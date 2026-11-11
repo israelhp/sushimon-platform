@@ -978,6 +978,7 @@
       "password": "Contraseña",
       "demoAs": "Entrar como (demo)",
       "accountMeta": "{role} · {branch}",
+      "branchAll": "Todas las sucursales",
       "submit": "Ingresar",
       "forgot": "¿Olvidaste tu contraseña?",
       "forgotToast": "Te enviamos un enlace de recuperación a {email} (demostración: no se envía ningún correo)",
@@ -1054,6 +1055,7 @@
       "summary": "{active} en curso · {fresh} nuevos",
       "searchPlaceholder": "Buscar n.º de pedido o cliente",
       "searchLabel": "Buscar pedidos",
+      "moreDelivered": "Mostrando {shown} de {total} entregados · el resto está en la tabla",
       "boardHint": "Toca una tarjeta para ver el pedido completo. Los pedidos nuevos se resaltan en coral.",
       "error": "No pudimos cargar los pedidos.",
       "columns": {
@@ -1166,6 +1168,7 @@
         "call": "Llamar",
         "deliverTitle": "Entrega",
         "pickupTitle": "Recoge en tienda",
+        "city": "Ciudad de Guatemala",
         "notes": "Observaciones del cliente",
         "courier": "Repartidor · {provider}",
         "providerPedidosya": "PedidosYa Courier",

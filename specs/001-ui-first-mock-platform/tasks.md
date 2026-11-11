@@ -34,8 +34,8 @@
 
 ## Phase 4: US2 Gestión de pedidos en el backoffice (P1)
 
-- [ ] T040 [US2] Login de demostración + shell (sidebar, topbar, popovers, toast) con menú por rol
-- [ ] T041 [US2] Panel (KPIs) + Pedidos (kanban/tabla, drawer, aceptar/rechazar/preparar/listo)
+- [x] T040 [US2] Login de demostración + shell (sidebar, topbar, popovers, toast) con menú por rol
+- [x] T041 [US2] Panel (KPIs) + Pedidos (kanban/tabla, drawer, aceptar/rechazar/preparar/listo)
 - [ ] T042 [US2] Entregas + modal Despachar (PedidosYa simulado / propio)
 - [ ] T043 [US2] E2E: encargado lleva un pedido a entregado; cocina sin acceso a entregas
 

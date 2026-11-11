@@ -11,6 +11,8 @@ interface RouteCase {
   ready: { role: 'heading' | 'button' | 'link'; name: string | RegExp };
   /** Abre antes la sesión de DEMOSTRACIÓN del cliente (sessionStorage); las rutas de cuenta la necesitan. */
   signedIn?: boolean;
+  /** Abre antes la sesión de DEMOSTRACIÓN del personal del backoffice con ese rol (sessionStorage). */
+  staff?: 'admin' | 'manager' | 'kitchen';
   /** Etiqueta para distinguir casos de la misma ruta (p. ej. pasos del checkout). */
   label?: string;
   /** Preferencias del cliente a precargar (carrito, modo de pedido…) en localStorage. */
@@ -125,11 +127,54 @@ export const A11Y_ROUTES: RouteCase[] = [
   },
   { path: '/menu', ready: { role: 'heading', name: /^Entradas/ } },
   { path: '/promociones', ready: { role: 'heading', name: /^Entradas/ } },
+  // Backoffice, bloques 1–2 (acceso, Panel y Pedidos). Sesión de demostración del personal.
+  { path: '/backoffice/login', ready: { role: 'heading', name: 'Iniciar sesión' } },
+  {
+    path: '/backoffice/panel',
+    ready: { role: 'heading', name: /^Buenas tardes/ },
+    staff: 'admin',
+  },
+  {
+    path: '/backoffice/pedidos',
+    ready: { role: 'heading', name: 'Pedidos' },
+    staff: 'admin',
+  },
+  {
+    path: '/backoffice/pedidos',
+    label: 'cocina',
+    ready: { role: 'heading', name: 'Pedidos' },
+    staff: 'kitchen',
+  },
 ];
+
+/** Usuarios de demostración del personal por rol (coinciden con los fixtures del mock). */
+const STAFF_SESSIONS = {
+  admin: {
+    userId: 'u1',
+    email: 'ana.perez@sushimon.gt',
+    name: 'Ana Lucía Pérez',
+    role: 'admin',
+    branchId: null,
+  },
+  manager: {
+    userId: 'u2',
+    email: 'marco.gomez@sushimon.gt',
+    name: 'Marco Antonio Gómez',
+    role: 'manager',
+    branchId: 'sucursal-1',
+  },
+  kitchen: {
+    userId: 'u5',
+    email: 'cocina.z4@sushimon.gt',
+    name: 'Cocina Zona 4',
+    role: 'kitchen',
+    branchId: 'sucursal-1',
+  },
+} as const;
 
 for (const theme of ['light', 'dark'] as const) {
   for (const route of A11Y_ROUTES) {
-    test(`a11y ${route.path}${route.label ? ` (${route.label})` : ''}${route.signedIn ? ' (con sesión)' : ''} · ${theme}`, async ({
+    test(`a11y ${route.path}${route.label ? ` (${route.label})` : ''}${route.signedIn ? ' (con sesión)' : ''}${route.staff ? ` (personal: ${route.staff})` : ''} · ${theme}`, async ({
       page,
     }) => {
       await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
@@ -156,6 +201,16 @@ for (const theme of ['light', 'dark'] as const) {
               staff: null,
             }),
           ),
+        );
+      }
+      if (route.staff) {
+        await page.addInitScript(
+          (staff) =>
+            sessionStorage.setItem(
+              'monsushi-demo-session-v1',
+              JSON.stringify({ customer: null, staff }),
+            ),
+          STAFF_SESSIONS[route.staff],
         );
       }
       await page.goto(route.path);

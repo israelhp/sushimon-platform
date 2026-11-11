@@ -56,7 +56,8 @@ export function SearchInput({
 
   if (zone === 'bo') {
     return (
-      <label className={cn('search', inline && 'inline', wrapperClassName)}>
+      // `inline` es también la utilidad `display:inline` de Tailwind (capa utilities > components): `flex!` la anula.
+      <label className={cn('search', inline && 'inline flex!', wrapperClassName)}>
         <IconSearch size="sm" />
         <input
           type="search"
