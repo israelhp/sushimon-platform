@@ -74,10 +74,10 @@ export function MobileNav() {
             {count > 0 ? (
               <span
                 key={count}
-                className="anim-bump absolute -right-0.5 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-surface bg-primary px-1 text-[10px] text-onprimary"
-              >
-                {count}
-              </span>
+                aria-hidden="true"
+                className="anim-bump absolute -right-0.5 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-surface bg-primary px-1 text-[10px] text-onprimary after:content-[attr(data-count)]"
+                data-count={count}
+              ></span>
             ) : null}
           </span>
           {t('order')}

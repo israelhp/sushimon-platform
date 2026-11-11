@@ -57,7 +57,7 @@
     "day": "Day",
     "time": "Time",
     "hoursNote": "Mon–Thu 12:00–8:00 p.m. · Fri–Sat 12:00–10:00 p.m. · Sun 12:00–6:00 p.m. Last order 30 min before closing.",
-    "changeAria": "Change order type: {a}, {b}",
+    "changeAria": "Change order type: {a} {b}",
     "orderNow": "Order now",
     "scheduleOrder": "Schedule order",
     "where": "Where should we deliver?",
@@ -119,7 +119,9 @@
     "catalogAria": "{a}, {b}. View details",
     "added": "{a} added",
     "addedQty": "{a} × {b} added to your order",
-    "removed": "{a} removed"
+    "removed": "{a} removed",
+    "unavailableNote": "This product isn’t available right now. Try another one from the menu.",
+    "maxQty": "Maximum {a} per order."
   },
   "cart": {
     "title": "Your order",
@@ -199,9 +201,24 @@
     "title": "Menu",
     "categoriesAria": "Categories",
     "happyLine": "{a} · {b} · Dine-in only",
-    "tapHint": "Tap a product to see details and add special requests."
+    "tapHint": "Tap a product to see details and add special requests.",
+    "emptyTitle": "The menu isn’t available right now",
+    "emptySub": "There are no products to show yet. Please try again in a moment.",
+    "happyLive": "Live now",
+    "happyOver": "Ended"
   },
   "promos": {
+    "daysRange": "{a} to {b}",
+    "validDineIn": "Dine-in only",
+    "statusLive": "Live now · until {a}",
+    "statusToday": "Today from {a}",
+    "statusUpcoming": "Next: {a} at {b}",
+    "statusScheduled": "Starts on {a}",
+    "statusExpired": "Ended on {a}",
+    "statusInactive": "Promotion paused",
+    "expiredNotice": "This promotion has ended. Check the regular menu for current prices.",
+    "emptyTitle": "No promotions right now",
+    "emptySub": "Check back soon or order from the regular menu.",
     "jp": "ハッピーアワー",
     "shortLine": "Mon–Thu · 3:00–6:00 p.m.",
     "longLine": "{a} · {b} · Dine-in only",
@@ -362,7 +379,9 @@
     "pendingMsg": "This may take a few minutes. Please don’t pay again: we’ll let you know once it’s confirmed.",
     "checkStatus": "Check status",
     "checking": "Checking…",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "errorTitle": "We couldn't process the payment",
+    "errorMsg": "There was a problem reaching the (simulated) gateway. You were not charged: you can try again or pay in cash."
   },
   "status": {
     "awaiting_payment": "Awaiting payment",
@@ -408,7 +427,17 @@
     "another": "Place another order",
     "viewMyOrders": "See it in My orders",
     "trackLater": "You can track this order anytime with its number and your phone in “Track your order”.",
-    "reportProblem": "Any problem? Report it"
+    "reportProblem": "Any problem? Report it",
+    "trackOrder": "Track my order"
+  },
+  "checkoutFlow": {
+    "zoneInline": "Zone",
+    "unavailableNotice": "Some items are no longer available at your branch. Remove them from your order to continue.",
+    "autoBranch": "Branch assigned for your area",
+    "switchToPickup": "Pick up at a branch",
+    "errOffline": "You're offline. Check your connection and try again.",
+    "errConflict": "Your order changed: the branch is closed or an item is no longer available. Review it and try again.",
+    "advanceError": "We couldn't advance this order's status."
   },
   "validation": {
     "name": "Enter your full name.",
@@ -423,6 +452,35 @@
     "quote": "We need a valid shipping estimate to continue."
   },
   "careers": {
+    "positions": {
+      "cocinero-sushi": {
+        "title": "Sushi cook",
+        "area": "Kitchen · preparing rolls, starters and monchis.",
+        "shift": "Full time · afternoon shift",
+        "req": "1 year of experience in Japanese or similar cuisine."
+      },
+      "mesero": {
+        "title": "Server",
+        "area": "Floor · serving MONcheros at the restaurant.",
+        "shift": "Full time or part time",
+        "req": "Great attitude and a love for customer service."
+      },
+      "auxiliar-cocina": {
+        "title": "Kitchen assistant",
+        "area": "Kitchen · help with prep, organization and cleaning.",
+        "shift": "Part time · weekends",
+        "req": "No experience needed: we’ll train you."
+      },
+      "repartidor": {
+        "title": "Delivery rider",
+        "area": "Delivery · orders across the city.",
+        "shift": "Full time · afternoon shift",
+        "req": "Own motorcycle and a valid license."
+      }
+    },
+    "cvSimulated": "Simulation: for now the file is not uploaded; only its name and size are sent. Real upload will arrive with secure storage.",
+    "submitting": "Sending…",
+    "submitError": "We couldn’t send your application. Please try again.",
     "eyebrow": "Work with us",
     "heroA": "Want to join the ",
     "heroB": "MONcheros?",
@@ -651,8 +709,24 @@
     "waTrack": "Find my order with number and phone",
     "waEmpty": "We couldn’t find orders on this device.",
     "waUnavailable": "WhatsApp isn’t available right now. Call us at",
-    "waMsg": "Hi MON SUSHI, I have a problem with my order.\n\nOrder: undefined\nDate: undefined\nDelivery: undefined\nItems: undefined\nTotal: undefined\nName: undefined\n\nWhat happened?: ",
+    "waMsg": "Hi MON SUSHI, I have a problem with my order.\n\nOrder: {id}\nDate: {date}\nDelivery: {mode}\nItems: {items}\nTotal: {total}\nName: {name}\n\nWhat happened?: ",
     "waMsgGeneric": "Hi MON SUSHI, I have a problem with an order.\n\nOrder number: \nWhat happened?: "
+  },
+  "tracking": {
+    "stepsAria": "Order progress",
+    "stepDone": "done",
+    "stepCurrent": "current step",
+    "advanceError": "This demo order could not be advanced.",
+    "rejected": "The restaurant rejected this order.",
+    "cancelled": "This order was cancelled.",
+    "reason": "Reason",
+    "reportOnline": "Report the problem in the app",
+    "zoneN": "zone {zone}",
+    "discount": "Discount",
+    "redirecting": "We couldn’t show this order with your session. Look it up with the number and your phone.",
+    "goLookup": "Look up my order",
+    "noAccess": "We couldn’t open this order with your session.",
+    "opensNewTab": "opens in a new tab"
   },
   "hub": {
     "personal": "My personal details",

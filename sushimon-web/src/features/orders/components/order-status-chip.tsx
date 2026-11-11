@@ -26,7 +26,9 @@ export function OrderStatusChip({
     <span
       className={cn(
         'inline-flex max-w-full items-center gap-1.5 truncate rounded-full px-2.5 py-1 text-[12px] font-extrabold',
-        inProgress ? 'bg-primary-soft text-primary' : 'bg-success-soft text-success',
+        inProgress
+          ? 'bg-primary-soft text-red-700 dark:text-red-300'
+          : 'bg-success-soft text-success',
       )}
     >
       {inProgress ? (

@@ -1,6 +1,6 @@
 'use client';
 
-import { Info, TriangleAlert } from 'lucide-react';
+import { Info, RotateCcw, TriangleAlert } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
@@ -17,7 +17,7 @@ import { ErrorNotice } from '@/features/store-shell/components/ErrorNotice';
 import { useCartDrawer } from '@/features/store-shell/store-shell-context';
 import type { LastOrderSummary } from '../last-order';
 
-const money = (value: number) => formatMoney(value, 'es', { decimals: 'auto' });
+const money = (value: number) => formatMoney(value, 'es');
 
 /**
  * "Pedir de nuevo": revisa el pedido anterior contra el menú de hoy (productos no disponibles y cambios
@@ -46,6 +46,8 @@ export function ReorderDialog({
     return product ? productName(product, locale) : fallback;
   };
   const newSubtotal = plan ? estimateSubtotal(plan.lines, prices) : 0;
+  const skippedIds = new Set(plan?.skipped.map((x) => x.productId));
+  const priceChanges = new Map((plan?.priceChanges ?? []).map((c) => [c.productId, c]));
 
   const confirm = () => {
     if (!plan || plan.lines.length === 0) return;
@@ -72,7 +74,7 @@ export function ReorderDialog({
           disabled={!plan || plan.lines.length === 0}
           onClick={confirm}
         >
-          {t('confirm')}
+          <RotateCcw className="h-4 w-4" aria-hidden="true" /> {t('confirm')}
         </button>
       }
     >
@@ -89,64 +91,70 @@ export function ReorderDialog({
           <ErrorNotice message={t('error')} onRetry={() => void products.refetch()} />
         ) : (
           <>
-            {plan.lines.length === 0 ? (
-              <div className="notice notice-warn" role="status">
-                <TriangleAlert className="mt-0.5 h-[18px] w-[18px] flex-none" aria-hidden="true" />
-                <div>{t('noneAvailable')}</div>
-              </div>
-            ) : (
-              <ul className="m-0 grid list-none gap-2 p-0">
-                {plan.lines.map((line) => (
+            {plan.skippedCount > 0 ? (
+              <p
+                role="status"
+                className="m-0 flex items-start gap-2 rounded-xl bg-danger-soft px-3.5 py-2.5 text-[14px] font-bold"
+              >
+                <TriangleAlert
+                  className="mt-0.5 h-4 w-4 flex-none text-danger"
+                  aria-hidden="true"
+                />
+                {plan.lines.length > 0
+                  ? t('unavailableNote', { a: plan.skippedCount })
+                  : t('noneAvailable')}
+              </p>
+            ) : null}
+
+            <ul className="m-0 list-none divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface p-0">
+              {order.lines.map((line, index) => {
+                const unavailable = skippedIds.has(line.productId);
+                const change = priceChanges.get(line.productId);
+                return (
                   <li
-                    key={`${line.productId}|${line.note}`}
-                    className="flex items-baseline justify-between gap-3 rounded-xl border border-line bg-surface px-3.5 py-2.5"
+                    key={`${line.productId}|${line.note}|${index}`}
+                    className={cn(
+                      'flex items-start justify-between gap-3 px-3.5 py-2.5',
+                      unavailable && 'opacity-60',
+                    )}
                   >
-                    <span className="min-w-0 font-bold">
-                      {line.quantity}× {nameOf(line.productId, line.productId)}
+                    <span className="min-w-0">
+                      <span className={cn('block font-bold', unavailable && 'line-through')}>
+                        {line.quantity}× {nameOf(line.productId, line.name)}
+                      </span>
                       {line.note ? (
-                        <span className="block truncate text-[12px] font-normal text-muted">
-                          {line.note}
+                        <span className="block text-[12px] text-muted">{line.note}</span>
+                      ) : null}
+                      {unavailable ? (
+                        <span className="mt-0.5 inline-block rounded-full bg-danger-soft px-2 py-0.5 text-[11px] font-extrabold text-danger">
+                          {t('unavailable')}
+                        </span>
+                      ) : null}
+                      {change ? (
+                        <span className="mt-0.5 block text-[12px] font-bold text-secondary">
+                          {t('priceChanged', { a: money(change.before), b: money(change.now) })}
                         </span>
                       ) : null}
                     </span>
-                    <span className="flex-none text-sm text-muted">
-                      {money((prices[line.productId] ?? 0) * line.quantity)}
+                    <span className="flex-none font-bold">
+                      {unavailable ? '—' : money((prices[line.productId] ?? 0) * line.quantity)}
                     </span>
                   </li>
-                ))}
-              </ul>
-            )}
+                );
+              })}
+            </ul>
 
-            {plan.skippedCount > 0 ? (
-              <div className="notice notice-warn" role="status">
-                <TriangleAlert className="mt-0.5 h-[18px] w-[18px] flex-none" aria-hidden="true" />
-                <div>
-                  <p className="m-0 font-bold">{t('unavailable')}</p>
-                  <p className="m-0">{t('unavailableNote', { a: plan.skippedCount })}</p>
-                </div>
+            <div className="rounded-2xl border border-line bg-surface px-3.5 py-3 text-[14px]">
+              <div className="flex justify-between text-muted">
+                <span>{t('originalTotal')}</span>
+                <span>{money(order.total)}</span>
               </div>
-            ) : null}
-
-            {plan.priceChanges.map((c) => (
-              <p key={c.productId} className="m-0 text-[13px] text-muted">
-                {nameOf(c.productId, c.name)}:{' '}
-                {t('priceChanged', { a: money(c.before), b: money(c.now) })}
-              </p>
-            ))}
-
-            {plan.lines.length > 0 ? (
-              <div className="rounded-2xl border border-line bg-surface p-3.5">
-                <div className="flex items-baseline justify-between text-sm">
-                  <span className="text-muted">{t('originalTotal')}</span>
-                  <span className="font-bold">{money(order.total)}</span>
-                </div>
-                <div className="mt-1 flex items-baseline justify-between">
-                  <span className="font-bold">{t('currentSubtotal')}</span>
-                  <strong className="font-display text-[22px]">{money(newSubtotal)}</strong>
-                </div>
-                <p className="m-0 mt-1 text-[12px] text-muted">{t('shippingNote')}</p>
+              <div className="mt-0.5 flex items-baseline justify-between">
+                <span className="font-extrabold">{t('currentSubtotal')}</span>
+                <span className="font-display text-[22px]">{money(newSubtotal)}</span>
               </div>
-            ) : null}
+              <p className="m-0 mt-1 text-[12px] text-muted">{t('shippingNote')}</p>
+            </div>
 
             {cart.count > 0 && plan.lines.length > 0 ? (
               <fieldset>

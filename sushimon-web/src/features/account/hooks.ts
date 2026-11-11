@@ -53,7 +53,7 @@ export function useAddresses() {
   });
 }
 
-function useAddressMutation<T>(fn: (args: T) => Promise<unknown>) {
+function useAddressMutation<T, R>(fn: (args: T) => Promise<R>) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,

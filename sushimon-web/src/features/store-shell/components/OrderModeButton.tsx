@@ -57,7 +57,7 @@ export function OrderModeButton({ className }: { className?: string }) {
         <Icon className="h-4 w-4" aria-hidden="true" />
       </span>
       <span className="min-w-0 leading-tight">
-        <span className="block truncate text-[12px] font-extrabold">{typeLabel}</span>
+        <span className="block truncate text-[12px] font-extrabold">{typeLabel}</span>{' '}
         <span className="block truncate text-[11px] text-muted">{whenLabel}</span>
       </span>
       <ChevronDown className="h-4 w-4 flex-none" aria-hidden="true" />

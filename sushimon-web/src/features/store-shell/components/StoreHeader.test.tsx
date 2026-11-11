@@ -81,7 +81,7 @@ describe('StoreHeader', () => {
     });
     expect(
       screen.getByRole('button', {
-        name: 'Cambiar forma de pedido: A domicilio, Lo antes posible',
+        name: 'Cambiar forma de pedido: A domicilio Lo antes posible',
       }),
     ).toBeInTheDocument();
   });

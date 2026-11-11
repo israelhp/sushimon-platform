@@ -75,10 +75,10 @@ export function StoreHeader() {
               {count > 0 ? (
                 <span
                   key={count}
-                  className="anim-bump absolute -right-2.5 -top-2 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-extrabold text-onprimary"
-                >
-                  {count}
-                </span>
+                  aria-hidden="true"
+                  className="anim-bump absolute -right-2.5 -top-2 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-extrabold text-onprimary after:content-[attr(data-count)]"
+                  data-count={count}
+                ></span>
               ) : null}
             </span>
             {t('order')}

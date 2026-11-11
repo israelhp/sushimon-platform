@@ -15,7 +15,7 @@ export function AccountButton({ className }: { className?: string }) {
   return (
     <Link
       href={STORE_ROUTES.account}
-      aria-label={customer ? `${t('account')}, ${customer.name}` : t('signIn')}
+      aria-label={customer ? undefined : t('signIn')}
       title={customer ? t('account') : t('signIn')}
       className={cn(
         'flex-none items-center justify-center rounded-full no-underline',
@@ -26,10 +26,15 @@ export function AccountButton({ className }: { className?: string }) {
       )}
     >
       {customer ? (
-        <Avatar
-          name={customer.name}
-          className="h-8 w-8 text-[12px] min-[400px]:h-9 min-[400px]:w-9 min-[400px]:text-[13px]"
-        />
+        <>
+          <Avatar
+            name={customer.name}
+            className="h-8 w-8 text-[12px] min-[400px]:h-9 min-[400px]:w-9 min-[400px]:text-[13px]"
+          />
+          <span className="sr-only">
+            {t('account')}, {customer.name}
+          </span>
+        </>
       ) : (
         <User className="h-[18px] w-[18px]" aria-hidden="true" />
       )}

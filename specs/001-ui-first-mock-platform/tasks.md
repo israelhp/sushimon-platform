@@ -28,7 +28,7 @@
 
 - [x] T030 [US1] Layout de tienda: header, nav móvil, footer, toggles, CartDrawer, OrderModeSheet
 - [x] T031 [US1] Inicio: carrusel, categorías, favoritos, Happy Hour
-- [ ] T032 [US1] Menú `?cat=` + ProductSheet; Promociones
+- [x] T032 [US1] Menú `?cat=` + ProductSheet; Promociones
 - [ ] T033 [US1] Checkout 5 pasos + modal NeoNet simulado + confirmación
 - [ ] T034 [US1] Pruebas de componentes (carrito, checkout) y E2E de compra en efectivo y tarjeta rechazada
 
@@ -41,11 +41,11 @@
 
 ## Phase 5: US3 Seguimiento y consulta (P2)
 
-- [ ] T050 [US3] `pedidos/[id]`, `consultar`, `incidencias` + E2E de consulta de invitado
+- [x] T050 [US3] `pedidos/[id]`, `consultar`, `incidencias` + E2E de consulta de invitado
 
 ## Phase 6: US4 Cuenta (P2)
 
-- [ ] T060 [US4] `cuenta/*` (datos, direcciones, favoritos, pedidos), modal de inicio de sesión simulado, reorden
+- [x] T060 [US4] `cuenta/*` (datos, direcciones, favoritos, pedidos), modal de inicio de sesión simulado, reorden
 
 ## Phase 7: US5 Administración (P3)
 
@@ -54,7 +54,7 @@
 
 ## Phase 8: US6 Contenido (P3)
 
-- [ ] T080 [US6] `mas`, `trabaja-con-nosotros` (validación accesible), 404
+- [x] T080 [US6] `mas`, `trabaja-con-nosotros` (validación accesible), 404
 
 ## Phase 9: Polish & Cross-Cutting
 

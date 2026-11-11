@@ -56,8 +56,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const theme = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   useEffect(() => {
-    if (readStored()) return;
+    const stored = readStored();
+    // Si el documento se renderizó en el cliente (p. ej. la página 404 de Next), el script inline del
+    // <head> no se ejecutó: se aplica aquí la preferencia guardada.
+    if (stored && getSnapshot() !== stored) applyTheme(stored);
+    if (stored) return;
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    if (getSnapshot() !== (mq.matches ? 'dark' : 'light'))
+      applyTheme(mq.matches ? 'dark' : 'light');
     const onChange = (e: MediaQueryListEvent) => {
       if (!readStored()) applyTheme(e.matches ? 'dark' : 'light');
     };

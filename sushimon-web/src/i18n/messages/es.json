@@ -57,7 +57,7 @@
     "day": "Día",
     "time": "Hora",
     "hoursNote": "Lun–Jue 12:00–8:00 p. m. · Vie–Sáb 12:00–10:00 p. m. · Dom 12:00–6:00 p. m. Último pedido 30 min antes del cierre.",
-    "changeAria": "Cambiar forma de pedido: {a}, {b}",
+    "changeAria": "Cambiar forma de pedido: {a} {b}",
     "orderNow": "Pedir ahora",
     "scheduleOrder": "Programar pedido",
     "where": "¿A dónde te lo llevamos?",
@@ -119,7 +119,9 @@
     "catalogAria": "{a}, {b}. Ver detalle",
     "added": "{a} agregado",
     "addedQty": "{a} × {b} agregado a tu pedido",
-    "removed": "{a} eliminado"
+    "removed": "{a} eliminado",
+    "unavailableNote": "Este producto no está disponible por ahora. Probá con otro del menú.",
+    "maxQty": "Máximo {a} por pedido."
   },
   "cart": {
     "title": "Tu pedido",
@@ -199,9 +201,24 @@
     "title": "Menú",
     "categoriesAria": "Categorías",
     "happyLine": "{a} · {b} · Solo en restaurante",
-    "tapHint": "Tocá un producto para ver el detalle y agregar observaciones."
+    "tapHint": "Tocá un producto para ver el detalle y agregar observaciones.",
+    "emptyTitle": "El menú no está disponible por ahora",
+    "emptySub": "Todavía no hay productos para mostrar. Volvé a intentar en un momento.",
+    "happyLive": "En curso",
+    "happyOver": "Finalizada"
   },
   "promos": {
+    "daysRange": "{a} a {b}",
+    "validDineIn": "Válido solo en restaurante",
+    "statusLive": "En curso ahora · hasta {a}",
+    "statusToday": "Hoy a partir de las {a}",
+    "statusUpcoming": "Próxima: {a} a las {b}",
+    "statusScheduled": "Empieza el {a}",
+    "statusExpired": "Finalizó el {a}",
+    "statusInactive": "Promoción pausada",
+    "expiredNotice": "Esta promoción ya finalizó. Mirá el menú regular para ver los precios vigentes.",
+    "emptyTitle": "No hay promociones vigentes",
+    "emptySub": "Volvé pronto o pedí del menú regular.",
     "jp": "ハッピーアワー",
     "shortLine": "Lun–Jue · 3:00–6:00 p. m.",
     "longLine": "{a} · {b} · Solo en restaurante",
@@ -362,7 +379,9 @@
     "pendingMsg": "Esto puede tardar unos minutos. No vuelvas a pagar: te avisaremos cuando se confirme.",
     "checkStatus": "Consultar estado",
     "checking": "Consultando…",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "errorTitle": "No pudimos procesar el pago",
+    "errorMsg": "Ocurrió un problema al contactar la pasarela (simulada). No se realizó ningún cobro: podés reintentar o pagar en efectivo."
   },
   "status": {
     "awaiting_payment": "Pendiente de pago",
@@ -408,7 +427,17 @@
     "another": "Hacer otro pedido",
     "viewMyOrders": "Ver en Mis pedidos",
     "trackLater": "Podés consultar este pedido cuando quieras con el número y tu teléfono en «Consultá tu orden».",
-    "reportProblem": "¿Algún problema? Reportalo"
+    "reportProblem": "¿Algún problema? Reportalo",
+    "trackOrder": "Seguir mi pedido"
+  },
+  "checkoutFlow": {
+    "zoneInline": "zona",
+    "unavailableNotice": "Algunos productos ya no están disponibles en tu sucursal. Quitalos de tu pedido para continuar.",
+    "autoBranch": "Sucursal asignada según tu zona",
+    "switchToPickup": "Recoger en sucursal",
+    "errOffline": "No hay conexión. Revisá tu internet e intentá de nuevo.",
+    "errConflict": "Tu pedido cambió: la sucursal está cerrada o un producto dejó de estar disponible. Revisalo e intentá de nuevo.",
+    "advanceError": "No se pudo avanzar el estado de este pedido."
   },
   "validation": {
     "name": "Escribí tu nombre completo.",
@@ -423,6 +452,35 @@
     "quote": "Necesitamos una estimación de envío válida para continuar."
   },
   "careers": {
+    "positions": {
+      "cocinero-sushi": {
+        "title": "Cocinero de sushi",
+        "area": "Cocina · preparación de rolls, entradas y monchis.",
+        "shift": "Tiempo completo · turno tarde",
+        "req": "1 año de experiencia en cocina japonesa o similar."
+      },
+      "mesero": {
+        "title": "Mesero",
+        "area": "Salón · atención a los MONcheros en restaurante.",
+        "shift": "Tiempo completo o medio tiempo",
+        "req": "Buena actitud y gusto por el servicio al cliente."
+      },
+      "auxiliar-cocina": {
+        "title": "Auxiliar de cocina",
+        "area": "Cocina · apoyo en preparación, orden y limpieza.",
+        "shift": "Medio tiempo · fines de semana",
+        "req": "Sin experiencia: te capacitamos."
+      },
+      "repartidor": {
+        "title": "Repartidor",
+        "area": "Entregas · pedidos a domicilio en la ciudad.",
+        "shift": "Tiempo completo · turno tarde",
+        "req": "Moto propia y licencia vigente."
+      }
+    },
+    "cvSimulated": "Simulación: por ahora el archivo no se sube; solo se envía su nombre y tamaño. La carga real llegará con almacenamiento seguro.",
+    "submitting": "Enviando…",
+    "submitError": "No pudimos enviar tu postulación. Intentá de nuevo.",
     "eyebrow": "Trabaja con nosotros",
     "heroA": "¿Querés ser parte de los ",
     "heroB": "MONcheros?",
@@ -651,8 +709,24 @@
     "waTrack": "Buscar mi pedido con número y teléfono",
     "waEmpty": "No encontramos pedidos en este dispositivo.",
     "waUnavailable": "WhatsApp no está disponible por ahora. Llamanos al",
-    "waMsg": "Hola MON SUSHI, tengo un problema con mi pedido.\n\nPedido: undefined\nFecha: undefined\nEntrega: undefined\nProductos: undefined\nTotal: undefined\nNombre: undefined\n\n¿Qué pasó?: ",
+    "waMsg": "Hola MON SUSHI, tengo un problema con mi pedido.\n\nPedido: {id}\nFecha: {date}\nEntrega: {mode}\nProductos: {items}\nTotal: {total}\nNombre: {name}\n\n¿Qué pasó?: ",
     "waMsgGeneric": "Hola MON SUSHI, tengo un problema con un pedido.\n\nNúmero de pedido: \n¿Qué pasó?: "
+  },
+  "tracking": {
+    "stepsAria": "Progreso del pedido",
+    "stepDone": "completado",
+    "stepCurrent": "paso actual",
+    "advanceError": "No se pudo avanzar el estado de este pedido de demostración.",
+    "rejected": "El restaurante rechazó este pedido.",
+    "cancelled": "Este pedido fue cancelado.",
+    "reason": "Motivo",
+    "reportOnline": "Reportar el problema en la app",
+    "zoneN": "zona {zone}",
+    "discount": "Descuento",
+    "redirecting": "No pudimos mostrar este pedido con tu sesión. Buscalo con el número y tu teléfono.",
+    "goLookup": "Consultar mi pedido",
+    "noAccess": "No pudimos abrir este pedido con tu sesión.",
+    "opensNewTab": "se abre en una pestaña nueva"
   },
   "hub": {
     "personal": "Mis datos personales",
