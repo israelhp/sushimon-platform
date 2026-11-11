@@ -71,7 +71,8 @@
   --line: 34 45 66;
   --primary: 239 68 68;
   --primary-soft: 60 22 26;
-  --onprimary: 255 255 255;
+  /* Tinta oscura: blanco sobre #EF4444 da 3,76:1 (AA exige 4,5). Mismo criterio que el backoffice oscuro. */
+  --onprimary: 11 11 15;
   --secondary: 203 213 225;
   --secondary-soft: 30 41 59;
   --onsecondary: 11 11 15;

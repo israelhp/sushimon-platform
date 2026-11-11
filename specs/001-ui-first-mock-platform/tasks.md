@@ -29,8 +29,8 @@
 - [x] T030 [US1] Layout de tienda: header, nav móvil, footer, toggles, CartDrawer, OrderModeSheet
 - [x] T031 [US1] Inicio: carrusel, categorías, favoritos, Happy Hour
 - [x] T032 [US1] Menú `?cat=` + ProductSheet; Promociones
-- [ ] T033 [US1] Checkout 5 pasos + modal NeoNet simulado + confirmación
-- [ ] T034 [US1] Pruebas de componentes (carrito, checkout) y E2E de compra en efectivo y tarjeta rechazada
+- [x] T033 [US1] Checkout 5 pasos + modal NeoNet simulado + confirmación
+- [x] T034 [US1] Pruebas de componentes (carrito, checkout) y E2E de compra en efectivo y tarjeta rechazada
 
 ## Phase 4: US2 Gestión de pedidos en el backoffice (P1)
 
