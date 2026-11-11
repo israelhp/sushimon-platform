@@ -1,0 +1,101 @@
+import { describe, expect, it } from 'vitest';
+import { ApiError } from '@/lib/data-access/errors';
+import * as account from '@/services/account';
+import { createHarness } from '../testing';
+
+async function status(p: Promise<unknown>): Promise<number> {
+  try {
+    await p;
+  } catch (e) {
+    if (e instanceof ApiError) return e.status;
+    throw e;
+  }
+  return 200;
+}
+
+const address = {
+  label: 'other' as const,
+  customLabel: 'Casa de mamá',
+  department: 'Guatemala',
+  municipality: 'Guatemala',
+  zone: '15',
+  line: '2a calle 23-80, Vista Hermosa',
+  references: 'Casa azul',
+};
+
+describe('cuenta del cliente (/v1/me)', () => {
+  it('sin sesión → 401', async () => {
+    const h = createHarness();
+    expect(await status(account.getMe(h.client))).toBe(401);
+    expect(await status(account.listMyOrders(h.client))).toBe(401);
+  });
+
+  it('cuenta demo sembrada: perfil, 2 direcciones, 2 favoritos y 3 pedidos', async () => {
+    const h = createHarness();
+    h.asCustomer();
+    expect(await account.getMe(h.client)).toMatchObject({
+      fullName: 'Cliente Demo',
+      defaultAddressId: 'demo-casa',
+    });
+    const addresses = await account.listAddresses(h.client);
+    expect(addresses.map((a) => a.id)).toEqual(['demo-casa', 'demo-trabajo']);
+    expect(await account.listFavorites(h.client)).toEqual(['platanito-roll', 'calientito-roll']);
+    const orders = await account.listMyOrders(h.client);
+    expect(orders.map((o) => o.id)).toEqual(['MON-490217', 'MON-482193', 'MON-479850']);
+  });
+
+  it('cuenta nueva empieza vacía', async () => {
+    const h = createHarness();
+    h.asCustomer('invitado.nuevo@ejemplo.com');
+    expect(await account.getMe(h.client)).toMatchObject({ phone: '', defaultAddressId: null });
+    expect(await account.listAddresses(h.client)).toEqual([]);
+    const first = await account.createAddress(h.client, address);
+    expect((await account.getMe(h.client)).defaultAddressId).toBe(first.id);
+  });
+
+  it('direcciones: duplicado 409, predeterminada, edición y borrado', async () => {
+    const h = createHarness();
+    h.asCustomer();
+    const a = await account.createAddress(h.client, address);
+    expect(a).toMatchObject({ id: 'addr-1', customLabel: 'Casa de mamá', zone: '15' });
+    expect(await status(account.createAddress(h.client, address))).toBe(409);
+    expect(await status(account.createAddress(h.client, { ...address, zone: '' }))).toBe(400);
+    await account.setDefaultAddress(h.client, a.id);
+    expect((await account.listAddresses(h.client))[0]?.id).toBe(a.id);
+    const edited = await account.updateAddress(h.client, a.id, { references: 'Portón verde' });
+    expect(edited.references).toBe('Portón verde');
+    expect(await account.deleteAddress(h.client, a.id)).toBeUndefined();
+    expect((await account.getMe(h.client)).defaultAddressId).toBeNull();
+    expect(await status(account.deleteAddress(h.client, a.id))).toBe(404);
+    expect(await status(account.setDefaultAddress(h.client, 'zzz'))).toBe(404);
+  });
+
+  it('máximo 10 direcciones', async () => {
+    const h = createHarness();
+    h.asCustomer('invitado.nuevo@ejemplo.com');
+    for (let i = 1; i <= 10; i++) {
+      await account.createAddress(h.client, { ...address, line: `Calle ${i} casa ${i}` });
+    }
+    expect(await status(account.createAddress(h.client, { ...address, line: 'Calle 11 x' }))).toBe(
+      409,
+    );
+  });
+
+  it('perfil y favoritos', async () => {
+    const h = createHarness();
+    h.asCustomer();
+    expect(await status(account.updateMe(h.client, { phone: '12' }))).toBe(400);
+    expect((await account.updateMe(h.client, { phone: '5555-9999' })).phone).toBe('5555-9999');
+    expect(await account.addFavorite(h.client, 'dumplings')).toEqual([
+      'dumplings',
+      'platanito-roll',
+      'calientito-roll',
+    ]);
+    expect(await account.addFavorite(h.client, 'dumplings')).toHaveLength(3);
+    expect(await account.removeFavorite(h.client, 'platanito-roll')).toEqual([
+      'dumplings',
+      'calientito-roll',
+    ]);
+    expect(await status(account.addFavorite(h.client, 'no-existe'))).toBe(404);
+  });
+});

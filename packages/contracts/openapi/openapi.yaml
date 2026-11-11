@@ -38,6 +38,880 @@ components:
         statusCode: { type: integer }
         error: { type: string }
         message: { type: string }
+    # ─────────────────────────────────────────────────────────────────────────────────────────
+    # Esquemas DRAFT (x-status: draft) — Etapa 1 UI First. Los consume sushimon-web (adaptador
+    # mock) y se referenciarán desde `paths` slice a slice cuando la API los implemente.
+    # Rutas previstas: docs/contracts/planned-endpoints.md. Montos en GTQ. Fechas ISO 8601 (UTC).
+    # ─────────────────────────────────────────────────────────────────────────────────────────
+    LocalizedText:
+      x-status: draft
+      type: object
+      required: [es]
+      properties:
+        es: { type: string }
+        en: { type: string }
+    BranchHours:
+      x-status: draft
+      description: Horario de un día (0 = domingo … 6 = sábado), hora local de Guatemala.
+      type: object
+      required: [day, open, close, closed]
+      properties:
+        day: { type: integer, minimum: 0, maximum: 6 }
+        open: { type: string, example: '12:00' }
+        close: { type: string, example: '22:00' }
+        closed: { type: boolean }
+    DeliveryTierId:
+      x-status: draft
+      type: string
+      enum: [near, mid, extended, far]
+    DeliveryTier:
+      x-status: draft
+      type: object
+      required: [id, fee, etaMinMinutes, etaMaxMinutes]
+      properties:
+        id: { $ref: '#/components/schemas/DeliveryTierId' }
+        fee: { type: number }
+        etaMinMinutes: { type: integer }
+        etaMaxMinutes: { type: integer }
+    CoverageRule:
+      x-status: draft
+      description: Nivel de envío de una sucursal para un municipio (zone null = todo el municipio).
+      type: object
+      required: [department, municipality, zone, tier]
+      properties:
+        department: { type: string }
+        municipality: { type: string }
+        zone: { type: string, nullable: true }
+        tier: { $ref: '#/components/schemas/DeliveryTierId' }
+    Municipality:
+      x-status: draft
+      type: object
+      required: [name, zones]
+      properties:
+        name: { type: string }
+        zones: { type: integer, description: Número de zonas (0 = el municipio no usa zonas). }
+    Department:
+      x-status: draft
+      type: object
+      required: [department, municipalities]
+      properties:
+        department: { type: string }
+        municipalities:
+          type: array
+          items: { $ref: '#/components/schemas/Municipality' }
+    StoreConfig:
+      x-status: draft
+      type: object
+      required:
+        - name
+        - tagline
+        - currency
+        - timezone
+        - serverTime
+        - whatsappOrdersNumber
+        - phoneDisplay
+        - phoneHref
+        - instagramHandle
+        - instagramUrl
+        - locationLabel
+        - mapsUrl
+        - wazeUrl
+        - openingHours
+        - weeklyHours
+        - schedule
+        - deliveryTiers
+        - departments
+        - nonexistentZones
+      properties:
+        name: { type: string }
+        tagline: { type: string }
+        currency: { type: string, enum: [GTQ] }
+        timezone: { type: string, example: America/Guatemala }
+        serverTime:
+          type: string
+          format: date-time
+          description: Hora del servidor (en el mock, el reloj de la demo). La UI calcula horarios con ella.
+        whatsappOrdersNumber: { type: string }
+        phoneDisplay: { type: string }
+        phoneHref: { type: string }
+        instagramHandle: { type: string }
+        instagramUrl: { type: string }
+        locationLabel: { type: string }
+        mapsUrl: { type: string }
+        wazeUrl: { type: string }
+        openingHours:
+          type: array
+          items:
+            type: object
+            required: [key, open, close]
+            properties:
+              key: { type: string, enum: [monThu, friSat, sun] }
+              open: { type: string }
+              close: { type: string }
+        weeklyHours:
+          type: array
+          items: { $ref: '#/components/schemas/BranchHours' }
+        schedule:
+          type: object
+          required: [stepMinutes, lastOrderBeforeClose, minLeadMinutes, days]
+          properties:
+            stepMinutes: { type: integer }
+            lastOrderBeforeClose: { type: integer }
+            minLeadMinutes: { type: integer }
+            days: { type: integer }
+        deliveryTiers:
+          type: array
+          items: { $ref: '#/components/schemas/DeliveryTier' }
+        departments:
+          type: array
+          items: { $ref: '#/components/schemas/Department' }
+        nonexistentZones:
+          type: array
+          description: Zonas de la Ciudad de Guatemala que no existen (20, 22, 23).
+          items: { type: integer }
+    Branch:
+      x-status: draft
+      type: object
+      required:
+        - id
+        - name
+        - area
+        - zoneLabel
+        - address
+        - phone
+        - hoursLabel
+        - hours
+        - radiusKm
+        - status
+        - isOpen
+        - openNow
+        - coverage
+        - coverageLabels
+      properties:
+        id: { type: string }
+        name: { type: string }
+        area: { $ref: '#/components/schemas/LocalizedText' }
+        zoneLabel: { type: string, example: 'Zona 4 · Cuatro Grados Norte' }
+        address: { type: string }
+        phone: { type: string }
+        hoursLabel: { type: string }
+        hours:
+          type: array
+          items: { $ref: '#/components/schemas/BranchHours' }
+        radiusKm: { type: number }
+        status: { type: string, enum: [active, coming_soon] }
+        isOpen: { type: boolean, description: Interruptor abierta/cerrada del backoffice. }
+        openNow: { type: boolean, description: isOpen y dentro del horario a la hora del servidor. }
+        coverage:
+          type: array
+          items: { $ref: '#/components/schemas/CoverageRule' }
+        coverageLabels:
+          type: array
+          items: { type: string }
+    DeliveryQuote:
+      x-status: draft
+      type: object
+      required:
+        [
+          covered,
+          reason,
+          quoteId,
+          branchId,
+          tier,
+          fee,
+          currency,
+          etaMinMinutes,
+          etaMaxMinutes,
+          simulated,
+          createdAt,
+        ]
+      properties:
+        covered: { type: boolean }
+        reason: { type: string, nullable: true, enum: [not_covered, branch_not_covered] }
+        quoteId: { type: string, nullable: true }
+        branchId: { type: string, nullable: true }
+        tier:
+          allOf: [{ $ref: '#/components/schemas/DeliveryTierId' }]
+          nullable: true
+        fee: { type: number, nullable: true }
+        currency: { type: string, enum: [GTQ] }
+        etaMinMinutes: { type: integer, nullable: true }
+        etaMaxMinutes: { type: integer, nullable: true }
+        simulated: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    Category:
+      x-status: draft
+      type: object
+      required: [id, name, sortOrder, visible, kind]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        nameEn: { type: string }
+        sortOrder: { type: integer }
+        visible: { type: boolean }
+        kind:
+          type: string
+          enum: [products, happy_hour]
+          description: happy_hour es un acceso a la promoción; no agrupa productos.
+        illustration: { type: string }
+        jpLabel: { type: string }
+    BranchAvailability:
+      x-status: draft
+      type: object
+      required: [branchId, available]
+      properties:
+        branchId: { type: string }
+        available: { type: boolean }
+    Product:
+      x-status: draft
+      type: object
+      required:
+        [
+          id,
+          name,
+          description,
+          price,
+          categoryId,
+          illustration,
+          featured,
+          food,
+          available,
+          availability,
+        ]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        nameEn: { type: string }
+        description: { type: string }
+        descriptionEn: { type: string }
+        price: { type: number }
+        categoryId: { type: string }
+        illustration: { type: string }
+        featured: { type: boolean }
+        food: { type: boolean }
+        available:
+          type: boolean
+          description: Disponible en la sucursal pedida (o en alguna sucursal activa si no se indica).
+        availability:
+          type: array
+          items: { $ref: '#/components/schemas/BranchAvailability' }
+    HappyHourItem:
+      x-status: draft
+      type: object
+      required: [id, name, priceLabel, group, illustration]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        nameEn: { type: string }
+        priceLabel: { type: string }
+        group: { type: string }
+        illustration: { type: string }
+    Promotion:
+      x-status: draft
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - kind
+        - value
+        - daysOfWeek
+        - startTime
+        - endTime
+        - validFrom
+        - validTo
+        - active
+        - status
+        - dineInOnly
+        - items
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        kind: { type: string, enum: [2x1, percent, fixed_price] }
+        value: { type: number, description: 0 para 2x1; porcentaje; o precio especial en GTQ. }
+        daysOfWeek:
+          type: array
+          description: Días ISO (1 = lunes … 7 = domingo).
+          items: { type: integer, minimum: 1, maximum: 7 }
+        startTime: { type: string, example: '15:00' }
+        endTime: { type: string, example: '18:00' }
+        validFrom: { type: string, format: date }
+        validTo: { type: string, format: date }
+        active: { type: boolean }
+        status:
+          type: string
+          enum: [current, scheduled, expired, inactive]
+          description: Calculado con la fecha del servidor.
+        dineInOnly: { type: boolean }
+        subtitle: { $ref: '#/components/schemas/LocalizedText' }
+        conditions: { $ref: '#/components/schemas/LocalizedText' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/HappyHourItem' }
+    PromotionInput:
+      x-status: draft
+      type: object
+      required: [name, kind, value, daysOfWeek, startTime, endTime, validFrom, validTo]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        kind: { type: string, enum: [2x1, percent, fixed_price] }
+        value: { type: number }
+        daysOfWeek: { type: array, items: { type: integer } }
+        startTime: { type: string }
+        endTime: { type: string }
+        validFrom: { type: string, format: date }
+        validTo: { type: string, format: date }
+        active: { type: boolean }
+    OrderStatus:
+      x-status: draft
+      type: string
+      enum: [received, accepted, preparing, ready, on_the_way, delivered, rejected, cancelled]
+    PaymentStatus:
+      x-status: draft
+      type: string
+      enum: [pending, approved, declined, review]
+    PaymentMethod:
+      x-status: draft
+      type: string
+      enum: [cash, card]
+    DeliveryProvider:
+      x-status: draft
+      type: string
+      enum: [pedidosya, own]
+    DeliveryStatus:
+      x-status: draft
+      type: string
+      description: >-
+        PedidosYa: searching → assigned → picking_up → picked_up → on_the_way → delivered.
+        Propio: assigned → on_the_way → delivered. failed = el proveedor no encontró repartidor.
+      enum: [searching, assigned, picking_up, picked_up, on_the_way, delivered, failed]
+    FulfillmentType:
+      x-status: draft
+      type: string
+      enum: [pickup, delivery]
+    OrderSchedule:
+      x-status: draft
+      type: object
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [now, scheduled] }
+        date:
+          { type: string, format: date, description: Fecha local (YYYY-MM-DD) si es programado. }
+        time: { type: string, example: '19:30', description: Hora local (HH:mm) si es programado. }
+    OrderAddress:
+      x-status: draft
+      type: object
+      required: [department, municipality, zone, line, references]
+      properties:
+        department: { type: string }
+        municipality: { type: string }
+        zone: { type: string, description: Vacío si el municipio no usa zonas. }
+        line: { type: string }
+        references: { type: string }
+    OrderCustomer:
+      x-status: draft
+      type: object
+      required: [name, phone, email]
+      properties:
+        name: { type: string }
+        phone: { type: string }
+        email: { type: string }
+    OrderLine:
+      x-status: draft
+      type: object
+      required: [productId, name, quantity, note, unitPrice, subtotal]
+      properties:
+        productId: { type: string }
+        name: { type: string }
+        quantity: { type: integer, minimum: 1, maximum: 99 }
+        note: { type: string }
+        unitPrice: { type: number, description: Precio al momento del pedido. }
+        subtotal: { type: number }
+    OrderStatusEvent:
+      x-status: draft
+      type: object
+      required: [at, kind, status, reason, detail]
+      properties:
+        at: { type: string, format: date-time }
+        kind: { type: string, enum: [order, payment, delivery] }
+        status:
+          type: string
+          description: 'Valor de OrderStatus, PaymentStatus o DeliveryStatus según kind.'
+        reason: { type: string, nullable: true }
+        detail:
+          type: string
+          nullable: true
+          description: 'Repartidor, referencia o proveedor.'
+    Payment:
+      x-status: draft
+      type: object
+      required: [method, status, amount, reference, cardBrand, cardLast4, simulated, processedAt]
+      properties:
+        method: { $ref: '#/components/schemas/PaymentMethod' }
+        status: { $ref: '#/components/schemas/PaymentStatus' }
+        amount: { type: number }
+        reference: { type: string, nullable: true }
+        cardBrand: { type: string, nullable: true }
+        cardLast4:
+          type: string
+          nullable: true
+          description: Único dato de tarjeta que se conserva (nunca PAN completo, CVV ni PIN).
+        simulated: { type: boolean }
+        processedAt: { type: string, format: date-time, nullable: true }
+    Delivery:
+      x-status: draft
+      type: object
+      required:
+        [
+          provider,
+          status,
+          riderId,
+          riderName,
+          reference,
+          cost,
+          requestedAt,
+          etaAt,
+          deliveredAt,
+          simulated,
+        ]
+      properties:
+        provider: { $ref: '#/components/schemas/DeliveryProvider' }
+        status: { $ref: '#/components/schemas/DeliveryStatus' }
+        riderId: { type: string, nullable: true }
+        riderName: { type: string, nullable: true }
+        reference: { type: string, nullable: true }
+        cost:
+          {
+            type: number,
+            nullable: true,
+            description: Costo del courier (null para repartidor propio).,
+          }
+        requestedAt: { type: string, format: date-time }
+        etaAt: { type: string, format: date-time, nullable: true }
+        deliveredAt: { type: string, format: date-time, nullable: true }
+        simulated: { type: boolean }
+    Order:
+      x-status: draft
+      type: object
+      required:
+        - id
+        - createdAt
+        - updatedAt
+        - branchId
+        - fulfillment
+        - schedule
+        - customer
+        - address
+        - lines
+        - subtotal
+        - deliveryFee
+        - discount
+        - total
+        - currency
+        - note
+        - deliveryTier
+        - status
+        - rejectionReason
+        - payment
+        - delivery
+        - history
+        - incidents
+      properties:
+        id: { type: string, example: MON-490217, description: Número público del pedido. }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        branchId: { type: string }
+        fulfillment: { $ref: '#/components/schemas/FulfillmentType' }
+        schedule: { $ref: '#/components/schemas/OrderSchedule' }
+        customer: { $ref: '#/components/schemas/OrderCustomer' }
+        address:
+          allOf: [{ $ref: '#/components/schemas/OrderAddress' }]
+          nullable: true
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/OrderLine' }
+        subtotal: { type: number }
+        deliveryFee: { type: number }
+        discount: { type: number }
+        total: { type: number }
+        currency: { type: string, enum: [GTQ] }
+        note: { type: string }
+        deliveryTier:
+          allOf: [{ $ref: '#/components/schemas/DeliveryTierId' }]
+          nullable: true
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        rejectionReason: { type: string, nullable: true }
+        payment: { $ref: '#/components/schemas/Payment' }
+        delivery:
+          allOf: [{ $ref: '#/components/schemas/Delivery' }]
+          nullable: true
+        history:
+          type: array
+          items: { $ref: '#/components/schemas/OrderStatusEvent' }
+        incidents:
+          type: array
+          items: { $ref: '#/components/schemas/Incident' }
+    CreateOrderLine:
+      x-status: draft
+      type: object
+      required: [productId, quantity]
+      properties:
+        productId: { type: string }
+        quantity: { type: integer, minimum: 1, maximum: 99 }
+        note: { type: string, maxLength: 140 }
+    CreateOrderRequest:
+      x-status: draft
+      description: El cliente nunca envía precios ni totales; el servidor los calcula.
+      type: object
+      required: [fulfillment, schedule, customer, lines, paymentMethod]
+      properties:
+        branchId: { type: string, description: Obligatorio para recoger; opcional a domicilio. }
+        fulfillment: { $ref: '#/components/schemas/FulfillmentType' }
+        schedule: { $ref: '#/components/schemas/OrderSchedule' }
+        customer: { $ref: '#/components/schemas/OrderCustomer' }
+        address: { $ref: '#/components/schemas/OrderAddress' }
+        lines:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/CreateOrderLine' }
+        paymentMethod: { $ref: '#/components/schemas/PaymentMethod' }
+        note: { type: string, maxLength: 280 }
+    OrderLookupRequest:
+      x-status: draft
+      type: object
+      required: [orderNumber, phone]
+      properties:
+        orderNumber: { type: string }
+        phone: { type: string }
+    CardPaymentRequest:
+      x-status: draft
+      description: >-
+        Solo simulación (NeoNet pendiente de documentación). La integración real tokenizará la tarjeta
+        en el navegador; el servidor nunca debe recibir ni guardar PAN/CVV/PIN.
+      type: object
+      required: [orderId, cardNumber, holderName, expiry, cvv]
+      properties:
+        orderId: { type: string }
+        cardNumber: { type: string }
+        holderName: { type: string }
+        expiry: { type: string, example: '12/28' }
+        cvv: { type: string }
+    PaymentResult:
+      x-status: draft
+      type: object
+      required: [orderId, status, reference, amount, processedAt, simulated]
+      properties:
+        orderId: { type: string }
+        status: { $ref: '#/components/schemas/PaymentStatus' }
+        reference: { type: string, nullable: true }
+        amount: { type: number }
+        processedAt: { type: string, format: date-time }
+        simulated: { type: boolean }
+    CourierQuote:
+      x-status: draft
+      type: object
+      required:
+        [
+          quoteId,
+          orderId,
+          provider,
+          cost,
+          currency,
+          customerFee,
+          etaMinMinutes,
+          etaMaxMinutes,
+          expiresAt,
+          simulated,
+        ]
+      properties:
+        quoteId: { type: string }
+        orderId: { type: string }
+        provider: { type: string, enum: [pedidosya] }
+        cost: { type: number }
+        currency: { type: string, enum: [GTQ] }
+        customerFee:
+          { type: number, description: Envío cobrado al cliente (para mostrar la diferencia). }
+        etaMinMinutes: { type: integer }
+        etaMaxMinutes: { type: integer }
+        expiresAt: { type: string, format: date-time }
+        simulated: { type: boolean }
+    DispatchRequest:
+      x-status: draft
+      type: object
+      required: [provider]
+      properties:
+        provider: { $ref: '#/components/schemas/DeliveryProvider' }
+        riderId: { type: string, description: Obligatorio con provider = own. }
+    OrderStatusChangeRequest:
+      x-status: draft
+      type: object
+      required: [status]
+      properties:
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        reason: { type: string, description: Obligatorio para rejected y cancelled. }
+    Rider:
+      x-status: draft
+      type: object
+      required: [id, name, branchId, vehicle, phone, active, busy]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        branchId: { type: string }
+        vehicle: { type: string }
+        phone: { type: string }
+        active: { type: boolean }
+        busy: { type: boolean }
+    StaffRole:
+      x-status: draft
+      type: string
+      enum: [admin, manager, kitchen]
+    StaffPermission:
+      x-status: draft
+      type: string
+      enum:
+        - dashboard
+        - orders.accept
+        - orders.status
+        - orders.dispatch
+        - products.edit
+        - products.availability
+        - promotions
+        - branches
+        - users
+        - reports
+    StaffUser:
+      x-status: draft
+      type: object
+      required: [id, name, email, role, branchId, active, permissions]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string }
+        role: { $ref: '#/components/schemas/StaffRole' }
+        branchId:
+          { type: string, nullable: true, description: null = todas las sucursales (admin). }
+        active: { type: boolean }
+        permissions:
+          type: array
+          items: { $ref: '#/components/schemas/StaffPermission' }
+    StaffUserInput:
+      x-status: draft
+      type: object
+      required: [name, email, role]
+      properties:
+        name: { type: string }
+        email: { type: string }
+        role: { $ref: '#/components/schemas/StaffRole' }
+        branchId: { type: string, nullable: true }
+        active: { type: boolean }
+        permissions:
+          type: array
+          items: { $ref: '#/components/schemas/StaffPermission' }
+    Customer:
+      x-status: draft
+      type: object
+      required: [email, fullName, phone, defaultAddressId]
+      properties:
+        email: { type: string }
+        fullName: { type: string }
+        phone: { type: string }
+        defaultAddressId: { type: string, nullable: true }
+    Address:
+      x-status: draft
+      type: object
+      required:
+        [id, label, customLabel, department, municipality, zone, line, references, createdAt]
+      properties:
+        id: { type: string }
+        label: { type: string, enum: [home, work, other] }
+        customLabel: { type: string }
+        department: { type: string }
+        municipality: { type: string }
+        zone: { type: string }
+        line: { type: string }
+        references: { type: string }
+        createdAt: { type: string, format: date-time }
+    AddressInput:
+      x-status: draft
+      type: object
+      required: [label, department, municipality, zone, line]
+      properties:
+        label: { type: string, enum: [home, work, other] }
+        customLabel: { type: string }
+        department: { type: string }
+        municipality: { type: string }
+        zone: { type: string }
+        line: { type: string }
+        references: { type: string }
+    Incident:
+      x-status: draft
+      type: object
+      required: [id, orderId, createdAt, type, items, description, resolution, status, answer]
+      properties:
+        id: { type: string, example: INC-1042 }
+        orderId: { type: string }
+        createdAt: { type: string, format: date-time }
+        type: { type: string, enum: [missing, wrong, late, quality, charge, other] }
+        items: { type: array, items: { type: string }, description: productId afectados. }
+        description: { type: string }
+        resolution: { type: string, enum: [replace, refund, credit, inform] }
+        status: { type: string, enum: [received, in_review, resolved] }
+        answer:
+          allOf: [{ $ref: '#/components/schemas/LocalizedText' }]
+          nullable: true
+    CreateIncidentRequest:
+      x-status: draft
+      type: object
+      required: [orderId, type, items, description, resolution]
+      properties:
+        orderId: { type: string }
+        phone: { type: string, description: Verificación de invitado. }
+        type: { type: string, enum: [missing, wrong, late, quality, charge, other] }
+        items: { type: array, items: { type: string } }
+        description: { type: string, minLength: 10 }
+        resolution: { type: string, enum: [replace, refund, credit, inform] }
+    JobApplication:
+      x-status: draft
+      type: object
+      required:
+        [id, createdAt, status, name, email, phone, position, experience, message, cvFileName]
+      properties:
+        id: { type: string }
+        createdAt: { type: string, format: date-time }
+        status: { type: string, enum: [received] }
+        name: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        position: { type: string }
+        experience: { type: string, enum: [none, lt1, y1to3, gt3] }
+        message: { type: string }
+        cvFileName: { type: string }
+    JobApplicationRequest:
+      x-status: draft
+      description: El CV se subirá con almacenamiento firmado (pendiente); en el mock solo viajan nombre y tamaño.
+      type: object
+      required: [name, email, phone, position, experience, consent, cvFileName, cvSizeBytes]
+      properties:
+        name: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        position: { type: string }
+        experience: { type: string, enum: [none, lt1, y1to3, gt3] }
+        message: { type: string }
+        consent: { type: boolean }
+        cvFileName: { type: string }
+        cvSizeBytes: { type: integer }
+    BranchCount:
+      x-status: draft
+      type: object
+      required: [branchId, orders, sales]
+      properties:
+        branchId: { type: string }
+        orders: { type: integer }
+        sales: { type: number }
+    DashboardAlert:
+      x-status: draft
+      type: object
+      required: [type, orderId, minutes]
+      properties:
+        type: { type: string, enum: [unaccepted, no_rider, searching_rider] }
+        orderId: { type: string }
+        minutes: { type: integer }
+    DashboardSummary:
+      x-status: draft
+      type: object
+      required:
+        - date
+        - branchId
+        - received
+        - newPending
+        - inPreparation
+        - readyForDispatch
+        - onTheWay
+        - delivered
+        - cancelled
+        - sales
+        - byBranch
+        - alerts
+      properties:
+        date: { type: string, format: date }
+        branchId: { type: string, nullable: true }
+        received: { type: integer, description: Pedidos del día. }
+        newPending: { type: integer }
+        inPreparation: { type: integer, description: accepted + preparing. }
+        readyForDispatch: { type: integer }
+        onTheWay: { type: integer }
+        delivered: { type: integer }
+        cancelled: { type: integer, description: rejected + cancelled. }
+        sales:
+          type: number
+          description: 'Total de pedidos aceptados (excluye received, rejected y cancelled).'
+        byBranch:
+          type: array
+          items: { $ref: '#/components/schemas/BranchCount' }
+        alerts:
+          type: array
+          items: { $ref: '#/components/schemas/DashboardAlert' }
+    ReportGroup:
+      x-status: draft
+      type: object
+      required: [key, orders, sales, byBranch]
+      properties:
+        key: { type: string, description: Hora ('12'…'22') o fecha (YYYY-MM-DD). }
+        orders: { type: integer }
+        sales: { type: number }
+        byBranch:
+          type: array
+          items: { $ref: '#/components/schemas/BranchCount' }
+    TopProduct:
+      x-status: draft
+      type: object
+      required: [productId, name, quantity]
+      properties:
+        productId: { type: string }
+        name: { type: string }
+        quantity: { type: integer }
+    ReportSummary:
+      x-status: draft
+      type: object
+      required:
+        - from
+        - to
+        - branchId
+        - unit
+        - clipped
+        - minDate
+        - groups
+        - byBranch
+        - topProducts
+        - orders
+        - cancelled
+        - sales
+        - averageTicket
+        - deliveryOrders
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        branchId: { type: string, nullable: true }
+        unit: { type: string, enum: [hour, day] }
+        clipped: { type: boolean, description: El rango pedido se recortó a los datos disponibles. }
+        minDate: { type: string, format: date }
+        groups:
+          type: array
+          items: { $ref: '#/components/schemas/ReportGroup' }
+        byBranch:
+          type: array
+          items: { $ref: '#/components/schemas/BranchCount' }
+        topProducts:
+          type: array
+          items: { $ref: '#/components/schemas/TopProduct' }
+        orders: { type: integer }
+        cancelled: { type: integer }
+        sales: { type: number }
+        averageTicket: { type: number }
+        deliveryOrders: { type: integer }
   securitySchemes:
     bearer:
       type: http

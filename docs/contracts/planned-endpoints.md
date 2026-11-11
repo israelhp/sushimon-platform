@@ -41,3 +41,24 @@ implemente (`contracts:check` exige que contrato y API coincidan). Los esquemas 
 | GET              | `/v1/backoffice/reports/history?from&to&branchId`          | `Order[]`            | historial                                              | admin/encargado             |
 
 Errores: cuerpo `ErrorResponse` (`statusCode`, `error`, `message`) — el cliente lo normaliza a `ApiError`.
+
+## 🎭 Rutas solo de simulación (nunca en la API real)
+
+Existen únicamente en el adaptador mock (`sushimon-web/src/mocks/handlers/orders.ts`); la UI solo las ofrece si
+`client.kind === 'mock'` y las rotula "Simulación". Con `DATA_SOURCE=http` responderían 404.
+
+| Método | Ruta                           | Respuesta | Uso                                                                    |
+| ------ | ------------------------------ | --------- | ---------------------------------------------------------------------- |
+| POST   | `/v1/demo/orders/{id}/advance` | `Order`   | botón "Ver siguiente estado (simulación)" del seguimiento de la tienda |
+| POST   | `/v1/demo/orders/simulate`     | `Order`   | pedido entrante simulado del backoffice (body opcional `{ branchId }`) |
+
+## Notas de los esquemas draft
+
+- `DeliveryStatus` incluye `failed` (PedidosYa no encontró repartidor; escenario `rider-unavailable`): el pedido
+  sigue `ready` y se puede volver a despachar.
+- `StaffRole` = `admin | manager | kitchen` (encargado = `manager`, cocina = `kitchen`); permisos en `StaffPermission`.
+- Cuerpos auxiliares draft: `OrderLookupRequest`, `CardPaymentRequest`, `OrderStatusChangeRequest`, `DispatchRequest`,
+  `CreateIncidentRequest`, `JobApplicationRequest`, `AddressInput`, `PromotionInput`, `StaffUserInput`.
+- `GET /v1/backoffice/orders?status=` admite una lista separada por comas.
+- `CardPaymentRequest` es solo para la simulación: la integración real con NeoNet tokenizará en el navegador y el
+  servidor no recibirá PAN/CVV (⏳ documentación del proveedor).
