@@ -1,49 +1,96 @@
+/*
+ * Estilos globales de sushimon-web (Tailwind 4).
+ *
+ * Dos zonas con identidad propia, ambas con claro/oscuro (`.dark` en <html>, ver ThemeProvider):
+ *  - Tienda   [data-zone='store'] → tokens en src/styles/store-tokens.css, clases propias en src/styles/store.css.
+ *  - Backoffice [data-zone='bo']  → hoja propia src/styles/backoffice.css (tokens --bo-*).
+ * Los valores vienen de los prototipos (ADR-0007). Nada de colores hex fuera de las definiciones de tokens.
+ */
 @import 'tailwindcss';
+@import '../styles/store-tokens.css';
+@import '../styles/keyframes.css';
+@import '../styles/store.css';
+@import '../styles/backoffice.css';
+
+/* ---------- Variantes ---------- */
+
+/* `dark:` sigue a la clase .dark de <html> (como el prototipo), no a prefers-color-scheme. */
+@custom-variant dark (&:where(.dark, .dark *));
 
 /*
- * Design tokens iniciales extraídos de los prototipos (docs/ui/design-system.md).
- * Se refinan en feature/ui-first-mock-platform; no son definitivos.
+ * Teléfonos pequeños: `max-width` inclusivo como en Tailwind v3 (v4 `max-[519px]:` usa `width < 519px`).
+ * Uso: `upto379:hidden`, `upto359:text-[14px]`… Los `min-[400px]:` del prototipo funcionan tal cual en v4.
  */
-:root {
-  --bg: #faf7f2;
-  --fg: #111827;
-  --muted: #6b7280;
-  --line: #e8e2d8;
-  --primary: #dc2626;
-  --accent: #f59e0b;
+@custom-variant upto339 (@media (max-width: 339px));
+@custom-variant upto359 (@media (max-width: 359px));
+@custom-variant upto379 (@media (max-width: 379px));
+@custom-variant upto399 (@media (max-width: 399px));
+@custom-variant upto419 (@media (max-width: 419px));
+@custom-variant upto439 (@media (max-width: 439px));
+@custom-variant upto519 (@media (max-width: 519px));
+/* Pantallas bajas (equivalen a `[@media(max-height:600px)]:` y `[@media(min-height:601px)_and_(max-height:700px)]:`). */
+@custom-variant short (@media (max-height: 600px));
+@custom-variant midh (@media (min-height: 601px) and (max-height: 700px));
+
+/* ---------- Tema (Tailwind) ---------- */
+@theme static {
+  /* Breakpoints del prototipo (Tailwind v3 por defecto, en px). */
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+
+  /* Tipografías autoalojadas (@fontsource, importadas en app/layout.tsx) con los fallbacks del prototipo. */
+  --font-sans: 'DM Sans Variable', 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Archivo Black', Impact, 'Arial Black', sans-serif;
+  --font-jp: 'Dela Gothic One', 'Hiragino Sans', 'Yu Gothic', 'Noto Sans JP', sans-serif;
 }
 
-.dark {
-  --bg: #0b0b0f;
-  --fg: #e5e7eb;
-  --muted: #9ca3af;
-  --line: #232c3f;
-  --primary: #ef4444;
-  --accent: #fbbf24;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) {
-    --bg: #0b0b0f;
-    --fg: #e5e7eb;
-    --muted: #9ca3af;
-    --line: #232c3f;
-    --primary: #ef4444;
-    --accent: #fbbf24;
-  }
-}
-
+/* Colores y sombras de la tienda: mismos nombres de utilidad que el prototipo (bg-surface, text-fg, border-line…). */
 @theme inline {
-  --color-bg: var(--bg);
-  --color-fg: var(--fg);
-  --color-muted: var(--muted);
-  --color-line: var(--line);
-  --color-primary: var(--primary);
-  --color-accent: var(--accent);
+  --color-bg: rgb(var(--bg));
+  --color-surface: rgb(var(--surface));
+  --color-subtle: rgb(var(--subtle));
+  --color-fg: rgb(var(--fg));
+  --color-muted: rgb(var(--muted));
+  --color-line: rgb(var(--line));
+  --color-primary: rgb(var(--primary));
+  --color-primary-soft: rgb(var(--primary-soft));
+  --color-onprimary: rgb(var(--onprimary));
+  --color-secondary: rgb(var(--secondary));
+  --color-secondary-soft: rgb(var(--secondary-soft));
+  --color-onsecondary: rgb(var(--onsecondary));
+  --color-accent: rgb(var(--accent));
+  --color-accent-soft: rgb(var(--accent-soft));
+  --color-deep: rgb(var(--deep));
+  --color-ondeep: rgb(var(--ondeep));
+  --color-success: rgb(var(--success));
+  --color-success-soft: rgb(var(--success-soft));
+  --color-danger: rgb(var(--danger));
+  --color-danger-soft: rgb(var(--danger-soft));
+
+  --shadow-card: var(--sh-card);
+  --shadow-lift: var(--sh-lift);
+  --shadow-pop: var(--sh-pop);
 }
 
-body {
-  background: var(--bg);
-  color: var(--fg);
-  font-family: 'DM Sans', system-ui, sans-serif;
+/* ---------- Compatibilidad Tailwind v3 → v4 (el prototipo se compiló con v3) ---------- */
+@layer base {
+  /* v3: color de borde por defecto gray-200 (v4 usa currentColor). */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+
+  /*
+   * El backoffice del prototipo NO usaba el preflight de Tailwind: dentro de [data-zone='bo'] se revierten los estilos
+   * de esta capa (preflight) a los del navegador; su hoja (components) define el resto. Se excluye SVG para no
+   * anular atributos de presentación.
+   */
+  [data-zone='bo'] :where(:not(svg, svg *)) {
+    all: revert-layer;
+  }
 }
