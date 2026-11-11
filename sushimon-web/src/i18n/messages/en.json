@@ -69,7 +69,12 @@
     "errType": "Choose pickup or delivery.",
     "errAddress": "Enter the delivery address.",
     "errZone": "Enter the zone.",
-    "whenInvalid": "That time is no longer available. Please choose another."
+    "whenInvalid": "That time is no longer available. Please choose another.",
+    "closedBadge": "Closed",
+    "closedNow": "{a} is closed right now. Schedule your order for later.",
+    "allClosed": "No branches are open right now. Schedule your order for later.",
+    "noSlots": "No time slots are available in the coming days.",
+    "errZoneInvalid": "The zone must be a number from 1 to 25 (zones 20, 22 and 23 do not exist)."
   },
   "hours": {
     "title": "Opening hours",
@@ -125,7 +130,9 @@
     "removeAria": "Remove {a}",
     "total": "Order total",
     "close": "Close order",
-    "viewOrder": "View order"
+    "viewOrder": "View order",
+    "clear": "Clear order",
+    "cleared": "Order cleared"
   },
   "home": {
     "hello": "Hi, MONchero!",
@@ -183,7 +190,10 @@
     "jobsTitle": "Work with us",
     "jobsText": "Join the MON team: kitchen, floor and delivery. Apply in a minute.",
     "apply": "Apply",
-    "footnote": "{a} items on the menu · Prices in quetzales"
+    "footnote": "{a} items on the menu · Prices in quetzales",
+    "noProducts": "There are no products to show yet.",
+    "pause": "Pause carousel",
+    "play": "Resume carousel"
   },
   "menu": {
     "title": "Menu",

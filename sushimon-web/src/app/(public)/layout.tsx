@@ -1,13 +1,17 @@
 import { ToastProvider } from '@/components/ui/Toast';
+import { StoreShell } from '@/features/store-shell/components/StoreShell';
 
 /**
- * Zona tienda: aplica los tokens y clases propias de la tienda (`[data-zone='store']`) y su proveedor de avisos.
- * El encabezado, la navegación móvil, el pie y los overlays los agregan los bloques de pantallas.
+ * Zona tienda: aplica los tokens y clases propias de la tienda (`[data-zone='store']`), el proveedor de
+ * avisos y el armazón (encabezado, navegación inferior móvil, pie y overlays: carrito, modo de pedido,
+ * inicio de sesión simulado y ficha de producto). Ver `features/store-shell/`.
  */
 export default function StoreZoneLayout({ children }: { children: React.ReactNode }) {
   return (
     <div data-zone="store" className="flex min-h-dvh flex-col bg-bg text-fg">
-      <ToastProvider zone="store">{children}</ToastProvider>
+      <ToastProvider zone="store">
+        <StoreShell>{children}</StoreShell>
+      </ToastProvider>
     </div>
   );
 }

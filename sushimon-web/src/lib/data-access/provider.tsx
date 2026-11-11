@@ -26,9 +26,18 @@ function createQueryClient(): QueryClient {
  * Provee el DataClient (mock o http) y TanStack Query a la app. Las pantallas no usan este
  * contexto directamente: los hooks de cada feature lo leen con `useDataClient()`.
  */
-export function DataProvider({ children, client }: { children: ReactNode; client?: DataClient }) {
+export function DataProvider({
+  children,
+  client,
+  queryClient: customQueryClient,
+}: {
+  children: ReactNode;
+  client?: DataClient;
+  /** Para pruebas (p. ej. sin reintentos). */
+  queryClient?: QueryClient;
+}) {
   const [dataClient] = useState(() => client ?? getDataClient());
-  const [queryClient] = useState(createQueryClient);
+  const [queryClient] = useState(() => customQueryClient ?? createQueryClient());
   return (
     <DataClientContext.Provider value={dataClient}>
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>

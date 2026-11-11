@@ -9,25 +9,25 @@
 - [x] T001 Crear rama `feature/ui-first-mock-platform` desde `develop`
 - [x] T002 ADR-0004/0005 actualizados; ADR-0007 y ADR-0008 nuevos
 - [x] T003 `scripts/prototype-extract.mjs` + `scripts/prototype-i18n.mjs`; `docs/ui/extracted/` ignorado
-- [ ] T004 Prueba `node:test` del extractor en `scripts/prototype-extract.test.mjs`
-- [ ] T005 Dependencias web: next-intl, lucide-react, clsx, @fontsource/*, Testing Library, jsdom, Playwright, axe, pixelmatch, pngjs
+- [x] T004 Prueba `node:test` del extractor en `scripts/prototype-extract.test.mjs`
+- [x] T005 Dependencias web: next-intl, lucide-react, clsx, @fontsource/*, Testing Library, jsdom, Playwright, axe, pixelmatch, pngjs
 
 ## Phase 2: Foundational (bloquea las historias)
 
-- [ ] T010 [P] Tokens por zona (`[data-zone=store|bo]`, claro/oscuro) + `@theme` + breakpoints/variants + keyframes en `src/app/globals.css`
-- [ ] T011 [P] Fuentes autoalojadas, `ThemeProvider` sin parpadeo, next-intl (`src/i18n/request.ts`, cookie `NEXT_LOCALE`), mensajes es/en
-- [ ] T012 [P] Componentes base en `src/components/ui/` + página `/_ui` (solo desarrollo)
-- [ ] T013 [P] Ilustraciones (`src/components/art/`), logos (`public/brand/`), íconos del backoffice (`src/components/icons/bo/`)
-- [ ] T020 [P] Esquemas draft en `packages/contracts/openapi/openapi.yaml` + `pnpm contracts:generate`; `docs/contracts/planned-endpoints.md`
-- [ ] T021 [P] `DataClient.request`, `ApiError`, `paths.ts`, http-client ampliado, `mock-client.ts`, `DataProvider` (QueryClient)
-- [ ] T022 [P] MockStore + reloj + PRNG + fixtures fusionadas + handlers por ruta + escenarios
-- [ ] T023 [P] Services por dominio + hooks de feature + pruebas unitarias y de paridad mock/http
-- [ ] T024 Estado local del cliente: carrito, modo de pedido, sesión de demostración (cliente y personal)
+- [x] T010 [P] Tokens por zona (`[data-zone=store|bo]`, claro/oscuro) + `@theme` + breakpoints/variants + keyframes en `src/app/globals.css`
+- [x] T011 [P] Fuentes autoalojadas, `ThemeProvider` sin parpadeo, next-intl (`src/i18n/request.ts`, cookie `NEXT_LOCALE`), mensajes es/en
+- [x] T012 [P] Componentes base en `src/components/ui/` + página `/_ui` (solo desarrollo)
+- [x] T013 [P] Ilustraciones (`src/components/art/`), logos (`public/brand/`), íconos del backoffice (`src/components/icons/bo/`)
+- [x] T020 [P] Esquemas draft en `packages/contracts/openapi/openapi.yaml` + `pnpm contracts:generate`; `docs/contracts/planned-endpoints.md`
+- [x] T021 [P] `DataClient.request`, `ApiError`, `paths.ts`, http-client ampliado, `mock-client.ts`, `DataProvider` (QueryClient)
+- [x] T022 [P] MockStore + reloj + PRNG + fixtures fusionadas + handlers por ruta + escenarios
+- [x] T023 [P] Services por dominio + hooks de feature + pruebas unitarias y de paridad mock/http
+- [x] T024 Estado local del cliente: carrito, modo de pedido, sesión de demostración (cliente y personal)
 
 ## Phase 3: US1 Pedido en la tienda (P1) 🎯 MVP
 
-- [ ] T030 [US1] Layout de tienda: header, nav móvil, footer, toggles, CartDrawer, OrderModeSheet
-- [ ] T031 [US1] Inicio: carrusel, categorías, favoritos, Happy Hour
+- [x] T030 [US1] Layout de tienda: header, nav móvil, footer, toggles, CartDrawer, OrderModeSheet
+- [x] T031 [US1] Inicio: carrusel, categorías, favoritos, Happy Hour
 - [ ] T032 [US1] Menú `?cat=` + ProductSheet; Promociones
 - [ ] T033 [US1] Checkout 5 pasos + modal NeoNet simulado + confirmación
 - [ ] T034 [US1] Pruebas de componentes (carrito, checkout) y E2E de compra en efectivo y tarjeta rechazada

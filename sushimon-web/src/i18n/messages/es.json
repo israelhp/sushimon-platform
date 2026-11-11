@@ -69,7 +69,12 @@
     "errType": "Elegí si lo recogés o te lo llevamos.",
     "errAddress": "Escribí la dirección de entrega.",
     "errZone": "Indicá la zona.",
-    "whenInvalid": "Ese horario ya no está disponible. Elegí otro."
+    "whenInvalid": "Ese horario ya no está disponible. Elegí otro.",
+    "closedBadge": "Cerrada",
+    "closedNow": "{a} está cerrada en este momento. Programá tu pedido para más tarde.",
+    "allClosed": "No hay sucursales abiertas en este momento. Programá tu pedido para más tarde.",
+    "noSlots": "No hay horarios disponibles en los próximos días.",
+    "errZoneInvalid": "La zona debe ser un número del 1 al 25 (no existen la 20, 22 ni 23)."
   },
   "hours": {
     "title": "Horario",
@@ -125,7 +130,9 @@
     "removeAria": "Eliminar {a}",
     "total": "Total de tu pedido",
     "close": "Cerrar pedido",
-    "viewOrder": "Ver pedido"
+    "viewOrder": "Ver pedido",
+    "clear": "Vaciar pedido",
+    "cleared": "Pedido vaciado"
   },
   "home": {
     "hello": "¡Hola, MONchero!",
@@ -183,7 +190,10 @@
     "jobsTitle": "Trabaja con nosotros",
     "jobsText": "Unite al equipo MON: cocina, salón y entregas. Aplicá en un minuto.",
     "apply": "Aplicar",
-    "footnote": "{a} productos en el menú · Precios en quetzales"
+    "footnote": "{a} productos en el menú · Precios en quetzales",
+    "noProducts": "Todavía no hay productos para mostrar.",
+    "pause": "Pausar carrusel",
+    "play": "Reanudar carrusel"
   },
   "menu": {
     "title": "Menú",

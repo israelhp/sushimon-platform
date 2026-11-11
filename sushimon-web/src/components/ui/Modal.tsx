@@ -28,6 +28,8 @@ export interface ModalProps {
   /** Backoffice: subtítulo bajo el título. */
   description?: ReactNode;
   className?: string;
+  /** Tienda: tamaño del título (por defecto `text-[24px]`; las hojas de "Pedir ahora" e "Iniciar sesión" usan 26). */
+  titleClassName?: string;
 }
 
 /**
@@ -48,6 +50,7 @@ export function Modal({
   iconTone = 'coral',
   description,
   className,
+  titleClassName,
 }: ModalProps) {
   const t = useTranslations('ui');
   const ref = useDialog<HTMLDivElement>(open, onClose);
@@ -125,7 +128,7 @@ export function Modal({
           aria-hidden="true"
         />
         <div className="flex items-center justify-between gap-3 px-5 pb-2 pt-3">
-          <h2 id={titleId} className="disp text-[24px]">
+          <h2 id={titleId} className={cn('disp', titleClassName ?? 'text-[24px]')}>
             {title}
           </h2>
           <button
@@ -150,7 +153,7 @@ export function Modal({
 
 export type BottomSheetProps = Omit<
   ModalProps,
-  'zone' | 'size' | 'icon' | 'iconTone' | 'description'
+  'zone' | 'size' | 'icon' | 'iconTone' | 'description' | 'titleClassName'
 >;
 
 /**

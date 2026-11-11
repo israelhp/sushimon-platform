@@ -11,6 +11,9 @@ function focusables(root: HTMLElement): HTMLElement[] {
   );
 }
 
+/** Diálogos abiertos (el último es el superior): solo él reacciona a Esc/Tab cuando hay varios apilados. */
+const dialogStack: HTMLElement[] = [];
+
 /**
  * Comportamiento de diálogos (equivale al hook `As` del prototipo, más trampa de foco):
  * al abrir bloquea el scroll del body y enfoca el contenedor; Esc cierra; Tab/Shift+Tab no salen del diálogo;
@@ -32,8 +35,11 @@ export function useDialog<T extends HTMLElement>(
     const overflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     ref.current?.focus();
+    const self = ref.current;
+    if (self) dialogStack.push(self);
 
     const onKey = (e: KeyboardEvent) => {
+      if (self && dialogStack[dialogStack.length - 1] !== self) return;
       if (e.key === 'Escape') {
         e.stopPropagation();
         onCloseRef.current();
@@ -63,6 +69,8 @@ export function useDialog<T extends HTMLElement>(
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
+      const i = self ? dialogStack.lastIndexOf(self) : -1;
+      if (i >= 0) dialogStack.splice(i, 1);
       document.body.style.overflow = overflow;
       previous?.focus?.();
     };

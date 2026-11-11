@@ -42,7 +42,7 @@ export function LocaleToggle({ className }: { className?: string }) {
             type="button"
             lang={id}
             aria-pressed={active}
-            aria-label={active ? label.full : t('switchTo', { a: label.full })}
+            aria-label={`${label.short}, ${active ? label.full : t('switchTo', { a: label.full })}`}
             onClick={() => setLocale(id)}
             className={cn(
               'inline-flex h-full min-w-[26px] items-center justify-center rounded-full px-1 text-[11px] font-extrabold tracking-wide transition-colors min-[400px]:min-w-[30px] min-[400px]:px-1.5 min-[400px]:text-[12px]',
