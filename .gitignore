@@ -27,3 +27,6 @@ playwright/.cache/
 .DS_Store
 *.log
 .vercel/
+
+# Extracción de prototipos (regenerable con scripts/prototype-extract.mjs)
+docs/ui/extracted/
