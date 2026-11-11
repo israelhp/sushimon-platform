@@ -1,0 +1,14 @@
+# PLANTILLA — NO ACTIVA (extensión .disabled). Ver docs/development/deployments.md.
+# develop → staging · release/* → validación previa · main → producción.
+# Vercel NO asocia develop a staging automáticamente: se configura en el proyecto de Vercel
+# (Production Branch = main; branch domain para develop). Cada app se despliega por separado:
+#   sushimon-web → Vercel   |   sushimon-api → host Node a definir (ADR pendiente)
+# Activar solo tras definir secretos (VERCEL_TOKEN, etc.) en GitHub Environments con aprobadores.
+name: Deploy (template)
+on:
+  workflow_dispatch:
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Plantilla sin activar. Ver docs/development/deployments.md"

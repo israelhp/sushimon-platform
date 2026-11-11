@@ -1,0 +1,45 @@
+# Contrato HTTP canónico de Sushi Mon (Contract First).
+# Se diseña ANTES de implementar cada slice y se verifica contra NestJS con `pnpm contracts:check`.
+# Estado: solo contiene lo implementado en el bootstrap (health). No se agregan endpoints ficticios.
+openapi: 3.0.3
+info:
+  title: Sushi Mon API
+  version: 0.0.0
+  description: Contrato canónico. Los cambios requieren PR con revisión (ver docs/contracts/README.md).
+servers:
+  - url: http://localhost:3001
+    description: Desarrollo local
+paths:
+  /v1/health:
+    get:
+      operationId: getHealth
+      summary: Liveness probe
+      tags: [health]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    ErrorResponse:
+      type: object
+      required: [statusCode, error, message]
+      properties:
+        statusCode: { type: integer }
+        error: { type: string }
+        message: { type: string }
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

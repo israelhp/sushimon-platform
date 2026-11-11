@@ -1,0 +1,27 @@
+# sushimon-web — reglas Next.js
+
+Contexto global en `../CLAUDE.md`. **Esta versión de Next (16) difiere de lo que sabes**: consulta la
+documentación incluida en `node_modules/next/dist/docs/` antes de usar APIs de routing/caché.
+
+- **Una app, dos zonas**: `src/app/(public)/…` tienda; `src/app/(backoffice)/backoffice/…` backoffice.
+  Layouts separados, componentes y lógica compartidos en `components/`, `features/`, `lib/`.
+- **Server Components por defecto**; `'use client'` solo donde haya interactividad. Datos estáticos
+  no necesitan TanStack Query; datos de servidor interactivos sí.
+- **Estado**: local (`useState`), formularios (por feature) y remoto (TanStack Query) separados.
+- **Datos**: las pantallas nunca llaman `fetch` directamente. Flujo:
+  `UI → feature hooks → services → lib/data-access (DataClient) → mock | http`.
+  Selección por `NEXT_PUBLIC_DATA_SOURCE`; sin fallback silencioso en producción (`config.ts` lo impide).
+- **Mock Data**: `src/mocks/{fixtures,factories,scenarios}`; deterministas (sin `Date.now()`/`Math.random()`
+  sin semilla), tipados con `@sushimon/contracts`. Escenarios: ver `mocks/scenarios/index.ts`.
+  Las acciones simuladas (PedidosYa, Neonet) muestran una insignia visible “Simulación”.
+- **Tipos de API**: importar de `@sushimon/contracts`; no redefinir a mano.
+- **Estilo**: Tailwind 4 con tokens en `globals.css` (`bg-bg`, `text-fg`, `text-muted`, `border-line`,
+  `bg-primary`, `bg-accent`); claro/oscuro; sin colores hex sueltos. Fidelidad a los prototipos
+  (`docs/ui/design-system.md`), sin copiar su código.
+- **Accesibilidad**: HTML semántico, foco visible, etiquetas en controles, contraste AA, teclado completo.
+- **i18n**: es/en desde el inicio (textos fuera de componentes). Librería por decidir (ADR-0005).
+- **Seguridad**: nada de secretos en `NEXT_PUBLIC_*`; `localStorage` solo para preferencias (tema/idioma),
+  nunca autenticación/autorización; el backoffice oculta UI por permiso pero **la API decide**.
+- **Pruebas**: Vitest para lógica (`*.test.ts`); Playwright (E2E) se incorpora con las primeras pantallas.
+
+Comandos: `pnpm --filter sushimon-web {dev|build|test|lint|typecheck}`.

@@ -1,0 +1,2 @@
+# Gate local antes de publicar. CI repite estos controles (fuente de verdad).
+pnpm check

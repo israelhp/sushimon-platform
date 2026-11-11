@@ -1,0 +1,29 @@
+node_modules/
+dist/
+.next/
+out/
+build/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Entorno y secretos (solo .env.example se versiona)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.supabase/
+
+# Claude Code: configuración local personal
+.claude/settings.local.json
+.claude/worktrees/
+
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
+
+.DS_Store
+*.log
+.vercel/

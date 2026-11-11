@@ -1,0 +1,21 @@
+# Plan de pantallas — Etapa 1 (`feature/ui-first-mock-platform`)
+
+📐 Plan; nada implementado aún. Tareas pequeñas, una pantalla por PR cuando sea posible. Orden por reutilización.
+
+| #   | Tarea                                       | Alcance                                                                                                               | Criterio de aceptación                                                     |
+| --- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| 0   | Fundaciones UI                              | Fuentes, tokens, tema claro/oscuro, i18n es/en (ADR-0005), componentes base (botón, pill, tarjeta, modal, switch)     | Storybook-less: página `/_ui` interna con todos los estados; a11y revisada |
+| 1   | Capa de datos mock                          | `DataClient` mock, fixtures (sucursales, categorías, productos, promos, pedidos, repartidores), factories, escenarios | `pnpm test` cubre determinismo y escenarios                                |
+| 2   | Tienda · layout + inicio                    | Header, selector de sucursal, banners, categorías                                                                     | Fiel al prototipo en móvil y escritorio                                    |
+| 3   | Tienda · menú y producto                    | Lista, modificadores, notas                                                                                           | Total calculado **solo para mostrar** (la API lo hará)                     |
+| 4   | Tienda · carrito + checkout                 | Recoger/domicilio, dirección, programación, pago simulado Neonet (aprobado/rechazado/cancelado/error)                 | Insignia “Simulación”; sin datos reales de tarjeta                         |
+| 5   | Tienda · seguimiento + consulta invitado    | Número+teléfono, progreso                                                                                             | Estados del escenario `order-pending`                                      |
+| 6   | Tienda · cuenta                             | Google simulado, direcciones, pedidos, favoritos, reorden                                                             | Sin `localStorage` como auth                                               |
+| 7   | Tienda · reclamos, contacto, postulaciones  | Formularios con validación                                                                                            | Mensajes de error accesibles                                               |
+| 8   | Backoffice · shell + acceso                 | Layout, navegación por rol (admin/encargado/cocina), login de demostración                                            | Rótulo “Demostración”                                                      |
+| 9   | Backoffice · panel y pedidos                | KPIs, lista, drawer, aceptar/rechazar/preparar/listo                                                                  | Permisos por rol simulados                                                 |
+| 10  | Backoffice · entregas y despacho            | PedidosYa simulado y repartidor propio, errores del proveedor, regreso a sucursal                                     | Todo rotulado “Simulación”                                                 |
+| 11  | Backoffice · catálogo                       | Productos, categorías, promociones                                                                                    | Edición solo admin (UI)                                                    |
+| 12  | Backoffice · sucursales, usuarios, reportes | Tope 5 (❓), roles, KPIs                                                                                              | —                                                                          |
+
+Cada tarea cierra con `ui-ux-reviewer` y `pnpm check`. Después: Etapa 2 (contratos) por slice.

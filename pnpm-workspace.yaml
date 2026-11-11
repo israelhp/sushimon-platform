@@ -1,0 +1,17 @@
+packages:
+  - sushimon-api
+  - sushimon-web
+  - packages/*
+
+# Build scripts permitidos (pnpm 10 bloquea los demás por defecto).
+onlyBuiltDependencies:
+  - '@nestjs/core'
+  - '@swc/core'
+  - esbuild
+  - sharp
+  - unrs-resolver
+
+# openapi-typescript declara peer typescript ^5; funciona con 6.0 (verificado por `pnpm contracts:check`).
+peerDependencyRules:
+  allowedVersions:
+    openapi-typescript>typescript: '6'

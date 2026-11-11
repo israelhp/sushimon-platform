@@ -1,0 +1,34 @@
+name: Git Flow
+
+# Valida que los PRs sigan el flujo: feature|fix|chore → develop; release|hotfix → main.
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, reopened, synchronize, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  branch-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validar origen y destino
+        env:
+          HEAD: ${{ github.head_ref }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          set -eu
+          case "$BASE" in
+            develop)
+              case "$HEAD" in
+                feature/*|fix/*|chore/*|docs/*|release/*|hotfix/*|main) ;;  # release/hotfix/main: sincronización de vuelta
+                *) echo "::error::PRs hacia develop deben venir de feature/*, fix/*, chore/*, docs/* (o release/*, hotfix/* al sincronizar)."; exit 1 ;;
+              esac ;;
+            main)
+              case "$HEAD" in
+                release/*|hotfix/*) ;;
+                *) echo "::error::main solo recibe PRs desde release/* o hotfix/*."; exit 1 ;;
+              esac ;;
+          esac
+          echo "OK: $HEAD → $BASE"
