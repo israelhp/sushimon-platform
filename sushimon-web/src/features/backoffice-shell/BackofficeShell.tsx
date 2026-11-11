@@ -21,12 +21,12 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
   return (
     <StaffGate>
       <BackofficeShellProvider>
-        <DispatchModalProvider>
-          <OrderDetailProvider>
+        <OrderDetailProvider>
+          <DispatchModalProvider>
             <ShellFrame>{children}</ShellFrame>
             <OrderDetailHost />
-          </OrderDetailProvider>
-        </DispatchModalProvider>
+          </DispatchModalProvider>
+        </OrderDetailProvider>
       </BackofficeShellProvider>
     </StaffGate>
   );

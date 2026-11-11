@@ -69,14 +69,15 @@ test('encargado: rechaza un pedido con motivo desde el detalle', async ({ page }
   await expect(column(page, 'Nuevo').getByText('#MON-307057')).toHaveCount(0);
 });
 
-test('encargado: "Despachar" abre el punto de integración con el TODO visible', async ({
+test('encargado: "Despachar" abre el modal con PedidosYa simulado y repartidor propio', async ({
   page,
 }) => {
   await enterAs(page, /Marco Antonio Gómez/);
   await page.goto('/backoffice/pedidos');
   await card(page, '#MON-307051').getByRole('button', { name: 'Despachar pedido' }).click();
   const modal = page.getByRole('dialog', { name: 'Despachar pedido' });
-  await expect(modal.getByText(/TODO:/)).toBeVisible();
+  await expect(modal.getByRole('button', { name: /PedidosYa Courier/ })).toBeVisible();
+  await expect(modal.getByRole('button', { name: /Repartidor del restaurante/ })).toBeVisible();
   await expect(modal.getByText('Simulación')).toBeVisible();
 });
 

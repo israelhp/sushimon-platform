@@ -8,11 +8,14 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
  *
  *   const detail = useOrderDetail();
  *   detail.open(order.id);   // abre el drawer
+ *   detail.open(order.id, { day }); // pedido de otro día (YYYY-MM-DD), p. ej. desde Entregas
  *   detail.close();
  */
 export interface OrderDetailApi {
   orderId: string | null;
-  open: (orderId: string) => void;
+  /** Día (YYYY-MM-DD) del pedido abierto si no es de hoy; null = hoy. */
+  day: string | null;
+  open: (orderId: string, options?: { day?: string }) => void;
   close: () => void;
   rejectOpen: boolean;
   openReject: () => void;
@@ -23,22 +26,25 @@ const OrderDetailContext = createContext<OrderDetailApi | null>(null);
 
 export function OrderDetailProvider({ children }: { children: ReactNode }) {
   const [orderId, setOrderId] = useState<string | null>(null);
+  const [day, setDay] = useState<string | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
 
-  const open = useCallback((id: string) => {
+  const open = useCallback((id: string, options?: { day?: string }) => {
     setOrderId(id);
+    setDay(options?.day ?? null);
     setRejectOpen(false);
   }, []);
   const close = useCallback(() => {
     setOrderId(null);
+    setDay(null);
     setRejectOpen(false);
   }, []);
   const openReject = useCallback(() => setRejectOpen(true), []);
   const closeReject = useCallback(() => setRejectOpen(false), []);
 
   const api = useMemo<OrderDetailApi>(
-    () => ({ orderId, open, close, rejectOpen, openReject, closeReject }),
-    [orderId, open, close, rejectOpen, openReject, closeReject],
+    () => ({ orderId, day, open, close, rejectOpen, openReject, closeReject }),
+    [orderId, day, open, close, rejectOpen, openReject, closeReject],
   );
 
   return <OrderDetailContext.Provider value={api}>{children}</OrderDetailContext.Provider>;

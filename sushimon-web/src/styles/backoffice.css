@@ -69,7 +69,7 @@
     --bo-surface: #ffffff;
     --bo-surface-2: #f3efe8;
     --bo-text: #111827;
-    --bo-muted: #6b7280;
+    --bo-muted: #646b78; /* prototipo #6b7280: 4,21:1 sobre surface-2; este llega a 4,6:1 (AA) */
     --bo-line: #e8e2d8;
     --bo-line-strong: #d5cec2;
     --bo-accent: #f59e0b;

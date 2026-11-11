@@ -12,8 +12,9 @@ import { DispatchModalHost } from './dispatch-modal-host';
  *   dispatchModal.close();
  *   dispatchModal.orderId;          // id del pedido abierto (o null)
  *
- * Hoy `DispatchModalHost` es un STUB que muestra un aviso TODO visible. El bloque de Entregas lo reemplaza
- * por el modal real (cotizar con `useCourierQuote`, despachar con `useDispatchOrder`) sin tocar las pantallas.
+ * `DispatchModalHost` monta el modal real (`bo-deliveries/components/DispatchModal`: cotiza con
+ * `useCourierQuote`, despacha con `useDispatchOrder`; todo SIMULADO). Debe ir DENTRO de `OrderDetailProvider`
+ * porque al confirmar abre el detalle del pedido, como el prototipo.
  */
 export interface DispatchModalApi {
   open: (orderId: string) => void;

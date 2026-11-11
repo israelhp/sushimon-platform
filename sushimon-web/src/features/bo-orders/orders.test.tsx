@@ -112,12 +112,12 @@ describe('tablero de pedidos', () => {
 });
 
 describe('permisos por rol en Pedidos', () => {
-  it('el encargado despacha: abre el modal con el TODO visible y no cambia el estado', async () => {
+  it('el encargado despacha: abre el modal Despachar (simulación) y no cambia el estado al abrirlo', async () => {
     await renderOrders('manager');
     await screen.findByText('#MON-307051');
     await userEvent.click(card('#MON-307051').getByRole('button', { name: 'Despachar pedido' }));
     const modal = await screen.findByRole('dialog', { name: 'Despachar pedido' });
-    expect(within(modal).getByText(/TODO:/)).toBeVisible();
+    expect(within(modal).getByRole('button', { name: /PedidosYa Courier/ })).toBeVisible();
     expect(within(modal).getByText('Simulación')).toBeVisible();
     expect(within(column('Listo')).getByText('#MON-307051')).toBeVisible();
   });

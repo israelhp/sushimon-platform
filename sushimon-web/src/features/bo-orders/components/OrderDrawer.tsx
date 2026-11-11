@@ -14,6 +14,7 @@ import { Drawer } from '@/components/ui/Drawer';
 import { StatusPill } from '@/components/ui/Pill';
 import { SimulationBadge } from '@/components/ui/SimulationBadge';
 import { useRiders } from '@/features/backoffice/hooks';
+import { formatTopbarDate } from '@/features/backoffice-shell/staff-display';
 import { useNow } from '@/features/backoffice-shell/use-now';
 import { useShell } from '@/features/backoffice-shell/shell-context';
 import { cn } from '@/lib/cn';
@@ -21,7 +22,7 @@ import type { Order, OrderStatusEvent } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
 import { toBackofficeColumn } from '@/lib/order-status';
 import { can } from '@/lib/permissions';
-import { localTime } from '@/lib/time';
+import { localDate, localTime } from '@/lib/time';
 import { useOrderDetail } from '../order-detail-context';
 import {
   dispatchBlockedForRole,
@@ -36,6 +37,7 @@ import {
   trackSteps,
 } from '../order-view';
 import { useOrderActions } from '../use-order-actions';
+import { usePastOrder } from '../use-past-order';
 import { useScopedOrders } from '../use-scoped-orders';
 import { COLUMN_TONE, LOGISTICS_TONE, useOrderText } from '../use-order-text';
 
@@ -45,7 +47,10 @@ const phoneHref = (phone: string) => `tel:${phone.replace(/[^0-9+]/g, '')}`;
 export function OrderDrawer({ orderId }: { orderId: string }) {
   const detail = useOrderDetail();
   const orders = useScopedOrders();
-  const order = orders.data?.find((o) => o.id === orderId);
+  const todayOrder = orders.data?.find((o) => o.id === orderId);
+  // Pedido de un día anterior (abierto desde Entregas): se consulta ese día.
+  const past = usePastOrder(orderId, detail.day, !todayOrder && orders.isSuccess);
+  const order = todayOrder ?? past.order;
   const t = useTranslations('backoffice.orders.drawer');
 
   if (!order) {
@@ -81,7 +86,10 @@ function OrderDrawerContent({ order, onClose }: { order: Order; onClose: () => v
   const hasActions = action !== null || blocked;
 
   const eyebrow = td('eyebrow', {
-    day: td('today'),
+    day:
+      now && localDate(new Date(order.createdAt)) !== localDate(now)
+        ? formatTopbarDate(new Date(order.createdAt))
+        : td('today'),
     time: orderTime(order),
     branch: branch?.name ?? order.branchId,
   });

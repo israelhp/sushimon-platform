@@ -212,8 +212,8 @@ export function useBoCategories() {
 export function useSaveCategory() {
   const client = useDataClient();
   return useInvalidatingMutation(
-    ({ id, input }: { id?: string; input: CategoryInput }) =>
-      id ? updateCategory(client, id, input) : createCategory(client, input),
+    ({ id, input }: { id?: string; input: Partial<CategoryInput> }) =>
+      id ? updateCategory(client, id, input) : createCategory(client, input as CategoryInput),
     [queryKeys.catalog.all],
   );
 }

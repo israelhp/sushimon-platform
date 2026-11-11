@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 /**
  * Accesibilidad automática (axe) por ruta y tema. Sin violaciones serias ni críticas.
@@ -19,6 +19,8 @@ interface RouteCase {
   local?: Record<string, string>;
   /** Borrador a precargar en sessionStorage (p. ej. el paso del checkout). */
   session?: Record<string, string>;
+  /** Acción previa al análisis (p. ej. abrir un modal); se ejecuta cuando la pantalla ya pintó. */
+  step?: (page: Page) => Promise<void>;
 }
 
 /** Checkout (bloque 4): carrito con un producto, modo "recoger" y el paso pedido (borrador no sensible). */
@@ -145,6 +147,77 @@ export const A11Y_ROUTES: RouteCase[] = [
     ready: { role: 'heading', name: 'Pedidos' },
     staff: 'kitchen',
   },
+  // Backoffice, bloque 3 (Entregas y modal Despachar; PedidosYa simulado).
+  {
+    path: '/backoffice/entregas',
+    ready: { role: 'heading', name: 'Entregas' },
+    staff: 'admin',
+  },
+  {
+    path: '/backoffice/pedidos',
+    label: 'encargado, modal Despachar',
+    ready: { role: 'heading', name: 'Pedidos' },
+    staff: 'manager',
+    step: async (page) => {
+      await page
+        .locator('.kcard', { hasText: '#MON-307051' })
+        .getByRole('button', { name: 'Despachar pedido' })
+        .click();
+      await page.getByRole('dialog', { name: 'Despachar pedido' }).waitFor();
+    },
+  },
+  // Backoffice, bloque 4 (Productos, Categorías y Promociones), con modales abiertos.
+  { path: '/backoffice/productos', ready: { role: 'heading', name: 'Productos' }, staff: 'admin' },
+  {
+    path: '/backoffice/productos',
+    label: 'encargado',
+    ready: { role: 'heading', name: 'Productos' },
+    staff: 'manager',
+  },
+  {
+    path: '/backoffice/productos',
+    label: 'tabla',
+    ready: { role: 'heading', name: 'Productos' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Tabla', exact: true }).click();
+      await page.getByRole('table').waitFor();
+    },
+  },
+  {
+    path: '/backoffice/productos',
+    label: 'modal producto',
+    ready: { role: 'heading', name: 'Productos' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Nuevo producto' }).click();
+      await page.getByRole('dialog', { name: 'Nuevo producto' }).waitFor();
+      await page.getByRole('button', { name: 'Guardar producto' }).click();
+      await page.getByRole('alert').waitFor();
+    },
+  },
+  {
+    path: '/backoffice/categorias',
+    ready: { role: 'heading', name: 'Categorías' },
+    staff: 'admin',
+  },
+  {
+    path: '/backoffice/promociones',
+    ready: { role: 'heading', name: 'Promociones' },
+    staff: 'admin',
+  },
+  {
+    path: '/backoffice/promociones',
+    label: 'modal promoción',
+    ready: { role: 'heading', name: 'Promociones' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Nueva promoción' }).click();
+      await page.getByRole('dialog', { name: 'Nueva promoción' }).waitFor();
+      await page.getByRole('button', { name: 'Crear promoción' }).click();
+      await page.getByRole('alert').waitFor();
+    },
+  },
 ];
 
 /** Usuarios de demostración del personal por rol (coinciden con los fixtures del mock). */
@@ -222,6 +295,7 @@ for (const theme of ['light', 'dark'] as const) {
         .waitFor({ state: 'detached' })
         .catch(() => {});
       await page.waitForTimeout(300);
+      await route.step?.(page);
 
       const results = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
