@@ -9,6 +9,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
+import { Public } from '../auth/public.decorator.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { HealthTokenGuard } from './health-token.guard.js';
 
@@ -32,6 +33,7 @@ export class ReadyResponse {
 }
 
 @ApiTags('health')
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}

@@ -6,7 +6,9 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['test/**/*.int-spec.ts'],
+    // Comparten una sola base de datos: los archivos se ejecutan en serie.
+    fileParallelism: false,
     testTimeout: 30_000,
-    hookTimeout: 30_000,
+    hookTimeout: 60_000,
   },
 });

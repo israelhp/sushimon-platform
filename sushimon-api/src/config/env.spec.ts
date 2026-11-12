@@ -4,6 +4,7 @@ const prod = {
   NODE_ENV: 'production',
   DATABASE_URL: 'postgresql://u:p@db.example.invalid:6543/postgres',
   HEALTH_READY_TOKEN: 'token-de-prueba-123456',
+  SUPABASE_URL: 'https://abcdefgh.supabase.co',
 };
 
 describe('validateEnv', () => {
@@ -23,6 +24,24 @@ describe('validateEnv', () => {
       /DATABASE_URL.*HEALTH_READY_TOKEN/,
     );
     expect(validateEnv(prod).NODE_ENV).toBe('production');
+  });
+
+  it('exige configuración de Supabase Auth en producción', () => {
+    const withoutSupabase = { ...prod, SUPABASE_URL: undefined };
+    expect(() => validateEnv(withoutSupabase)).toThrow(/SUPABASE_URL/);
+    expect(
+      validateEnv({
+        ...withoutSupabase,
+        SUPABASE_JWT_ISSUER: 'https://x.example/auth/v1',
+        SUPABASE_JWKS_URL: 'https://x.example/auth/v1/.well-known/jwks.json',
+      }).NODE_ENV,
+    ).toBe('production');
+  });
+
+  it('valida longitudes y formato de las variables de Auth', () => {
+    expect(() => validateEnv({ SUPABASE_JWT_SECRET: 'corto' })).toThrow(/SUPABASE_JWT_SECRET/);
+    expect(() => validateEnv({ SUPABASE_URL: 'no-es-url' })).toThrow(/SUPABASE_URL/);
+    expect(validateEnv({}).SUPABASE_JWT_AUDIENCE).toBe('authenticated');
   });
 
   it('prohíbe CORS "*" en producción', () => {
