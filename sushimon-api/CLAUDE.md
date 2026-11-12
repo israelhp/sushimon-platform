@@ -19,8 +19,14 @@ Contexto global en `../CLAUDE.md`. Aquí solo lo específico de la API.
   idempotencia (`Idempotency-Key`) en operaciones de pedido/pago.
 - **Proveedores externos**: tras interfaces (`DeliveryProvider`, `PaymentGateway`); adaptadores reales
   solo con documentación oficial + sandbox. Mientras tanto, adaptadores mock explícitos.
-- **ORM**: sin decidir (ADR-0003 propuesto, Prisma preferido). No instalar otro ORM ni SQL ad-hoc en servicios.
+- **ORM**: Prisma 7.10.1 + adapter `pg` (ADR-0003). No instalar otro ORM ni SQL ad-hoc en servicios. Migraciones con `DIRECT_URL`; nunca aplicar a Supabase sin autorización.
 - **Pruebas**: `*.spec.ts` junto al código (unit); `test/*.e2e-spec.ts` (supertest). Mocks de red siempre.
 - **Logging**: estructurado, sin PII ni secretos.
 
 Comandos: `pnpm --filter sushimon-api {dev|test|test:e2e|lint|typecheck|build}`.
+
+## Inyección de dependencias
+
+Usa `@Inject(Clase)` explícito en los constructores de providers/controladores/guards: el script
+`openapi:emit` corre con `tsx` (esbuild), que no emite `emitDecoratorMetadata`. Sin `@Inject`, Nest falla
+con salida vacía y código 1 (el logger está desactivado en ese script).

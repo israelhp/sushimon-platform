@@ -18,7 +18,7 @@ export const RULES = [
   },
   {
     name: 'Asignación de secreto literal',
-    re: /\b(?:password|passwd|secret|api[_-]?key|access[_-]?token|client[_-]?secret)\b\s*[:=]\s*['"][^'"\s$<{][^'"]{11,}['"]/i,
+    re: /\b(?:password|passwd|secret|api[_-]?key|access[_-]?token|client[_-]?secret)\b\s*[:=]\s*['"](?!env\()[^'"\s$<{][^'"]{11,}['"]/i,
   },
 ];
 

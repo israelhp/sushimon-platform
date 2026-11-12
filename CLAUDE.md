@@ -11,7 +11,7 @@ Monorepo pnpm con dos apps y un paquete de contratos:
 | `docs/`, `specs/`    | Arquitectura, ADRs, referencias, especificaciones (Spec Kit)                                 |
 
 Estado real: **Etapa 1 (UI First) completada con datos simulados** en `sushimon-web` (tienda +
-backoffice, estado `MOCK_ONLY`). La API solo tiene `GET /v1/health`; el resto de endpoints están
+backoffice, estado `MOCK_ONLY`). La API (F00, `specs/002-api-foundations`) expone `GET /v1/health` y `GET /v1/health/ready` sobre Prisma 7 + esquema `app`; el resto de endpoints están
 planificados en `docs/contracts/planned-endpoints.md`. Lee `docs/architecture/overview.md` para el
 mapa completo.
 

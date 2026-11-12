@@ -17,10 +17,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/health/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Readiness probe (interno, protegido con x-health-token)
+         * @description Verifica la conexión a PostgreSQL y que exista el esquema `app`.
+         */
+        get: operations["getReadiness"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ReadyResponse: {
+            /** @enum {string} */
+            status: "ok";
+            checks: {
+                /** @enum {string} */
+                database: "up";
+                /** @enum {string} */
+                schemaApp: "present";
+            };
+        };
         HealthResponse: {
             /** @enum {string} */
             status: "ok";
@@ -29,6 +59,10 @@ export interface components {
             statusCode: number;
             error: string;
             message: string;
+            /** @description Identificador de la solicitud (igual a la cabecera X-Request-Id). */
+            requestId?: string;
+            /** @description Mensajes de validación por campo (solo en 400). */
+            details?: string[];
         };
         LocalizedText: {
             es: string;
@@ -616,6 +650,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    getReadiness: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Dependencias disponibles */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadyResponse"];
+                };
+            };
+            /** @description Token de salud ausente o inválido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Base de datos o esquema `app` no disponible */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

@@ -18,6 +18,15 @@ jobs:
     name: Quality gates
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: ci-only-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -31,6 +40,11 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm --filter sushimon-api test:e2e
+      - name: Integración con PostgreSQL real
+        run: pnpm --filter sushimon-api test:integration
+        env:
+          # Credencial efímera del servicio de CI (no es un secreto del proyecto).
+          DATABASE_URL_TEST: postgresql://postgres:ci-only-password@localhost:5432/postgres
       - run: pnpm contracts:check
       - run: pnpm secrets:scan
       - run: pnpm claude:validate

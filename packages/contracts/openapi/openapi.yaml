@@ -1,6 +1,8 @@
 # Contrato HTTP canónico de Sushi Mon (Contract First).
 # Se diseña ANTES de implementar cada slice y se verifica contra NestJS con `pnpm contracts:check`.
-# Estado: solo contiene lo implementado en el bootstrap (health). No se agregan endpoints ficticios.
+# Estado: F00 (health y readiness). No se agregan endpoints ficticios.
+# Transversal a TODAS las respuestas: cabecera `X-Request-Id`; errores con `ErrorResponse`; 429 cuando
+# se excede el rate limit global (no se repite por operación).
 openapi: 3.0.3
 info:
   title: Sushi Mon API
@@ -22,8 +24,52 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+  /v1/health/ready:
+    get:
+      operationId: getReadiness
+      summary: Readiness probe (interno, protegido con x-health-token)
+      description: Verifica la conexión a PostgreSQL y que exista el esquema `app`.
+      tags: [health]
+      security:
+        - health-token: []
+      responses:
+        '200':
+          description: Dependencias disponibles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+        '401':
+          description: Token de salud ausente o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Base de datos o esquema `app` no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
+    ReadyResponse:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        checks:
+          type: object
+          required: [database, schemaApp]
+          properties:
+            database:
+              type: string
+              enum: [up]
+            schemaApp:
+              type: string
+              enum: [present]
     HealthResponse:
       type: object
       required: [status]
@@ -38,6 +84,13 @@ components:
         statusCode: { type: integer }
         error: { type: string }
         message: { type: string }
+        requestId:
+          type: string
+          description: Identificador de la solicitud (igual a la cabecera X-Request-Id).
+        details:
+          type: array
+          description: Mensajes de validación por campo (solo en 400).
+          items: { type: string }
     # ─────────────────────────────────────────────────────────────────────────────────────────
     # Esquemas DRAFT (x-status: draft) — Etapa 1 UI First. Los consume sushimon-web (adaptador
     # mock) y se referenciarán desde `paths` slice a slice cuando la API los implemente.
@@ -917,3 +970,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    health-token:
+      type: apiKey
+      in: header
+      name: x-health-token
