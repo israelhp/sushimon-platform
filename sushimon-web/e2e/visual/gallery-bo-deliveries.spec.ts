@@ -49,7 +49,7 @@ const toDispatch = async (page: Page) => {
   await page
     .getByRole('button', { name: /despachar pedido/i })
     .filter({ visible: true })
-    .first()
+    .last() // el del cajón, no el de la tarjeta que queda detrás del velo
     .click();
   await page.waitForTimeout(300);
 };

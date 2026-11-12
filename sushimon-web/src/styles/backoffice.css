@@ -2396,6 +2396,11 @@
     left: 10px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   }
+  /* En oscuro el mosaico del producto sigue siendo claro y la pastilla (texto claro, fondo
+     translúcido) quedaba ilegible (contraste 1,02:1): se le da fondo sólido del tema. */
+  .dark [data-zone='bo'] .pimg .pill {
+    background-color: var(--bo-surface);
+  }
   [data-zone='bo'] .art {
     width: 110px;
     height: 110px;
@@ -3292,6 +3297,10 @@
     }
     [data-zone='bo'] .search.inline {
       width: 100%;
+    }
+    /* Como en el prototipo, la acción primaria queda junto al título; el buscador (extra) baja a su propia fila. */
+    [data-zone='bo'] .page-h > .search.inline {
+      order: 3;
     }
     [data-zone='bo'] .hbar-row {
       grid-template-columns: 96px minmax(0, 1fr) 80px;

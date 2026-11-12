@@ -165,7 +165,9 @@ function useInvalidatingMutation<TArgs, TResult>(
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
-    onSuccess: () => keys.forEach((queryKey) => void qc.invalidateQueries({ queryKey })),
+    // Se espera el refetch: mientras tanto la mutación sigue «pendiente» y la UI no ofrece de nuevo la
+    // misma acción sobre datos obsoletos (p. ej. «Agregar sucursal» sobre el mismo hueco).
+    onSuccess: () => Promise.all(keys.map((queryKey) => qc.invalidateQueries({ queryKey }))),
   });
 }
 

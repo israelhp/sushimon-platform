@@ -1,6 +1,6 @@
 # Plan de pantallas — Etapa 1 (`feature/ui-first-mock-platform`)
 
-📐 Plan; nada implementado aún. Tareas pequeñas, una pantalla por PR cuando sea posible. Orden por reutilización.
+✅ Implementado con datos simulados (estado `MOCK_ONLY`, spec `specs/001-ui-first-mock-platform`). Verificación: pruebas Vitest, E2E + axe y comparación visual contra los prototipos (`pnpm --filter sushimon-web test:visual`, reporte). La tienda no tiene modificadores (solo cantidad y nota); el backoffice usa rutas reales.
 
 | #   | Tarea                                       | Alcance                                                                                                               | Criterio de aceptación                                                     |
 | --- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |

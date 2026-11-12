@@ -31,7 +31,6 @@ export function OrderCard({ order, onReorder }: { order: Order; onReorder?: () =
       <Link
         href={`/pedidos/${order.id}`}
         className="group flex items-start gap-3 p-3.5 text-fg no-underline sm:p-4"
-        aria-label={`${t('order')} ${order.id}, ${t('view')}`}
       >
         <span
           className={cn(

@@ -58,11 +58,11 @@
 
 ## Phase 9: Polish & Cross-Cutting
 
-- [ ] T090 Playwright: configuración, axe en todas las rutas, comparación visual (`test:visual`)
-- [ ] T091 CI: job E2E + axe; umbral de cobertura en lib/mocks/services
-- [ ] T092 Revisiones: ui-ux-reviewer por bloque, security-reviewer, performance-reviewer; correcciones
-- [ ] T093 Docs: inventario, design-system, mock-data-strategy, screen-implementation-plan, overview (estado)
-- [ ] T094 `pnpm check` verde; `/speckit-converge`; PR a `develop` preparado (push solo con autorización)
+- [x] T090 Playwright: configuración, axe en todas las rutas, comparación visual (`test:visual`)
+- [x] T091 CI: job E2E + axe; umbral de cobertura en lib/mocks/services
+- [x] T092 Revisiones: ui-ux-reviewer por bloque, security-reviewer, performance-reviewer; correcciones
+- [x] T093 Docs: inventario, design-system, mock-data-strategy, screen-implementation-plan, overview (estado)
+- [x] T094 `pnpm check` verde; `/speckit-converge`; PR a `develop` preparado (push solo con autorización)
 
 ## Dependencies & Execution Order
 

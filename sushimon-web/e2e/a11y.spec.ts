@@ -193,7 +193,7 @@ export const A11Y_ROUTES: RouteCase[] = [
       await page.getByRole('button', { name: 'Nuevo producto' }).click();
       await page.getByRole('dialog', { name: 'Nuevo producto' }).waitFor();
       await page.getByRole('button', { name: 'Guardar producto' }).click();
-      await page.getByRole('alert').waitFor();
+      await page.getByRole('dialog').getByRole('alert').first().waitFor();
     },
   },
   {
@@ -215,7 +215,36 @@ export const A11Y_ROUTES: RouteCase[] = [
       await page.getByRole('button', { name: 'Nueva promoción' }).click();
       await page.getByRole('dialog', { name: 'Nueva promoción' }).waitFor();
       await page.getByRole('button', { name: 'Crear promoción' }).click();
-      await page.getByRole('alert').waitFor();
+      await page.getByRole('dialog').getByRole('alert').first().waitFor();
+    },
+  },
+  {
+    path: '/backoffice/sucursales',
+    ready: { role: 'heading', name: 'Sucursales' },
+    staff: 'admin',
+  },
+  { path: '/backoffice/usuarios', ready: { role: 'heading', name: 'Usuarios' }, staff: 'admin' },
+  {
+    path: '/backoffice/usuarios',
+    label: 'modal usuario',
+    ready: { role: 'heading', name: 'Usuarios' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: /Nuevo usuario/ }).click();
+      await page.getByRole('dialog', { name: 'Nuevo usuario' }).waitFor();
+      await page.getByRole('button', { name: 'Guardar usuario' }).click();
+      await page.getByRole('dialog').getByRole('alert').waitFor();
+    },
+  },
+  { path: '/backoffice/reportes', ready: { role: 'heading', name: 'Reportes' }, staff: 'admin' },
+  {
+    path: '/backoffice/reportes',
+    label: 'historial',
+    ready: { role: 'heading', name: 'Reportes' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('tab', { name: 'Historial de pedidos' }).click();
+      await page.getByRole('heading', { name: 'Pedidos del periodo' }).waitFor();
     },
   },
 ];

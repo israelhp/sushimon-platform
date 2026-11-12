@@ -107,7 +107,7 @@ test('reportes: el rango elegido da totales coherentes entre el resumen y el his
 
   await page.getByRole('button', { name: '30 días', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Pedidos por día y sucursal' })).toBeVisible();
-  await expect(page.getByText('Vie 13 oct – Mié 11 nov · 30 días').first()).toBeVisible();
+  await expect(page.getByText('Mar 13 oct – Mié 11 nov · 30 días').first()).toBeVisible();
   const orders = (await kpi(page, 'Pedidos').locator('.kpi-val').innerText()).trim();
   const sales = (await kpi(page, 'Ventas').locator('.kpi-foot').innerText()).trim();
 
@@ -121,9 +121,18 @@ test('reportes: el rango elegido da totales coherentes entre el resumen y el his
   await page.getByLabel('Hasta').fill('2026-11-07');
   await expect(page.getByText('Jue 5 nov – Sáb 7 nov · 3 días').first()).toBeVisible();
   await expect(kpi(page, 'Pedidos').locator('.kpi-val')).not.toHaveText(orders);
+  // El historial pagina de 25 en 25: se despliega todo el rango y se comprueba que son exactamente 3 días
+  // y que la suma de pedidos por día (encabezados) es el total del resumen del periodo.
+  const more = page.getByRole('button', { name: /^Mostrar \d+ más$/ });
+  while (await more.isVisible()) await more.click();
   const dayHeads = page.locator('.day-h .strong');
   await expect(dayHeads).toHaveCount(3);
-
+  const periodOrders = Number(
+    (await kpi(page, 'Pedidos').locator('.kpi-val').innerText()).replace(/[^\d]/g, ''),
+  );
+  const perDay = await page.locator('.day-h .sm').allInnerTexts();
+  const sumDays = perDay.reduce((acc, t) => acc + Number(/^(\d+) pedidos/.exec(t)?.[1] ?? NaN), 0);
+  expect(sumDays).toBe(periodOrders);
   await page.getByRole('tab', { name: 'Resumen y gráficos' }).click();
   await expect(page.getByRole('img', { name: /Pedidos por día y sucursal/ })).toBeVisible();
   await expect(page.getByLabel('Desde')).toHaveValue('2026-11-05');

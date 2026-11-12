@@ -36,6 +36,8 @@ interface Screen {
   /** Prefijo de la captura del prototipo (`{reference}-{viewport}-{theme}.png`). */
   reference: string;
   path: string;
+  /** Umbral propio (justificado en el caso); por defecto `MAX_RATIO`. */
+  max?: number;
   staff: keyof typeof SESSIONS;
   step?: (page: Page) => Promise<void>;
   ready: (page: Page) => Promise<void>;
@@ -48,7 +50,7 @@ const click = async (p: Page, name: string) => {
 
 const products = (p: Page) =>
   p.getByRole('switch', { name: 'Disponible: Dumplings' }).waitFor({ timeout: 90_000 });
-const categories = (p: Page) => p.getByText('Orden del menú').waitFor({ timeout: 90_000 });
+const categories = (p: Page) => p.getByText('Orden del menú').first().waitFor({ timeout: 90_000 });
 const promotions = (p: Page) => p.getByText('Happy Hour 2x1').waitFor({ timeout: 90_000 });
 
 const SCREEN_LIST: Record<string, Screen> = {
@@ -89,12 +91,15 @@ const SCREEN_LIST: Record<string, Screen> = {
     step: async (p) => {
       await click(p, 'Nuevo producto');
       await click(p, 'Guardar producto');
-      await p.getByRole('alert').waitFor();
+      await p.getByRole('dialog').getByRole('alert').waitFor();
     },
   },
   'productos-modal-editar': {
     reference: 'bo-productos-modal-editar',
     path: '/backoffice/productos',
+    // Intencional: el modal real añade «Nombre/Descripción en inglés» (es/en) y usa el catálogo canónico de 29
+    // productos y sus categorías; el prototipo tiene 18 productos y no tiene esos campos (medido: 5–12.4 %).
+    max: 0.15,
     staff: 'admin',
     ready: products,
     step: async (p) => {
@@ -132,7 +137,7 @@ const SCREEN_LIST: Record<string, Screen> = {
     step: async (p) => {
       await click(p, 'Nueva promoción');
       await click(p, 'Crear promoción');
-      await p.getByRole('alert').waitFor();
+      await p.getByRole('dialog').getByRole('alert').waitFor();
     },
   },
 };
@@ -167,7 +172,7 @@ for (const theme of ['light', 'dark'] as const) {
         console.log(
           `[visual] bo-catalog/${name} ${viewport} ${theme}: ${(result.ratio * 100).toFixed(2)}% (${result.diffPixels}/${result.totalPixels})`,
         );
-        expect(result.ratio).toBeLessThan(MAX_RATIO);
+        expect(result.ratio).toBeLessThan(screen.max ?? MAX_RATIO);
       });
     }
   }

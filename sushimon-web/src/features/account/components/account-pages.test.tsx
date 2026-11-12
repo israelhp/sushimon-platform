@@ -249,7 +249,8 @@ describe('pedidos y "Volver a pedir"', () => {
     const user = userEvent.setup();
     const view = await renderStore(<OrdersPage />);
     await signIn(view);
-    const link = await screen.findByRole('link', { name: /Pedido MON-490217, Ver detalle/ });
+    // Sin aria-label: el nombre accesible es el contenido visible (axe label-content-name-mismatch).
+    const link = await screen.findByRole('link', { name: /MON-490217/ });
     expect(link).toHaveAttribute('href', '/pedidos/MON-490217');
     expect(screen.getByRole('tab', { name: /En curso/ })).toHaveAttribute('aria-selected', 'true');
     await user.click(screen.getByRole('tab', { name: /Historial/ }));
