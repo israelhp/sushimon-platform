@@ -1,0 +1,78 @@
+/*
+ * Tienda · keyframes del prototipo (los usa `anim-*` en store.css).
+ * `spin` y `pulse` coinciden con los de Tailwind; el backoffice usa los suyos con prefijo `bo-`.
+ */
+@keyframes tick {
+  to {
+    transform: translate(-50%);
+  }
+}
+@keyframes bump {
+  40% {
+    transform: scale(1.35);
+  }
+}
+@keyframes fade {
+  0% {
+    opacity: 0;
+  }
+}
+@keyframes slide {
+  0% {
+    transform: translate(100%);
+  }
+}
+@keyframes pop {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+}
+/*
+ * drop/rise: en el prototipo (Tailwind v3) incluían translate(-50%) porque -translate-x-1/2 era un transform.
+ * En v4 -translate-x-1/2 usa la propiedad `translate` (se compone con `transform`), así que aquí solo va el
+ * desplazamiento vertical: el resultado visual es el mismo.
+ */
+@keyframes drop {
+  0% {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+@keyframes rise {
+  0% {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes stepin {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes riseup {
+  0% {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+@keyframes heart {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.32);
+  }
+  60% {
+    transform: scale(0.92);
+  }
+  to {
+    transform: scale(1);
+  }
+}

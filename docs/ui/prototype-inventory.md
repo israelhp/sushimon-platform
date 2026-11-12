@@ -25,7 +25,7 @@ Tipografías: Archivo Black + DM Sans. Temas claro (`#FAF7F2`) y oscuro (`#0B0B0
 | Reportes           | Ventas, pedidos, ticket promedio, envíos, diferencias                                                                           | `orders`, `payments`, `deliveries`                | D                                                        |
 | Modales            | Rechazar, Despachar, Producto, Promoción, Usuario                                                                               | —                                                 | D                                                        |
 
-**Reglas observadas (D)**: edición de productos solo `admin`; despachar solo si estado “listo”, es envío a domicilio, sin logística aún y rol ≠ `cocina` (el `encargado` despacha); cocina ve bloqueo informativo. Estados de pedido (en español): recibido/nuevo → aceptado → en preparación → listo → en camino → entregado; además rechazado/cancelado. Las horas de llegada PedidosYa son **estimadas**.
+**Reglas observadas (D)**: edición de productos solo `admin`; despachar solo si estado “listo”, es envío a domicilio, sin logística aún y rol ≠ `cocina` (el `encargado` despacha); cocina ve bloqueo informativo. Estados de pedido (en español): `nuevo` → aceptado → en preparación → listo → en camino → entregado; además rechazado/cancelado. Las horas de llegada PedidosYa son **estimadas**.
 
 ## B. Tienda pública (`public-store-prototype.html`)
 
@@ -34,7 +34,7 @@ Es/en, claro/oscuro (preferencia en `localStorage`: aceptable solo como preferen
 | Flujo                           | Observado                                                                                                                                                      | Entidades                                               | Estado                           |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | -------------------------------- |
 | Inicio                          | Banners rotativos, categorías, “Los favoritos de los MONcheros”, más pedidos                                                                                   | `products`, `categories`, `product_media`               | D                                |
-| Menú y producto                 | Personalización con modificadores, notas                                                                                                                       | `modifier_groups`, `modifiers`                          | D                                |
+| Menú y producto                 | Cantidad (máx. 99) y nota. **Sin modificadores** (corregido en la Etapa 1)                                                                                     | `modifier_groups`, `modifiers`                          | D                                |
 | Promociones                     | **Happy Hour lunes a jueves**, carrusel de promociones                                                                                                         | `promotions`, `promotion_weekdays`                      | D                                |
 | Carrito                         | Reemplazar o agregar al pedido actual, “agregamos tu último pedido”                                                                                            | `orders`, `order_items`                                 | D                                |
 | Checkout                        | Recoger en sucursal (sin envío) o domicilio; dirección exacta, referencia, enlace a Google Maps; pagar                                                         | `orders`, `order_addresses`, `delivery_zones`           | D                                |
@@ -59,6 +59,18 @@ Es/en, claro/oscuro (preferencia en `localStorage`: aceptable solo como preferen
 6. **Login con contraseña** en backoffice (UI) vs. requisito Google OAuth.
 7. **Pedidos “en este dispositivo”** (UI invitado) vs. sin vínculo de dispositivo en BD → la búsqueda real es número+teléfono; el listado local es solo conveniencia ❓.
 8. **Impuestos/propina** no visibles ni modelados ❓.
+
+## C2. Hallazgos de la Etapa 1 (extracción estática, 2026-11-11)
+
+- **Tienda**: React 18 + react-router (MemoryRouter) + Tailwind v3 compilado + lucide-react; i18n propio con ~630 claves
+  por idioma (convertidas a ICU en `sushimon-web/src/i18n/messages`); 29 productos, 8 categorías, 5 sucursales (3 activas),
+  niveles de envío near/mid/extended/far (Q15/20/25/30); checkout de 5 pasos; pago `cash` o `card_neonet` con tarjetas de
+  prueba; estados en inglés (`awaiting_payment`, `paid_pending_acceptance`, `pending_acceptance`, `payment_review`).
+- **Backoffice**: además del despacho PedidosYa existe un flujo de **repartidor propio** (`asignado → en_camino → entregado`);
+  estados de pedido `nuevo, aceptado, preparacion, listo, en_camino, entregado, cancelado`; 15 pedidos del día + 60 días
+  generados con semilla.
+- **Unificación**: el contrato usa catálogos en inglés separados para pedido, pago y entrega; cada zona muestra sus etiquetas.
+- **Diferencias intencionales**: el backoffice usa rutas reales (`/backoffice/pedidos`…) en lugar de estado interno.
 
 ## D. No cubierto / por confirmar
 

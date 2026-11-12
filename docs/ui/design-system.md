@@ -1,6 +1,6 @@
 # Sistema de diseño (borrador extraído de los prototipos)
 
-Estado: 📐 tokens iniciales en `sushimon-web/src/app/globals.css`; componentes por construir en la Etapa 1.
+Estado: ✅ tokens por zona en `sushimon-web/src/styles/{store-tokens,backoffice}.css` (`[data-zone="store"|"bo"]`, claro/oscuro); componentes base en `src/components/ui` (página interna `/ui-kit`). Desviación intencional: en oscuro de la tienda el texto sobre botones rojos usa tinta oscura (`--onprimary`) para cumplir AA (blanco sobre #EF4444 = 3,76:1); en el backoffice, `--bo-muted` claro es #646b78 por el mismo motivo.
 Los prototipos son **referencia**, no código a copiar.
 
 ## Tokens observados

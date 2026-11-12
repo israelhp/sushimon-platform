@@ -1,0 +1,366 @@
+import AxeBuilder from '@axe-core/playwright';
+import { expect, test, type Page } from '@playwright/test';
+
+/**
+ * Accesibilidad automática (axe) por ruta y tema. Sin violaciones serias ni críticas.
+ * Cada bloque de pantallas agrega aquí sus rutas (y, si hace falta, una `ready` para esperar sus datos).
+ */
+interface RouteCase {
+  path: string;
+  /** Texto accesible a esperar antes de analizar (la pantalla ya pintó sus datos). */
+  ready: { role: 'heading' | 'button' | 'link'; name: string | RegExp };
+  /** Abre antes la sesión de DEMOSTRACIÓN del cliente (sessionStorage); las rutas de cuenta la necesitan. */
+  signedIn?: boolean;
+  /** Abre antes la sesión de DEMOSTRACIÓN del personal del backoffice con ese rol (sessionStorage). */
+  staff?: 'admin' | 'manager' | 'kitchen';
+  /** Etiqueta para distinguir casos de la misma ruta (p. ej. pasos del checkout). */
+  label?: string;
+  /** Preferencias del cliente a precargar (carrito, modo de pedido…) en localStorage. */
+  local?: Record<string, string>;
+  /** Borrador a precargar en sessionStorage (p. ej. el paso del checkout). */
+  session?: Record<string, string>;
+  /** Acción previa al análisis (p. ej. abrir un modal); se ejecuta cuando la pantalla ya pintó. */
+  step?: (page: Page) => Promise<void>;
+}
+
+/** Checkout (bloque 4): carrito con un producto, modo "recoger" y el paso pedido (borrador no sensible). */
+const CHECKOUT_LOCAL = {
+  'monsushi-cart-v1': JSON.stringify([{ productId: 'dumplings', quantity: 1, note: '' }]),
+  'monsushi-order-mode-v1': JSON.stringify({
+    type: 'pickup',
+    when: { kind: 'now' },
+    branchId: null,
+    address: null,
+  }),
+};
+const checkoutStep = (step: number, payment: 'card' | 'cash' = 'card') => ({
+  'monsushi-checkout-v1': JSON.stringify({
+    step,
+    contact: { name: 'Cliente Demo', phone: '5555-1234', email: 'cliente@ejemplo.com' },
+    address: {
+      department: 'Guatemala',
+      municipality: 'Guatemala',
+      zone: '10',
+      line: '6a avenida 10-50',
+      references: '',
+    },
+    addressId: 'other',
+    notes: '',
+    pickupBranchId: null,
+    deliveryBranchId: null,
+    payment,
+  }),
+});
+
+export const A11Y_ROUTES: RouteCase[] = [
+  // Cuenta, Más, empleo y 404 (bloque 6). Las de cuenta, con y sin sesión de demostración.
+  { path: '/mas', ready: { role: 'heading', name: /^Más/ } },
+  { path: '/cuenta', ready: { role: 'heading', name: /Mi cuenta/ } },
+  { path: '/cuenta', ready: { role: 'heading', name: /Mi cuenta/ }, signedIn: true },
+  {
+    path: '/cuenta/datos',
+    ready: { role: 'heading', name: 'Mis datos personales' },
+    signedIn: true,
+  },
+  {
+    path: '/cuenta/direcciones',
+    ready: { role: 'heading', name: 'Mis direcciones' },
+    signedIn: true,
+  },
+  { path: '/cuenta/favoritos', ready: { role: 'heading', name: 'Mis favoritos' }, signedIn: true },
+  { path: '/cuenta/pedidos', ready: { role: 'heading', name: 'Mis pedidos' }, signedIn: true },
+  { path: '/cuenta/direcciones', ready: { role: 'heading', name: 'Mis direcciones' } },
+  { path: '/trabaja-con-nosotros', ready: { role: 'heading', name: /MONcheros/ } },
+  { path: '/ruta-que-no-existe', ready: { role: 'heading', name: 'Este roll no existe' } },
+  { path: '/', ready: { role: 'heading', name: /Favoritos/ } },
+  // Consulta de invitado, reclamos y seguimiento (bloque 5). El seguimiento exige sesión: lo decide la API.
+  { path: '/consultar', ready: { role: 'heading', name: /Consultá tu orden/ } },
+  { path: '/incidencias', ready: { role: 'heading', name: /Hacer un reclamo/ } },
+  {
+    path: '/incidencias',
+    label: 'con pedidos',
+    ready: { role: 'heading', name: 'Tus últimos pedidos' },
+    signedIn: true,
+  },
+  {
+    path: '/incidencias/nuevo?pedido=MON-490217',
+    ready: { role: 'heading', name: /Reportar un problema/ },
+    signedIn: true,
+  },
+  {
+    path: '/pedidos/MON-490217',
+    ready: { role: 'heading', name: 'Seguimiento del pedido' },
+    signedIn: true,
+  },
+  // Checkout (bloque 4): un caso por paso.
+  {
+    path: '/checkout',
+    label: 'paso 1',
+    ready: { role: 'heading', name: 'Tu pedido' },
+    local: CHECKOUT_LOCAL,
+  },
+  {
+    path: '/checkout',
+    label: 'paso 2',
+    ready: { role: 'heading', name: 'Entrega' },
+    local: CHECKOUT_LOCAL,
+    session: checkoutStep(2),
+  },
+  {
+    path: '/checkout',
+    label: 'paso 3',
+    ready: { role: 'heading', name: 'Envío' },
+    local: CHECKOUT_LOCAL,
+    session: checkoutStep(3),
+  },
+  {
+    path: '/checkout',
+    label: 'paso 4',
+    ready: { role: 'heading', name: 'Pago' },
+    local: CHECKOUT_LOCAL,
+    session: checkoutStep(4),
+  },
+  {
+    path: '/checkout',
+    label: 'paso 5',
+    ready: { role: 'heading', name: 'Confirmación' },
+    local: CHECKOUT_LOCAL,
+    session: checkoutStep(5),
+  },
+  { path: '/menu', ready: { role: 'heading', name: /^Entradas/ } },
+  { path: '/promociones', ready: { role: 'heading', name: /^Entradas/ } },
+  // Backoffice, bloques 1–2 (acceso, Panel y Pedidos). Sesión de demostración del personal.
+  { path: '/backoffice/login', ready: { role: 'heading', name: 'Iniciar sesión' } },
+  {
+    path: '/backoffice/panel',
+    ready: { role: 'heading', name: /^Buenas tardes/ },
+    staff: 'admin',
+  },
+  {
+    path: '/backoffice/pedidos',
+    ready: { role: 'heading', name: 'Pedidos' },
+    staff: 'admin',
+  },
+  {
+    path: '/backoffice/pedidos',
+    label: 'cocina',
+    ready: { role: 'heading', name: 'Pedidos' },
+    staff: 'kitchen',
+  },
+  // Backoffice, bloque 3 (Entregas y modal Despachar; PedidosYa simulado).
+  {
+    path: '/backoffice/entregas',
+    ready: { role: 'heading', name: 'Entregas' },
+    staff: 'admin',
+  },
+  {
+    path: '/backoffice/pedidos',
+    label: 'encargado, modal Despachar',
+    ready: { role: 'heading', name: 'Pedidos' },
+    staff: 'manager',
+    step: async (page) => {
+      await page
+        .locator('.kcard', { hasText: '#MON-307051' })
+        .getByRole('button', { name: 'Despachar pedido' })
+        .click();
+      await page.getByRole('dialog', { name: 'Despachar pedido' }).waitFor();
+    },
+  },
+  // Backoffice, bloque 4 (Productos, Categorías y Promociones), con modales abiertos.
+  { path: '/backoffice/productos', ready: { role: 'heading', name: 'Productos' }, staff: 'admin' },
+  {
+    path: '/backoffice/productos',
+    label: 'encargado',
+    ready: { role: 'heading', name: 'Productos' },
+    staff: 'manager',
+  },
+  {
+    path: '/backoffice/productos',
+    label: 'tabla',
+    ready: { role: 'heading', name: 'Productos' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Tabla', exact: true }).click();
+      await page.getByRole('table').waitFor();
+    },
+  },
+  {
+    path: '/backoffice/productos',
+    label: 'modal producto',
+    ready: { role: 'heading', name: 'Productos' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Nuevo producto' }).click();
+      await page.getByRole('dialog', { name: 'Nuevo producto' }).waitFor();
+      await page.getByRole('button', { name: 'Guardar producto' }).click();
+      await page.getByRole('dialog').getByRole('alert').first().waitFor();
+    },
+  },
+  {
+    path: '/backoffice/categorias',
+    ready: { role: 'heading', name: 'Categorías' },
+    staff: 'admin',
+  },
+  {
+    path: '/backoffice/promociones',
+    ready: { role: 'heading', name: 'Promociones' },
+    staff: 'admin',
+  },
+  {
+    path: '/backoffice/promociones',
+    label: 'modal promoción',
+    ready: { role: 'heading', name: 'Promociones' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Nueva promoción' }).click();
+      await page.getByRole('dialog', { name: 'Nueva promoción' }).waitFor();
+      await page.getByRole('button', { name: 'Crear promoción' }).click();
+      await page.getByRole('dialog').getByRole('alert').first().waitFor();
+    },
+  },
+  {
+    path: '/backoffice/sucursales',
+    ready: { role: 'heading', name: 'Sucursales' },
+    staff: 'admin',
+  },
+  { path: '/backoffice/usuarios', ready: { role: 'heading', name: 'Usuarios' }, staff: 'admin' },
+  {
+    path: '/backoffice/usuarios',
+    label: 'modal usuario',
+    ready: { role: 'heading', name: 'Usuarios' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: /Nuevo usuario/ }).click();
+      await page.getByRole('dialog', { name: 'Nuevo usuario' }).waitFor();
+      await page.getByRole('button', { name: 'Guardar usuario' }).click();
+      await page.getByRole('dialog').getByRole('alert').waitFor();
+    },
+  },
+  { path: '/backoffice/reportes', ready: { role: 'heading', name: 'Reportes' }, staff: 'admin' },
+  {
+    path: '/backoffice/reportes',
+    label: 'historial',
+    ready: { role: 'heading', name: 'Reportes' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('tab', { name: 'Historial de pedidos' }).click();
+      await page.getByRole('heading', { name: 'Pedidos del periodo' }).waitFor();
+    },
+  },
+];
+
+/** Usuarios de demostración del personal por rol (coinciden con los fixtures del mock). */
+const STAFF_SESSIONS = {
+  admin: {
+    userId: 'u1',
+    email: 'ana.perez@sushimon.gt',
+    name: 'Ana Lucía Pérez',
+    role: 'admin',
+    branchId: null,
+  },
+  manager: {
+    userId: 'u2',
+    email: 'marco.gomez@sushimon.gt',
+    name: 'Marco Antonio Gómez',
+    role: 'manager',
+    branchId: 'sucursal-1',
+  },
+  kitchen: {
+    userId: 'u5',
+    email: 'cocina.z4@sushimon.gt',
+    name: 'Cocina Zona 4',
+    role: 'kitchen',
+    branchId: 'sucursal-1',
+  },
+} as const;
+
+for (const theme of ['light', 'dark'] as const) {
+  for (const route of A11Y_ROUTES) {
+    test(`a11y ${route.path}${route.label ? ` (${route.label})` : ''}${route.signedIn ? ' (con sesión)' : ''}${route.staff ? ` (personal: ${route.staff})` : ''} · ${theme}`, async ({
+      page,
+    }) => {
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
+      await page.addInitScript((value) => localStorage.setItem('monsushi-theme', value), theme);
+      if (route.local || route.session) {
+        await page.addInitScript(
+          ([local, session]) => {
+            for (const [k, v] of Object.entries(local ?? {})) localStorage.setItem(k, v);
+            for (const [k, v] of Object.entries(session ?? {})) sessionStorage.setItem(k, v);
+          },
+          [route.local, route.session] as const,
+        );
+      }
+      if (route.signedIn) {
+        await page.addInitScript(() =>
+          sessionStorage.setItem(
+            'monsushi-demo-session-v1',
+            JSON.stringify({
+              customer: {
+                email: 'cliente@ejemplo.com',
+                name: 'Cliente Demo',
+                provider: 'google-demo',
+              },
+              staff: null,
+            }),
+          ),
+        );
+      }
+      if (route.staff) {
+        await page.addInitScript(
+          (staff) =>
+            sessionStorage.setItem(
+              'monsushi-demo-session-v1',
+              JSON.stringify({ customer: null, staff }),
+            ),
+          STAFF_SESSIONS[route.staff],
+        );
+      }
+      await page.goto(route.path);
+      await page.getByRole(route.ready.role, { name: route.ready.name }).first().waitFor();
+      // Datos del catálogo ya pintados (no solo el esqueleto).
+      await page
+        .locator('[aria-busy="true"]')
+        .first()
+        .waitFor({ state: 'detached' })
+        .catch(() => {});
+      await page.waitForTimeout(300);
+      await route.step?.(page);
+
+      const results = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+        .analyze();
+      const blocking = results.violations.filter(
+        (v) => v.impact === 'serious' || v.impact === 'critical',
+      );
+      expect(
+        blocking.map((v) => ({
+          id: v.id,
+          impact: v.impact,
+          nodes: v.nodes
+            .slice(0, 8)
+            .map((n) => n.target.join(' ') + ' :: ' + (n.any[0]?.message ?? '')),
+        })),
+      ).toEqual([]);
+    });
+  }
+}
+
+test('el carrito, el modo de pedido y el inicio de sesión abren como diálogos accesibles', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('heading', { name: /Favoritos/ }).waitFor();
+
+  await page
+    .getByRole('button', { name: /Iniciar pedido/ })
+    .first()
+    .click();
+  const sheet = page.getByRole('dialog', { name: 'Pedir ahora' });
+  await expect(sheet).toBeVisible();
+  const sheetResults = await new AxeBuilder({ page }).include('[role="dialog"]').analyze();
+  expect(
+    sheetResults.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical'),
+  ).toEqual([]);
+  await page.keyboard.press('Escape');
+  await expect(sheet).toBeHidden();
+});

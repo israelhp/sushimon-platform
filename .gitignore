@@ -20,10 +20,13 @@ next-env.d.ts
 .claude/worktrees/
 
 # Playwright
-test-results/
+test-results*/
 playwright-report/
 playwright/.cache/
 
 .DS_Store
 *.log
 .vercel/
+
+# Extracción de prototipos (regenerable con scripts/prototype-extract.mjs)
+docs/ui/extracted/

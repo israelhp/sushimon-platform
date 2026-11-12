@@ -1,0 +1,96 @@
+/*
+ * Tienda · tokens de diseño (valores idénticos al prototipo docs/references/public-store-prototype.html).
+ *
+ * Formato: canales RGB separados por espacios (como el prototipo, Tailwind v3), para poder escribir
+ * `rgb(var(--surface) / 0.85)` en las clases propias. Tailwind los expone como colores en globals.css (@theme).
+ * Se definen en :root (cuerpo, overlays) y en [data-zone='store']; el tema oscuro lo activa `.dark` en <html>.
+ * El backoffice usa sus propios tokens con prefijo --bo-* (src/styles/backoffice.css).
+ */
+:root,
+[data-zone='store'] {
+  --bg: 250 247 242;
+  --surface: 255 255 255;
+  --subtle: 243 238 230;
+  --fg: 17 24 39;
+  --muted: 107 114 128;
+  --line: 231 225 216;
+  --primary: 220 38 38;
+  --primary-soft: 254 236 236;
+  --onprimary: 255 255 255;
+  --secondary: 31 41 55;
+  --secondary-soft: 236 234 229;
+  --onsecondary: 255 255 255;
+  --accent: 245 158 11;
+  --accent-soft: 254 243 219;
+  --deep: 31 41 55;
+  --ondeep: 255 255 255;
+  --success: 21 128 61;
+  --success-soft: 220 252 231;
+  --danger: 185 28 28;
+  --danger-soft: 254 236 236;
+
+  /* Bandas seigaiha (valores completos, no canales) */
+  --band-red: #dc2626;
+  --band-red-2: #e23c3c;
+  --band-blue: #1f2937;
+  --band-blue-2: #2a3646;
+  --band-deep: #111827;
+  --band-deep-2: #1b2333;
+  --band-amber: #f59e0b;
+  --band-amber-2: #f7aa2b;
+  --on-band: 255 255 255;
+  --on-band-amber: 17 24 39;
+
+  /* Fondos de ilustración (`tile-*`): fijos, no cambian con el tema */
+  --tile-coral: 220 38 38;
+  --tile-blue: 31 41 55;
+  --tile-sky: 245 158 11;
+  --tile-cream: 243 238 230;
+
+  /* Sello `hanko` y texto contorneado */
+  --hanko: 200 16 46;
+  --hanko-paper: 255 255 255;
+  --outline-light: 255 255 255;
+  --outline-dark: 17 24 39;
+
+  /* Sombras */
+  --sh-card: 0 1px 2px rgb(31 41 55 / 0.05), 0 4px 14px rgb(31 41 55 / 0.06);
+  --sh-lift: 0 2px 4px rgb(31 41 55 / 0.06), 0 12px 28px rgb(31 41 55 / 0.12);
+  --sh-pop: 0 20px 50px rgb(17 24 39 / 0.22);
+
+  color-scheme: light;
+}
+
+.dark,
+.dark [data-zone='store'] {
+  --bg: 11 11 15;
+  --surface: 15 23 42;
+  --subtle: 26 35 54;
+  --fg: 249 250 251;
+  --muted: 156 163 175;
+  --line: 34 45 66;
+  --primary: 239 68 68;
+  --primary-soft: 60 22 26;
+  /* Tinta oscura: blanco sobre #EF4444 da 3,76:1 (AA exige 4,5). Mismo criterio que el backoffice oscuro. */
+  --onprimary: 11 11 15;
+  --secondary: 203 213 225;
+  --secondary-soft: 30 41 59;
+  --onsecondary: 11 11 15;
+  --accent: 251 191 36;
+  --accent-soft: 58 44 12;
+  --deep: 30 41 59;
+  --ondeep: 249 250 251;
+  --success: 74 222 128;
+  --success-soft: 18 52 36;
+  --danger: 248 113 113;
+  --danger-soft: 66 24 28;
+
+  --band-blue: #0f172a;
+  --band-blue-2: #18223a;
+
+  --sh-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 16px rgb(0 0 0 / 0.35);
+  --sh-lift: 0 2px 6px rgb(0 0 0 / 0.45), 0 14px 32px rgb(0 0 0 / 0.45);
+  --sh-pop: 0 24px 60px rgb(0 0 0 / 0.65);
+
+  color-scheme: dark;
+}

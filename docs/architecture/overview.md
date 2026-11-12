@@ -1,6 +1,6 @@
 # Arquitectura — visión general
 
-**Estado**: Etapa 0 (bootstrap). Leyenda: ✅ implementado · 📐 planificado · 🎭 simulado (mock) · ⏳ pendiente de proveedor · ❓ pendiente de decisión
+**Estado**: Etapa 1 (UI First) completada con datos simulados; API solo `GET /v1/health`. Leyenda: ✅ implementado · 📐 planificado · 🎭 simulado (mock) · ⏳ pendiente de proveedor · ❓ pendiente de decisión
 
 ```text
             ┌────────────────────────────── sushimon-web (Next.js) ───────────────┐
@@ -19,16 +19,17 @@
 
 ## Componentes
 
-| Pieza                | Estado | Notas                                                              |
-| -------------------- | ------ | ------------------------------------------------------------------ |
-| Monorepo pnpm        | ✅     | `sushimon-api`, `sushimon-web`, `packages/contracts`               |
-| API `GET /v1/health` | ✅     | único endpoint real; OpenAPI + filtro de errores + env validado    |
-| Web: shells públicos | ✅     | `/` y `/backoffice` son placeholders; sin pantallas del prototipo  |
-| `lib/data-access`    | ✅     | selección mock/http con regla anti-fallback; adaptador mock 📐     |
-| Contratos            | ✅     | OpenAPI canónico + tipos generados + verificación contra la API    |
-| Auth Google/RBAC     | 📐     | slice `feature/google-oauth` (Etapa 3)                             |
-| Base de datos        | 📐     | DBML como línea base; sin migraciones aplicadas; ORM ❓ (ADR-0003) |
-| PedidosYa / Neonet   | ⏳     | solo arquitectura y mocks futuros                                  |
+| Pieza                | Estado | Notas                                                                                     |
+| -------------------- | ------ | ----------------------------------------------------------------------------------------- |
+| Monorepo pnpm        | ✅     | `sushimon-api`, `sushimon-web`, `packages/contracts`                                      |
+| API `GET /v1/health` | ✅     | único endpoint real; OpenAPI + filtro de errores + env validado                           |
+| Web: tienda pública  | 🎭     | 15 vistas + 6 overlays fieles al prototipo (es/en, claro/oscuro); datos simulados         |
+| Web: backoffice      | 🎭     | login de demostración por rol, panel, pedidos, entregas, catálogo, admin y reportes       |
+| `lib/data-access`    | ✅     | puerto único mock/http, `ApiError`, sin fallback silencioso; adaptador mock ✅ (ADR-0008) |
+| Contratos            | ✅     | OpenAPI canónico + tipos generados + verificación contra la API                           |
+| Auth Google/RBAC     | 📐     | slice `feature/google-oauth` (Etapa 3)                                                    |
+| Base de datos        | 📐     | DBML como línea base; sin migraciones aplicadas; ORM ❓ (ADR-0003)                        |
+| PedidosYa / Neonet   | ⏳     | simulados en la web (rotulados "Simulación"); integración real pendiente de documentación |
 
 ## Decisiones de diseño
 

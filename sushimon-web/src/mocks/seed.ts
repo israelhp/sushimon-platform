@@ -1,0 +1,259 @@
+import type { Order, OrderLine, OrderStatusEvent, Payment } from '@/lib/data-access/models';
+import { addDaysISO, fromLocal, localDate } from '@/lib/time';
+import { DEMO_BASE_TIME } from './clock';
+import { BRANCH_SEEDS } from './fixtures/branches';
+import {
+  BACKOFFICE_ORDER_SEEDS,
+  DEMO_ACCOUNT,
+  STORE_ORDER_SEEDS,
+  type OrderSeed,
+} from './fixtures/orders';
+import { PRODUCT_SEEDS } from './fixtures/products';
+import { PROMOTION_SEEDS } from './fixtures/promotions';
+import { RIDER_SEEDS, STAFF_SEEDS } from './fixtures/staff';
+import { CATEGORY_SEEDS, STORE_CONFIG_SEED } from './fixtures/store';
+import { event, tierFor, totals } from './domain';
+import { rngFor } from './factories/random';
+import type { MockScenario } from './scenarios';
+import { MOCK_STORE_VERSION, type MockStore, type ProductRecord } from './store';
+
+/**
+ * Siembra determinista del MockStore para un escenario. La fecha base es la del reloj de la demo
+ * (`DEMO_BASE_TIME`); los pedidos sembrados se ubican relativo a ella.
+ *
+ * Escenarios de dominio aplicados aquí:
+ * - empty: sin categorías, productos, promociones, pedidos, historial ni datos de cuenta.
+ * - promotion-expired: todas las promociones vencieron ayer.
+ * - branch-closed: las sucursales activas están "cerradas" (no se pide "ahora"; sí programado).
+ * - product-unavailable: Calientito Roll y Platanito Roll no disponibles en ninguna sucursal.
+ * - order-pending: el pago del pedido demo MON-490217 queda "en verificación" (review).
+ * (payment-rejected y rider-unavailable se aplican en los handlers.)
+ */
+export const UNAVAILABLE_IN_SCENARIO = ['calientito-roll', 'platanito-roll'];
+
+/** Disponibilidad por sucursal del backoffice (p10 sin stock en s3, p16 sin stock en s2). */
+const UNAVAILABLE_AT: Record<string, string[]> = {
+  'joselito-roll': ['sucursal-3'],
+  gaseosas: ['sucursal-2'],
+};
+
+const STATUS_OFFSETS: Record<string, number> = {
+  accepted: 2,
+  preparing: 5,
+  ready: 16,
+  on_the_way: 24,
+  delivered: 42,
+};
+const FLOW = ['accepted', 'preparing', 'ready', 'on_the_way', 'delivered'] as const;
+
+function buildProducts(scenario: MockScenario): ProductRecord[] {
+  if (scenario === 'empty') return [];
+  return PRODUCT_SEEDS.map((p) => ({
+    ...p,
+    availability: BRANCH_SEEDS.filter((b) => b.status === 'active').map((b) => ({
+      branchId: b.id,
+      available:
+        !(UNAVAILABLE_AT[p.id] ?? []).includes(b.id) &&
+        !(scenario === 'product-unavailable' && UNAVAILABLE_IN_SCENARIO.includes(p.id)),
+    })),
+  }));
+}
+
+export function buildSeedOrder(seed: OrderSeed, base: Date, scenario: MockScenario): Order {
+  const created = new Date(base.getTime() - seed.minutesAgo * 60_000);
+  const at = (minutes: number) => new Date(created.getTime() + minutes * 60_000);
+  const age = seed.minutesAgo;
+  const day = localDate(created);
+
+  const lines: OrderLine[] = seed.lines.map((l) => {
+    const product = PRODUCT_SEEDS.find((p) => p.id === l.productId);
+    const unitPrice = l.unitPrice ?? product?.price;
+    if (unitPrice === undefined) throw new Error(`Precio desconocido: ${l.productId}`);
+    return {
+      productId: l.productId,
+      name: l.name ?? product?.name ?? l.productId,
+      quantity: l.quantity,
+      note: l.note ?? '',
+      unitPrice,
+      subtotal: unitPrice * l.quantity,
+    };
+  });
+
+  const branch = BRANCH_SEEDS.find((b) => b.id === seed.branchId);
+  if (!branch) throw new Error(`Sucursal desconocida: ${seed.branchId}`);
+  let tier: Order['deliveryTier'] = null;
+  let fee = 0;
+  if (seed.fulfillment === 'delivery') {
+    if (!seed.address) throw new Error(`${seed.id}: falta dirección`);
+    tier = tierFor(branch, seed.address.municipality, seed.address.zone);
+    if (!tier) throw new Error(`${seed.id}: dirección fuera de cobertura`);
+    fee = STORE_CONFIG_SEED.deliveryTiers.find((t) => t.id === tier)?.fee ?? 0;
+  }
+  const t = totals(lines, fee);
+
+  // Historial: received + estados alcanzados (sin pasar del "ahora" de la siembra).
+  const history: OrderStatusEvent[] = [event(created, 'order', 'received')];
+  const cap = (m: number) => Math.min(m, Math.max(age - 1, 0));
+  if (seed.status === 'rejected' || seed.status === 'cancelled') {
+    history.push(event(at(cap(3)), 'order', seed.status, { reason: seed.rejectionReason ?? '' }));
+  } else {
+    const reached = FLOW.slice(0, FLOW.indexOf(seed.status as (typeof FLOW)[number]) + 1);
+    for (const s of reached) {
+      if (s === 'on_the_way' && seed.fulfillment === 'pickup') continue;
+      if (s === 'on_the_way' || s === 'delivered') continue; // los agrega la logística abajo
+      history.push(event(at(cap(STATUS_OFFSETS[s] ?? 0)), 'order', s));
+    }
+  }
+
+  let delivery: Order['delivery'] = null;
+  if (seed.delivery) {
+    const d = seed.delivery;
+    const requested = fromLocal(day, d.requestedAt);
+    const delivered = d.deliveredAt ? fromLocal(day, d.deliveredAt) : null;
+    delivery = {
+      provider: d.provider,
+      status: d.status,
+      riderId: d.riderId ?? null,
+      riderName: d.riderName,
+      reference: d.reference,
+      cost: d.provider === 'own' ? null : fee + (seed.courierSurcharge ?? 0),
+      requestedAt: requested.toISOString(),
+      etaAt: fromLocal(day, d.etaAt).toISOString(),
+      deliveredAt: delivered?.toISOString() ?? null,
+      simulated: true,
+    };
+    history.push(event(requested, 'delivery', 'searching', { detail: d.reference }));
+    const assigned = new Date(requested.getTime() + 4 * 60_000);
+    history.push(event(assigned, 'delivery', 'assigned', { detail: d.riderName }));
+    if (seed.status === 'on_the_way' || seed.status === 'delivered') {
+      history.push(event(at(cap(STATUS_OFFSETS.on_the_way ?? 24)), 'order', 'on_the_way'));
+    }
+  }
+  if (seed.status === 'delivered') {
+    const when = delivery?.deliveredAt ?? at(cap(STATUS_OFFSETS.delivered ?? 42)).toISOString();
+    history.push(event(when, 'order', 'delivered'));
+  }
+  history.sort((a, b) => a.at.localeCompare(b.at));
+
+  const rng = rngFor(`payment|${seed.id}`);
+  const isCard = seed.payment.method === 'card';
+  const paymentStatus: Payment['status'] = isCard
+    ? scenario === 'order-pending' && seed.id === 'MON-490217'
+      ? 'review'
+      : 'approved'
+    : seed.status === 'delivered'
+      ? 'approved'
+      : 'pending';
+  const payment: Payment = {
+    method: seed.payment.method,
+    status: paymentStatus,
+    amount: t.total,
+    reference: isCard
+      ? (seed.payment.reference ?? `NNT-DEMO-${10000 + Math.floor(rng() * 89999)}`)
+      : null,
+    cardBrand: isCard ? 'Visa' : null,
+    cardLast4: isCard ? '4242' : null,
+    simulated: true,
+    processedAt: isCard
+      ? at(1).toISOString()
+      : seed.status === 'delivered'
+        ? (history[history.length - 1]?.at ?? null)
+        : null,
+  };
+  if (isCard) history.splice(1, 0, event(at(1), 'payment', paymentStatus));
+
+  return {
+    id: seed.id,
+    createdAt: created.toISOString(),
+    updatedAt: history[history.length - 1]?.at ?? created.toISOString(),
+    branchId: seed.branchId,
+    fulfillment: seed.fulfillment,
+    schedule: { kind: 'now' },
+    customer: seed.customer,
+    address: seed.address,
+    lines,
+    ...t,
+    currency: 'GTQ',
+    note: seed.note,
+    deliveryTier: tier,
+    status: seed.status,
+    rejectionReason: seed.rejectionReason ?? null,
+    payment,
+    delivery,
+    history,
+    incidents: (seed.incidents ?? []).map((i) => ({
+      ...i,
+      orderId: seed.id,
+      createdAt: i.createdAt || at(80).toISOString(),
+    })),
+  };
+}
+
+export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
+  const base = new Date(DEMO_BASE_TIME);
+  const today = localDate(base);
+  const empty = scenario === 'empty';
+
+  const branches = structuredClone(BRANCH_SEEDS).map((b) =>
+    scenario === 'branch-closed' && b.status === 'active' ? { ...b, isOpen: false } : b,
+  );
+  const promotions = empty
+    ? []
+    : structuredClone(PROMOTION_SEEDS).map((p) =>
+        scenario === 'promotion-expired'
+          ? { ...p, validTo: addDaysISO(today, -1), validFrom: addDaysISO(today, -40) }
+          : p,
+      );
+  const orders = empty
+    ? []
+    : [...STORE_ORDER_SEEDS, ...BACKOFFICE_ORDER_SEEDS].map((s) =>
+        buildSeedOrder(s, base, scenario),
+      );
+  const courierSurcharges = Object.fromEntries(
+    BACKOFFICE_ORDER_SEEDS.filter((s) => s.courierSurcharge).map((s) => [
+      s.id,
+      s.courierSurcharge ?? 0,
+    ]),
+  );
+
+  const daysAgo = (n: number) => new Date(base.getTime() - n * 86_400_000).toISOString();
+  const demoAccount = {
+    profile: { ...DEMO_ACCOUNT.profile, defaultAddressId: empty ? null : 'demo-casa' },
+    addresses: empty
+      ? []
+      : DEMO_ACCOUNT.addresses.map(({ daysAgo: n, ...a }) => ({ ...a, createdAt: daysAgo(n) })),
+    favorites: empty ? [] : [...DEMO_ACCOUNT.favorites],
+  };
+
+  return {
+    version: MOCK_STORE_VERSION,
+    scenario,
+    seededFor: today,
+    config: structuredClone(STORE_CONFIG_SEED),
+    branches,
+    categories: empty ? [] : structuredClone(CATEGORY_SEEDS),
+    products: buildProducts(scenario),
+    promotions,
+    orders,
+    staff: structuredClone(STAFF_SEEDS),
+    riders: structuredClone(RIDER_SEEDS),
+    accounts: { [DEMO_ACCOUNT.profile.email]: demoAccount },
+    jobApplications: [],
+    verifiedOrderIds: [],
+    courierSurcharges,
+    historyEnabled: !empty,
+    sequences: {
+      order: 7059,
+      incident: 1043,
+      address: 1,
+      product: 1,
+      category: 1,
+      promotion: 1,
+      user: 9,
+      job: 1,
+      quote: 1,
+      payment: 1,
+      courier: 32000,
+    },
+  };
+}
