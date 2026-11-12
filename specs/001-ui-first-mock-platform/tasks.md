@@ -68,3 +68,15 @@
 
 Phase 1 → Phase 2 (T010–T013 ∥ T020–T024) → US1 → US2 → US3/US4/US6 → US5 → Polish.
 Por decisión del usuario, la tienda va antes que el backoffice; todo en una sola rama con commits por bloque.
+
+## Phase 10: Convergence
+
+- [ ] T095 HIGH: añadir un E2E que falle ante cualquier solicitud de red fuera de `localhost` durante un recorrido de tienda y de backoffice per SC-007 (missing)
+- [ ] T096 HIGH: ejercitar en UI los escenarios `empty`, `error`, `offline`, `forbidden`, `branch-closed`, `product-unavailable`, `promotion-expired`, `rider-unavailable` y `loading` (p. ej. proyecto Playwright con servidor por escenario o selector de escenario en pruebas) per FR-012 (partial)
+- [ ] T097 MEDIUM: reducir las diferencias visuales > 3 % (neonet-pendiente móvil, despacho móvil, promociones móvil, Inicio completo) o ratificar por pantalla el umbral con justificación en `docs/ui/prototype-inventory.md` per SC-002 (partial)
+- [ ] T098 MEDIUM: añadir prueba de "sin desplazamiento horizontal" a 320 px en las rutas principales de ambas zonas y E2E móvil (proyecto `e2e-mobile`) de compra y de gestión de pedido per Edge Cases (missing)
+- [ ] T099 MEDIUM: probar el arranque con `NEXT_PUBLIC_DATA_SOURCE=http` sin API disponible (falla explícito, sin caer a mock) per FR-014 (partial)
+- [ ] T100 LOW: permitir que el bloqueo 429 de la consulta de invitado se recupere (ventana de tiempo del reloj de la demo o reinicio al resetear el store) per US3/AC1 (partial)
+- [ ] T101 LOW: registrar en `docs/ui/prototype-inventory.md` las adiciones no pedidas como diferencias intencionales (pausa del carrusel, "Editar" de sucursales, buscador de usuarios, `/incidencias/nuevo`, rutas `/v1/demo/*`, cabeceras de seguridad, límite 429) per Constitution VIII (unrequested)
+- [ ] T102 LOW: dividir los mensajes i18n por zona y extraer un `CartPanel` compartido per Constitution IX (partial)
+- [ ] T103 LOW: añadir aserción de duración a los E2E de compra (< 2 min) y de gestión de pedido (< 1 min) per SC-003 y SC-004 (partial)
