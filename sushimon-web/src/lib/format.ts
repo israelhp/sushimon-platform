@@ -35,12 +35,32 @@ export function formatMoney(
   return (
     sign +
     'Q' +
-    Math.abs(value).toLocaleString('en-US', {
-      minimumFractionDigits: min,
-      maximumFractionDigits: 2,
-    })
+    numberFormat('en-US', { minimumFractionDigits: min, maximumFractionDigits: 2 }).format(
+      Math.abs(value),
+    )
   );
 }
+
+// Crear un Intl.*Format es caro: se reutilizan por locale + opciones (a nivel de módulo).
+const numberFormats = new Map<string, Intl.NumberFormat>();
+const dateFormats = new Map<string, Intl.DateTimeFormat>();
+
+function numberFormat(locale: string, options: Intl.NumberFormatOptions): Intl.NumberFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let f = numberFormats.get(key);
+  if (!f) numberFormats.set(key, (f = new Intl.NumberFormat(locale, options)));
+  return f;
+}
+
+function dateFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let f = dateFormats.get(key);
+  if (!f) dateFormats.set(key, (f = new Intl.DateTimeFormat(locale, options)));
+  return f;
+}
+
+/** Cantidad de formateadores en caché (solo para pruebas). */
+export const formatterCacheSize = () => numberFormats.size + dateFormats.size;
 
 type DateInput = Date | string | number;
 
@@ -52,14 +72,14 @@ export function formatDate(
   locale: string = 'es',
   options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' },
 ): string {
-  return new Intl.DateTimeFormat(toIntlLocale(locale), { timeZone: TIME_ZONE, ...options })
+  return dateFormat(toIntlLocale(locale), { timeZone: TIME_ZONE, ...options })
     .format(toDate(date))
     .replace(/\./g, '');
 }
 
 /** Fecha y hora (como `Cs` del prototipo): "11 nov 2026, 12:05 p. m." / "Nov 11, 2026, 12:05 PM". */
 export function formatDateTime(date: DateInput, locale: string = 'es'): string {
-  return new Intl.DateTimeFormat(toIntlLocale(locale), {
+  return dateFormat(toIntlLocale(locale), {
     timeZone: TIME_ZONE,
     day: 'numeric',
     month: 'short',
@@ -71,7 +91,7 @@ export function formatDateTime(date: DateInput, locale: string = 'es'): string {
 
 /** Hora de un instante (`Date`/ISO) en Guatemala, con Intl. */
 export function formatTime(date: DateInput, locale: string = 'es'): string {
-  return new Intl.DateTimeFormat(toIntlLocale(locale), {
+  return dateFormat(toIntlLocale(locale), {
     timeZone: TIME_ZONE,
     hour: 'numeric',
     minute: '2-digit',

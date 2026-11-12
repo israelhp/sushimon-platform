@@ -273,7 +273,7 @@ function DispatchFlow({ order, onClose }: { order: Order; onClose: () => void })
             <button type="button" className="opt" onClick={requestQuote}>
               <span
                 className="opt-ic"
-                style={{ background: 'var(--secondary-soft)', color: 'var(--text)' }}
+                style={{ background: 'var(--bo-secondary-soft)', color: 'var(--bo-text)' }}
               >
                 <IconBike size="sm" />
               </span>
@@ -294,7 +294,7 @@ function DispatchFlow({ order, onClose }: { order: Order; onClose: () => void })
             >
               <span
                 className="opt-ic"
-                style={{ background: 'var(--primary-soft)', color: 'var(--primary)' }}
+                style={{ background: 'var(--bo-primary-soft)', color: 'var(--bo-primary)' }}
               >
                 <IconShop size="sm" />
               </span>

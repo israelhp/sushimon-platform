@@ -35,7 +35,7 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
 function ShellFrame({ children }: { children: ReactNode }) {
   const t = useTranslations('backoffice.shell');
   const shell = useShell();
-  const orders = useScopedOrders();
+  const orders = useScopedOrders({ poll: true });
   const newCount = (orders.data ?? []).filter((o) => o.status === 'received').length;
 
   useEffect(() => {

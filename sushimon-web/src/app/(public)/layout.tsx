@@ -1,4 +1,6 @@
 import { ToastProvider } from '@/components/ui/Toast';
+import { CartProvider } from '@/features/cart/cart-context';
+import { OrderModeProvider } from '@/features/order-mode/order-mode-context';
 import { StoreShell } from '@/features/store-shell/components/StoreShell';
 
 /**
@@ -9,9 +11,13 @@ import { StoreShell } from '@/features/store-shell/components/StoreShell';
 export default function StoreZoneLayout({ children }: { children: React.ReactNode }) {
   return (
     <div data-zone="store" className="flex min-h-dvh flex-col bg-bg text-fg">
-      <ToastProvider zone="store">
-        <StoreShell>{children}</StoreShell>
-      </ToastProvider>
+      <CartProvider>
+        <OrderModeProvider>
+          <ToastProvider zone="store">
+            <StoreShell>{children}</StoreShell>
+          </ToastProvider>
+        </OrderModeProvider>
+      </CartProvider>
     </div>
   );
 }

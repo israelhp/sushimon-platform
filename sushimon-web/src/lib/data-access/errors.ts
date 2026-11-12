@@ -11,6 +11,7 @@ export type ApiErrorCode =
   | 'not_found'
   | 'conflict'
   | 'unprocessable'
+  | 'too_many_requests'
   | 'server_error'
   | (string & {});
 
@@ -33,6 +34,7 @@ const CODE_BY_STATUS: Record<number, ApiErrorCode> = {
   404: 'not_found',
   409: 'conflict',
   422: 'unprocessable',
+  429: 'too_many_requests',
 };
 
 export function codeForStatus(status: number): ApiErrorCode {

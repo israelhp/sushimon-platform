@@ -5,6 +5,7 @@ import {
   formatDateTime,
   formatMoney,
   formatTime,
+  formatterCacheSize,
   toIntlLocale,
 } from './format';
 
@@ -51,5 +52,41 @@ describe('fechas y horas', () => {
     expect(formatClock('13:30', 'en')).toBe('1:30 p.m.');
     expect(formatClock('00:05', 'es')).toBe('12:05 a. m.');
     expect(formatClock('12:00', 'en')).toBe('12:00 p.m.');
+  });
+});
+
+describe('caché de formateadores', () => {
+  it('reutiliza los Intl.* por locale + opciones y no cambia la salida', () => {
+    const at = '2026-11-11T20:25:00.000Z';
+    const first = [
+      formatMoney(1234.5),
+      formatMoney(85, 'es', { decimals: 'auto' }),
+      formatDate(at, 'es'),
+      formatDateTime(at, 'en'),
+      formatTime(at, 'es'),
+    ];
+    const size = formatterCacheSize();
+    expect(size).toBeGreaterThan(0);
+    for (let i = 0; i < 50; i++) {
+      formatMoney(i + 0.5);
+      formatDate(at, 'es');
+      formatTime(at, 'es');
+    }
+    expect(formatterCacheSize()).toBe(size);
+    expect([
+      formatMoney(1234.5),
+      formatMoney(85, 'es', { decimals: 'auto' }),
+      formatDate(at, 'es'),
+      formatDateTime(at, 'en'),
+      formatTime(at, 'es'),
+    ]).toEqual(first);
+    // Igual que un formateador nuevo sin caché.
+    expect(formatTime(at, 'en')).toBe(
+      new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Guatemala',
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(new Date(at)),
+    );
   });
 });

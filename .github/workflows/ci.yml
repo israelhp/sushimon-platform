@@ -38,6 +38,31 @@ jobs:
       - name: Dependencias (vulnerabilidades altas)
         run: pnpm audit --prod --audit-level high
 
+  web-e2e:
+    name: Web E2E + accesibilidad (datos simulados)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Instalar Chromium
+        run: pnpm --filter sushimon-web exec playwright install --with-deps chromium
+      # Flujos (tienda y backoffice) y axe en claro/oscuro. La comparación visual contra los
+      # prototipos (`test:visual`) es un reporte local, no un gate.
+      - run: pnpm --filter sushimon-web test:e2e
+      - name: Reporte de Playwright
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: sushimon-web/playwright-report/
+          retention-days: 7
+
   commits:
     name: Conventional Commits
     if: github.event_name == 'pull_request'

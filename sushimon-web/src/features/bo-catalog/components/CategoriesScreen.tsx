@@ -2,7 +2,7 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { IconChevronDown, IconChevronUp, IconGrip, IconPlus } from '@/components/icons/bo';
 import { Banner } from '@/components/ui/Banner';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -31,6 +31,8 @@ export function CategoriesScreen() {
 
   const [newName, setNewName] = useState('');
   const [nameInvalid, setNameInvalid] = useState(false);
+  const [orderError, setOrderError] = useState('');
+  const nameErrorId = useId();
   /** Orden local mientras se guarda (los botones responden al instante). */
   const [localOrder, setLocalOrder] = useState<string[] | null>(null);
   const [announcement, setAnnouncement] = useState('');
@@ -83,6 +85,8 @@ export function CategoriesScreen() {
         }
       })
       .catch((error: unknown) => {
+        // Aviso persistente (el toast desaparece); `finally` descarta el orden local y la lista revierte.
+        setOrderError(t('saveError', { message: errorMessage(error) }));
         toast.notify(t('saveError', { message: errorMessage(error) }));
       })
       .finally(async () => {
@@ -100,6 +104,7 @@ export function CategoriesScreen() {
     if (!next) return;
     const name = list.find((c) => c.id === id)?.name ?? '';
     setLocalOrder(next);
+    setOrderError('');
     focusAfter.current = { id, dir: dir === -1 ? 'up' : 'down' };
     setAnnouncement(t('moved', { name, position: next.indexOf(id) + 1, total: next.length }));
     persist(next);
@@ -158,6 +163,7 @@ export function CategoriesScreen() {
           placeholder={t('newPlaceholder')}
           aria-label={t('newLabel')}
           aria-invalid={nameInvalid}
+          aria-describedby={nameInvalid ? nameErrorId : undefined}
           value={newName}
           onChange={(e) => {
             setNewName(e.target.value);
@@ -168,7 +174,23 @@ export function CategoriesScreen() {
           <IconPlus size="sm" />
           {t('add')}
         </button>
+        {nameInvalid ? (
+          <p
+            id={nameErrorId}
+            role="alert"
+            className="sm"
+            style={{ color: 'var(--bo-red)', margin: 0, flexBasis: '100%' }}
+          >
+            {t('emptyName')}
+          </p>
+        ) : null}
       </form>
+
+      {orderError ? (
+        <Banner zone="bo" tone="danger" role="alert">
+          {orderError}
+        </Banner>
+      ) : null}
 
       {categories.isError ? (
         <Banner zone="bo" tone="danger" role="alert">
@@ -184,7 +206,7 @@ export function CategoriesScreen() {
           <h2 id="cat-order-title">{t('listTitle')}</h2>
           <span className="count-chip">{list.length}</span>
         </div>
-        <div ref={listRef} style={{ borderTop: '1px solid var(--line)' }} role="list">
+        <div ref={listRef} style={{ borderTop: '1px solid var(--bo-line)' }} role="list">
           {categories.isPending ? (
             <div aria-busy="true" aria-label={tu('loading')} style={{ padding: 14 }}>
               {Array.from({ length: 6 }, (_, i) => (
@@ -205,7 +227,7 @@ export function CategoriesScreen() {
                 data-cat-id={c.id}
                 className={cn('crow', !c.visible && 'off')}
               >
-                <IconGrip style={{ color: 'var(--muted)' }} />
+                <IconGrip style={{ color: 'var(--bo-muted)' }} />
                 <span className="cpos">{i + 1}</span>
                 <div className="grow">
                   <div className="cname">{c.name}</div>

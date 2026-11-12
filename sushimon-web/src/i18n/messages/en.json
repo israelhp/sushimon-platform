@@ -642,6 +642,7 @@
     "submit": "Track",
     "searching": "Searching…",
     "notFound": "We couldn’t find an order with those details. Check the number and the phone.",
+    "tooManyAttempts": "Too many attempts for that order number. Wait a few minutes and try again.",
     "errId": "Enter the order number",
     "errPhone": "Enter the phone (8 digits)",
     "demoHint": "Test data: MON-490217 · 5555-1234",
@@ -1079,6 +1080,27 @@
       "admin": "Administrador general",
       "manager": "Encargado de sucursal",
       "kitchen": "Cocina"
+    },
+    "roleDescriptions": {
+      "admin": "Acceso total: sucursales, catálogo, promociones, usuarios y reportes.",
+      "manager": "Opera los pedidos y entregas de su sucursal y ve sus reportes.",
+      "kitchen": "Ve el tablero de su sucursal y avanza los estados de preparación."
+    },
+    "permissions": {
+      "dashboard": "Ver panel general",
+      "orders": {
+        "accept": "Aceptar y rechazar pedidos",
+        "status": "Cambiar estados de preparación",
+        "dispatch": "Solicitar repartidor PedidosYa"
+      },
+      "products": {
+        "edit": "Crear y editar productos",
+        "availability": "Cambiar disponibilidad"
+      },
+      "promotions": "Gestionar promociones",
+      "branches": "Gestionar sucursales",
+      "users": "Gestionar usuarios",
+      "reports": "Ver reportes"
     },
     "nav": {
       "label": "Menú principal",

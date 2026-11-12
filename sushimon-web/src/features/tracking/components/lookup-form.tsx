@@ -95,7 +95,8 @@ export function LookupForm({
   const notFoundShown = lookup.isError
     ? isApiError(lookup.error) && lookup.error.status === 404
     : notFound;
-  const failed = lookup.isError && !notFoundShown;
+  const tooMany = lookup.isError && isApiError(lookup.error) && lookup.error.status === 429;
+  const failed = lookup.isError && !notFoundShown && !tooMany;
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -202,6 +203,12 @@ export function LookupForm({
             <div className="notice notice-warn mt-4">
               <TriangleAlert className="mt-0.5 h-[18px] w-[18px] flex-none" aria-hidden="true" />
               <div>{t('notFound')}</div>
+            </div>
+          ) : null}
+          {tooMany ? (
+            <div className="notice notice-warn mt-4">
+              <TriangleAlert className="mt-0.5 h-[18px] w-[18px] flex-none" aria-hidden="true" />
+              <div>{t('tooManyAttempts')}</div>
             </div>
           ) : null}
           {failed ? (

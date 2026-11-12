@@ -18,6 +18,7 @@ import {
   event,
   fail,
   findOrder,
+  isAwaitingPayment,
   isValidEmail,
   isValidPhone,
   normalizeOrderNumber,
@@ -183,10 +184,33 @@ export const createOrder: Handler = (req): Order => {
     history: [event(at, 'order', 'received')],
     incidents: [],
   };
+  cancelAbandonedCardOrders(req, order, at);
   req.store.orders.unshift(order);
   req.store.verifiedOrderIds.push(order.id);
   return order;
 };
+
+/**
+ * Un pedido con tarjeta que nunca se pagó (rechazo, diálogo cerrado) queda abandonado cuando el mismo
+ * cliente y sesión crean otro pedido (p. ej. cambia a efectivo): se cancela para no dejar huérfanos
+ * en el store. En la API real lo haría el servidor (expiración/cancelación de pedidos sin pago).
+ */
+function cancelAbandonedCardOrders(req: Req, fresh: Order, at: Date) {
+  for (const o of req.store.orders) {
+    if (
+      o.status !== 'received' ||
+      !isAwaitingPayment(o) ||
+      !req.store.verifiedOrderIds.includes(o.id) ||
+      phoneKey(o.customer.phone) !== phoneKey(fresh.customer.phone)
+    ) {
+      continue;
+    }
+    o.status = 'cancelled';
+    o.rejectionReason = 'Pago con tarjeta no completado';
+    o.history.push(event(at, 'order', 'cancelled', { reason: o.rejectionReason }));
+    touch(o, at);
+  }
+}
 
 /** GET /v1/orders/:id */
 export const getOrder: Handler = (req) => {
@@ -195,14 +219,26 @@ export const getOrder: Handler = (req) => {
   return order;
 };
 
-/** POST /v1/orders/lookup — mismo 404 si no existe o el teléfono no coincide. */
+const LOOKUP_MAX_FAILURES = 5;
+const LOOKUP_NOT_FOUND = 'No encontramos un pedido con esos datos';
+
+/**
+ * POST /v1/orders/lookup — mismo 404 si no existe o el teléfono no coincide.
+ * Anti fuerza bruta: tras 5 intentos fallidos para el mismo número de pedido responde 429 con el
+ * mismo mensaje genérico (existan o no el pedido). Un acierto NO resetea el contador.
+ * Nota: en el mock el contador vive en el store (`lookupFailures`). La API real debe limitar por IP
+ * Y por pedido (ventana de tiempo, p. ej. en Redis/tabla), no solo por pedido.
+ */
 export const lookupOrder: Handler = (req) => {
   const b = body<OrderLookupRequest>(req);
   const id = normalizeOrderNumber(str(b.orderNumber));
   const phone = str(b.phone);
+  const failures = (req.store.lookupFailures ??= {});
+  if ((failures[id] ?? 0) >= LOOKUP_MAX_FAILURES) fail(429, LOOKUP_NOT_FOUND);
   const order = req.store.orders.find((o) => o.id === id);
   if (!order || digits(phone).length < 8 || phoneKey(order.customer.phone) !== phoneKey(phone)) {
-    fail(404, 'No encontramos un pedido con esos datos');
+    failures[id] = (failures[id] ?? 0) + 1;
+    fail(404, LOOKUP_NOT_FOUND);
   }
   if (!req.store.verifiedOrderIds.includes(order.id)) req.store.verifiedOrderIds.push(order.id);
   settleReviews(req, [order]);

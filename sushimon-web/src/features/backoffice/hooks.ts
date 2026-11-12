@@ -55,7 +55,7 @@ function useStaffEnabled() {
 }
 
 interface PollOptions {
-  /** ms; p. ej. 15_000 para el tablero de pedidos. */
+  /** ms; p. ej. 30_000 para el tablero de pedidos. */
   refetchInterval?: number;
 }
 

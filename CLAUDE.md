@@ -10,8 +10,10 @@ Monorepo pnpm con dos apps y un paquete de contratos:
 | `packages/contracts` | OpenAPI canónico + tipos TS generados (`pnpm contracts:generate`)                            |
 | `docs/`, `specs/`    | Arquitectura, ADRs, referencias, especificaciones (Spec Kit)                                 |
 
-Estado real: **Etapa 0 (bootstrap)**. Solo existe `GET /v1/health`. Todo lo demás está en los
-prototipos o en planes. Lee `docs/architecture/overview.md` para el mapa completo.
+Estado real: **Etapa 1 (UI First) completada con datos simulados** en `sushimon-web` (tienda +
+backoffice, estado `MOCK_ONLY`). La API solo tiene `GET /v1/health`; el resto de endpoints están
+planificados en `docs/contracts/planned-endpoints.md`. Lee `docs/architecture/overview.md` para el
+mapa completo.
 
 ## Fuentes de verdad (no se editan)
 

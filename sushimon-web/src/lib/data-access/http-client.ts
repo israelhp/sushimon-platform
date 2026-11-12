@@ -13,6 +13,10 @@ export function createHttpClient(baseUrl: string, fetchImpl: typeof fetch = fetc
     const { method = 'GET', query, body, signal } = options;
     const qs = toSearchParams(query).toString();
     let res: Response;
+    // TODO(Etapa 3, auth): definir `credentials` (hoy el valor por defecto es 'same-origin'; con la API en
+    // otro origen haría falta 'include' + CORS con `Access-Control-Allow-Credentials` y origen explícito,
+    // nunca '*'). Si la sesión va en cookie, exigir protección CSRF (SameSite + token/cabecera propia
+    // verificada en el servidor) en métodos que escriben. No guardar tokens en localStorage.
     try {
       res = await fetchImpl(`${baseUrl}${path}${qs ? `?${qs}` : ''}`, {
         method,

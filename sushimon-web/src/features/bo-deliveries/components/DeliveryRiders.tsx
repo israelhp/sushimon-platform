@@ -43,8 +43,8 @@ export function PeriodRiders({
                     width: 32,
                     height: 32,
                     fontSize: 11,
-                    background: 'var(--secondary)',
-                    color: 'var(--on-secondary)',
+                    background: 'var(--bo-secondary)',
+                    color: 'var(--bo-on-secondary)',
                   }}
                 >
                   <IconBike size="sm" />
@@ -137,8 +137,8 @@ export function OwnRiderCards({
                   style={{
                     width: 36,
                     height: 36,
-                    background: 'var(--primary-soft)',
-                    color: 'var(--primary)',
+                    background: 'var(--bo-primary-soft)',
+                    color: 'var(--bo-primary)',
                   }}
                 >
                   <IconShop size="sm" />

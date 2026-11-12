@@ -249,7 +249,7 @@ describe('pedidos y "Volver a pedir"', () => {
     const user = userEvent.setup();
     const view = await renderStore(<OrdersPage />);
     await signIn(view);
-    const link = await screen.findByRole('link', { name: /Ver detalle: ?MON-490217/ });
+    const link = await screen.findByRole('link', { name: /Pedido MON-490217, Ver detalle/ });
     expect(link).toHaveAttribute('href', '/pedidos/MON-490217');
     expect(screen.getByRole('tab', { name: /En curso/ })).toHaveAttribute('aria-selected', 'true');
     await user.click(screen.getByRole('tab', { name: /Historial/ }));

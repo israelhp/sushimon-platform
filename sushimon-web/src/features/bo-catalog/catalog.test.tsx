@@ -232,8 +232,13 @@ describe('Categorías', () => {
     expect(within(sw().closest('.crow') as HTMLElement).getByText('Oculta')).toBeVisible();
 
     await userEvent.click(screen.getByRole('button', { name: 'Agregar' }));
-    expect(await screen.findByText('Escribe el nombre de la categoría')).toBeVisible();
-    expect(screen.getByRole('textbox', { name: 'Nombre de la nueva categoría' })).toHaveFocus();
+    // Error visible y asociado al campo (no solo toast).
+    const nameError = await screen.findByRole('alert');
+    expect(nameError).toHaveTextContent('Escribe el nombre de la categoría');
+    const nameInput = screen.getByRole('textbox', { name: 'Nombre de la nueva categoría' });
+    expect(nameInput).toHaveFocus();
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
+    expect(nameInput).toHaveAttribute('aria-describedby', nameError.id);
 
     await userEvent.type(
       screen.getByRole('textbox', { name: 'Nombre de la nueva categoría' }),

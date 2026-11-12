@@ -19,9 +19,11 @@ documentación incluida en `node_modules/next/dist/docs/` antes de usar APIs de 
   `bg-primary`, `bg-accent`); claro/oscuro; sin colores hex sueltos. Fidelidad a los prototipos
   (`docs/ui/design-system.md`), sin copiar su código.
 - **Accesibilidad**: HTML semántico, foco visible, etiquetas en controles, contraste AA, teclado completo.
-- **i18n**: es/en desde el inicio (textos fuera de componentes). Librería por decidir (ADR-0005).
+- **i18n**: `next-intl` sin prefijo en la URL (cookie `NEXT_LOCALE`, ADR-0005). Mensajes en
+  `src/i18n/messages/{es,en}.json`; el backoffice vive en el espacio `backoffice` y se muestra solo en español.
 - **Seguridad**: nada de secretos en `NEXT_PUBLIC_*`; `localStorage` solo para preferencias (tema/idioma),
   nunca autenticación/autorización; el backoffice oculta UI por permiso pero **la API decide**.
-- **Pruebas**: Vitest para lógica (`*.test.ts`); Playwright (E2E) se incorpora con las primeras pantallas.
+- **Pruebas**: Vitest (`*.test.ts` en node, `*.test.tsx` en jsdom); Playwright en `e2e/` (flujos, axe) y
+  `e2e/visual/` (comparación contra los prototipos con `harness.ts`, red bloqueada; es un reporte, no un gate).
 
-Comandos: `pnpm --filter sushimon-web {dev|build|test|lint|typecheck}`.
+Comandos: `pnpm --filter sushimon-web {dev|build|test|lint|typecheck|test:e2e|test:visual|capture:prototypes}`.

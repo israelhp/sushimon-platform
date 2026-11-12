@@ -18,11 +18,14 @@ export const NOW_TICK_MS = 60_000;
 export function useNow(): Date | null {
   const client = useDataClient();
   const query = useQuery({
-    queryKey: queryKeys.store.config,
-    queryFn: () => getStoreConfig(client),
+    // Clave propia y ligera: solo guarda la hora (string), así no pisa el `staleTime` de la query completa
+    // de `StoreConfig` ni re-renderiza a quien solo necesita la hora cuando cambia otro campo de config.
+    // Todos los consumidores comparten esta query (un único fetch por tick).
+    queryKey: queryKeys.store.serverTime,
+    queryFn: async () => (await getStoreConfig(client)).serverTime,
     staleTime: NOW_TICK_MS,
     refetchInterval: NOW_TICK_MS,
   });
-  const serverTime = query.data?.serverTime;
+  const serverTime = query.data;
   return useMemo(() => (serverTime ? new Date(serverTime) : null), [serverTime]);
 }

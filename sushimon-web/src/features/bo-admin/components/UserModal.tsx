@@ -11,7 +11,6 @@ import { useSaveUser } from '@/features/backoffice/hooks';
 import { errorMessage } from '@/features/bo-orders/error-message';
 import { cn } from '@/lib/cn';
 import type { Branch, StaffUser } from '@/lib/data-access/models';
-import { PERMISSION_LABEL, ROLE_LABEL } from '@/lib/permissions';
 import {
   ALL_PERMISSIONS,
   ROLE_ORDER,
@@ -43,6 +42,8 @@ export interface UserModalProps {
 export function UserModal({ user, branches, isSelf = false, onClose }: UserModalProps) {
   const t = useTranslations('backoffice.users.modal');
   const tu = useTranslations('backoffice.users');
+  const tr = useTranslations('backoffice.roles');
+  const tp = useTranslations('backoffice.permissions');
   const toast = useToast();
   const save = useSaveUser();
   const firstBranchId = branches[0]?.id ?? '';
@@ -148,7 +149,7 @@ export function UserModal({ user, branches, isSelf = false, onClose }: UserModal
               zone="bo"
               label={t('roleGroup')}
               value={values.role}
-              options={ROLE_ORDER.map((r) => ({ value: r, label: ROLE_LABEL[r] }))}
+              options={ROLE_ORDER.map((r) => ({ value: r, label: tr(r) }))}
               onChange={(role) => {
                 setValues((v) => withRole(v, role, firstBranchId));
                 clear();
@@ -206,7 +207,7 @@ export function UserModal({ user, branches, isSelf = false, onClose }: UserModal
                   onClick={() => patch({ permissions: toggled(values.permissions, p) })}
                 >
                   <span className="box">{on ? <IconCheckBold size="sm" /> : null}</span>
-                  {PERMISSION_LABEL[p]}
+                  {tp(p)}
                 </button>
               );
             })}
@@ -219,7 +220,7 @@ export function UserModal({ user, branches, isSelf = false, onClose }: UserModal
           </Banner>
         ) : null}
         {bannerText ? (
-          <Banner zone="bo" tone="alert" role="alert" id={bannerId}>
+          <Banner zone="bo" tone="danger" role="alert" id={bannerId}>
             {bannerText}
           </Banner>
         ) : null}

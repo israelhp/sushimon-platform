@@ -33,6 +33,9 @@ import {
 
 const HM = /^\d{2}:\d{2}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_PRICE = 100_000;
+const MAX_NAME = 120;
+const MAX_DESCRIPTION = 600;
 
 const slug = (s: string) =>
   s
@@ -63,7 +66,16 @@ function parseAvailability(req: Req, value: unknown): BranchAvailability[] {
 
 function validateProduct(req: Req, p: ProductRecord) {
   if (!p.name.trim()) fail(400, 'Escribe el nombre del producto');
-  if (!(typeof p.price === 'number' && p.price > 0)) fail(400, 'Escribe un precio mayor a Q0.00');
+  if (p.name.length > MAX_NAME) fail(400, `El nombre admite hasta ${MAX_NAME} caracteres`);
+  if (p.nameEn && p.nameEn.length > MAX_NAME)
+    fail(400, `El nombre admite hasta ${MAX_NAME} caracteres`);
+  if (p.description.length > MAX_DESCRIPTION || (p.descriptionEn?.length ?? 0) > MAX_DESCRIPTION) {
+    fail(400, `La descripción admite hasta ${MAX_DESCRIPTION} caracteres`);
+  }
+  if (!(typeof p.price === 'number' && Number.isFinite(p.price) && p.price > 0)) {
+    fail(400, 'Escribe un precio mayor a Q0.00');
+  }
+  if (p.price > MAX_PRICE) fail(400, `El precio no puede superar Q${MAX_PRICE}`);
   if (!req.store.categories.some((c) => c.id === p.categoryId && c.kind === 'products')) {
     fail(422, 'Categoría inválida');
   }
@@ -201,8 +213,17 @@ function parsePromotion(input: Partial<PromotionInput>) {
   if (!str(input.name).trim()) fail(400, 'Escribe el nombre de la promoción');
   const kind = oneOf(input.kind, ['2x1', 'percent', 'fixed_price'] as const, 'kind');
   const value = Number(input.value ?? 0);
-  if (kind !== '2x1' && !(value > 0)) fail(400, 'Indica el descuento o precio especial');
+  if (str(input.name).length > MAX_NAME) fail(400, `El nombre admite hasta ${MAX_NAME} caracteres`);
+  if (str(input.description).length > MAX_DESCRIPTION) {
+    fail(400, `La descripción admite hasta ${MAX_DESCRIPTION} caracteres`);
+  }
+  if (kind !== '2x1' && !(Number.isFinite(value) && value > 0)) {
+    fail(400, 'Indica el descuento o precio especial');
+  }
   if (kind === 'percent' && value > 100) fail(400, 'El porcentaje no puede superar 100');
+  if (kind === 'fixed_price' && value > MAX_PRICE) {
+    fail(400, `El precio especial no puede superar Q${MAX_PRICE}`);
+  }
   const days = input.daysOfWeek;
   if (!Array.isArray(days) || days.length === 0) fail(400, 'Elige al menos un día');
   if (days.some((d) => !Number.isInteger(d) || d < 1 || d > 7)) fail(400, 'Día inválido');
@@ -304,7 +325,13 @@ export const updateBranch: Handler = (req): Branch => {
   if (b.hours !== undefined) {
     if (!Array.isArray(b.hours) || b.hours.length !== 7) fail(400, 'Horario inválido');
     for (const h of b.hours) {
-      if (!HM.test(h.open) || !HM.test(h.close) || (!h.closed && h.open >= h.close)) {
+      if (
+        !h ||
+        typeof h !== 'object' ||
+        !HM.test(str(h.open)) ||
+        !HM.test(str(h.close)) ||
+        (!h.closed && h.open >= h.close)
+      ) {
         fail(400, 'Horario inválido');
       }
     }
@@ -316,7 +343,9 @@ export const updateBranch: Handler = (req): Branch => {
     }));
   }
   if (b.coverage !== undefined) {
-    if (!Array.isArray(b.coverage)) fail(400, 'Cobertura inválida');
+    if (!Array.isArray(b.coverage) || b.coverage.some((r) => !r || typeof r !== 'object')) {
+      fail(400, 'Cobertura inválida');
+    }
     next.coverage = b.coverage.map((r) => ({
       department: str(r.department),
       municipality: str(r.municipality),
@@ -349,10 +378,16 @@ function parseUser(req: Req, input: Partial<StaffUserInput>, selfId?: string) {
   if (req.store.staff.some((u) => u.email === email && u.id !== selfId)) {
     fail(409, 'Ya existe un usuario con ese correo');
   }
+  const known: readonly string[] = ROLE_PERMISSIONS.admin;
+  if (
+    input.permissions !== undefined &&
+    (!Array.isArray(input.permissions) ||
+      input.permissions.some((p) => typeof p !== 'string' || !known.includes(p)))
+  ) {
+    fail(400, 'Permisos inválidos');
+  }
   const permissions =
-    input.permissions === undefined
-      ? permissionsFor(role)
-      : input.permissions.filter((p) => ROLE_PERMISSIONS.admin.includes(p));
+    input.permissions === undefined ? permissionsFor(role) : [...new Set(input.permissions)];
   return { name, email, role, branchId, permissions };
 }
 

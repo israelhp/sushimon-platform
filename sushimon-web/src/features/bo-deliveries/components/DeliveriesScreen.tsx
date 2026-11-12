@@ -39,7 +39,7 @@ import { DeliveriesTable } from './DeliveriesTable';
 import { OwnRiderCards, PeriodRiders } from './DeliveryRiders';
 
 /** Refresco de los envíos (el estado logístico simulado avanza desde el detalle del pedido). */
-export const DELIVERIES_REFRESH_MS = 15_000;
+export const DELIVERIES_REFRESH_MS = 30_000;
 
 /** Pantalla Entregas: periodo, filtros, indicadores, repartidores y tabla de envíos (PedidosYa SIMULADO). */
 export function DeliveriesScreen() {

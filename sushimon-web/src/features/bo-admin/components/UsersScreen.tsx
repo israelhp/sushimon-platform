@@ -17,13 +17,7 @@ import { avatarStyle, staffInitials } from '@/features/backoffice-shell/staff-di
 import { errorMessage, isForbidden } from '@/features/bo-orders/error-message';
 import { useDemoSession } from '@/features/session/demo-session';
 import type { StaffUser } from '@/lib/data-access/models';
-import {
-  PERMISSION_LABEL,
-  ROLE_DESCRIPTION,
-  ROLE_LABEL,
-  ROLE_PERMISSIONS,
-  can,
-} from '@/lib/permissions';
+import { ROLE_PERMISSIONS, can } from '@/lib/permissions';
 import {
   ALL_PERMISSIONS,
   ROLE_ORDER,
@@ -39,6 +33,9 @@ type ModalState = { mode: 'closed' } | { mode: 'new' } | { mode: 'edit'; user: S
 export function UsersScreen() {
   const t = useTranslations('backoffice.users');
   const tu = useTranslations('ui');
+  const tr = useTranslations('backoffice.roles');
+  const trd = useTranslations('backoffice.roleDescriptions');
+  const tp = useTranslations('backoffice.permissions');
   const toast = useToast();
   const { role, branches } = useShell();
   const { staff } = useDemoSession();
@@ -149,7 +146,7 @@ export function UsersScreen() {
                     </div>
                     <div role="cell">
                       <Pill zone="bo" tone={ROLE_PILL_TONE[user.role]}>
-                        {ROLE_LABEL[user.role]}
+                        {tr(user.role)}
                       </Pill>
                     </div>
                     <div className="hide-sm" role="cell">
@@ -191,18 +188,18 @@ export function UsersScreen() {
         {ROLE_ORDER.map((r) => (
           <section key={r} className="card">
             <div className="card-h">
-              <h2>{ROLE_LABEL[r]}</h2>
+              <h2>{tr(r)}</h2>
             </div>
             <div className="card-b" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div className="sm muted" style={{ fontWeight: 600 }}>
-                {ROLE_DESCRIPTION[r]}
+                {trd(r)}
               </div>
               <div className="ptags">
                 {ALL_PERMISSIONS.map((p) => {
                   const included = ROLE_PERMISSIONS[r].includes(p);
                   return (
                     <span key={p} className={included ? 'ptag' : 'ptag no'}>
-                      {PERMISSION_LABEL[p]}
+                      {tp(p)}
                       {included ? null : <span className="sr-only"> (no incluido)</span>}
                     </span>
                   );

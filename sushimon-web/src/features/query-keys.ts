@@ -9,6 +9,8 @@ import type { ReportFilters } from '@/services/backoffice-admin';
 export const queryKeys = {
   store: {
     config: ['store', 'config'] as const,
+    /** Solo la hora del servidor (reloj de la demo del backoffice): no comparte caché con `config`. */
+    serverTime: ['store', 'server-time'] as const,
     branches: ['store', 'branches'] as const,
     deliveryQuote: (args: DeliveryQuoteArgs) => ['store', 'delivery-quote', args] as const,
   },

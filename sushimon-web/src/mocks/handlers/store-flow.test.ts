@@ -241,6 +241,48 @@ describe('consulta, seguimiento e incidencias', () => {
     expect(wrongPhone).toMatchObject({ status: 404, message: missing.message });
   });
 
+  it('lookup: tras 5 fallos del mismo pedido responde 429 genérico, incluso con datos correctos', async () => {
+    const { client } = createHarness();
+    const wrong = { orderNumber: 'MON-490217', phone: '5555-0000' };
+    for (let i = 0; i < 5; i++) {
+      expect((await apiError(orders.lookupOrder(client, wrong))).status).toBe(404);
+    }
+    const blocked = await apiError(orders.lookupOrder(client, wrong));
+    expect(blocked).toMatchObject({ status: 429, code: 'too_many_requests' });
+    expect(blocked.message).toBe('No encontramos un pedido con esos datos');
+    // Con el teléfono correcto tampoco se revela nada una vez bloqueado.
+    const right = await apiError(
+      orders.lookupOrder(client, { orderNumber: 'MON-490217', phone: '5555-1234' }),
+    );
+    expect(right.status).toBe(429);
+  });
+
+  it('lookup: el bloqueo es por pedido (otro número sigue en 404) y un acierto no resetea', async () => {
+    const { client } = createHarness();
+    for (let i = 0; i < 3; i++) {
+      await apiError(orders.lookupOrder(client, { orderNumber: 'MON-490217', phone: '5555-0000' }));
+    }
+    // Acierto del mismo pedido: no resetea los 3 fallos previos.
+    await orders.lookupOrder(client, { orderNumber: 'MON-490217', phone: '5555-1234' });
+    await apiError(orders.lookupOrder(client, { orderNumber: 'MON-490217', phone: '5555-0000' }));
+    await apiError(orders.lookupOrder(client, { orderNumber: 'MON-490217', phone: '5555-0000' }));
+    expect(
+      (
+        await apiError(
+          orders.lookupOrder(client, { orderNumber: 'MON-490217', phone: '5555-0000' }),
+        )
+      ).status,
+    ).toBe(429);
+    // Pedido inexistente: cuenta igual y no revela existencia.
+    expect(
+      (
+        await apiError(
+          orders.lookupOrder(client, { orderNumber: 'MON-000001', phone: '5555-1234' }),
+        )
+      ).status,
+    ).toBe(404);
+  });
+
   it('el dueño con sesión ve sus pedidos', async () => {
     const h = createHarness();
     h.asCustomer();
@@ -372,5 +414,27 @@ describe('pago con tarjeta (NeoNet simulado)', () => {
     expect((await pay(p.h, p.order.id, '4242424242424242')).status).toBe('review');
     p.h.clock.advance(60_000);
     expect((await orders.getOrder(p.h.client, p.order.id)).payment.status).toBe('review');
+  });
+
+  it('pago rechazado y cambio a efectivo: el pedido con tarjeta previo se cancela (sin huérfanos)', async () => {
+    const { h, order } = await cardOrder('payment-rejected');
+    expect((await pay(h, order.id, '4242424242424242')).status).toBe('declined');
+    const cash = await orders.createOrder(h.client, deliveryOrder({ paymentMethod: 'cash' }));
+    const stale = h.store.orders.find((o) => o.id === order.id);
+    expect(stale).toMatchObject({ status: 'cancelled' });
+    expect(stale?.history.at(-1)).toMatchObject({ kind: 'order', status: 'cancelled' });
+    // El nuevo pedido en efectivo sigue vivo y no se toca.
+    expect(h.store.orders.find((o) => o.id === cash.id)?.status).toBe('received');
+    // Ya no admite pago.
+    expect((await apiError(pay(h, order.id, '4242424242424242'))).status).toBe(409);
+  });
+
+  it('un pedido de otro cliente con tarjeta pendiente no se cancela', async () => {
+    const { h, order } = await cardOrder();
+    await orders.createOrder(
+      h.client,
+      deliveryOrder({ customer: { ...customer, phone: '5555-9999' }, paymentMethod: 'cash' }),
+    );
+    expect(h.store.orders.find((o) => o.id === order.id)?.status).toBe('received');
   });
 });

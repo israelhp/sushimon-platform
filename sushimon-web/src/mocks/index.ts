@@ -5,7 +5,13 @@ import { createBrowserClock, type Clock } from './clock';
 import { mockRoutes } from './handlers';
 import type { MockScenario } from './scenarios';
 import { createSeedStore } from './seed';
-import { loadPersistedStore, persistStore, type MockContext, type MockStore } from './store';
+import {
+  flushPersist,
+  loadPersistedStore,
+  persistStore,
+  type MockContext,
+  type MockStore,
+} from './store';
 
 export { mockRoutes } from './handlers';
 export { createSeedStore } from './seed';
@@ -69,5 +75,6 @@ export function resetMockStore(scenario: MockScenario): MockStore {
   const store = createSeedStore(scenario);
   tabStores.set(scenario, store);
   persistStore(store);
+  flushPersist(); // el reinicio suele seguirse de una recarga
   return store;
 }

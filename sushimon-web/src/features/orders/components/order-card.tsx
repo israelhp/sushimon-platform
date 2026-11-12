@@ -60,7 +60,7 @@ export function OrderCard({ order, onReorder }: { order: Order; onReorder?: () =
           <span className="mt-2 flex flex-wrap items-center gap-1.5">
             <OrderStatusChip order={order} />
             {order.payment.method === 'card' ? (
-              <span className="rounded-full bg-subtle px-2.5 py-1 text-[12px] font-bold text-muted">
+              <span className="rounded-full bg-subtle px-2.5 py-1 text-[12px] font-bold text-fg">
                 NeoNet
               </span>
             ) : null}
@@ -82,6 +82,7 @@ export function OrderCard({ order, onReorder }: { order: Order; onReorder?: () =
           <button
             type="button"
             onClick={onReorder}
+            aria-label={`${t('again')}: ${order.id}`}
             className="inline-flex min-h-[46px] flex-1 items-center justify-center gap-2 text-[14px] font-extrabold text-primary hover:bg-primary-soft"
           >
             <RotateCcw className="h-4 w-4" aria-hidden="true" /> {t('again')}

@@ -14,6 +14,9 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
+  // `next dev` compila rutas bajo demanda: pocos workers en CI evitan timeouts en frío.
+  workers: process.env.CI ? 2 : undefined,
+  timeout: 60_000,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : [['list']],
   use: {
     baseURL,
