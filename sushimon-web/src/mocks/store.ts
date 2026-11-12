@@ -50,9 +50,10 @@ export interface MockStore {
   verifiedOrderIds: string[];
   /**
    * Intentos fallidos de `POST /v1/orders/lookup` por número de pedido normalizado (existan o no,
-   * para no revelar existencia). Opcional: los stores persistidos antes de este campo no lo traen.
+   * para no revelar existencia), con la hora del último fallo para levantar el bloqueo tras la
+   * ventana. Opcional: los stores persistidos antes de este campo no lo traen.
    */
-  lookupFailures?: Record<string, number>;
+  lookupFailures?: Record<string, { count: number; lastAt: number }>;
   /** Diferencia costo courier − envío cobrado por pedido (para cotizar PedidosYa simulado). */
   courierSurcharges: Record<string, number>;
   /** Historial generado deshabilitado (escenario `empty`). */

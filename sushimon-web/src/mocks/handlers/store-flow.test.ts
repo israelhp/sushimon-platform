@@ -257,6 +257,20 @@ describe('consulta, seguimiento e incidencias', () => {
     expect(right.status).toBe(429);
   });
 
+  it('lookup: el bloqueo 429 se levanta a los 60 s del último fallo (la demo no queda sin salida)', async () => {
+    const { client, clock } = createHarness();
+    const wrong = { orderNumber: 'MON-490217', phone: '5555-0000' };
+    for (let i = 0; i < 5; i++) await apiError(orders.lookupOrder(client, wrong));
+    expect((await apiError(orders.lookupOrder(client, wrong))).status).toBe(429);
+    // Antes de la ventana sigue bloqueado, incluso con el teléfono correcto.
+    clock.advance(59_000);
+    const right = { orderNumber: 'MON-490217', phone: '5555-1234' };
+    expect((await apiError(orders.lookupOrder(client, right))).status).toBe(429);
+    // Pasada la ventana (60 s desde el último intento fallido) vuelve a funcionar.
+    clock.advance(61_000);
+    await expect(orders.lookupOrder(client, right)).resolves.toMatchObject({ id: 'MON-490217' });
+  });
+
   it('lookup: el bloqueo es por pedido (otro número sigue en 404) y un acierto no resetea', async () => {
     const { client } = createHarness();
     for (let i = 0; i < 3; i++) {

@@ -220,6 +220,8 @@ export const getOrder: Handler = (req) => {
 };
 
 const LOOKUP_MAX_FAILURES = 5;
+/** El bloqueo se levanta si pasan 60 s (reloj de la demo) desde el último intento fallido. */
+const LOOKUP_WINDOW_MS = 60_000;
 const LOOKUP_NOT_FOUND = 'No encontramos un pedido con esos datos';
 
 /**
@@ -234,10 +236,16 @@ export const lookupOrder: Handler = (req) => {
   const id = normalizeOrderNumber(str(b.orderNumber));
   const phone = str(b.phone);
   const failures = (req.store.lookupFailures ??= {});
-  if ((failures[id] ?? 0) >= LOOKUP_MAX_FAILURES) fail(429, LOOKUP_NOT_FOUND);
+  const at = now(req).getTime();
+  // Un store persistido antes de la ventana guardaba solo el número de fallos: se descarta.
+  const previous = failures[id];
+  const entry =
+    typeof previous === 'object' && at - previous.lastAt < LOOKUP_WINDOW_MS ? previous : undefined;
+  if (!entry && previous !== undefined) delete failures[id];
+  if ((entry?.count ?? 0) >= LOOKUP_MAX_FAILURES) fail(429, LOOKUP_NOT_FOUND);
   const order = req.store.orders.find((o) => o.id === id);
   if (!order || digits(phone).length < 8 || phoneKey(order.customer.phone) !== phoneKey(phone)) {
-    failures[id] = (failures[id] ?? 0) + 1;
+    failures[id] = { count: (entry?.count ?? 0) + 1, lastAt: at };
     fail(404, LOOKUP_NOT_FOUND);
   }
   if (!req.store.verifiedOrderIds.includes(order.id)) req.store.verifiedOrderIds.push(order.id);
