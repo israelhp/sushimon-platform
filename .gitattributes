@@ -1,0 +1,3 @@
+# Normaliza finales de línea: el repo siempre guarda LF, sin importar el sistema operativo
+# (Windows con core.autocrlf=true o macOS/Linux). Evita diffs fantasma y fallos de prettier.
+* text=auto eol=lf
