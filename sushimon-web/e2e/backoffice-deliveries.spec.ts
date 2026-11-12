@@ -30,8 +30,16 @@ async function advanceToEnd(page: Page, drawerName: RegExp) {
   const advance = drawer.getByRole('button', {
     name: /Avanzar estado logístico|Marcar como entregado|Marcar salida/,
   });
+  // El mock tarda ~150 ms por solicitud y cada avance hace dos (acción + refetch): el botón tarda
+  // ~300 ms en actualizarse. En el último paso el botón desaparece entre `count()` y `click()`; en ese
+  // caso el flujo terminó. Si el clic falla y el botón SIGUE ahí, es un fallo real y se relanza.
   for (let i = 0; i < 6 && (await advance.count()) > 0; i += 1) {
-    await advance.first().click();
+    try {
+      await advance.first().click({ timeout: 5_000 });
+    } catch (error) {
+      if ((await advance.count()) === 0) break;
+      throw error;
+    }
     await page.waitForTimeout(150);
   }
   await expect(advance).toHaveCount(0);

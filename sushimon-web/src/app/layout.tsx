@@ -23,7 +23,9 @@ export const viewport: Viewport = { themeColor: THEME_COLORS.light };
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const locale = await getLocale();
   return (
-    <html lang={locale} suppressHydrationWarning>
+    // `data-scroll-behavior`: Next desactiva el scroll suave solo durante las transiciones de ruta
+    // (store.css usa `scroll-behavior: smooth` en <html>).
+    <html lang={locale} data-scroll-behavior="smooth" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
