@@ -121,7 +121,13 @@ export function CareersPage() {
     const first = APPLICATION_FIELD_ORDER.find((f) => found[f]);
     if (first || !cv) {
       notify(t('fixFields'));
-      requestAnimationFrame(() => document.getElementById(FIELD_ID[first ?? 'cv'])?.focus());
+      // El foco va al primer campo inválido en el siguiente frame, salvo que el usuario ya lo haya
+      // movido (p. ej. con un enlace del resumen de errores): un frame tardío no debe quitárselo.
+      const focusAtSubmit = document.activeElement;
+      requestAnimationFrame(() => {
+        if (document.activeElement !== focusAtSubmit) return;
+        document.getElementById(FIELD_ID[first ?? 'cv'])?.focus();
+      });
       return;
     }
     submit.mutate(toApplicationRequest(values, cv), {

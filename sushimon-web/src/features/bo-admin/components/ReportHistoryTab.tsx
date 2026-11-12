@@ -581,7 +581,7 @@ function GroupRows({ group, today, sort, multiDay, onFocusDay, onOpen }: GroupRo
 
   const label = group.day
     ? group.day === today
-      ? t('dayToday', { day: dayLong(group.day) })
+      ? t('dayTodayLong', { day: dayLong(group.day) })
       : dayLong(group.day)
     : sort === 'mayor'
       ? t('sortedHigh')

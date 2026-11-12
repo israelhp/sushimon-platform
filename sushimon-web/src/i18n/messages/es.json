@@ -1640,7 +1640,7 @@
         "colProducts": "Productos",
         "colTotal": "Total",
         "colStatus": "Estado",
-        "dayToday": "{day} · hoy",
+        "dayTodayLong": "{day} · hoy",
         "daySub": "{count} pedidos · {sales} en ventas",
         "daySubCancelled": "{count} pedidos · {sales} en ventas · {cancelled} cancelados",
         "dayFocus": "Ver solo este día",

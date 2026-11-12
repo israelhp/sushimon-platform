@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { renderStore } from '@/test/store-providers';
 import { CareersPage } from './CareersPage';
 
@@ -11,6 +11,8 @@ beforeAll(() => {
 });
 
 // El campo de archivo acepta solo PDF; la prueba adjunta también otros tipos para validar el mensaje.
+afterEach(() => vi.unstubAllGlobals());
+
 const setup = () => userEvent.setup({ applyAccept: false });
 const pdf = () => new File(['%PDF-1.4'], 'CV-Ana.pdf', { type: 'application/pdf' });
 
@@ -56,7 +58,23 @@ describe('Trabaja con nosotros', () => {
     await renderStore(<CareersPage />);
     await user.click(screen.getByRole('button', { name: 'Enviar postulación' }));
     const summary = await screen.findByRole('alert');
+    await waitFor(() => expect(screen.getByLabelText('Nombre completo *')).toHaveFocus());
     await user.click(within(summary).getByRole('link', { name: 'Ingresá un correo válido.' }));
+    expect(screen.getByLabelText('Correo electrónico *')).toHaveFocus();
+  });
+
+  it('un frame tardío no le quita el foco al campo que el usuario ya eligió (regresión CI)', async () => {
+    // Frames controlados a mano: simula un runner lento donde el frame que enfoca el primer
+    // campo inválido llega DESPUÉS de que el usuario ya pulsó un enlace del resumen.
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb));
+    const user = setup();
+    await renderStore(<CareersPage />);
+    await user.click(screen.getByRole('button', { name: 'Enviar postulación' }));
+    const summary = await screen.findByRole('alert');
+    await user.click(within(summary).getByRole('link', { name: 'Ingresá un correo válido.' }));
+    expect(screen.getByLabelText('Correo electrónico *')).toHaveFocus();
+    frames.splice(0).forEach((cb) => cb(0)); // llega el frame pendiente del envío
     expect(screen.getByLabelText('Correo electrónico *')).toHaveFocus();
   });
 
