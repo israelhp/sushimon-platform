@@ -18,6 +18,7 @@ test('no marca configuración legítima', () => {
     'DATABASE_URL=postgresql://user:pass@localhost:5432/db',
     'const password = process.env.X',
     "api_key: '<tu-clave>'",
+    'secret = "env(SUPABASE_AUTH_EXTERNAL_APPLE_SECRET)"',
   ]) {
     assert.equal(scanText(s).length, 0, s);
   }

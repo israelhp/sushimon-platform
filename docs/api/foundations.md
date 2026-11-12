@@ -37,6 +37,23 @@ CORS por lista (`CORS_ORIGINS`, sin `*` en producción) · `helmet` · rate limi
 (`RATE_LIMIT_TTL_MS`/`RATE_LIMIT_MAX`; **por instancia**, no global exacto en serverless) · `TRUST_PROXY_HOPS`
 para IP real tras proxy · `/health/ready` con `x-health-token` comparado en tiempo constante.
 
+## Supabase local (recomendado para desarrollar)
+
+Requiere Docker. La CLI es una devDependency (`supabase`); la configuración está en `supabase/config.toml`
+(puertos 54341–54349 para no chocar con otros proyectos Supabase locales; sin realtime, storage ni analytics;
+pooler de transacciones activo para imitar producción).
+
+1. `pnpm db:local:start` (la primera vez descarga varios GB de imágenes).
+2. Crear `sushimon-api/.env` con los valores del bloque «Supabase LOCAL» de `.env.example`
+   (`DATABASE_URL` por el pooler 54349, `DIRECT_URL` directa 54342) y un `HEALTH_READY_TOKEN`.
+3. `pnpm db:local:migrate` con las variables cargadas (crea el esquema `app`; requiere aprobación humana).
+4. `pnpm dev:api` y `curl -H "x-health-token: <token>" localhost:3001/v1/health/ready`.
+5. `pnpm db:local:stop` al terminar.
+
+Studio <http://127.0.0.1:54343> · API <http://127.0.0.1:54341> · Mailpit <http://127.0.0.1:54344>.
+Las migraciones de la aplicación viven en `sushimon-api/prisma/migrations` (Prisma); `supabase/migrations`
+queda vacío a propósito para no tener dos fuentes de verdad.
+
 ## Pendiente
 
 Supabase real (credenciales + autorización), logging JSON/observabilidad, rate limit distribuido, auth.
