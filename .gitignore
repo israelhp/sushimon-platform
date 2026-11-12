@@ -30,3 +30,6 @@ playwright/.cache/
 
 # Extracción de prototipos (regenerable con scripts/prototype-extract.mjs)
 docs/ui/extracted/
+
+# Cliente Prisma generado (pnpm --filter sushimon-api prisma:generate)
+sushimon-api/src/generated/

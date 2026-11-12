@@ -1,0 +1,12 @@
+// Esquema Prisma de Sushi Mon. La línea base relacional es docs/references/monsushi_dbdiagram.dbml
+// (esquema PostgreSQL `app`). Los modelos se agregan por vertical slice, con su migración y revisión
+// del database-engineer. F00 solo crea el esquema `app` y verifica la conexión.
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["app"]
+}

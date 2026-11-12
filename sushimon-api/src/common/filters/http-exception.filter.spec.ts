@@ -1,8 +1,10 @@
 import { BadRequestException, Logger, type ArgumentsHost } from '@nestjs/common';
 import { AllExceptionsFilter } from './http-exception.filter.js';
 
-function hostWith(res: unknown): ArgumentsHost {
-  return { switchToHttp: () => ({ getResponse: () => res }) } as unknown as ArgumentsHost;
+function hostWith(res: unknown, id?: string): ArgumentsHost {
+  return {
+    switchToHttp: () => ({ getResponse: () => res, getRequest: () => ({ id }) }),
+  } as unknown as ArgumentsHost;
 }
 
 function fakeRes() {
@@ -19,6 +21,21 @@ describe('AllExceptionsFilter', () => {
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ statusCode: 400, message: 'dato inválido' }),
     );
+  });
+
+  it('incluye requestId y details de validación', () => {
+    const res = fakeRes();
+    new AllExceptionsFilter().catch(
+      new BadRequestException(['name must be a string', 'qty must be positive']),
+      hostWith(res, 'req-12345678'),
+    );
+    expect(res.json).toHaveBeenCalledWith({
+      statusCode: 400,
+      error: 'BAD_REQUEST',
+      message: 'Solicitud inválida',
+      requestId: 'req-12345678',
+      details: ['name must be a string', 'qty must be positive'],
+    });
   });
 
   it('oculta el detalle de errores inesperados', () => {

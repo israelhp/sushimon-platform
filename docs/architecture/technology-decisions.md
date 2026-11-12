@@ -17,9 +17,9 @@ Verificadas el 2026-11-11 contra npm/GitHub; las versiones exactas quedan fijada
 
 ## Pendientes de decisión
 
-| ADR  | Tema                                                                                                                                                                              |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0003 | ORM: Prisma (preferido) vs. SQL/otro. **No instalado**: `prisma` en npm `latest` apunta hoy a un RC 8.0 y el cliente estable es 7.x; decidir en el primer slice con base de datos |
-| 0004 | Modelo de caché de Next (`cacheComponents`)                                                                                                                                       |
-| 0005 | Librería i18n (es/en)                                                                                                                                                             |
-| 0006 | Host de la API (por evaluar contra límites y modelo de ejecución oficiales vigentes; no asumido)                                                                                  |
+| ADR  | Tema                                                                                               |
+| ---- | -------------------------------------------------------------------------------------------------- |
+| 0003 | ORM: **Prisma 7.10.1** + `@prisma/adapter-pg` (aceptada en F00; ver `docs/adr/0003-orm-prisma.md`) |
+| 0004 | Modelo de caché de Next (`cacheComponents`)                                                        |
+| 0005 | Librería i18n (es/en)                                                                              |
+| 0006 | Host de la API (por evaluar contra límites y modelo de ejecución oficiales vigentes; no asumido)   |

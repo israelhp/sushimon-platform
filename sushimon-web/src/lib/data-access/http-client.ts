@@ -1,3 +1,4 @@
+import type { components } from '@sushimon/contracts';
 import { ApiError, codeForStatus } from './errors';
 import { toSearchParams, withShortcuts, type DataClient, type RequestOptions } from './types';
 
@@ -30,12 +31,20 @@ export function createHttpClient(baseUrl: string, fetchImpl: typeof fetch = fetc
       throw new ApiError(0, 'offline', `${method} ${path} → sin conexión`);
     }
     if (!res.ok) {
-      const payload = (await res.json().catch(() => null)) as { message?: unknown } | null;
+      const payload = (await res.json().catch(() => null)) as Partial<
+        components['schemas']['ErrorResponse']
+      > | null;
       const message =
         typeof payload?.message === 'string'
           ? payload.message
           : `${method} ${path} → ${res.status}`;
-      throw new ApiError(res.status, codeForStatus(res.status), message);
+      throw new ApiError(
+        res.status,
+        codeForStatus(res.status),
+        message,
+        payload?.requestId ?? res.headers.get('x-request-id') ?? undefined,
+        Array.isArray(payload?.details) ? payload.details : undefined,
+      );
     }
     if (res.status === 204) return undefined as T;
     return (await res.json()) as T;

@@ -20,6 +20,10 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: ApiErrorCode,
     message: string,
+    /** Id de la solicitud (cabecera X-Request-Id / ErrorResponse.requestId) para soporte y trazas. */
+    readonly requestId?: string,
+    /** Mensajes de validación por campo (ErrorResponse.details, solo en 400). */
+    readonly details?: readonly string[],
   ) {
     super(message);
     this.name = 'ApiError';
