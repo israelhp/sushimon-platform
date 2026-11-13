@@ -590,7 +590,15 @@
     "viaGoogle": "Google",
     "promptTitle": "Sign in with Google",
     "promptText": "Track your orders, see your history and make claims faster. It’s optional.",
-    "notNow": "Not now"
+    "notNow": "Not now",
+    "googleRedirecting": "Redirecting to Google…",
+    "sessionExpired": "Your session expired. Please sign in again.",
+    "errorProvider": "Google sign-in could not be completed. Please try again.",
+    "errorExchange": "Your session could not be validated. Please try again.",
+    "errorNotConfigured": "Sign-in is not configured in this environment.",
+    "errorMissingCode": "Sign-in was not completed. Please try again.",
+    "privacyReal": "You sign in with Google. We never store your Google password.",
+    "loadingSession": "Checking your session…"
   },
   "account": {
     "title": "My account",
@@ -606,7 +614,9 @@
     "startOrder": "Place an order",
     "orders": "{a, plural, one {# order} other {# orders}}",
     "spent": "Total ordered",
-    "demoData": "Sample orders from the test account"
+    "demoData": "Sample orders from the test account",
+    "realModulesPending": "Your orders, addresses and favorites will appear here once those modules are connected to the API.",
+    "realProfile": "Signed in with Google"
   },
   "orders": {
     "order": "Order",
@@ -1030,13 +1040,34 @@
       "activate": "Activar {name}",
       "months": "ene,feb,mar,abr,may,jun,jul,ago,sep,oct,nov,dic",
       "days": {
-        "1": { "short": "L", "full": "Lunes" },
-        "2": { "short": "M", "full": "Martes" },
-        "3": { "short": "M", "full": "Miércoles" },
-        "4": { "short": "J", "full": "Jueves" },
-        "5": { "short": "V", "full": "Viernes" },
-        "6": { "short": "S", "full": "Sábado" },
-        "7": { "short": "D", "full": "Domingo" }
+        "1": {
+          "short": "L",
+          "full": "Lunes"
+        },
+        "2": {
+          "short": "M",
+          "full": "Martes"
+        },
+        "3": {
+          "short": "M",
+          "full": "Miércoles"
+        },
+        "4": {
+          "short": "J",
+          "full": "Jueves"
+        },
+        "5": {
+          "short": "V",
+          "full": "Viernes"
+        },
+        "6": {
+          "short": "S",
+          "full": "Sábado"
+        },
+        "7": {
+          "short": "D",
+          "full": "Domingo"
+        }
       },
       "toast": {
         "on": "{name} activada",
@@ -1175,7 +1206,17 @@
       "unknownUser": "No encontramos un usuario interno activo con ese correo (demostración).",
       "demoNotice": "Demostración: no se envía ninguna contraseña. El acceso real validará usuario interno, rol y sucursal en el servidor.",
       "themeToDark": "Cambiar a tema oscuro",
-      "themeToLight": "Cambiar a tema claro"
+      "themeToLight": "Cambiar a tema claro",
+      "googleCta": "Continue with Google",
+      "googleHelp": "Authorized staff only. Access is decided by the server, not by this screen.",
+      "denied": "Your Google account has no backoffice access. Ask an administrator to register you.",
+      "expired": "Your session expired. Please sign in again.",
+      "checking": "Checking access…",
+      "signOut": "Sign out",
+      "errorProvider": "Google sign-in could not be completed.",
+      "errorExchange": "Your session could not be validated.",
+      "errorNotConfigured": "Sign-in is not configured in this environment.",
+      "errorMissingCode": "Sign-in was not completed."
     },
     "forbidden": {
       "title": "No tienes permiso para ver esta pantalla",

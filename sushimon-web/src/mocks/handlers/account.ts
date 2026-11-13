@@ -1,4 +1,6 @@
+import type { AuthContext as AuthContextResponse } from '@/services/auth';
 import type { Address, AddressInput, Customer } from '@/lib/data-access/models';
+import { permissionsFor } from '@/lib/permissions';
 import { assertAddress, fail, isValidEmail, isValidPhone } from '../domain';
 import { settleReviews } from './orders';
 import { body, now, oneOf, requireCustomer, str, type Handler, type Req } from './shared';
@@ -11,6 +13,33 @@ const MAX_ADDRESSES = 10;
 
 const addressKey = (a: Pick<Address, 'line' | 'municipality' | 'zone'>) =>
   `${a.line.trim().replace(/\s+/g, ' ').toLowerCase()}|${a.municipality}|${a.zone}`;
+
+/**
+ * GET /v1/auth/context — réplica MOCK del contexto de identidad que calcula el servidor a partir del
+ * JWT y de la base de datos. Aquí sale de la sesión de demostración. Los UUID son fijos (deterministas).
+ */
+export const getAuthContext: Handler = (req): AuthContextResponse => {
+  const { customer, staff } = req.context.session;
+  if (!customer && !staff) fail(401, 'No autenticado');
+  const email = (staff?.email ?? customer?.email ?? '').toLowerCase();
+  return {
+    authUserId: '00000000-0000-4000-8000-00000000d3a0',
+    email,
+    provider: 'google-demo',
+    isCustomer: Boolean(customer),
+    staff: staff
+      ? {
+          staffId: '00000000-0000-4000-8000-00000000d3a1',
+          fullName: staff.name,
+          assignments: [{ role: staff.role, branchId: staff.branchId }],
+          permissions: permissionsFor(staff.role),
+          allBranches: staff.branchId === null,
+          branchIds: staff.branchId ? [staff.branchId] : [],
+        }
+      : null,
+    backofficeAccess: Boolean(staff),
+  };
+};
 
 /** GET /v1/me */
 export const getMe: Handler = (req): Customer => requireCustomer(req).profile;

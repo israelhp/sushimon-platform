@@ -13,8 +13,9 @@ Contexto global en `../CLAUDE.md`. Aquí solo lo específico de la API.
 - **Validación**: DTOs con `class-validator` (ValidationPipe global: whitelist + forbidNonWhitelisted).
   Config de entorno validada con zod en `src/config/env.ts` (falla al arrancar).
 - **Errores**: `AllExceptionsFilter` devuelve `{statusCode,error,message}`; nunca trazas en 5xx.
-- **Auth** (pendiente, slice `google-oauth`): guard que verifica JWT de Supabase, resuelve usuario interno,
-  rol, permisos y alcance de sucursal; decoradores explícitos por endpoint. Denegar por defecto.
+- **Auth** (F01, `docs/security/auth.md`): guard global `JwtAuthGuard` (denegar por defecto; `@Public()` solo health);
+  `@RequireStaff('permiso')` para backoffice; permisos y sucursales SIEMPRE desde la BD, nunca de las claims.
+  Nuevo endpoint = JWT por defecto + `@ApiBearerAuth()` + 401 en el contrato.
 - **Dinero**: la API calcula totales en GTQ con enteros/decimal exacto, nunca `number` flotante;
   idempotencia (`Idempotency-Key`) en operaciones de pedido/pago.
 - **Proveedores externos**: tras interfaces (`DeliveryProvider`, `PaymentGateway`); adaptadores reales
@@ -24,6 +25,11 @@ Contexto global en `../CLAUDE.md`. Aquí solo lo específico de la API.
 - **Logging**: estructurado, sin PII ni secretos.
 
 Comandos: `pnpm --filter sushimon-api {dev|test|test:e2e|lint|typecheck|build}`.
+
+## DTOs de Swagger
+
+Declara `type:` explícito en `@ApiProperty` (`String`, `Boolean`, `[Dto]`…): `openapi:emit` corre con tsx y sin
+metadata no puede inferir los tipos (error "circular dependency").
 
 ## Inyección de dependencias
 

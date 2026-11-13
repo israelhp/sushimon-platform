@@ -590,7 +590,15 @@
     "viaGoogle": "Google",
     "promptTitle": "Iniciá sesión con Google",
     "promptText": "Seguí tus pedidos, mirá tu historial y hacé reclamos más rápido. Es opcional.",
-    "notNow": "Ahora no"
+    "notNow": "Ahora no",
+    "googleRedirecting": "Redirigiendo a Google…",
+    "sessionExpired": "Tu sesión expiró. Iniciá sesión de nuevo.",
+    "errorProvider": "No se pudo completar el inicio de sesión con Google. Intentá de nuevo.",
+    "errorExchange": "No se pudo validar tu sesión. Intentá de nuevo.",
+    "errorNotConfigured": "El inicio de sesión no está configurado en este entorno.",
+    "errorMissingCode": "El inicio de sesión no se completó. Intentá de nuevo.",
+    "privacyReal": "Iniciás sesión con Google. No guardamos tu contraseña de Google.",
+    "loadingSession": "Verificando tu sesión…"
   },
   "account": {
     "title": "Mi cuenta",
@@ -606,7 +614,9 @@
     "startOrder": "Hacer un pedido",
     "orders": "{a, plural, one {# pedido} other {# pedidos}}",
     "spent": "Total en pedidos",
-    "demoData": "Pedidos de ejemplo de la cuenta de prueba"
+    "demoData": "Pedidos de ejemplo de la cuenta de prueba",
+    "realModulesPending": "Tus pedidos, direcciones y favoritos aparecerán aquí cuando esos módulos estén conectados a la API.",
+    "realProfile": "Sesión iniciada con Google"
   },
   "orders": {
     "order": "Pedido",
@@ -1030,13 +1040,34 @@
       "activate": "Activar {name}",
       "months": "ene,feb,mar,abr,may,jun,jul,ago,sep,oct,nov,dic",
       "days": {
-        "1": { "short": "L", "full": "Lunes" },
-        "2": { "short": "M", "full": "Martes" },
-        "3": { "short": "M", "full": "Miércoles" },
-        "4": { "short": "J", "full": "Jueves" },
-        "5": { "short": "V", "full": "Viernes" },
-        "6": { "short": "S", "full": "Sábado" },
-        "7": { "short": "D", "full": "Domingo" }
+        "1": {
+          "short": "L",
+          "full": "Lunes"
+        },
+        "2": {
+          "short": "M",
+          "full": "Martes"
+        },
+        "3": {
+          "short": "M",
+          "full": "Miércoles"
+        },
+        "4": {
+          "short": "J",
+          "full": "Jueves"
+        },
+        "5": {
+          "short": "V",
+          "full": "Viernes"
+        },
+        "6": {
+          "short": "S",
+          "full": "Sábado"
+        },
+        "7": {
+          "short": "D",
+          "full": "Domingo"
+        }
       },
       "toast": {
         "on": "{name} activada",
@@ -1175,7 +1206,17 @@
       "unknownUser": "No encontramos un usuario interno activo con ese correo (demostración).",
       "demoNotice": "Demostración: no se envía ninguna contraseña. El acceso real validará usuario interno, rol y sucursal en el servidor.",
       "themeToDark": "Cambiar a tema oscuro",
-      "themeToLight": "Cambiar a tema claro"
+      "themeToLight": "Cambiar a tema claro",
+      "googleCta": "Continuar con Google",
+      "googleHelp": "Solo personal autorizado. El acceso lo decide el servidor, no esta pantalla.",
+      "denied": "Tu cuenta de Google no tiene acceso al backoffice. Pedí a un administrador que te registre.",
+      "expired": "Tu sesión expiró. Volvé a iniciar sesión.",
+      "checking": "Verificando acceso…",
+      "signOut": "Cerrar sesión",
+      "errorProvider": "No se pudo completar el inicio de sesión con Google.",
+      "errorExchange": "No se pudo validar tu sesión.",
+      "errorNotConfigured": "El inicio de sesión no está configurado en este entorno.",
+      "errorMissingCode": "El inicio de sesión no se completó."
     },
     "forbidden": {
       "title": "No tienes permiso para ver esta pantalla",

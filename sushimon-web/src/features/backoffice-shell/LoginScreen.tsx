@@ -6,6 +6,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { BoLogo, IconLock } from '@/components/icons/bo';
 import { SimulationBadge } from '@/components/ui/SimulationBadge';
 import { useToast } from '@/components/ui/Toast';
+import { useAuth } from '@/features/session/auth-provider';
+import { useAuthContext } from '@/features/session/auth-queries';
 import { useDemoSession } from '@/features/session/demo-session';
 import { useBranches } from '@/features/store/hooks';
 import { cn } from '@/lib/cn';
@@ -26,7 +28,7 @@ const DEMO_ROLES: readonly StaffRole[] = ['admin', 'manager', 'kitchen'];
 const DEMO_PASSWORD_PLACEHOLDER = 'demodemodemo';
 
 /** Acceso al backoffice (prototipo): formulario simulado + selector de cuenta de demostración por rol. */
-export function LoginScreen() {
+function DemoLoginScreen() {
   const t = useTranslations('backoffice.login');
   const tr = useTranslations('backoffice.roles');
   const router = useRouter();
@@ -173,6 +175,145 @@ export function LoginScreen() {
             {t('forgot')}
           </button>
         </form>
+      </main>
+    </div>
+  );
+}
+
+/** Acceso al backoffice: demostración (auth `mock`) o Google real (auth `supabase`). */
+export function LoginScreen() {
+  const auth = useAuth();
+  return auth.mode === 'supabase' ? <GoogleLoginScreen /> : <DemoLoginScreen />;
+}
+
+/** Motivos del callback OAuth (`?auth_error=`) → clave de mensaje. Nunca se muestra texto del proveedor. */
+type AuthErrorKey = 'errorProvider' | 'errorExchange' | 'errorNotConfigured' | 'errorMissingCode';
+const AUTH_ERRORS: Record<string, AuthErrorKey> = {
+  provider: 'errorProvider',
+  exchange_failed: 'errorExchange',
+  not_configured: 'errorNotConfigured',
+  missing_code: 'errorMissingCode',
+};
+
+/**
+ * Acceso real: "Continuar con Google" (Supabase Auth, PKCE). Autenticarse NO da acceso: tras volver del
+ * callback se consulta `GET /v1/auth/context` y solo entra quien el servidor autoriza como personal activo.
+ */
+function GoogleLoginScreen() {
+  const t = useTranslations('backoffice.login');
+  const router = useRouter();
+  const auth = useAuth();
+  const context = useAuthContext();
+  const { staff } = useDemoSession();
+  const [pending, setPending] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [next, setNext] = useState<string | null>(null);
+  const [errorKey, setErrorKey] = useState<AuthErrorKey | null>(null);
+
+  // Parámetros del callback: se leen tras montar (la pantalla es dinámica; evita desajustes de hidratación).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- lectura única de la URL tras hidratar
+    setNext(params.get('next'));
+    const reason = params.get('auth_error');
+    setErrorKey(reason ? (AUTH_ERRORS[reason] ?? 'errorProvider') : null);
+  }, []);
+
+  const access = context.data?.backofficeAccess === true;
+  useEffect(() => {
+    if (auth.status === 'authenticated' && access && staff) {
+      const target =
+        next && next.startsWith('/backoffice') ? next : screenHref(ROLE_HOME[staff.role]);
+      router.replace(target);
+    }
+  }, [auth.status, access, staff, next, router]);
+
+  const signIn = async () => {
+    setPending(true);
+    setFailure(null);
+    try {
+      await auth.signInWithGoogle(next && next.startsWith('/backoffice') ? next : '/backoffice');
+    } catch {
+      setPending(false);
+      setFailure(t('errorProvider'));
+    }
+  };
+
+  const checking =
+    auth.status === 'loading' || (auth.status === 'authenticated' && context.isPending);
+  const denied =
+    auth.status === 'authenticated' &&
+    (context.isError || context.data?.backofficeAccess === false);
+
+  return (
+    <div className="auth">
+      <aside className="auth-brand sg sg-navy">
+        <div className="auth-logo">
+          <BoLogo />
+        </div>
+        <div>
+          <div className="auth-kicker">{t('kicker')}</div>
+          <h1>{t('headline')}</h1>
+          <p>{t('body')}</p>
+        </div>
+        <div className="auth-foot">
+          <IconLock />
+          {t('foot')}
+        </div>
+      </aside>
+      <main className="auth-main">
+        <div className="auth-tools" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <BoThemeButton scope="login" />
+        </div>
+        <div className="auth-card">
+          <BoLogo className="auth-mlogo" />
+          <div>
+            <div className="eyebrow">{t('eyebrow')}</div>
+            <h2>{t('title')}</h2>
+            <div className="sm muted" style={{ fontWeight: 600 }}>
+              {t('googleHelp')}
+            </div>
+          </div>
+          {auth.expired ? (
+            <div className="banner b-red" role="alert">
+              <div className="grow">{t('expired')}</div>
+            </div>
+          ) : null}
+          {errorKey || failure ? (
+            <div className="banner b-red" role="alert">
+              <div className="grow">{failure ?? t(errorKey ?? 'errorProvider')}</div>
+            </div>
+          ) : null}
+          {denied ? (
+            <>
+              <div className="banner b-red" role="alert">
+                <div className="grow">{t('denied')}</div>
+              </div>
+              <button
+                type="button"
+                className="btn block"
+                style={{ height: 50 }}
+                onClick={() => void auth.signOut()}
+              >
+                {t('signOut')}
+              </button>
+            </>
+          ) : checking ? (
+            <div role="status" className="sm muted">
+              {t('checking')}
+            </div>
+          ) : auth.status === 'anonymous' ? (
+            <button
+              type="button"
+              className="btn btn-primary block"
+              style={{ height: 50 }}
+              disabled={pending}
+              onClick={() => void signIn()}
+            >
+              {t('googleCta')}
+            </button>
+          ) : null}
+        </div>
       </main>
     </div>
   );

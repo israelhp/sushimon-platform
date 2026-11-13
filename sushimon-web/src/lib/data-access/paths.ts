@@ -21,6 +21,7 @@ export const paths = {
   jobApplications: () => '/v1/job-applications',
 
   // Cliente
+  authContext: () => '/v1/auth/context',
   me: () => '/v1/me',
   myAddresses: () => '/v1/me/addresses',
   myAddress: (id: string) => `/v1/me/addresses/${seg(id)}`,

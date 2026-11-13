@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { SimulationBadge } from '@/components/ui/SimulationBadge';
 import { useToast } from '@/components/ui/Toast';
+import { useAuth } from '@/features/session/auth-provider';
 import { useDemoSession } from '@/features/session/demo-session';
 import { useAuthModal } from '../store-shell-context';
 import { Avatar, firstNameOf } from './Avatar';
@@ -23,8 +24,13 @@ type Step = 'start' | 'choose' | 'signing';
  */
 export function AuthModal() {
   const { isOpen, close } = useAuthModal();
+  const auth = useAuth();
   if (!isOpen) return null;
-  return <AuthModalDialog onClose={close} />;
+  return auth.mode === 'supabase' ? (
+    <GoogleAuthDialog onClose={close} />
+  ) : (
+    <AuthModalDialog onClose={close} />
+  );
 }
 
 function AuthModalDialog({ onClose }: { onClose: () => void }) {
@@ -118,6 +124,82 @@ function AuthModalDialog({ onClose }: { onClose: () => void }) {
         <p className="m-0 flex items-start gap-2 text-[12px] leading-snug text-muted">
           <ShieldCheck className="mt-0.5 h-4 w-4 flex-none" aria-hidden="true" />
           {t('privacyDemo')}
+        </p>
+        <button type="button" onClick={onClose} className="link-btn self-center">
+          {t('guest')}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Inicio de sesión REAL: "Continuar con Google" (Supabase Auth, PKCE). Redirige a Google y vuelve por
+ * `/auth/callback`. Sin selector de cuentas de prueba ni rótulo de simulación.
+ */
+function GoogleAuthDialog({ onClose }: { onClose: () => void }) {
+  const t = useTranslations('auth');
+  const auth = useAuth();
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const benefits = [
+    { Icon: ClipboardList, text: t('benefitTrack') },
+    { Icon: History, text: t('benefitHistory') },
+    { Icon: LifeBuoy, text: t('benefitIncidents') },
+  ];
+
+  const signIn = async () => {
+    setPending(true);
+    setFailed(false);
+    try {
+      await auth.signInWithGoogle(window.location.pathname);
+    } catch {
+      setPending(false);
+      setFailed(true);
+    }
+  };
+
+  return (
+    <Modal open onClose={onClose} title={t('title')} layer="top">
+      <div className="flex flex-col gap-4 pb-2">
+        <p className="m-0 text-[15px] leading-snug text-muted">{t('intro')}</p>
+        {auth.expired ? (
+          <p className="m-0 text-[14px] font-bold text-danger" role="alert">
+            {t('sessionExpired')}
+          </p>
+        ) : null}
+        <ul className="m-0 grid list-none gap-2 p-0 text-[14px] font-bold">
+          {benefits.map(({ Icon, text }) => (
+            <li key={text} className="flex items-center gap-2.5">
+              <span className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-primary-soft text-primary">
+                <Icon className="h-4 w-4" aria-hidden="true" />
+              </span>
+              {text}
+            </li>
+          ))}
+        </ul>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => void signIn()}
+          className="btn w-full !border-line !bg-white !text-neutral-900 hover:!bg-neutral-100"
+        >
+          {pending ? (
+            <LoaderCircle className="anim-spin h-5 w-5" aria-hidden="true" />
+          ) : (
+            <GoogleLogo />
+          )}{' '}
+          {pending ? t('googleRedirecting') : t('continueGoogle')}
+        </button>
+        {failed ? (
+          <p className="m-0 text-[13px] font-bold text-danger" role="alert">
+            {t('errorProvider')}
+          </p>
+        ) : null}
+        <p className="m-0 flex items-start gap-2 text-[12px] leading-snug text-muted">
+          <ShieldCheck className="mt-0.5 h-4 w-4 flex-none" aria-hidden="true" />
+          {t('privacyReal')}
         </p>
         <button type="button" onClick={onClose} className="link-btn self-center">
           {t('guest')}

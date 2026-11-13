@@ -63,6 +63,8 @@ export interface DemoSessionApi extends DemoSessionState {
   /** Entra con un usuario interno concreto (id del listado de usuarios). */
   signInStaffUser: (userId: string) => DemoStaff;
   signOutStaff: () => void;
+  /** Uso exclusivo del puente con Supabase Auth: refleja al personal que el SERVIDOR autorizó. */
+  adoptStaff: (staff: DemoStaff | null) => void;
 }
 
 const DemoSessionContext = createContext<DemoSessionApi | null>(null);
@@ -125,6 +127,11 @@ export function DemoSessionProvider({ children }: { children: ReactNode }) {
       signOutStaff: () => {
         setSession({ ...getSnapshot(), staff: null });
         resetCaches('staff');
+      },
+      adoptStaff: (staff) => {
+        const current = getSnapshot().staff;
+        if (JSON.stringify(current) === JSON.stringify(staff)) return;
+        setSession({ ...getSnapshot(), staff });
       },
     }),
     [state, resetCaches],

@@ -4,14 +4,14 @@ import { User } from 'lucide-react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
-import { useDemoSession } from '@/features/session/demo-session';
+import { useCustomerIdentity } from '@/features/session/customer-identity';
 import { STORE_ROUTES } from '../nav';
 import { Avatar } from './Avatar';
 
 /** Botón de cuenta del encabezado: enlaza a `/cuenta`; con sesión de demostración muestra las iniciales. */
 export function AccountButton({ className }: { className?: string }) {
   const t = useTranslations('auth');
-  const { customer } = useDemoSession();
+  const customer = useCustomerIdentity();
   return (
     <Link
       href={STORE_ROUTES.account}

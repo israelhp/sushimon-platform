@@ -15,6 +15,7 @@ import { useOrderDetail } from '@/features/bo-orders/order-detail-context';
 import { orderCode, sortForColumn } from '@/features/bo-orders/order-view';
 import { useOrderText } from '@/features/bo-orders/use-order-text';
 import { useScopedOrders } from '@/features/bo-orders/use-scoped-orders';
+import { useAuth } from '@/features/session/auth-provider';
 import { useDemoSession } from '@/features/session/demo-session';
 import { cn } from '@/lib/cn';
 import type { StaffRole } from '@/lib/data-access/models';
@@ -186,6 +187,8 @@ function UserMenu() {
   const toast = useToast();
   const popover = usePopover();
   const { staff, signInStaff, signOutStaff } = useDemoSession();
+  const auth = useAuth();
+  const real = auth.mode === 'supabase';
   if (!staff) return null;
 
   const switchRole = (role: StaffRole) => {
@@ -197,6 +200,7 @@ function UserMenu() {
   const logout = () => {
     popover.close();
     signOutStaff();
+    if (real) void auth.signOut();
     router.replace(LOGIN_PATH);
   };
 
@@ -223,28 +227,33 @@ function UserMenu() {
             </div>
             <div className="xs muted">{staff.email}</div>
           </div>
-          <div
-            className="xs muted"
-            style={{
-              fontWeight: 800,
-              textTransform: 'uppercase',
-              letterSpacing: '.08em',
-              padding: '6px 12px 2px',
-            }}
-          >
-            {t('shell.switchRole')}
-          </div>
-          {STAFF_ROLES.map((role) => (
-            <button
-              key={role}
-              type="button"
-              className={cn('menu-item', staff.role === role && 'on')}
-              onClick={() => switchRole(role)}
-            >
-              {t(`roles.${role}`)}
-            </button>
-          ))}
-          <div className="menu-sep" />
+          {/* Cambiar de rol es solo de la demostración: con sesión real el rol lo fija el servidor. */}
+          {real ? null : (
+            <>
+              <div
+                className="xs muted"
+                style={{
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  letterSpacing: '.08em',
+                  padding: '6px 12px 2px',
+                }}
+              >
+                {t('shell.switchRole')}
+              </div>
+              {STAFF_ROLES.map((role) => (
+                <button
+                  key={role}
+                  type="button"
+                  className={cn('menu-item', staff.role === role && 'on')}
+                  onClick={() => switchRole(role)}
+                >
+                  {t(`roles.${role}`)}
+                </button>
+              ))}
+              <div className="menu-sep" />
+            </>
+          )}
           <button type="button" className="menu-item" onClick={logout}>
             {t('shell.logout')}
           </button>

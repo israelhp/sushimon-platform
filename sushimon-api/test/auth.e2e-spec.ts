@@ -294,6 +294,23 @@ describe('Autenticación y autorización (e2e)', () => {
     });
   });
 
+  it('CORS: el preflight con Authorization se permite solo al origen configurado', async () => {
+    const ok = await http()
+      .options('/v1/me')
+      .set('Origin', 'http://localhost:3000')
+      .set('Access-Control-Request-Method', 'GET')
+      .set('Access-Control-Request-Headers', 'authorization')
+      .expect(204);
+    expect(ok.headers['access-control-allow-origin']).toBe('http://localhost:3000');
+    expect(ok.headers['access-control-allow-headers']?.toLowerCase()).toContain('authorization');
+    const denied = await http()
+      .options('/v1/me')
+      .set('Origin', 'https://evil.example')
+      .set('Access-Control-Request-Method', 'GET')
+      .set('Access-Control-Request-Headers', 'authorization');
+    expect(denied.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
   it('las rutas de salud siguen públicas', async () => {
     await http().get('/v1/health').expect(200);
   });
