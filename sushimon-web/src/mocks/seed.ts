@@ -254,6 +254,7 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
       quote: 1,
       payment: 1,
       courier: 32000,
+      branch: 5,
     },
   };
 }

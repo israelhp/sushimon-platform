@@ -22,11 +22,17 @@ import {
   type DeliveryDraft,
   type DraftErrors,
 } from '@/features/order-mode/draft';
+import { usePublicBranches } from '@/features/branches/hooks';
+import { useBranchChangeInvalidation } from '@/features/order-mode/branch-selection';
 import { useOrderMode } from '@/features/order-mode/order-mode-context';
 import { dateOptions, firstSlot, type WhenLabels } from '@/features/order-mode/when';
 import { useBranches, useDeliveryQuote, useStoreConfig } from '@/features/store/hooks';
 import { STORE_ROUTES } from '../nav';
-import { useOrderSheet, type OrderSheetVariant } from '../store-shell-context';
+import {
+  useOrderSheet,
+  type OrderSheetNotice,
+  type OrderSheetVariant,
+} from '../store-shell-context';
 import { ErrorNotice } from './ErrorNotice';
 
 /**
@@ -36,9 +42,11 @@ import { ErrorNotice } from './ErrorNotice';
  * (preferencia del dispositivo) y lleva al menú; el servidor vuelve a validar todo al crear el pedido.
  */
 export function OrderModeSheet() {
-  const { variant, close } = useOrderSheet();
+  const { variant, notice, close } = useOrderSheet();
   if (!variant) return null;
-  return <OrderModeSheetDialog key={variant} initialView={variant} onClose={close} />;
+  return (
+    <OrderModeSheetDialog key={variant} initialView={variant} notice={notice} onClose={close} />
+  );
 }
 
 const choiceClass = (active: boolean) =>
@@ -99,9 +107,11 @@ function initialDelivery(
 
 function OrderModeSheetDialog({
   initialView,
+  notice,
   onClose,
 }: {
   initialView: OrderSheetVariant;
+  notice: OrderSheetNotice | null;
   onClose: () => void;
 }) {
   const t = useTranslations();
@@ -110,8 +120,12 @@ function OrderModeSheetDialog({
   const uid = useId();
   const { mode, setMode } = useOrderMode();
   const configQuery = useStoreConfig();
+  // Operación SIMULADA (horario, abierta ahora, cobertura: F08/F09) y lista PÚBLICA real (F07: solo activas).
   const branchesQuery = useBranches();
+  const publicQuery = usePublicBranches();
+  const invalidateOnBranchChange = useBranchChangeInvalidation();
   const config = configQuery.data;
+  const publicBranches = useMemo(() => publicQuery.data ?? [], [publicQuery.data]);
   const branches = useMemo(
     () => (branchesQuery.data ?? []).filter((b) => b.status === 'active'),
     [branchesQuery.data],
@@ -150,12 +164,13 @@ function OrderModeSheetDialog({
       ? branches.find((b) => b.id === quoteData.branchId)
       : undefined;
 
-  // Sucursal de recogida: la elegida (si sigue activa) o la primera abierta.
-  const pickupBranch =
-    branches.find((b) => b.id === pickupBranchId) ??
-    branches.find((b) => b.openNow) ??
-    branches[0] ??
+  // Sucursal de recogida: la elegida (si sigue activa en la lista pública) o la primera abierta (simulado).
+  const pickupChoice =
+    publicBranches.find((b) => b.id === pickupBranchId) ??
+    publicBranches.find((b) => branches.find((o) => o.id === b.id)?.openNow) ??
+    publicBranches[0] ??
     null;
+  const pickupBranch = pickupChoice ? branches.find((b) => b.id === pickupChoice.id) : undefined;
   const activeBranch =
     type === 'delivery' ? assignedBranch : type === 'pickup' ? pickupBranch : null;
 
@@ -210,7 +225,7 @@ function OrderModeSheetDialog({
   const submit = () => {
     if (!config) return;
     const found = validateDraft(
-      { type, branchId: pickupBranch?.id ?? null, delivery },
+      { type, branchId: pickupChoice?.id ?? null, delivery },
       config.nonexistentZones,
     );
     setErrors(found);
@@ -228,7 +243,7 @@ function OrderModeSheetDialog({
     setMode({
       type,
       when,
-      branchId: activeBranch?.id ?? null,
+      branchId: type === 'pickup' ? (pickupChoice?.id ?? null) : (activeBranch?.id ?? null),
       address:
         type === 'delivery'
           ? {
@@ -240,14 +255,19 @@ function OrderModeSheetDialog({
             }
           : null,
     });
+    invalidateOnBranchChange(
+      mode.branchId,
+      type === 'pickup' ? (pickupChoice?.id ?? null) : (activeBranch?.id ?? null),
+    );
     onClose();
     router.push(STORE_ROUTES.menu);
   };
 
   const fieldId = (name: string) => `${uid}-${name}`;
   const typeErrorId = fieldId('type-error');
-  const loadFailed = configQuery.isError || branchesQuery.isError;
-  const loading = !loadFailed && (configQuery.isPending || branchesQuery.isPending);
+  const loadFailed = configQuery.isError || publicQuery.isError;
+  const loading =
+    !loadFailed && (configQuery.isPending || publicQuery.isPending || branchesQuery.isPending);
   const err = (key: DraftErrors[keyof DraftErrors]) => (key ? t(key) : undefined);
 
   const municipalities = config ? municipalitiesOf(config.departments, delivery.department) : [];
@@ -264,18 +284,28 @@ function OrderModeSheetDialog({
           type="button"
           className="btn btn-primary w-full"
           onClick={submit}
-          disabled={!config || !branchesQuery.data}
+          disabled={
+            !config || !publicQuery.data || (branchesQuery.isPending && !branchesQuery.isError)
+          }
         >
           {t('mode.seeMenu')}
         </button>
       }
     >
       <div className="flex flex-col gap-5">
+        {notice === 'branchRemoved' ? (
+          <p className="notice notice-warn" role="status">
+            <TriangleAlert className="mt-0.5 h-[18px] w-[18px] flex-none" aria-hidden="true" />
+            {t('mode.branchRemoved')}
+          </p>
+        ) : null}
+
         {loadFailed ? (
           <ErrorNotice
+            message={publicQuery.isError ? t('mode.branchesError') : undefined}
             onRetry={() => {
               if (configQuery.isError) void configQuery.refetch();
-              if (branchesQuery.isError) void branchesQuery.refetch();
+              if (publicQuery.isError) void publicQuery.refetch();
             }}
           />
         ) : null}
@@ -308,8 +338,14 @@ function OrderModeSheetDialog({
               <Skeleton className="h-16 w-full" />
             ) : (
               <div className="grid gap-2" role="radiogroup" aria-label={t('delivery.branchPickup')}>
-                {branches.map((b) => {
-                  const selected = pickupBranch?.id === b.id;
+                {publicBranches.length === 0 && !loadFailed ? (
+                  <p className="notice notice-info" role="status">
+                    {t('mode.noBranches')}
+                  </p>
+                ) : null}
+                {publicBranches.map((b) => {
+                  const selected = pickupChoice?.id === b.id;
+                  const ops = branches.find((o) => o.id === b.id);
                   return (
                     <label
                       key={b.id}
@@ -330,11 +366,9 @@ function OrderModeSheetDialog({
                       />
                       <span className="min-w-0 flex-1 leading-tight">
                         <span className="block font-extrabold">{b.name}</span>
-                        <span className="block truncate text-[13px] text-muted">
-                          {b.area[locale === 'en' ? 'en' : 'es'] ?? b.area.es}
-                        </span>
+                        <span className="block truncate text-[13px] text-muted">{b.address}</span>
                       </span>
-                      {!b.openNow ? (
+                      {ops && !ops.openNow ? (
                         <span className="flex-none rounded-full bg-subtle px-2 py-0.5 text-[11px] font-extrabold text-muted">
                           {t('mode.closedBadge')}
                         </span>

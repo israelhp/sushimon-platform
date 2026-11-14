@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackofficeShell } from '@/features/backoffice-shell/BackofficeShell';
 import { ScreenGuard } from '@/features/backoffice-shell/ScreenGuard';
+import { ApiError } from '@/lib/data-access/errors';
 import type { Order, ReportSummary, StaffRole } from '@/lib/data-access/models';
 import type { MockScenario } from '@/mocks/scenarios';
 import { renderBackoffice } from '@/test/backoffice-providers';
@@ -38,60 +39,153 @@ const renderScreen = (
 };
 
 describe('sucursales', () => {
-  it('muestra 3 tarjetas, 2 espacios libres y el cupo de 5', async () => {
+  const card = (name: string) =>
+    screen.getByText(name, { selector: '.cname' }).closest('.bcard') as HTMLElement;
+
+  it('lista las sucursales con su estado administrativo, sin cupo y con la operación rotulada como simulación', async () => {
     await renderScreen('sucursales');
-    expect(await screen.findByText('3 de 5 sucursales configuradas')).toBeVisible();
-    expect(screen.getByRole('img', { name: '3 de 5 sucursales' })).toBeVisible();
-    expect(screen.getAllByRole('switch', { name: /Sucursal abierta/ })).toHaveLength(3);
-    expect(screen.getByText('Espacio 4 de 5 disponible')).toBeVisible();
-    expect(screen.getByText('Espacio 5 de 5 disponible')).toBeVisible();
+    expect(await screen.findByText('5 sucursales')).toBeVisible();
+    expect(screen.getAllByRole('switch', { name: /Sucursal activa/ })).toHaveLength(5);
+    expect(within(card('Sucursal 1')).getByText('Activa')).toBeVisible();
+    expect(within(card('Sucursal 4')).getByText('Inactiva')).toBeVisible();
+    expect(within(card('Sucursal 1')).getByText('sucursal-1')).toBeVisible();
+    expect(within(card('Sucursal 1')).getByText('Sin coordenadas')).toBeVisible();
+    // horario/cobertura/estadísticas: simulados
+    expect(within(card('Sucursal 1')).getByText('Simulación')).toBeVisible();
     expect(screen.getAllByText('Radio 5 km').length).toBeGreaterThan(0);
+    // sin tope de 5 ni cupos
+    expect(screen.queryByText(/Espacio \d de/)).toBeNull();
+    expect(screen.queryByText(/Límite de/)).toBeNull();
+    expect(screen.getByText(/no hay tope de sucursales/i)).toBeVisible();
+    // ya no existe el interruptor abierta/cerrada
+    expect(screen.queryByRole('switch', { name: /Sucursal abierta/ })).toBeNull();
   });
 
-  it('al llenar las 5 sucursales el alta queda deshabilitada con explicación', async () => {
+  it('filtra por estado y busca por nombre o código', async () => {
     const user = userEvent.setup();
     await renderScreen('sucursales');
-    await screen.findByText('3 de 5 sucursales configuradas');
-
-    await user.click(screen.getAllByRole('button', { name: /Agregar sucursal/ })[0]!);
-    expect(await screen.findByText('4 de 5 sucursales configuradas')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: /Agregar sucursal/ }));
-    expect(await screen.findByText('5 de 5 sucursales configuradas')).toBeVisible();
-
-    const full = screen.getByRole('button', { name: /Límite de 5 sucursales alcanzado/ });
-    expect(full).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.queryByRole('button', { name: /^Agregar sucursal/ })).toBeNull();
-    expect(screen.getByText(/pendiente de decisión del negocio/)).toBeVisible();
-    expect(full).toHaveAccessibleDescription(/pendiente de decisión del negocio/);
+    await screen.findByText('5 sucursales');
+    await user.click(screen.getByRole('button', { name: 'Inactivas' }));
+    expect(await screen.findByText('2 sucursales')).toBeVisible();
+    expect(screen.getAllByRole('switch')).toHaveLength(2);
+    await user.click(screen.getByRole('button', { name: 'Todas' }));
+    await screen.findByText('5 sucursales');
+    await user.type(screen.getByRole('searchbox', { name: 'Buscar sucursales' }), 'SUCURSAL-2');
+    expect(await screen.findByText('1 sucursal')).toBeVisible();
+    expect(screen.getAllByRole('switch')).toHaveLength(1);
   });
 
-  it('el interruptor abre y cierra una sucursal', async () => {
+  it('sin resultados: estado vacío con opción de limpiar filtros', async () => {
     const user = userEvent.setup();
     await renderScreen('sucursales');
-    const sw = await screen.findByRole('switch', { name: 'Sucursal abierta: Sucursal 1' });
-    expect(sw).toHaveAttribute('aria-checked', 'true');
-    await user.click(sw);
-    await waitFor(() =>
-      expect(screen.getByRole('switch', { name: 'Sucursal abierta: Sucursal 1' })).toHaveAttribute(
-        'aria-checked',
-        'false',
-      ),
+    await screen.findByText('5 sucursales');
+    await user.type(screen.getByRole('searchbox', { name: 'Buscar sucursales' }), 'zzzz');
+    expect(await screen.findByText('Sin resultados')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Limpiar filtros' }));
+    expect(await screen.findByText('5 sucursales')).toBeVisible();
+  });
+
+  it('cambia el orden', async () => {
+    const user = userEvent.setup();
+    await renderScreen('sucursales');
+    await screen.findByText('5 sucursales');
+    const names = () => [...document.querySelectorAll('.bcard .cname')].map((n) => n.textContent);
+    expect(names()[0]).toBe('Sucursal 1');
+    await user.click(screen.getByRole('button', { name: /Cambiar el orden/ }));
+    await waitFor(() => expect(names()[0]).toBe('Sucursal 5'));
+  });
+
+  it('crear valida en cliente y enfoca el primer campo con error', async () => {
+    const user = userEvent.setup();
+    await renderScreen('sucursales');
+    await user.click(await screen.findByRole('button', { name: /Nueva sucursal/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Nueva sucursal' });
+    await user.click(within(dialog).getByRole('button', { name: 'Crear sucursal' }));
+    const code = within(dialog).getByLabelText('Código');
+    expect(code).toHaveFocus();
+    expect(code).toHaveAttribute('aria-invalid', 'true');
+    expect(within(dialog).getByText('Escribe el código de la sucursal.')).toBeVisible();
+    expect(within(dialog).getByText('Escribe el nombre de la sucursal.')).toBeVisible();
+    expect(within(dialog).getByText('Escribe la dirección de la sucursal.')).toBeVisible();
+
+    await user.type(code, 'zona-11');
+    await user.type(within(dialog).getByLabelText('Nombre'), 'Zona 11');
+    await user.type(within(dialog).getByLabelText('Dirección'), '3a avenida 12-30');
+    await user.type(within(dialog).getByLabelText('Latitud (opcional)'), '14.6');
+    await user.click(within(dialog).getByRole('button', { name: 'Crear sucursal' }));
+    expect(within(dialog).getByLabelText('Longitud (opcional)')).toHaveFocus();
+    expect(
+      within(dialog).getByText('Indica latitud y longitud juntas, o deja ambas vacías.'),
+    ).toBeVisible();
+  });
+
+  it('crea una sucursal y aparece en la lista (sin tope)', async () => {
+    const user = userEvent.setup();
+    await renderScreen('sucursales');
+    await user.click(await screen.findByRole('button', { name: /Nueva sucursal/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Nueva sucursal' });
+    await user.type(within(dialog).getByLabelText('Código'), ' Zona-11 ');
+    await user.type(within(dialog).getByLabelText('Nombre'), 'Zona 11');
+    await user.type(within(dialog).getByLabelText('Dirección'), '3a avenida 12-30, Zona 11');
+    await user.click(within(dialog).getByRole('button', { name: 'Crear sucursal' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByText('Sucursal creada', { selector: '.toast' })).toBeVisible();
+    expect(await screen.findByText('6 sucursales')).toBeVisible();
+    expect(within(card('Zona 11')).getByText('zona-11')).toBeVisible();
+    expect(within(card('Zona 11')).getByText('Activa')).toBeVisible();
+  });
+
+  it('un código duplicado (409) se muestra en el campo y el modal sigue abierto', async () => {
+    const user = userEvent.setup();
+    await renderScreen('sucursales');
+    await user.click(await screen.findByRole('button', { name: /Nueva sucursal/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Nueva sucursal' });
+    await user.type(within(dialog).getByLabelText('Código'), 'SUCURSAL-1');
+    await user.type(within(dialog).getByLabelText('Nombre'), 'Duplicada');
+    await user.type(within(dialog).getByLabelText('Dirección'), 'Calle 1');
+    await user.click(within(dialog).getByRole('button', { name: 'Crear sucursal' }));
+    expect(
+      await within(dialog).findByText(/Ya existe una sucursal con ese código. Elige otro./),
+    ).toBeVisible();
+    expect(within(dialog).getByLabelText('Código')).toHaveAttribute('aria-invalid', 'true');
+    expect(within(dialog).getByLabelText('Código')).toHaveFocus();
+    expect(screen.getByRole('dialog', { name: 'Nueva sucursal' })).toBeVisible();
+  });
+
+  it('errores 400 y 403 del servidor se muestran sin cerrar el modal', async () => {
+    const user = userEvent.setup();
+    const view = await renderScreen('sucursales');
+    await user.click(await screen.findByRole('button', { name: /Nueva sucursal/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Nueva sucursal' });
+    await user.type(within(dialog).getByLabelText('Código'), 'valido');
+    await user.type(within(dialog).getByLabelText('Nombre'), 'Valida');
+    await user.type(within(dialog).getByLabelText('Dirección'), 'Calle 1');
+
+    const client = view.api().client;
+    const post = vi.spyOn(client, 'post');
+    post.mockRejectedValueOnce(
+      new ApiError(400, 'bad_request', 'Datos inválidos', undefined, ['name: ya está en uso']),
     );
-    expect(await screen.findByText('Cerrada · no recibe pedidos')).toBeVisible();
-    expect(screen.getByText('Sucursal 1 cerrada', { selector: '.toast' })).toBeVisible();
+    await user.click(within(dialog).getByRole('button', { name: 'Crear sucursal' }));
+    expect(await within(dialog).findByText('ya está en uso')).toBeVisible();
+    expect(within(dialog).getByText(/Revisa los datos: name: ya está en uso/)).toBeVisible();
+    expect(within(dialog).getByLabelText('Nombre')).toHaveAttribute('aria-invalid', 'true');
+
+    post.mockRejectedValueOnce(new ApiError(403, 'forbidden', 'No tienes permiso'));
+    await user.click(within(dialog).getByRole('button', { name: 'Crear sucursal' }));
+    expect(
+      await within(dialog).findByText('No tienes permiso para esta acción sobre sucursales.'),
+    ).toBeVisible();
+    expect(screen.getByRole('dialog', { name: 'Nueva sucursal' })).toBeVisible();
   });
 
-  it('escenario branch-closed: todas las sucursales activas aparecen cerradas', async () => {
-    await renderScreen('sucursales', 'admin', 'branch-closed');
-    await screen.findByText('3 de 5 sucursales configuradas');
-    await waitFor(() => expect(screen.getAllByText('Cerrada · no recibe pedidos')).toHaveLength(3));
-  });
-
-  it('editar valida y enfoca el primer campo con error; guarda los cambios', async () => {
+  it('editar: el código es de solo lectura, valida y guarda; sin cambios no envía', async () => {
     const user = userEvent.setup();
-    await renderScreen('sucursales');
+    const view = await renderScreen('sucursales');
     await user.click(await screen.findByRole('button', { name: 'Editar Sucursal 2' }));
     const dialog = await screen.findByRole('dialog', { name: 'Editar sucursal' });
+    expect(within(dialog).getByLabelText('Código')).toHaveAttribute('readonly');
+    expect(within(dialog).getByLabelText('Código')).toHaveValue('sucursal-2');
     const name = within(dialog).getByLabelText('Nombre');
     await user.clear(name);
     await user.click(within(dialog).getByRole('button', { name: 'Guardar sucursal' }));
@@ -99,16 +193,90 @@ describe('sucursales', () => {
     expect(name).toHaveAttribute('aria-invalid', 'true');
     expect(within(dialog).getByText('Escribe el nombre de la sucursal.')).toBeVisible();
 
+    const patch = vi.spyOn(view.api().client, 'patch');
     await user.type(name, 'Sucursal Oakland');
     await user.click(within(dialog).getByRole('button', { name: 'Guardar sucursal' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(await screen.findByText('Sucursal Oakland')).toBeVisible();
+    expect(patch).toHaveBeenCalledTimes(1);
+    expect(patch.mock.calls[0]![1]).toEqual({ name: 'Sucursal Oakland' });
+
+    await user.click(screen.getByRole('button', { name: 'Editar Sucursal Oakland' }));
+    const again = await screen.findByRole('dialog', { name: 'Editar sucursal' });
+    await user.click(within(again).getByRole('button', { name: 'Guardar sucursal' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(patch).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('No hay cambios que guardar', { selector: '.toast' })).toBeVisible();
+  });
+
+  it('desactivar exige confirmación y motivo; la tarjeta pasa a inactiva', async () => {
+    const user = userEvent.setup();
+    await renderScreen('sucursales');
+    const sw = await screen.findByRole('switch', { name: 'Sucursal activa: Sucursal 1' });
+    expect(sw).toHaveAttribute('aria-checked', 'true');
+    await user.click(sw);
+    const dialog = await screen.findByRole('dialog', { name: 'Desactivar sucursal' });
+    expect(within(dialog).getByText(/No cancela pedidos en curso/)).toBeVisible();
+    await user.click(within(dialog).getByRole('button', { name: 'Desactivar sucursal' }));
+    const reason = within(dialog).getByLabelText('Motivo de la desactivación');
+    expect(reason).toHaveFocus();
+    expect(reason).toHaveAttribute('aria-invalid', 'true');
+    expect(within(dialog).getByText('Escribe el motivo de la desactivación.')).toBeVisible();
+    // el estado no cambió
+    expect(screen.getByRole('switch', { name: 'Sucursal activa: Sucursal 1' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+
+    await user.type(reason, 'Remodelación del local');
+    await user.click(within(dialog).getByRole('button', { name: 'Desactivar sucursal' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByText('Sucursal 1 desactivada', { selector: '.toast' })).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByRole('switch', { name: 'Sucursal activa: Sucursal 1' })).toHaveAttribute(
+        'aria-checked',
+        'false',
+      ),
+    );
+    expect(within(card('Sucursal 1')).getByText('Inactiva')).toBeVisible();
+    expect(screen.getAllByText('Inactiva · oculta en la tienda')).toHaveLength(3);
+  });
+
+  it('activar una inactiva no exige motivo', async () => {
+    const user = userEvent.setup();
+    await renderScreen('sucursales');
+    await user.click(await screen.findByRole('switch', { name: 'Sucursal activa: Sucursal 4' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Activar sucursal' });
+    await user.click(within(dialog).getByRole('button', { name: 'Activar sucursal' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(within(card('Sucursal 4')).getByText('Activa')).toBeVisible();
+  });
+
+  it('la pantalla no maneja abierta/cerrada: escenario branch-closed no cambia el estado administrativo', async () => {
+    await renderScreen('sucursales', 'admin', 'branch-closed');
+    await screen.findByText('5 sucursales');
+    expect(screen.getAllByText('Activa')).toHaveLength(3);
+    expect(screen.queryByText(/Cerrada/)).toBeNull();
+  });
+
+  it('estado de carga, error con reintento y 403 del servidor', async () => {
+    const loading = await renderScreen('sucursales', 'admin', 'loading');
+    expect(await screen.findByLabelText('Cargando…')).toBeVisible();
+    loading.unmount();
+
+    const failing = await renderScreen('sucursales', 'admin', 'error');
+    expect(await screen.findByText(/No pudimos cargar las sucursales/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Reintentar' })).toBeVisible();
+    failing.unmount();
+
+    await renderScreen('sucursales', 'admin', 'forbidden');
+    expect(await screen.findByText('No tienes permiso para ver esta pantalla')).toBeVisible();
   });
 
   it('el encargado no ve la pantalla', async () => {
     await renderScreen('sucursales', 'manager');
     expect(await screen.findByText('No tienes permiso para ver esta pantalla')).toBeVisible();
-    expect(screen.queryByText('Agregar sucursal')).toBeNull();
+    expect(screen.queryByText('Nueva sucursal')).toBeNull();
   });
 });
 

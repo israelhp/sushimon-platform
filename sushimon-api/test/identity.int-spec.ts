@@ -156,7 +156,7 @@ describe.skipIf(!url)('Identidad contra PostgreSQL real', () => {
 
     it('alcance por sucursal: asignación a una sucursal no es "todas"', async () => {
       const branch = await prisma.branch.create({
-        data: { code: `B-${randomUUID().slice(0, 6)}`, name: 'Sucursal' },
+        data: { code: `b-${randomUUID().slice(0, 6)}`, name: 'Sucursal', address: 'Zona 1' },
       });
       createdBranchIds.add(branch.id);
       const p = principal();

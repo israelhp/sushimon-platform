@@ -1,69 +1,112 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useId, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { IconPencil, IconPlus, IconStore } from '@/components/icons/bo';
 import { Banner } from '@/components/ui/Banner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Pill } from '@/components/ui/Pill';
+import { SearchInput } from '@/components/ui/SearchInput';
+import { SegmentedControl } from '@/components/ui/SegmentedControl';
+import { SimulationBadge } from '@/components/ui/SimulationBadge';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Switch } from '@/components/ui/Switch';
-import { useToast } from '@/components/ui/Toast';
-import {
-  useBackofficeOrders,
-  useBoBranches,
-  useDashboard,
-  useUpdateBranch,
-} from '@/features/backoffice/hooks';
+import { useBackofficeOrders, useDashboard } from '@/features/backoffice/hooks';
+import { useAdminBranches } from '@/features/branches/hooks';
 import { ForbiddenScreen } from '@/features/backoffice-shell/ForbiddenScreen';
 import { useShell } from '@/features/backoffice-shell/shell-context';
-import { errorMessage, isForbidden } from '@/features/bo-orders/error-message';
-import type { Branch } from '@/lib/data-access/models';
+import { isForbidden } from '@/features/bo-orders/error-message';
+import { useBranches } from '@/features/store/hooks';
+import type { AdminBranch, Branch } from '@/lib/data-access/models';
 import { can } from '@/lib/permissions';
 import { cn } from '@/lib/cn';
-import { branchCapacity, branchStats, radiusLabel } from '../branches-view';
+import {
+  branchStats,
+  coordinatesLabel,
+  DEFAULT_BRANCH_LIST,
+  hasActiveFilters,
+  pageCount,
+  radiusLabel,
+  toAdminFilters,
+  type BranchListState,
+  type BranchSortKey,
+  type BranchStatusFilter,
+} from '../branches-view';
 import { formatMoneyCompact } from '../format';
-import { BranchEditModal } from './BranchEditModal';
+import { BranchFormModal } from './BranchFormModal';
+import { BranchStatusModal } from './BranchStatusModal';
 
-/** Sucursales (admin): tarjetas con abierta/cerrada, estadísticas de hoy, edición y cupo de sucursales. */
+const SEARCH_DEBOUNCE_MS = 300;
+
+const dateFormat = new Intl.DateTimeFormat('es-GT', {
+  dateStyle: 'medium',
+  timeZone: 'America/Guatemala',
+});
+
+type Modal =
+  | { kind: 'create' }
+  | { kind: 'edit'; branch: AdminBranch }
+  | { kind: 'status'; branch: AdminBranch };
+
+/**
+ * Sucursales (admin) — F07. Lista paginada con búsqueda, filtro por estado y orden; alta, edición y activación /
+ * desactivación (estado ADMINISTRATIVO, con motivo). El horario, la cobertura y las estadísticas siguen siendo
+ * SIMULADOS (F08/F09/F33) y se rotulan «Simulación». El interruptor abierta/cerrada del prototipo ya no existe: la
+ * pausa operativa queda pendiente (F08). La UI solo muestra/oculta; la API autoriza.
+ */
 export function BranchesScreen() {
   const t = useTranslations('backoffice.branches');
   const tu = useTranslations('ui');
-  const toast = useToast();
   const { role } = useShell();
-  const branches = useBoBranches();
+  const [list, setList] = useState<BranchListState>(DEFAULT_BRANCH_LIST);
+  const [search, setSearch] = useState('');
+  const [modal, setModal] = useState<Modal | null>(null);
+
+  // La búsqueda se envía con un pequeño retardo y reinicia la página.
+  useEffect(() => {
+    const id = setTimeout(
+      () => setList((s) => (s.q === search ? s : { ...s, q: search, page: 1 })),
+      SEARCH_DEBOUNCE_MS,
+    );
+    return () => clearTimeout(id);
+  }, [search]);
+
+  const filters = useMemo(() => toAdminFilters(list), [list]);
+  const branches = useAdminBranches(filters);
+  // 🎭 Operación y estadísticas SIMULADAS (F08/F09/F33).
+  const operations = useBranches();
   const dashboard = useDashboard();
   const orders = useBackofficeOrders({});
-  const update = useUpdateBranch();
-  const [editing, setEditing] = useState<Branch | null>(null);
-  const noteId = useId();
+
+  const items = branches.data?.items ?? [];
+  const total = branches.data?.total ?? 0;
+  const pages = pageCount(total, branches.data?.pageSize);
+
+  // Si la página pedida quedó vacía (p. ej., se desactivó la última fila de un filtro), retrocede una página.
+  if (branches.data && !branches.isPlaceholderData && items.length === 0 && list.page > 1) {
+    setList((s) => ({ ...s, page: Math.max(1, Math.min(s.page - 1, pages)) }));
+  }
 
   if (isForbidden(branches.error)) return <ForbiddenScreen reason="server" />;
 
-  const all = branches.data ?? [];
-  const active = all.filter((b) => b.status === 'active');
-  const capacity = branchCapacity(all);
   const canEdit = can(role, 'branches');
-
-  const toggle = (branch: Branch, isOpen: boolean) => {
-    update.mutate(
-      { id: branch.id, input: { isOpen } },
-      {
-        onSuccess: () =>
-          toast.notify(t(isOpen ? 'toastOpened' : 'toastClosed', { name: branch.name })),
-        onError: (e) => toast.notify(errorMessage(e)),
-      },
-    );
+  const setFilter = (patch: Partial<BranchListState>) =>
+    setList((s) => ({ ...s, ...patch, page: 1 }));
+  const clearFilters = () => {
+    setSearch('');
+    setList(DEFAULT_BRANCH_LIST);
   };
+  const opsOf = (id: string): Branch | undefined => operations.data?.find((b) => b.id === id);
 
-  const addSlot = (branch: Branch) => {
-    update.mutate(
-      { id: branch.id, input: { status: 'active', isOpen: false } },
-      {
-        onSuccess: () => toast.notify(t('toastAdded')),
-        onError: (e) => toast.notify(errorMessage(e)),
-      },
-    );
+  const statusOptions: { value: BranchStatusFilter; label: string }[] = [
+    { value: 'all', label: t('filterAll') },
+    { value: 'active', label: t('filterActive') },
+    { value: 'inactive', label: t('filterInactive') },
+  ];
+  const sortLabels: Record<BranchSortKey, string> = {
+    name: t('sortName'),
+    code: t('sortCode'),
+    createdAt: t('sortCreated'),
   };
 
   return (
@@ -71,19 +114,64 @@ export function BranchesScreen() {
       <div className="page-h">
         <div className="grow">
           <h1>{t('title')}</h1>
-          <div className="page-sub">
-            {t('subtitle', { count: capacity.count, cap: capacity.cap })}
-          </div>
+          <div className="page-sub">{branches.data ? t('subtitle', { total }) : ' '}</div>
         </div>
-        <div
-          className="cap"
-          role="img"
-          aria-label={t('capLabel', { count: capacity.count, cap: capacity.cap })}
+        <SearchInput
+          zone="bo"
+          inline
+          clearable
+          value={search}
+          onValueChange={setSearch}
+          label={t('searchLabel')}
+          placeholder={t('searchPlaceholder')}
+        />
+        {canEdit ? (
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setModal({ kind: 'create' })}
+          >
+            <IconPlus size="sm" />
+            {t('new')}
+          </button>
+        ) : null}
+      </div>
+
+      <div className="row gap10" style={{ flexWrap: 'wrap', marginBottom: 14 }}>
+        <SegmentedControl
+          zone="bo"
+          label={t('statusFilterLabel')}
+          value={list.status}
+          options={statusOptions}
+          onChange={(status) => setFilter({ status })}
+        />
+        <label className="row gap8">
+          <span className="sm muted" style={{ fontWeight: 700 }}>
+            {t('sortLabel')}
+          </span>
+          <select
+            className="inp"
+            style={{ width: 'auto' }}
+            value={list.sort}
+            onChange={(e) => setFilter({ sort: e.target.value as BranchSortKey })}
+          >
+            {(Object.keys(sortLabels) as BranchSortKey[]).map((key) => (
+              <option key={key} value={key}>
+                {sortLabels[key]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          className="btn sm"
+          aria-label={t('orderToggle', {
+            order: list.order === 'asc' ? t('orderAsc') : t('orderDesc'),
+          })}
+          onClick={() => setFilter({ order: list.order === 'asc' ? 'desc' : 'asc' })}
         >
-          {Array.from({ length: capacity.cap }, (_, i) => (
-            <span key={i} className={i < capacity.count ? 'on' : ''} />
-          ))}
-        </div>
+          {list.order === 'asc' ? '↑' : '↓'} {list.order === 'asc' ? t('orderAsc') : t('orderDesc')}
+        </button>
       </div>
 
       {branches.isError ? (
@@ -101,15 +189,30 @@ export function BranchesScreen() {
             <Skeleton key={i} zone="bo" style={{ height: 360, borderRadius: 16 }} />
           ))}
         </div>
-      ) : !branches.isError && all.length === 0 ? (
-        <EmptyState zone="bo" title={t('emptyTitle')} description={t('emptyText')} />
+      ) : !branches.isError && items.length === 0 ? (
+        hasActiveFilters(list) ? (
+          <EmptyState
+            zone="bo"
+            title={t('noResultsTitle')}
+            description={t('noResultsText')}
+            action={
+              <button type="button" className="btn mt8" onClick={clearFilters}>
+                {t('clearFilters')}
+              </button>
+            }
+          />
+        ) : (
+          <EmptyState zone="bo" title={t('emptyTitle')} description={t('emptyText')} />
+        )
       ) : (
-        <div className="bgrid">
-          {active.map((branch) => {
+        <div className="bgrid" aria-busy={branches.isFetching}>
+          {items.map((branch) => {
+            const ops = opsOf(branch.id);
             const stats = branchStats(branch.id, dashboard.data?.byBranch, orders.data);
-            const pending = dashboard.isPending || orders.isPending;
+            const statsPending = dashboard.isPending || orders.isPending;
+            const statsAvailable = !dashboard.isError && !orders.isError;
             return (
-              <div key={branch.id} className={cn('bcard', !branch.isOpen && 'off')}>
+              <div key={branch.id} className={cn('bcard', !branch.active && 'off')}>
                 <div className="bcard-top">
                   <span className="bcard-ic">
                     <IconStore />
@@ -117,27 +220,39 @@ export function BranchesScreen() {
                   <div className="grow">
                     <div className="cname">{branch.name}</div>
                     <div className="sm muted" style={{ fontWeight: 700 }}>
-                      {branch.zoneLabel}
+                      <code>{branch.code}</code>
                     </div>
                   </div>
-                  <Pill zone="bo" tone={branch.isOpen ? 'success' : 'muted'}>
-                    {branch.isOpen ? t('open') : t('closed')}
+                  <Pill zone="bo" tone={branch.active ? 'success' : 'muted'}>
+                    {branch.active ? t('statusActive') : t('statusInactive')}
                   </Pill>
                 </div>
                 <div className="bcard-b">
                   <dl className="kv">
                     <dt>{t('address')}</dt>
                     <dd>{branch.address}</dd>
-                    <dt>{t('hours')}</dt>
-                    <dd>{branch.hoursLabel}</dd>
                     <dt>{t('phone')}</dt>
-                    <dd className="num">{branch.phone}</dd>
+                    <dd className="num">{branch.phone ?? t('noPhone')}</dd>
+                    <dt>{t('coordinates')}</dt>
+                    <dd>{coordinatesLabel(branch)}</dd>
+                    <dt>{t('createdAt')}</dt>
+                    <dd>{dateFormat.format(new Date(branch.createdAt))}</dd>
+                  </dl>
+                  <div className="row gap8" style={{ flexWrap: 'wrap' }}>
+                    <span className="sm muted" style={{ fontWeight: 700 }}>
+                      {t('operations')}
+                    </span>
+                    <SimulationBadge zone="bo" />
+                  </div>
+                  <dl className="kv">
+                    <dt>{t('hours')}</dt>
+                    <dd>{ops ? ops.hoursLabel : t('pending')}</dd>
                     <dt>{t('coverage')}</dt>
-                    <dd>{radiusLabel(branch)}</dd>
+                    <dd>{ops ? radiusLabel(ops) : t('pending')}</dd>
                   </dl>
                   <div className="ptags">
-                    {(branch.coverageLabels.length
-                      ? branch.coverageLabels
+                    {(ops && ops.coverageLabels.length
+                      ? ops.coverageLabels
                       : [t('zonesPending')]
                     ).map((zone) => (
                       <span key={zone} className="ptag">
@@ -148,13 +263,13 @@ export function BranchesScreen() {
                   <div className="row gap8">
                     <Switch
                       zone="bo"
-                      checked={branch.isOpen}
+                      checked={branch.active}
                       label={t('switchLabel', { name: branch.name })}
-                      disabled={!canEdit || update.isPending}
-                      onCheckedChange={(next) => toggle(branch, next)}
+                      disabled={!canEdit}
+                      onCheckedChange={() => setModal({ kind: 'status', branch })}
                     />
                     <span className="sm" style={{ fontWeight: 700 }}>
-                      {branch.isOpen ? t('switchOn') : t('switchOff')}
+                      {branch.active ? t('switchOn') : t('switchOff')}
                     </span>
                     <span className="spacer" />
                     {canEdit ? (
@@ -162,7 +277,7 @@ export function BranchesScreen() {
                         type="button"
                         className="btn sm"
                         aria-label={t('editLabel', { name: branch.name })}
-                        onClick={() => setEditing(branch)}
+                        onClick={() => setModal({ kind: 'edit', branch })}
                       >
                         <IconPencil size="sm" />
                         {t('edit')}
@@ -172,80 +287,62 @@ export function BranchesScreen() {
                 </div>
                 <div className="bstats">
                   <span>
-                    <b>{pending ? '—' : stats.orders}</b>
+                    <b>{statsPending || !statsAvailable ? '—' : stats.orders}</b>
                     {t('statOrders')}
                   </span>
                   <span>
-                    <b>{pending ? '—' : stats.active}</b>
+                    <b>{statsPending || !statsAvailable ? '—' : stats.active}</b>
                     {t('statActive')}
                   </span>
                   <span>
-                    <b>{pending ? '—' : formatMoneyCompact(stats.sales)}</b>
+                    <b>{statsPending || !statsAvailable ? '—' : formatMoneyCompact(stats.sales)}</b>
                     {t('statSales')}
                   </span>
                 </div>
               </div>
             );
           })}
-
-          {capacity.slots.map((slot, i) => (
-            <button
-              key={slot.id}
-              type="button"
-              className="bslot"
-              disabled={!canEdit || update.isPending}
-              onClick={() => addSlot(slot)}
-            >
-              <span
-                className="bcard-ic"
-                style={{ background: 'var(--bo-surface-2)', color: 'var(--bo-text)' }}
-              >
-                <IconPlus />
-              </span>
-              <span className="cname">{t('add')}</span>
-              <span className="sm muted" style={{ fontWeight: 700 }}>
-                {t('slotFree', { n: capacity.count + i + 1, cap: capacity.cap })}
-              </span>
-            </button>
-          ))}
-
-          {capacity.unassignedSlots > 0 && !capacity.full ? (
-            <button type="button" className="bslot" aria-disabled="true" aria-describedby={noteId}>
-              <span
-                className="bcard-ic"
-                style={{ background: 'var(--bo-surface-2)', color: 'var(--bo-text)' }}
-              >
-                <IconPlus />
-              </span>
-              <span className="cname">{t('unassignedTitle')}</span>
-              <span className="sm muted" style={{ fontWeight: 700 }}>
-                {t('unassignedText')}
-              </span>
-            </button>
-          ) : null}
-
-          {capacity.full ? (
-            <button type="button" className="bslot" aria-disabled="true" aria-describedby={noteId}>
-              <span
-                className="bcard-ic"
-                style={{ background: 'var(--bo-surface-2)', color: 'var(--bo-text)' }}
-              >
-                <IconPlus />
-              </span>
-              <span className="cname">{t('fullTitle', { cap: capacity.cap })}</span>
-              <span className="sm muted" style={{ fontWeight: 700 }}>
-                {t('fullText')}
-              </span>
-            </button>
-          ) : null}
         </div>
       )}
 
-      <p id={noteId} className="sm muted" style={{ fontWeight: 600 }}>
-        {capacity.full ? t('fullNote', { cap: capacity.cap }) : t('demoNote')}
+      {pages > 1 ? (
+        <nav className="row gap10" aria-label={t('pagerLabel')} style={{ marginTop: 14 }}>
+          <button
+            type="button"
+            className="btn sm"
+            disabled={list.page <= 1}
+            onClick={() => setList((s) => ({ ...s, page: s.page - 1 }))}
+          >
+            {t('prev')}
+          </button>
+          <span className="sm" style={{ fontWeight: 700 }} aria-live="polite">
+            {t('pageOf', { page: list.page, pages })}
+          </span>
+          <button
+            type="button"
+            className="btn sm"
+            disabled={list.page >= pages}
+            onClick={() => setList((s) => ({ ...s, page: s.page + 1 }))}
+          >
+            {t('next')}
+          </button>
+        </nav>
+      ) : null}
+
+      <p className="sm muted" style={{ fontWeight: 600 }}>
+        {t('stateNote')}
+      </p>
+      <p className="sm muted" style={{ fontWeight: 600 }}>
+        {t('simNote')}
       </p>
 
-      {editing ? <BranchEditModal branch={editing} onClose={() => setEditing(null)} /> : null}
+      {modal?.kind === 'create' ? <BranchFormModal onClose={() => setModal(null)} /> : null}
+      {modal?.kind === 'edit' ? (
+        <BranchFormModal branch={modal.branch} onClose={() => setModal(null)} />
+      ) : null}
+      {modal?.kind === 'status' ? (
+        <BranchStatusModal branch={modal.branch} onClose={() => setModal(null)} />
+      ) : null}
     </div>
   );
 }

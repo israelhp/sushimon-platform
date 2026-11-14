@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { BranchSelectionGuard } from '@/features/order-mode/branch-selection';
 import { renderStore } from '@/test/store-providers';
 import { OrderModeSheet } from './OrderModeSheet';
 
@@ -166,5 +167,122 @@ describe('OrderModeSheet', () => {
     const alert = await within(dialog).findByRole('alert');
     expect(within(alert).getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Ver el menú' })).toBeDisabled();
+  });
+
+  it('recoger: el selector muestra solo las sucursales activas del listado público (con su dirección)', async () => {
+    const user = userEvent.setup();
+    const { dialog } = await openSheet('now');
+    await user.click(within(dialog).getByRole('button', { name: 'Recoger' }));
+    const radios = within(within(dialog).getByRole('radiogroup')).getAllByRole('radio');
+    expect(radios).toHaveLength(3);
+    expect(within(dialog).queryByText('Sucursal 4')).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByText('Diagonal 6, Zona 10, Ciudad de Guatemala'),
+    ).toBeInTheDocument();
+  });
+
+  it('recoger: una sucursal desactivada por el administrador no se ofrece', async () => {
+    const user = userEvent.setup();
+    const view = await renderStore(<OrderModeSheet />, {
+      prepareStore: (store) => {
+        store.branches.find((b) => b.id === 'sucursal-2')!.active = false;
+      },
+    });
+    await act(async () => view.api().shell.openOrderSheet('now'));
+    const dialog = await screen.findByRole('dialog', { name: 'Pedir ahora' });
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: 'Ver el menú' })).toBeEnabled(),
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Recoger' }));
+    expect(within(dialog).queryByText('Sucursal 2')).not.toBeInTheDocument();
+    expect(within(dialog).getAllByRole('radio')).toHaveLength(2);
+  });
+
+  it('recoger: sin sucursales activas muestra el estado vacío y no permite continuar', async () => {
+    const user = userEvent.setup();
+    const view = await renderStore(<OrderModeSheet />, {
+      prepareStore: (store) => store.branches.forEach((b) => (b.active = false)),
+    });
+    await act(async () => view.api().shell.openOrderSheet('now'));
+    const dialog = await screen.findByRole('dialog', { name: 'Pedir ahora' });
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: 'Ver el menú' })).toBeEnabled(),
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Recoger' }));
+    expect(
+      within(dialog).getByText(/no hay sucursales disponibles para recoger/),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByRole('radio')).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Ver el menú' }));
+    expect(push).not.toHaveBeenCalled();
+    expect(view.api().mode.mode.branchId).toBeNull();
+  });
+
+  it('carga: muestra esqueletos y deshabilita continuar', async () => {
+    const view = await renderStore(<OrderModeSheet />, { scenario: 'loading' });
+    await act(async () => view.api().shell.openOrderSheet('now'));
+    const dialog = await screen.findByRole('dialog', { name: 'Pedir ahora' });
+    expect(within(dialog).getByRole('button', { name: 'Ver el menú' })).toBeDisabled();
+    expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('error al cargar las sucursales: aviso específico con reintento', async () => {
+    const view = await renderStore(<OrderModeSheet />, { scenario: 'error' });
+    await act(async () => view.api().shell.openOrderSheet('now'));
+    const dialog = await screen.findByRole('dialog', { name: 'Pedir ahora' });
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent('No pudimos cargar las sucursales.');
+  });
+
+  it('en inglés el selector usa los textos de i18n', async () => {
+    const view = await renderStore(<OrderModeSheet />, {
+      locale: 'en',
+      prepareStore: (store) => store.branches.forEach((b) => (b.active = false)),
+    });
+    await act(async () => view.api().shell.openOrderSheet('now'));
+    const dialog = await screen.findByRole('dialog');
+    const user = userEvent.setup();
+    await user.click(await within(dialog).findByRole('button', { name: 'Pickup' }));
+    expect(await within(dialog).findByText(/no branches available for pickup/)).toBeInTheDocument();
+  });
+
+  it('la sucursal persistida que ya no está activa se limpia y se pide elegir otra', async () => {
+    const view = await renderStore(
+      <>
+        <BranchSelectionGuard />
+        <OrderModeSheet />
+      </>,
+      {
+        prepareStore: (store) => {
+          store.branches.find((b) => b.id === 'sucursal-2')!.active = false;
+        },
+      },
+    );
+    await act(async () =>
+      view.api().mode.setMode({
+        type: 'pickup',
+        when: { kind: 'now' },
+        branchId: 'sucursal-2',
+        address: null,
+      }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Pedir ahora' });
+    expect(within(dialog).getByText(/ya no está disponible/)).toBeInTheDocument();
+    expect(view.api().mode.mode).toMatchObject({ type: null, branchId: null });
+  });
+
+  it('una sucursal persistida que sigue activa no se toca', async () => {
+    const view = await renderStore(<BranchSelectionGuard />);
+    await act(async () =>
+      view.api().mode.setMode({
+        type: 'pickup',
+        when: { kind: 'now' },
+        branchId: 'sucursal-3',
+        address: null,
+      }),
+    );
+    await act(async () => {});
+    expect(view.api().mode.mode.branchId).toBe('sucursal-3');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });

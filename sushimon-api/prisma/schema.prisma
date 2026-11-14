@@ -21,7 +21,14 @@ model Branch {
   code        String            @unique
   name        String
   phone       String?
+  /// F07 (migración 0003). Obligatoria y no vacía (CHECK NOT VALID por filas previas a F07).
+  address     String
+  latitude    Decimal?          @db.Decimal(10, 7)
+  longitude   Decimal?          @db.Decimal(10, 7)
+  active      Boolean           @default(true)
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   assignments StaffAssignment[]
+  auditEvents AuditEvent[]
 
   @@map("branches")
   @@schema("app")
@@ -98,5 +105,29 @@ model StaffAssignment {
 
   @@unique([staffId, roleId, branchId])
   @@map("staff_assignments")
+  @@schema("app")
+}
+
+// ---------------------------------------------------------------------------------------------
+// F07 · Auditoría (migración 0003). `actorId` es el id de staff_users pero SIN FK a propósito:
+// el historial no debe bloquear ni desaparecer con el empleado. `entityId` es polimórfico.
+// ---------------------------------------------------------------------------------------------
+
+model AuditEvent {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  branchId   String?  @map("branch_id") @db.Uuid
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id") @db.Uuid
+  action     String
+  reason     String?
+  oldValues  Json?    @map("old_values")
+  newValues  Json?    @map("new_values")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  branch     Branch?  @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  @@index([entityType, entityId, createdAt(sort: Desc)], map: "audit_events_entity_idx")
+  @@index([branchId, createdAt(sort: Desc)], map: "audit_events_branch_created_idx")
+  @@map("audit_events")
   @@schema("app")
 }

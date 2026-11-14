@@ -10,18 +10,15 @@ import {
   createUser,
   getReportHistory,
   getReportSummary,
-  listBoBranches,
   listBoCategories,
   listBoProducts,
   listBoPromotions,
   listUsers,
   setProductAvailability,
-  updateBranch,
   updateCategory,
   updateProduct,
   updatePromotion,
   updateUser,
-  type BranchUpdate,
   type CategoryInput,
   type ProductInput,
   type ReportFilters,
@@ -241,24 +238,6 @@ export function useSavePromotion() {
 }
 
 // ── Administración ────────────────────────────────────────────────────────────────────────
-
-export function useBoBranches() {
-  const client = useDataClient();
-  const enabled = useStaffEnabled();
-  return useQuery({
-    queryKey: queryKeys.backoffice.branches,
-    queryFn: () => listBoBranches(client),
-    enabled,
-  });
-}
-
-export function useUpdateBranch() {
-  const client = useDataClient();
-  return useInvalidatingMutation(
-    ({ id, input }: { id: string; input: BranchUpdate }) => updateBranch(client, id, input),
-    [queryKeys.backoffice.branches, queryKeys.store.branches, ['backoffice', 'dashboard']],
-  );
-}
 
 export function useUsers() {
   const client = useDataClient();

@@ -3,6 +3,7 @@ import type { MockContext, MockStore } from '../store';
 import * as account from './account';
 import * as admin from './backoffice-admin';
 import * as bo from './backoffice';
+import * as branches from './branches';
 import * as orders from './orders';
 import * as pub from './public';
 
@@ -13,7 +14,8 @@ import * as pub from './public';
 export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   // Públicas
   'GET /v1/store/config': pub.getStoreConfig,
-  'GET /v1/branches': pub.listBranches,
+  'GET /v1/branches': branches.listPublicBranches,
+  'GET /v1/branches/:id': branches.getPublicBranch,
   'GET /v1/delivery/quote': pub.getDeliveryQuote,
   'GET /v1/catalog/categories': pub.listCategories,
   'GET /v1/catalog/products': pub.listProducts,
@@ -59,8 +61,12 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'GET /v1/backoffice/promotions': admin.listBoPromotions,
   'POST /v1/backoffice/promotions': admin.createPromotion,
   'PATCH /v1/backoffice/promotions/:id': admin.updatePromotion,
-  'GET /v1/backoffice/branches': admin.listBoBranches,
-  'PATCH /v1/backoffice/branches/:id': admin.updateBranch,
+  // F07: administración de sucursales (contrato)
+  'GET /v1/admin/branches': branches.listAdminBranches,
+  'POST /v1/admin/branches': branches.createAdminBranch,
+  'GET /v1/admin/branches/:id': branches.getAdminBranch,
+  'PATCH /v1/admin/branches/:id': branches.updateAdminBranch,
+  'PATCH /v1/admin/branches/:id/status': branches.updateAdminBranchStatus,
   'GET /v1/backoffice/users': admin.listUsers,
   'POST /v1/backoffice/users': admin.createUser,
   'PATCH /v1/backoffice/users/:id': admin.updateUser,
@@ -68,6 +74,8 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'GET /v1/backoffice/reports/history': admin.getReportHistory,
 
   // 🎭 Solo simulación
+  'GET /v1/demo/branches/operations': branches.listBranchOperations,
+  'PATCH /v1/demo/branches/:id/operations': branches.updateBranchOperations,
   'POST /v1/demo/orders/:id/advance': orders.demoAdvanceOrder,
   'POST /v1/demo/orders/simulate': orders.demoSimulateOrder,
 };

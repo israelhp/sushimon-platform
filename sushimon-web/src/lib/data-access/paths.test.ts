@@ -12,6 +12,20 @@ describe('paths', () => {
     expect(paths.deliveryAdvance('MON-1')).toBe('/v1/backoffice/deliveries/MON-1/advance');
   });
 
+  it('F07: rutas de sucursales del contrato (público y admin) y de la operación simulada', () => {
+    expect(paths.branches()).toBe('/v1/branches');
+    expect(paths.branch('a b')).toBe('/v1/branches/a%20b');
+    expect(paths.adminBranches()).toBe('/v1/admin/branches');
+    expect(paths.adminBranch('b1')).toBe('/v1/admin/branches/b1');
+    expect(paths.adminBranchStatus('b1')).toBe('/v1/admin/branches/b1/status');
+    // La operación (horario, cobertura, abierta ahora) es F08/F09: solo existe en el mock, bajo /v1/demo.
+    expect(paths.demoBranchOperations()).toBe('/v1/demo/branches/operations');
+    expect(paths.demoBranchOperation('b1')).toBe('/v1/demo/branches/b1/operations');
+    expect(Object.values(paths).map((f) => (f as (id: string) => string)('X'))).not.toContain(
+      '/v1/backoffice/branches',
+    );
+  });
+
   it('cada ruta de paths tiene handler mock (paridad de superficie)', () => {
     const patterns = Object.keys(mockRoutes).map((k) => {
       const pattern = k.split(' ')[1] ?? '';
@@ -31,9 +45,11 @@ describe('paths', () => {
       join(__dirname, '../../../../docs/contracts/planned-endpoints.md'),
       'utf8',
     );
-    const documented = [...doc.matchAll(/`(\/v1\/[^`?\s[]+)/g)].map((m) =>
-      (m[1] ?? '').replace(/\{(\w+)\}/g, 'X'),
-    );
+    // Rutas del documento que el contrato real (F07) reemplazó: ahora son `/v1/admin/branches[...]`.
+    const superseded = new Set(['/v1/backoffice/branches']);
+    const documented = [...doc.matchAll(/`(\/v1\/[^`?\s[]+)/g)]
+      .map((m) => (m[1] ?? '').replace(/\{(\w+)\}/g, 'X'))
+      .filter((path) => !superseded.has(path));
     expect(documented.length).toBeGreaterThan(25);
     const registered = Object.keys(mockRoutes).map(
       (k) => new RegExp(`^${(k.split(' ')[1] ?? '').replace(/:([A-Za-z]+)/g, '[^/]+')}$`),

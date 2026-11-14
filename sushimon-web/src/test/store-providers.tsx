@@ -27,6 +27,7 @@ import { createFixedClock } from '@/mocks/clock';
 import { createMockDataClient } from '@/mocks/index';
 import type { MockScenario } from '@/mocks/scenarios';
 import { createSeedStore } from '@/mocks/seed';
+import type { MockStore } from '@/mocks/store';
 
 /** APIs de estado del cliente expuestas a las pruebas (carrito, modo de pedido, sesión, overlays). */
 export interface StoreTestApi {
@@ -39,6 +40,8 @@ export interface StoreTestApi {
 export interface RenderStoreOptions {
   scenario?: MockScenario;
   locale?: 'es' | 'en';
+  /** Ajusta el store mock antes de montar (p. ej., desactivar sucursales). */
+  prepareStore?: (store: MockStore) => void;
 }
 
 /**
@@ -48,7 +51,7 @@ export interface RenderStoreOptions {
  */
 export async function renderStore(
   ui: ReactElement,
-  { scenario = 'default', locale = 'es' }: RenderStoreOptions = {},
+  { scenario = 'default', locale = 'es', prepareStore }: RenderStoreOptions = {},
 ): Promise<RenderResult & { api: () => StoreTestApi }> {
   let current: StoreTestApi | null = null;
   function Probe() {
@@ -61,11 +64,13 @@ export async function renderStore(
     return null;
   }
 
+  const seeded = createSeedStore(scenario);
+  prepareStore?.(seeded);
   const client = createMockDataClient({
     scenario,
     latencyMs: 0,
     persist: false,
-    store: createSeedStore(scenario),
+    store: seeded,
     clock: createFixedClock(),
   });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

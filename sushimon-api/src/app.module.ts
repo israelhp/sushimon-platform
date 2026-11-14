@@ -3,9 +3,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AppThrottlerGuard } from './common/throttle/app-throttler.guard.js';
+import { noStoreMiddleware } from './common/http/cache-control.js';
+import { rejectProtoKeysMiddleware } from './common/http/reject-proto-keys.middleware.js';
 import { requestIdMiddleware } from './common/request-id/request-id.middleware.js';
 import { validateEnv, type Env } from './config/env.js';
 import { AuthModule } from './auth/auth.module.js';
+import { BranchesModule } from './branches/branches.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthController } from './health/health.controller.js';
 import { HealthTokenGuard } from './health/health-token.guard.js';
@@ -30,12 +33,15 @@ import { HealthTokenGuard } from './health/health-token.guard.js';
     }),
     DatabaseModule,
     AuthModule,
+    BranchesModule,
   ],
   controllers: [HealthController],
   providers: [HealthTokenGuard, { provide: APP_GUARD, useClass: AppThrottlerGuard }],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(requestIdMiddleware).forRoutes('*path');
+    consumer.apply(requestIdMiddleware, rejectProtoKeysMiddleware).forRoutes('*path');
+    // Todo el backoffice: nunca se almacena en caché (incluidos 401/403).
+    consumer.apply(noStoreMiddleware).forRoutes('admin/*path');
   }
 }

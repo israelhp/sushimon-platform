@@ -324,10 +324,10 @@ describe('catálogo y administración', () => {
     expect(await status(admin.listBoPromotions(h.client))).toBe(403);
   });
 
-  it('sucursales y usuarios', async () => {
+  it('operación simulada de sucursales (isOpen) y usuarios', async () => {
     const h = createHarness();
     h.asStaff('admin');
-    const closed = await admin.updateBranch(h.client, 'sucursal-2', { isOpen: false });
+    const closed = await admin.updateBranchOperations(h.client, 'sucursal-2', { isOpen: false });
     expect(closed).toMatchObject({ isOpen: false, openNow: false });
     const u = await admin.createUser(h.client, {
       name: 'Nuevo Encargado',

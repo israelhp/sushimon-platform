@@ -5,10 +5,11 @@ adaptador mock**; se añaden a `openapi.yaml` (sección `paths`) en la Etapa 2/3
 implemente (`contracts:check` exige que contrato y API coincidan). Los esquemas ya están en
 `components/schemas` con `x-status: draft`.
 
+> Implementado en F07 (`API_IMPLEMENTED`, ya en `openapi.yaml`): `GET /v1/branches[/{id}]` y `/v1/admin/branches[/{id}[/status]]`; se retiraron de esta tabla.
+
 | Método           | Ruta                                                       | Esquema de respuesta  | Uso                                                    | Auth prevista               |
 | ---------------- | ---------------------------------------------------------- | --------------------- | ------------------------------------------------------ | --------------------------- |
 | GET              | `/v1/store/config`                                         | `StoreConfig`         | moneda, horarios, reglas de programación, contacto     | pública                     |
-| GET              | `/v1/branches`                                             | `Branch[]`            | sucursales con cobertura                               | pública                     |
 | GET              | `/v1/delivery/quote?branchId&department&municipality&zone` | `DeliveryQuote`       | tarifa y ETA por zona                                  | pública                     |
 | GET              | `/v1/catalog/categories`                                   | `Category[]`          | categorías visibles                                    | pública                     |
 | GET              | `/v1/catalog/products?branchId&categoryId`                 | `Product[]`           | menú (disponibilidad por sucursal)                     | pública                     |
@@ -36,7 +37,6 @@ implemente (`contracts:check` exige que contrato y API coincidan). Los esquemas 
 | GET/POST · PATCH | `/v1/backoffice/products[/{id}]`                           | `Product`             | catálogo (editar: admin; disponibilidad: encargado)    | personal                    |
 | GET/POST · PATCH | `/v1/backoffice/categories[/{id}]`                         | `Category`            | orden/visibilidad                                      | admin                       |
 | GET/POST · PATCH | `/v1/backoffice/promotions[/{id}]`                         | `Promotion`           | promociones                                            | admin                       |
-| GET · PATCH      | `/v1/backoffice/branches[/{id}]`                           | `Branch`              | sucursales (tope 5 ❓)                                 | admin                       |
 | GET/POST · PATCH | `/v1/backoffice/users[/{id}]`                              | `StaffUser`           | usuarios internos                                      | admin                       |
 | GET              | `/v1/backoffice/reports/summary?from&to&branchId`          | `ReportSummary`       | reportes                                               | admin/encargado             |
 | GET              | `/v1/backoffice/reports/history?from&to&branchId`          | `Order[]`             | historial                                              | admin/encargado             |
