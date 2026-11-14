@@ -136,6 +136,65 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      operationId: updateMe
+      summary: Actualiza nombre y teléfono del perfil del cliente autenticado
+      description: |
+        Actualización parcial: los campos omitidos no cambian. El cliente se identifica solo por el JWT; no
+        existe forma de elegir otra identidad. El correo, la identidad, los roles y los permisos NO se pueden
+        modificar aquí (400 por campo no permitido).
+      tags: [me]
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCustomerProfileRequest'
+      responses:
+        '200':
+          description: Perfil actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '400':
+          description: Datos inválidos (formato, longitud o campo no permitido)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/me/storefront:
+    get:
+      operationId: getCustomerStorefront
+      summary: Contexto agregado de Mi cuenta (una sola solicitud)
+      description: |
+        Devuelve la identidad (Supabase Auth), el perfil comercial y las secciones de Mi cuenta que aún
+        no tienen contrato (`pendingSections`). Nunca representa como `0` datos de F05, F06 o F23 que
+        todavía no existen. Crea el perfil de forma idempotente si todavía no existe.
+      tags: [me]
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Contexto de cuenta del cliente autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerStorefrontContext'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /v1/branches:
     get:
       operationId: listPublicBranches
@@ -1801,9 +1860,61 @@ components:
       required: [authUserId, email, customer, isStaff]
       properties:
         authUserId: { type: string, format: uuid }
-        email: { type: string, nullable: true }
+        email:
+          {
+            type: string,
+            nullable: true,
+            description: 'Correo de la identidad de Supabase Auth (solo lectura).',
+          }
         customer: { $ref: '#/components/schemas/CustomerProfile' }
         isStaff: { type: boolean }
+    UpdateCustomerProfileRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        Campos editables del perfil comercial. Omitido = sin cambios. `phone: null` o cadena vacía borra el teléfono.
+        Cualquier otra propiedad (identidad, correo, roles, permisos, `customerId`…) responde 400.
+      properties:
+        fullName:
+          type: string
+          minLength: 2
+          maxLength: 120
+          description: |
+            Se recortan espacios y se colapsan los internos. Solo letras (incluidas tildes y ñ), espacios,
+            apóstrofos, guiones y puntos; debe contener al menos una letra. Sin `null`.
+        phone:
+          type: string
+          nullable: true
+          maxLength: 20
+          description: |
+            Guatemala: 8 dígitos locales, con o sin `+502`/`502`; se guarda como `+502XXXXXXXX`.
+            Otros países: `+` seguido de 8 a 15 dígitos (E.164), sin prefijo de país asumido.
+    CustomerStorefrontContext:
+      type: object
+      required: [authUserId, email, provider, avatarUrl, customer, isStaff, pendingSections]
+      properties:
+        authUserId: { type: string, format: uuid }
+        email:
+          {
+            type: string,
+            nullable: true,
+            description: 'Correo de la identidad (Auth), no editable.',
+          }
+        provider:
+          { type: string, nullable: true, description: 'Proveedor de identidad (p. ej. google).' }
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: Imagen de la identidad de Google (https, dominio permitido). Null si no existe. No se copia a almacenamiento propio.
+        customer: { $ref: '#/components/schemas/CustomerProfile' }
+        isStaff: { type: boolean }
+        pendingSections:
+          type: array
+          description: Secciones de Mi cuenta sin contrato implementado todavía. No tienen contadores.
+          items:
+            type: string
+            enum: [addresses, favorites, orders]
     ReadyResponse:
       type: object
       required: [status, checks]
