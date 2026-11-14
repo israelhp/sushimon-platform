@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { ConflictException, Logger } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { AuditService } from '../src/audit/audit.service.js';
 import { AuthorizationService } from '../src/auth/authorization.service.js';
@@ -7,7 +7,7 @@ import { BranchesQueryService } from '../src/branches/branches-query.service.js'
 import { BranchesRepository } from '../src/branches/branches.repository.js';
 import { validateEnv, type Env } from '../src/config/env.js';
 import { PrismaService } from '../src/database/prisma.service.js';
-import type { IdentityService } from '../src/identity/identity.service.js';
+import { IdentityService } from '../src/identity/identity.service.js';
 import type { StaffContext } from '../src/identity/identity.types.js';
 import { RolesService } from '../src/staff/roles.service.js';
 import { StaffCommandGuard } from '../src/staff/staff-command-guard.js';
@@ -49,7 +49,7 @@ describe.skipIf(!url)('Personal y RBAC contra PostgreSQL real', () => {
   const createdBranchIds = new Set<string>();
 
   const buildServices = (audit = new AuditService()) => {
-    const authorization = new AuthorizationService({} as IdentityService);
+    const authorization = new AuthorizationService(new IdentityService(prisma, audit));
     const branches = new BranchesQueryService(new BranchesRepository(prisma), authorization);
     const guard = new StaffCommandGuard(repo, audit);
     return {
@@ -127,9 +127,11 @@ describe.skipIf(!url)('Personal y RBAC contra PostgreSQL real', () => {
       },
     });
     await probe.$disconnect();
-    if (foreign > 0) {
+    // Opt-in explícito (STAFF_INT_ALLOW_EXISTING_STAFF=1) para una base de pruebas del equipo donde el único personal
+    // «real» es el admin del bootstrap. Las pruebas solo borran datos marcados @sushimon.test; nunca tocan ese admin.
+    if (foreign > 0 && process.env['STAFF_INT_ALLOW_EXISTING_STAFF'] !== '1') {
       throw new Error(
-        'staff.int-spec: DATABASE_URL_TEST contiene empleados reales activos y vinculados. Estas pruebas exigen una base DESECHABLE o de pruebas; no se ejecutaron.',
+        'staff.int-spec: DATABASE_URL_TEST contiene empleados reales activos y vinculados. Estas pruebas exigen una base DESECHABLE o de pruebas; no se ejecutaron. Si es una base de pruebas del equipo, repite con STAFF_INT_ALLOW_EXISTING_STAFF=1.',
       );
     }
     prisma = new PrismaService(new ConfigService<Env, true>(validateEnv({ DATABASE_URL: url })));
@@ -283,7 +285,34 @@ describe.skipIf(!url)('Personal y RBAC contra PostgreSQL real', () => {
   });
 
   describe('último administrador (candado pg_advisory_xact_lock con la misma clave que el bootstrap)', () => {
-    it('dos desactivaciones simultáneas de los dos últimos administradores: exactamente una tiene éxito, la otra 409', async () => {
+    // Con STAFF_INT_ALLOW_EXISTING_STAFF=1 el admin del bootstrap contaría como «otro administrador» y el candado
+    // nunca se dispararía. Se desactiva SOLO durante este bloque y se restaura siempre (afterAll).
+    let suspendedAdmins: string[] = [];
+    beforeAll(async () => {
+      if (process.env['STAFF_INT_ALLOW_EXISTING_STAFF'] !== '1') return;
+      const rows = await prisma.staffUser.findMany({
+        where: {
+          active: true,
+          authUserId: { not: null },
+          NOT: { email: { endsWith: '@sushimon.test' } },
+        },
+        select: { id: true },
+      });
+      suspendedAdmins = rows.map((r) => r.id);
+      await prisma.staffUser.updateMany({
+        where: { id: { in: suspendedAdmins } },
+        data: { active: false },
+      });
+    });
+    afterAll(async () => {
+      if (suspendedAdmins.length === 0) return;
+      await prisma.staffUser.updateMany({
+        where: { id: { in: suspendedAdmins } },
+        data: { active: true },
+      });
+    });
+
+    it('dos desactivaciones simultáneas de los dos últimos administradores: exactamente una tiene éxito, la otra 409/403', async () => {
       const x = await mkStaff('admin');
       const y = await mkStaff('admin');
       for (let round = 0; round < 3; round++) {
@@ -300,7 +329,11 @@ describe.skipIf(!url)('Personal y RBAC contra PostgreSQL real', () => {
           `ronda ${round}`,
         ).toHaveLength(1);
         const rejected = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
-        expect(rejected.reason).toBeInstanceOf(ConflictException);
+        // 409 (candado del último admin) o 403 (el actor perdedor ya fue desactivado por el ganador y la relectura
+        // transaccional del actor lo rechaza): ambos son seguros; lo esencial es que quede exactamente un admin activo.
+        expect(
+          [ConflictException, ForbiddenException].some((E) => rejected.reason instanceof E),
+        ).toBe(true);
         expect(
           await prisma.staffUser.count({ where: { id: { in: [x.id, y.id] }, active: true } }),
         ).toBe(1);
