@@ -37,7 +37,7 @@ export async function createTestKeys(): Promise<TestKeys> {
       role: 'authenticated',
       email: 'cliente@example.com',
       app_metadata: { provider: 'google', providers: ['google'] },
-      user_metadata: { full_name: 'Cliente Prueba' },
+      user_metadata: { full_name: 'Cliente Prueba', email_verified: true },
       amr: [{ method: 'oauth', timestamp: Math.floor(Date.now() / 1000) }],
       ...claims,
     })

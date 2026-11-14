@@ -1,12 +1,29 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
 
 export class AuthStaffAssignmentDto {
-  @ApiProperty({ type: String, enum: ['admin', 'manager', 'kitchen'] })
+  @ApiProperty({ type: String, enum: ['admin', 'manager', 'kitchen', 'staff'] })
   role!: string;
   @ApiProperty({ type: String, format: 'uuid', nullable: true })
   branchId!: string | null;
 }
 
+export class BranchRefDto {
+  @ApiProperty({ type: String, format: 'uuid' })
+  id!: string;
+  @ApiProperty({ type: String })
+  name!: string;
+  @ApiProperty({ type: String })
+  code!: string;
+}
+
+export class GrantScopeDto {
+  @ApiProperty({ type: Boolean })
+  allBranches!: boolean;
+  @ApiProperty({ type: [String], format: 'uuid' })
+  branchIds!: string[];
+}
+
+@ApiExtraModels(GrantScopeDto)
 export class AuthStaffContextDto {
   @ApiProperty({ type: String, format: 'uuid' })
   staffId!: string;
@@ -14,12 +31,20 @@ export class AuthStaffContextDto {
   fullName!: string;
   @ApiProperty({ type: [AuthStaffAssignmentDto] })
   assignments!: AuthStaffAssignmentDto[];
-  @ApiProperty({ type: [String] })
+  @ApiProperty({ type: [String], description: 'Unión de permisos (solo UI; no autoriza).' })
   permissions!: string[];
-  @ApiProperty({ type: Boolean })
+  @ApiProperty({ type: Boolean, deprecated: true })
   allBranches!: boolean;
-  @ApiProperty({ type: [String], format: 'uuid' })
+  @ApiProperty({ type: [String], format: 'uuid', deprecated: true })
   branchIds!: string[];
+  @ApiProperty({
+    type: 'object',
+    additionalProperties: { $ref: getSchemaPath(GrantScopeDto) },
+    description: 'Permiso -> alcance. Solo asignaciones efectivas.',
+  })
+  grants!: Record<string, GrantScopeDto>;
+  @ApiProperty({ type: [BranchRefDto] })
+  branches!: BranchRefDto[];
 }
 
 export class AuthContextResponse {

@@ -135,7 +135,11 @@ function toPrincipal(payload: JWTPayload): Principal {
     authUserId: sub.toLowerCase(),
     email,
     provider,
-    googleOAuth: provider === 'google' && viaOAuth,
+    // Default-deny: solo se vincula personal si Auth marca el correo como verificado (`email_verified === true`).
+    // Ausente, false o de otro tipo = no verificado. Riesgo residual: `user_metadata` es editable por el usuario;
+    // la defensa real es deshabilitar el proveedor Email y controlar el linking de identidades en Supabase
+    // (docs/security/auth.md).
+    googleOAuth: provider === 'google' && viaOAuth && userMeta['email_verified'] === true,
     aal,
     // Solo dato inicial para mostrar: se limpia de caracteres de control y se acota.
     displayName: name ? name.replace(/\p{Cc}/gu, '').slice(0, 120) || null : null,

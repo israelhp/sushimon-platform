@@ -1,8 +1,8 @@
 import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { AuditService } from '../audit/audit.service.js';
+import { AuthorizationService } from '../auth/authorization.service.js';
 import type { StaffContext } from '../identity/identity.types.js';
 import { translateBranchDbError } from './branch-db-errors.js';
-import { BranchScopeService, canAccess } from './branch-scope.service.js';
 import {
   diffBranch,
   normalizeCreate,
@@ -28,13 +28,13 @@ export class BranchesCommandsService {
   constructor(
     @Inject(BranchesRepository) private readonly repo: BranchesRepository,
     @Inject(AuditService) private readonly audit: AuditService,
-    @Inject(BranchScopeService) private readonly scopes: BranchScopeService,
+    @Inject(AuthorizationService) private readonly authorization: AuthorizationService,
   ) {}
 
   /** Alta global: solo personal con alcance a TODAS las sucursales. */
   async create(staff: StaffContext, input: CreateBranchInput): Promise<AdminBranchView> {
-    // Alcance global SOLO si una asignación con permiso `branches` es global (no basta otro rol).
-    if (!(await this.scopes.resolve(staff)).allBranches) {
+    // Alcance global SOLO si una asignación con permiso `branches.create` es global (no basta otro rol).
+    if (!this.authorization.scopeFor(staff, 'branches.create').allBranches) {
       throw new ForbiddenException('Acceso denegado');
     }
     const data = normalizeCreate(input);
@@ -73,7 +73,7 @@ export class BranchesCommandsService {
     input: UpdateBranchInput,
   ): Promise<AdminBranchView> {
     const patch = normalizeUpdate(input);
-    await this.assertInScope(staff, id);
+    this.assertInScope(staff, id);
     return this.inTransaction(async (tx) => {
       const current = await this.requireBranch(tx, id);
       const { latitude, longitude } = resultingCoordinates(current, patch);
@@ -101,7 +101,7 @@ export class BranchesCommandsService {
     input: StatusInput,
   ): Promise<AdminBranchView> {
     const { active, reason } = normalizeStatus(input);
-    await this.assertInScope(staff, id);
+    this.assertInScope(staff, id);
     return this.inTransaction(async (tx) => {
       const current = await this.requireBranch(tx, id);
       if (current.active === active) return current; // idempotente
@@ -123,9 +123,11 @@ export class BranchesCommandsService {
     });
   }
 
-  /** Fuera de alcance = inexistente (404), sin consultar la sucursal. */
-  private async assertInScope(staff: StaffContext, id: string): Promise<void> {
-    if (!canAccess(await this.scopes.resolve(staff), id)) throw new NotFoundException(NOT_FOUND);
+  /** Fuera del alcance de `branches.update` = inexistente (404), sin consultar la sucursal. */
+  private assertInScope(staff: StaffContext, id: string): void {
+    if (!this.authorization.canAccess(staff, 'branches.update', id)) {
+      throw new NotFoundException(NOT_FOUND);
+    }
   }
 
   private async inTransaction<T>(fn: (tx: BranchTx) => Promise<T>): Promise<T> {

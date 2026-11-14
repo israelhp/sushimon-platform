@@ -4,7 +4,7 @@ import type { Prisma } from '../generated/prisma/client.js';
 /** Solo lo que AuditService necesita del cliente transaccional (facilita dobles en pruebas). */
 export type AuditWriter = Pick<Prisma.TransactionClient, 'auditEvent'>;
 
-export type AuditValues = Record<string, string | number | boolean | null>;
+export type AuditValues = Record<string, string | number | boolean | null | string[]>;
 
 export interface AuditEventInput {
   /** `staff_users.id` de quien actúa (null = sistema). */

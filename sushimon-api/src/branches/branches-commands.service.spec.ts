@@ -6,9 +6,17 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AuditService } from '../audit/audit.service.js';
+import { AuthorizationService } from '../auth/authorization.service.js';
+import type { IdentityService } from '../identity/identity.service.js';
 import type { StaffContext } from '../identity/identity.types.js';
+import {
+  globalStaff,
+  grantsOf,
+  mergeGrants,
+  scopedStaff,
+  staffContext,
+} from '../../test/support/staff-context.js';
 import { BranchesCommandsService } from './branches-commands.service.js';
-import type { BranchScopeService } from './branch-scope.service.js';
 import type { BranchesRepository } from './branches.repository.js';
 import type { AdminBranchView } from './branches.types.js';
 
@@ -31,15 +39,13 @@ const stored: AdminBranchView = {
   createdAt: '2026-01-01T00:00:00.000Z',
 };
 
-const staff = (over: Partial<StaffContext> = {}): StaffContext => ({
-  staffId: 'staff-1',
-  fullName: 'Ana',
-  assignments: [],
-  permissions: ['branches'],
-  allBranches: true,
-  branchIds: [],
-  ...over,
-});
+/** `branches.create` + `branches.update` globales (por defecto) o solo en `branchIds` (`allBranches: false`). */
+const staff = (over: { allBranches?: boolean; branchIds?: string[] } = {}): StaffContext => {
+  const perms = ['branches.create', 'branches.update'];
+  const ctx =
+    over.allBranches === false ? scopedStaff(perms, over.branchIds ?? []) : globalStaff(perms);
+  return { ...ctx, staffId: 'staff-1' };
+};
 
 function setup(current: AdminBranchView | null = stored) {
   const tx = { auditEvent: { create: vi.fn().mockResolvedValue({}) } };
@@ -51,15 +57,10 @@ function setup(current: AdminBranchView | null = stored) {
       Promise.resolve({ ...current, ...data } as AdminBranchView),
     ),
   };
-  // El alcance lo calcula BranchScopeService (probado aparte): aquí se deriva de la prueba.
-  const scopes = {
-    resolve: (s: StaffContext) =>
-      Promise.resolve({ allBranches: s.allBranches, branchIds: s.branchIds }),
-  };
   const service = new BranchesCommandsService(
     repo as unknown as BranchesRepository,
     new AuditService(),
-    scopes as unknown as BranchScopeService,
+    new AuthorizationService({} as IdentityService),
   );
   return { service, repo, tx };
 }
@@ -91,6 +92,17 @@ describe('BranchesCommandsService.create', () => {
     await expect(
       service.create(staff({ allBranches: false, branchIds: [ID] }), input),
     ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(repo.transaction).not.toHaveBeenCalled();
+  });
+
+  it('el alcance global se exige sobre branches.create (no basta global en branches.update)', async () => {
+    const { service, repo } = setup();
+    const onlyUpdateGlobal = staffContext(
+      mergeGrants(grantsOf(['branches.update'], 'global'), grantsOf(['branches.create'], [ID])),
+    );
+    await expect(service.create(onlyUpdateGlobal, input)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
     expect(repo.transaction).not.toHaveBeenCalled();
   });
 
@@ -151,6 +163,17 @@ describe('BranchesCommandsService.update', () => {
       latitude: null,
       longitude: null,
     });
+  });
+
+  it('el alcance sale de branches.update, no de branches.read', async () => {
+    const { service, repo } = setup();
+    const readGlobalUpdateScoped = staffContext(
+      mergeGrants(grantsOf(['branches.read'], 'global'), grantsOf(['branches.update'], [OTHER])),
+    );
+    await expect(service.update(readGlobalUpdateScoped, ID, { name: 'X' })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(repo.transaction).not.toHaveBeenCalled();
   });
 
   it('inexistente → 404; fuera de alcance → 404 sin consultar la BD', async () => {

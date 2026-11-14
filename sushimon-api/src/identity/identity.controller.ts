@@ -21,13 +21,16 @@ export class AuthController {
   @ApiOkResponse({ type: AuthContextResponse })
   @ApiResponse({ status: 401, description: 'Token ausente, inválido, expirado o de otro emisor' })
   async getContext(@CurrentUser() principal: Principal): Promise<AuthContextResponse> {
-    const [staff, isCustomer] = await Promise.all([
+    const [resolved, isCustomer] = await Promise.all([
       this.identity.getStaffContext(principal),
       this.identity.hasCustomer(principal.authUserId),
     ]);
-    const staffAuthorized = staff !== null;
+    const staffAuthorized = resolved !== null;
     const mfaOk = principal.aal === 'aal2';
     const access = !staffAuthorized ? 'NOT_STAFF' : mfaOk ? 'GRANTED' : 'MFA_REQUIRED';
+    // Roles, permisos y sucursales solo se revelan con la sesión aal2 (nada administrativo antes).
+    const staff =
+      resolved && access === 'GRANTED' ? await this.identity.withAllBranches(resolved) : null;
     return {
       authUserId: principal.authUserId,
       email: principal.email,
@@ -37,8 +40,7 @@ export class AuthController {
       staffAuthorized,
       mfaRequired: staffAuthorized && !mfaOk,
       access,
-      // Roles, permisos y sucursales solo se revelan con la sesión aal2 (nada administrativo antes).
-      staff: access === 'GRANTED' ? staff : null,
+      staff,
       backofficeAccess: access === 'GRANTED',
     };
   }
@@ -49,6 +51,8 @@ export class AuthController {
 @RequireStaff()
 @Controller('admin')
 export class AdminController {
+  constructor(@Inject(IdentityService) private readonly identity: IdentityService) {}
+
   @Get('me/context')
   @ApiOperation({
     operationId: 'getAdminContext',
@@ -56,11 +60,16 @@ export class AdminController {
   })
   @ApiOkResponse({ type: AdminContextResponse })
   @ApiResponse({ status: 401, description: 'Token ausente, inválido o expirado' })
-  getAdminContext(
+  async getAdminContext(
     @CurrentUser() principal: Principal,
     @CurrentStaff() staff: StaffContext,
-  ): AdminContextResponse {
-    return { authUserId: principal.authUserId, email: principal.email, aal: 'aal2', staff };
+  ): Promise<AdminContextResponse> {
+    return {
+      authUserId: principal.authUserId,
+      email: principal.email,
+      aal: 'aal2',
+      staff: await this.identity.withAllBranches(staff),
+    };
   }
 }
 

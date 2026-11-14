@@ -14,7 +14,7 @@ Contexto global en `../CLAUDE.md`. Aquí solo lo específico de la API.
   Config de entorno validada con zod en `src/config/env.ts` (falla al arrancar).
 - **Errores**: `AllExceptionsFilter` devuelve `{statusCode,error,message}`; nunca trazas en 5xx.
 - **Auth** (F01, `docs/security/auth.md`): guard global `JwtAuthGuard` (denegar por defecto; `@Public()` solo health);
-  `@RequireStaff('permiso')` para backoffice (exige personal activo **y `aal2`**, F02; toda ruta admin lo usa); permisos y sucursales SIEMPRE desde la BD, nunca de las claims.
+  `@RequireStaff('modulo.accion')` para backoffice (F03, ADR-0010: permisos granulares; exige personal activo, cada permiso en algún alcance **y `aal2`**; toda ruta admin lo usa, por método). El alcance por sucursal se resuelve por recurso con `AuthorizationService.scopeFor/canAccess(staff, permiso, branchId)` sobre `staff.grants` (nunca la unión plana `permissions/allBranches/branchIds`, deprecada, solo UI); permisos y sucursales SIEMPRE desde la BD, nunca de las claims, sin caché entre solicitudes.
   Nuevo endpoint = JWT por defecto + `@ApiBearerAuth()` + 401 en el contrato.
 - **Dinero**: la API calcula totales en GTQ con enteros/decimal exacto, nunca `number` flotante;
   idempotencia (`Idempotency-Key`) en operaciones de pedido/pago.

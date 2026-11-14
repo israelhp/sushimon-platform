@@ -1,7 +1,7 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { StaffContext } from '../identity/identity.types.js';
-import { BranchScopeService, canAccess } from './branch-scope.service.js';
-import { BranchesRepository } from './branches.repository.js';
+import { AuthorizationService } from '../auth/authorization.service.js';
+import { BranchesRepository, type BranchTx } from './branches.repository.js';
 import type {
   AdminBranchListQuery,
   AdminBranchPageView,
@@ -10,6 +10,7 @@ import type {
 } from './branches.types.js';
 
 const NOT_FOUND = 'Sucursal no encontrada';
+const READ = 'branches.read';
 
 /**
  * Consultas de sucursales. Exportado para F08/F09/F13/F17 (horarios, cobertura, precios, bootstrap): es la
@@ -19,7 +20,7 @@ const NOT_FOUND = 'Sucursal no encontrada';
 export class BranchesQueryService {
   constructor(
     @Inject(BranchesRepository) private readonly repo: BranchesRepository,
-    @Inject(BranchScopeService) private readonly scopes: BranchScopeService,
+    @Inject(AuthorizationService) private readonly authorization: AuthorizationService,
   ) {}
 
   listPublic(): Promise<PublicBranchView[]> {
@@ -36,9 +37,21 @@ export class BranchesQueryService {
     return this.repo.existsActive(id);
   }
 
-  /** Ids de sucursales dentro del alcance del empleado para el permiso `branches`. */
-  async idsInScope(staff: StaffContext, opts: { activeOnly?: boolean } = {}): Promise<string[]> {
-    const scope = await this.scopes.resolve(staff);
+  /**
+   * Para escrituras de otros módulos: ¿existen TODAS las sucursales y están activas? Se evalúa con el cliente `tx`
+   * de la transacción del llamador y las bloquea (FOR SHARE) hasta su fin: nadie puede desactivarlas en medio.
+   */
+  async allActiveForShare(tx: BranchTx, ids: string[]): Promise<boolean> {
+    const unique = [...new Set(ids)];
+    return (await this.repo.lockActiveForShare(tx, unique)).length === unique.length;
+  }
+
+  /** Ids de sucursales dentro del alcance del empleado para un permiso (por defecto `branches.read`). */
+  async idsInScope(
+    staff: StaffContext,
+    opts: { activeOnly?: boolean; permission?: string } = {},
+  ): Promise<string[]> {
+    const scope = this.authorization.scopeFor(staff, opts.permission ?? READ);
     if (!scope.allBranches && scope.branchIds.length === 0) return [];
     return this.repo.findIds({
       scope: scope.allBranches ? null : scope.branchIds,
@@ -49,7 +62,7 @@ export class BranchesQueryService {
   async listAdmin(staff: StaffContext, query: AdminBranchListQuery): Promise<AdminBranchPageView> {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
-    const scope = await this.scopes.resolve(staff);
+    const scope = this.authorization.scopeFor(staff, READ);
     if (!scope.allBranches && scope.branchIds.length === 0) {
       return { items: [], page, pageSize, total: 0 };
     }
@@ -66,8 +79,9 @@ export class BranchesQueryService {
 
   /** Fuera de alcance = inexistente (404): no revela qué sucursales existen. */
   async getAdminById(staff: StaffContext, id: string): Promise<AdminBranchView> {
-    const scope = await this.scopes.resolve(staff);
-    const branch = canAccess(scope, id) ? await this.repo.findAdminById(id) : null;
+    const branch = this.authorization.canAccess(staff, READ, id)
+      ? await this.repo.findAdminById(id)
+      : null;
     if (!branch) throw new NotFoundException(NOT_FOUND);
     return branch;
   }

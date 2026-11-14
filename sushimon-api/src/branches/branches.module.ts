@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module.js';
 import { AdminBranchesController } from './admin-branches.controller.js';
-import { BranchScopeService } from './branch-scope.service.js';
 import { BranchesCommandsService } from './branches-commands.service.js';
 import { BranchesQueryService } from './branches-query.service.js';
 import { BranchesRepository } from './branches.repository.js';
@@ -11,12 +10,7 @@ import { PublicBranchesController } from './public-branches.controller.js';
 @Module({
   imports: [AuditModule],
   controllers: [PublicBranchesController, AdminBranchesController],
-  providers: [
-    BranchesRepository,
-    BranchScopeService,
-    BranchesQueryService,
-    BranchesCommandsService,
-  ],
+  providers: [BranchesRepository, BranchesQueryService, BranchesCommandsService],
   exports: [BranchesQueryService],
 })
 export class BranchesModule {}

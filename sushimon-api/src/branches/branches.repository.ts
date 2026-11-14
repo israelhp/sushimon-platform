@@ -93,6 +93,17 @@ export class BranchesRepository {
     return row !== null;
   }
 
+  /**
+   * Bloquea (FOR SHARE) las sucursales ACTIVAS de la lista dentro de la transacción y devuelve sus ids. Impide que
+   * se desactiven entre la validación y la escritura de una asignación (usa el cliente `tx`, sin otra conexión).
+   */
+  async lockActiveForShare(tx: BranchTx, ids: string[]): Promise<string[]> {
+    if (ids.length === 0) return [];
+    const rows = await tx.$queryRaw<{ id: string }[]>`
+      SELECT id FROM app.branches WHERE id = ANY(${ids}::uuid[]) AND active FOR SHARE`;
+    return rows.map((r) => r.id);
+  }
+
   /** Ids de sucursales (opcionalmente solo activas y/o dentro de un alcance). */
   async findIds(opts: { scope: string[] | null; activeOnly: boolean }): Promise<string[]> {
     const rows = await this.prisma.branch.findMany({
@@ -104,19 +115,6 @@ export class BranchesRepository {
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
     });
     return rows.map((r) => r.id);
-  }
-
-  /** `branch_id` (null = todas) de las asignaciones activas del empleado cuyo rol tiene el permiso. */
-  async findAssignmentBranchIds(staffId: string, permission: string): Promise<(string | null)[]> {
-    const rows = await this.prisma.staffAssignment.findMany({
-      where: {
-        staffId,
-        active: true,
-        role: { permissions: { some: { permission: { code: permission } } } },
-      },
-      select: { branchId: true },
-    });
-    return rows.map((r) => r.branchId);
   }
 
   /** Bloquea la fila (FOR UPDATE) hasta el fin de la transacción y la devuelve; null si no existe. */

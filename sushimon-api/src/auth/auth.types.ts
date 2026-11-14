@@ -7,7 +7,8 @@ export interface Principal {
   /** Proveedor de identidad (`app_metadata.provider`, controlado por el servidor de Auth). */
   provider: string | null;
   /**
-   * true solo si ESTA sesión nació de un OAuth con Google (provider google + amr `oauth`).
+   * true solo si ESTA sesión nació de un OAuth con Google (provider google + amr `oauth`) y Auth marca el correo
+   * como verificado (`user_metadata.email_verified === true`; ausente = no verificado).
    * Es la única base para vincular un empleado preregistrado por correo.
    */
   googleOAuth: boolean;

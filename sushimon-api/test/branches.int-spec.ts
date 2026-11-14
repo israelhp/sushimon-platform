@@ -2,33 +2,33 @@ import { ConfigService } from '@nestjs/config';
 import { ConflictException, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { AuditService } from '../src/audit/audit.service.js';
-import { BranchScopeService } from '../src/branches/branch-scope.service.js';
+import { AuthorizationService } from '../src/auth/authorization.service.js';
+import type { IdentityService } from '../src/identity/identity.service.js';
 import { BranchesCommandsService } from '../src/branches/branches-commands.service.js';
 import { BranchesQueryService } from '../src/branches/branches-query.service.js';
 import { BranchesRepository } from '../src/branches/branches.repository.js';
 import { validateEnv, type Env } from '../src/config/env.js';
 import { PrismaService } from '../src/database/prisma.service.js';
 import type { StaffContext } from '../src/identity/identity.types.js';
+import { globalStaff, scopedStaff as scopedStaffCtx } from './support/staff-context.js';
 import { cleanupTestData, ensureAuthStub, migrate, TEST_URL, withClient } from './support/db.js';
 
 const url = TEST_URL;
 const uniqueCode = () => `t${randomUUID().slice(0, 8)}`;
 
-const global: StaffContext = {
-  staffId: '', // se completa con el empleado real creado en beforeAll
+const BRANCH_PERMISSIONS = ['branches.read', 'branches.create', 'branches.update'];
+/** staffId se completa con el empleado real creado en beforeAll. */
+const global: StaffContext = globalStaff(BRANCH_PERMISSIONS, {
   fullName: 'Admin Prueba',
-  assignments: [],
-  permissions: ['branches'],
-  allBranches: true,
-  branchIds: [],
-};
+  staffId: '',
+});
 
 describe.skipIf(!url)('Sucursales contra PostgreSQL real', () => {
   let prisma: PrismaService;
   let commands: BranchesCommandsService;
   let queries: BranchesQueryService;
   const createdBranchIds = new Set<string>();
-  let adminRoleId = '';
+  let managerRoleId = '';
 
   const create = async (
     over: Partial<{ code: string; latitude: number; longitude: number }> = {},
@@ -53,12 +53,12 @@ describe.skipIf(!url)('Sucursales contra PostgreSQL real', () => {
     migrate(url as string);
     prisma = new PrismaService(new ConfigService<Env, true>(validateEnv({ DATABASE_URL: url })));
     const repo = new BranchesRepository(prisma);
-    const scopes = new BranchScopeService(repo);
-    commands = new BranchesCommandsService(repo, new AuditService(), scopes);
-    queries = new BranchesQueryService(repo, scopes);
-    // El alcance se lee de la BD: el empleado de prueba necesita una asignación global con el permiso `branches`.
+    const authorization = new AuthorizationService({} as IdentityService);
+    commands = new BranchesCommandsService(repo, new AuditService(), authorization);
+    queries = new BranchesQueryService(repo, authorization);
+    // El actor de la prueba es un administrador global real (auditoría con actor FK-less pero existente).
     const admin = await prisma.role.findUniqueOrThrow({ where: { code: 'admin' } });
-    adminRoleId = admin.id;
+    managerRoleId = (await prisma.role.findUniqueOrThrow({ where: { code: 'manager' } })).id;
     const staff = await prisma.staffUser.create({
       data: {
         fullName: 'Admin Prueba',
@@ -174,18 +174,16 @@ describe.skipIf(!url)('Sucursales contra PostgreSQL real', () => {
         email: `${randomUUID().slice(0, 8)}@sushimon.test`,
         assignments: {
           create: [
-            { roleId: adminRoleId, branchId: a.id },
-            { roleId: adminRoleId, branchId: b.id },
+            { roleId: managerRoleId, branchId: a.id },
+            { roleId: managerRoleId, branchId: b.id },
           ],
         },
       },
     });
-    const scoped: StaffContext = {
-      ...global,
+    // El alcance viene de `branches.read` (el encargado solo tiene alcance acotado a a y b).
+    const scoped: StaffContext = scopedStaffCtx(['branches.read'], [a.id, b.id], {
       staffId: scopedStaff.id,
-      allBranches: false,
-      branchIds: [a.id, b.id],
-    };
+    });
 
     const all = await queries.listAdmin(scoped, { pageSize: 1 });
     expect(all).toMatchObject({ total: 2, pageSize: 1 });

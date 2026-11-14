@@ -12,8 +12,8 @@ import {
 import { Reflector } from '@nestjs/core';
 import { ApiForbiddenResponse } from '@nestjs/swagger';
 import type { Request } from 'express';
-import { IdentityService } from '../identity/identity.service.js';
 import type { StaffContext } from '../identity/identity.types.js';
+import { AuthorizationService } from './authorization.service.js';
 import { MfaGuard } from './mfa.guard.js';
 
 const PERMISSIONS_KEY = 'auth:requiredPermissions';
@@ -28,15 +28,15 @@ declare global {
 }
 
 /**
- * AUTORIZACIÓN de backoffice: exige personal activo con asignación activa y TODOS los permisos indicados
- * (sin permisos = solo personal activo). Se evalúa en el servidor desde la base de datos; el token solo
- * prueba quién es. El alcance por sucursal se comprueba por recurso con `canAccessBranch`.
+ * AUTORIZACIÓN de backoffice: exige personal activo con asignación efectiva y TODOS los permisos indicados,
+ * cada uno en algún alcance (sin permisos = solo personal activo). Se evalúa en el servidor desde la base de
+ * datos; el token solo prueba quién es. El alcance por sucursal se resuelve por recurso (`scopeFor`/`canAccess`).
  */
 @Injectable()
 export class StaffGuard implements CanActivate {
   constructor(
     @Inject(Reflector) private readonly reflector: Reflector,
-    @Inject(IdentityService) private readonly identity: IdentityService,
+    @Inject(AuthorizationService) private readonly authorization: AuthorizationService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -48,8 +48,10 @@ export class StaffGuard implements CanActivate {
         context.getClass(),
       ]) ?? [];
 
-    const staff = (req.staff ??= (await this.identity.getStaffContext(req.principal)) ?? undefined);
-    if (!staff || !required.every((p) => staff.permissions.includes(p))) {
+    const staff = await this.authorization.staffFor(req);
+    // Cada permiso exigido debe existir en ALGÚN alcance; el alcance por recurso lo resuelve cada servicio
+    // con `AuthorizationService.scopeFor/canAccess` (nunca con la unión plana).
+    if (!staff || !required.every((p) => this.authorization.has(staff, p))) {
       // Mismo mensaje para "no es personal" y "falta permiso": no revela qué existe.
       throw new ForbiddenException('Acceso denegado');
     }
