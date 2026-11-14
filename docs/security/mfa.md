@@ -1,7 +1,8 @@
 # MFA TOTP del backoffice (F02)
 
-Estado: **API y web implementadas y probadas con dobles** (JWT ES256 firmados en pruebas; Supabase simulado en la web).
-**Pendiente de verificación manual** contra un proyecto Supabase real con Google y una app autenticadora (T020).
+Estado: **implementada y verificada manualmente** (2026-11-14) contra Supabase de pruebas con Google y app TOTP: enrolar,
+verificar al reingresar, código incorrecto con reintento, cuenta no autorizada. **Sin confirmar aún**: acceso directo por URL en
+aal1 y ausencia de bucles (T020b). Pruebas automáticas con JWT ES256 firmados y Supabase simulado.
 
 ## Principio
 
@@ -86,8 +87,6 @@ Recomendación para F03: permitir enrolar un segundo factor TOTP de respaldo (la
 - aal2 sin frescura: un token aal2 sirve hasta `exp`; para acciones sensibles futuras exigir `amr.totp.timestamp` reciente.
 - Falta log/auditoría de 403 `MFA_REQUIRED` y accesos denegados en los guards (sin PII) → F03.
 
-- **No probado con Supabase/Google reales** (T020): firmas de la API de `supabase-js` verificadas contra los tipos de la
-  versión instalada, pero no ejecutadas de extremo a extremo.
 - El `aal2` de un access token vive hasta su `exp` (1 h): desactivar a un empleado corta el acceso al instante (se
   consulta la BD), pero quitar el factor no invalida un token `aal2` ya emitido → revocar sesiones al recuperar MFA.
 - Brecha `staff_users.auth_user_id` (preregistro/vinculación por correo): ver ADR-0009; auditoría persistente → F03.
