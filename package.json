@@ -9,6 +9,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "dev": "pnpm --parallel --filter sushimon-api --filter sushimon-web dev",
     "dev:api": "pnpm --filter sushimon-api dev",
     "dev:web": "pnpm --filter sushimon-web dev",
     "lint": "pnpm -r --if-present lint",

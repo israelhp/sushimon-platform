@@ -58,6 +58,7 @@ directo. Ver `docs/development/gitflow.md`.
 
 ```bash
 pnpm install            # reproducible (lockfile)
+pnpm dev                # API y web a la vez (3001 y 3000)
 pnpm dev:api            # http://localhost:3001  (health: /v1/health)
 pnpm dev:web            # http://localhost:3000
 pnpm check              # format, lint, typecheck, test, contracts, secretos, build
