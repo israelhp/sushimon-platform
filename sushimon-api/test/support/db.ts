@@ -57,6 +57,10 @@ export async function cleanupTestData(
       );
       await c.query(`DELETE FROM app.staff_users WHERE email LIKE '%@sushimon.test'`);
       await c.query('DELETE FROM app.customers WHERE auth_user_id = ANY($1::uuid[])', [authIds]);
+      // audit_events es solo-añadir (migración 0004): la limpieza de pruebas lo habilita SOLO en esta transacción.
+      await c.query("SET LOCAL app.allow_audit_cleanup = 'on'");
+      // La auditoría referencia la sucursal (FK RESTRICT): solo se borra la de las sucursales de la prueba.
+      await c.query('DELETE FROM app.audit_events WHERE branch_id = ANY($1::uuid[])', [branchIds]);
       await c.query('DELETE FROM app.branches WHERE id = ANY($1::uuid[])', [branchIds]);
       // Supabase real: solo filas sin correo (las de la prueba). Stub de PostgreSQL plano: no tiene columna email.
       const realAuth = await hasRealSupabaseAuth(c);
