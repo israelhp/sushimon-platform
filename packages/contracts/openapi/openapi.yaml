@@ -1,6 +1,6 @@
 # Contrato HTTP canónico de Sushi Mon (Contract First).
 # Se diseña ANTES de implementar cada slice y se verifica contra NestJS con `pnpm contracts:check`.
-# Estado: F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me). No se agregan endpoints ficticios.
+# Estado: F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
 # Seguridad por defecto: Bearer JWT de Supabase Auth en todo salvo operaciones con `security: []` (health).
 # Transversal a TODAS las respuestas: cabecera `X-Request-Id`; errores con `ErrorResponse`; 429 cuando
 # se excede el rate limit global (no se repite por operación).
@@ -59,8 +59,10 @@ paths:
       summary: Contexto de identidad y autorización del token actual
       description: |
         AUTENTICACIÓN ≠ AUTORIZACIÓN. Verifica el JWT de Supabase Auth (firma, emisor, audiencia,
-        expiración y sujeto) y devuelve lo que el SERVIDOR sabe de esa identidad: si es personal activo,
-        con qué roles, permisos y alcance de sucursal. La web lo usa solo para mostrar/ocultar UI; cada
+        expiración y sujeto) y devuelve lo que el SERVIDOR sabe de esa identidad: si es personal activo y si
+        su sesión ya cumple MFA (`aal2`, leído del JWT verificado). Funciona con sesión `aal1` (es el punto
+        de entrada para configurar/verificar el segundo factor) pero NO devuelve roles, permisos ni
+        sucursales hasta `aal2` (`access = GRANTED`). La web lo usa solo para mostrar/ocultar UI; cada
         endpoint vuelve a autorizar. En el primer acceso de un empleado preregistrado (`staff_users` sin
         `auth_user_id`) vincula la identidad por correo verificado con Google.
       tags: [auth]
@@ -75,6 +77,38 @@ paths:
                 $ref: '#/components/schemas/AuthContextResponse'
         '401':
           description: Token ausente, inválido, expirado o con emisor/audiencia incorrectos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/me/context:
+    get:
+      operationId: getAdminContext
+      summary: Contexto administrativo del empleado (requiere aal2)
+      description: |
+        Primer endpoint del backoffice. Exige, en este orden: JWT válido → personal activo con asignación
+        → sesión `aal2` (segundo factor TOTP verificado por Supabase Auth). Devuelve perfil básico, roles,
+        sucursales y permisos efectivos calculados en el servidor. Convención: TODA ruta administrativa
+        futura usa `@RequireStaff(...)` y hereda el mismo requisito `aal2`.
+      tags: [admin]
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Contexto administrativo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminContextResponse'
+        '401':
+          description: Token ausente, inválido, expirado o con emisor/audiencia incorrectos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: |
+            No es personal activo, falta un permiso, o es personal con sesión `aal1` (mensaje `MFA_REQUIRED`).
           content:
             application/json:
               schema:
@@ -135,7 +169,19 @@ components:
           items: { type: string, format: uuid }
     AuthContextResponse:
       type: object
-      required: [authUserId, email, provider, isCustomer, staff, backofficeAccess]
+      required:
+        [
+          authUserId,
+          email,
+          provider,
+          isCustomer,
+          aal,
+          staffAuthorized,
+          mfaRequired,
+          access,
+          staff,
+          backofficeAccess,
+        ]
       properties:
         authUserId: { type: string, format: uuid, description: 'auth.users.id (claim sub).' }
         email: { type: string, nullable: true }
@@ -144,14 +190,38 @@ components:
         isCustomer:
           type: boolean
           description: Existe un perfil de cliente para esta identidad.
+        aal:
+          type: string
+          enum: [aal1, aal2]
+          description: Nivel de aseguramiento de ESTA sesión, leído del JWT verificado (aal2 = TOTP verificado).
+        staffAuthorized:
+          type: boolean
+          description: Personal activo con asignación activa (independiente del nivel MFA).
+        mfaRequired:
+          type: boolean
+          description: Personal autorizado cuya sesión aún no es aal2 (debe configurar o verificar TOTP).
+        access:
+          type: string
+          enum: [NOT_STAFF, MFA_REQUIRED, GRANTED]
+          description: |
+            NOT_STAFF = sin autorización administrativa; MFA_REQUIRED = personal activo en aal1;
+            GRANTED = personal activo en aal2.
         staff:
           allOf:
             - $ref: '#/components/schemas/AuthStaffContext'
           nullable: true
-          description: null si no es personal activo con alguna asignación activa.
+          description: Solo con `access = GRANTED`; null en cualquier otro caso (nada administrativo antes de aal2).
         backofficeAccess:
           type: boolean
-          description: Indicador para la UI; el acceso real lo decide cada endpoint.
+          description: Igual a `access = GRANTED`. Indicador para la UI; el acceso real lo decide cada endpoint.
+    AdminContextResponse:
+      type: object
+      required: [authUserId, email, aal, staff]
+      properties:
+        authUserId: { type: string, format: uuid }
+        email: { type: string, nullable: true }
+        aal: { type: string, enum: [aal2] }
+        staff: { $ref: '#/components/schemas/AuthStaffContext' }
     CustomerProfile:
       type: object
       required: [id, fullName, email, phone, createdAt]

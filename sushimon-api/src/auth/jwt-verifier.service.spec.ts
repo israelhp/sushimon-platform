@@ -43,6 +43,7 @@ describe('JwtVerifierService', () => {
       email: 'cliente@example.com',
       provider: 'google',
       googleOAuth: true,
+      aal: 'aal1',
       displayName: 'Cliente Prueba',
     });
   });
@@ -50,6 +51,39 @@ describe('JwtVerifierService', () => {
   it('googleOAuth es false si la sesión no nació de OAuth', async () => {
     const p = await verifier.verify(await keys.sign({ amr: [{ method: 'password' }] }));
     expect(p.googleOAuth).toBe(false);
+  });
+
+  describe('nivel de aseguramiento (MFA)', () => {
+    const totp = [
+      { method: 'oauth', timestamp: 1 },
+      { method: 'totp', timestamp: 2 },
+    ];
+    it('aal2 solo con claim aal2 Y segundo factor TOTP en amr', async () => {
+      const p = await verifier.verify(await keys.sign({ aal: 'aal2', amr: totp }));
+      expect(p.aal).toBe('aal2');
+    });
+    it.each([
+      ['sin claim aal', {}],
+      ['aal1 explícito', { aal: 'aal1' }],
+      ['aal2 sin TOTP en amr', { aal: 'aal2' }],
+      ['TOTP en amr pero claim aal1', { aal: 'aal1', amr: totp }],
+      ['claim con valor desconocido', { aal: 'aal3', amr: totp }],
+      ['claim con tipo inválido', { aal: true, amr: totp }],
+      ['claim aal2 con mayúsculas', { aal: 'AAL2', amr: totp }],
+      ['claim aal como arreglo', { aal: ['aal2'], amr: totp }],
+    ])('degrada a aal1: %s', async (_name, claims) => {
+      const p = await verifier.verify(await keys.sign(claims));
+      expect(p.aal).toBe('aal1');
+    });
+    it('lo que diga user_metadata/app_metadata no eleva el nivel', async () => {
+      const p = await verifier.verify(
+        await keys.sign({
+          app_metadata: { provider: 'google', aal: 'aal2' },
+          user_metadata: { aal: 'aal2' },
+        }),
+      );
+      expect(p.aal).toBe('aal1');
+    });
   });
 
   it('rechaza token expirado (más allá de la tolerancia)', async () => {

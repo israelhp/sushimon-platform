@@ -9,6 +9,7 @@ const ME: Principal = {
   email: 'ana@sushimon.test',
   provider: 'google',
   googleOAuth: true,
+  aal: 'aal1',
   displayName: 'Ana',
 };
 const BRANCH = '11111111-1111-4111-8111-111111111111';

@@ -11,6 +11,11 @@ export interface Principal {
    * Es la única base para vincular un empleado preregistrado por correo.
    */
   googleOAuth: boolean;
+  /**
+   * Nivel de aseguramiento de la sesión (claim `aal`, ya verificado con la firma). `aal2` SOLO si el claim lo
+   * dice Y `amr` registra un segundo factor TOTP; cualquier otro valor/forma degrada a `aal1` (deny by default).
+   */
+  aal: 'aal1' | 'aal2';
   /** Nombre para mostrar (user_metadata es editable por el usuario: solo sirve de dato inicial). */
   displayName: string | null;
 }

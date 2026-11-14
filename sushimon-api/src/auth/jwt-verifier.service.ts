@@ -125,6 +125,9 @@ function toPrincipal(payload: JWTPayload): Principal {
   const provider = str(appMeta['provider']);
   const amr = Array.isArray(payload['amr']) ? (payload['amr'] as unknown[]) : [];
   const viaOAuth = amr.some((a) => record(a)['method'] === 'oauth');
+  const viaTotp = amr.some((a) => record(a)['method'] === 'totp');
+  // Solo el claim firmado cuenta; aal2 exige además el segundo factor TOTP registrado en amr.
+  const aal = payload['aal'] === 'aal2' && viaTotp ? 'aal2' : 'aal1';
   const email = str(payload['email'])?.toLowerCase() ?? null;
   const name = str(userMeta['full_name']) ?? str(userMeta['name']);
 
@@ -133,6 +136,7 @@ function toPrincipal(payload: JWTPayload): Principal {
     email,
     provider,
     googleOAuth: provider === 'google' && viaOAuth,
+    aal,
     // Solo dato inicial para mostrar: se limpia de caracteres de control y se acota.
     displayName: name ? name.replace(/\p{Cc}/gu, '').slice(0, 120) || null : null,
   };

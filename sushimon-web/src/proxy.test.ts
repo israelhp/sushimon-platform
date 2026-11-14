@@ -39,8 +39,55 @@ describe('proxy (sesión Supabase)', () => {
   });
 
   it('con sesión válida deja pasar el backoffice (la API autoriza)', async () => {
-    claims.value = { sub: 'u1' };
+    claims.value = { sub: 'u1', aal: 'aal2' };
     expect((await proxy(req('/backoffice/pedidos'))).headers.get('location')).toBeNull();
+  });
+
+  describe('MFA (claim aal)', () => {
+    it('sesión aal1 en una ruta del backoffice → verificación MFA conservando el destino', async () => {
+      claims.value = { sub: 'u1', aal: 'aal1' };
+      const res = await proxy(req('/backoffice/pedidos'));
+      expect(res.status).toBe(307);
+      expect(res.headers.get('location')).toBe(
+        'http://localhost:3000/backoffice/mfa/verify?next=%2Fbackoffice%2Fpedidos',
+      );
+    });
+
+    it('sin claim aal también cuenta como aal1', async () => {
+      claims.value = { sub: 'u1' };
+      expect((await proxy(req('/backoffice'))).headers.get('location')).toContain(
+        '/backoffice/mfa/verify',
+      );
+    });
+
+    it.each([
+      '/backoffice/login',
+      '/backoffice/mfa/setup',
+      '/backoffice/mfa/verify',
+      '/backoffice/access-denied',
+    ])('las pantallas previas (%s) son accesibles en aal1 sin bucle', async (path) => {
+      claims.value = { sub: 'u1', aal: 'aal1' };
+      expect((await proxy(req(path))).headers.get('location')).toBeNull();
+    });
+
+    it('sin sesión, las pantallas MFA y de acceso denegado van al login', async () => {
+      const res = await proxy(req('/backoffice/mfa/setup'));
+      expect(res.headers.get('location')).toContain('/backoffice/login');
+    });
+
+    it('aal2 pasa; la API sigue decidiendo', async () => {
+      claims.value = { sub: 'u1', aal: 'aal2' };
+      expect((await proxy(req('/backoffice/pedidos'))).headers.get('location')).toBeNull();
+    });
+
+    it('el backoffice no se cachea; la tienda pública no se toca', async () => {
+      claims.value = { sub: 'u1', aal: 'aal2' };
+      expect((await proxy(req('/backoffice/pedidos'))).headers.get('cache-control')).toBe(
+        'private, no-store',
+      );
+      expect((await proxy(req('/backoffice/pedidos?x'))).status).toBe(200);
+      expect((await proxy(req('/menu'))).headers.get('cache-control')).toBeNull();
+    });
   });
 
   it('con auth mock no hace nada', async () => {

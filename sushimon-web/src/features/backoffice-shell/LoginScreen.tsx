@@ -6,8 +6,10 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { BoLogo, IconLock } from '@/components/icons/bo';
 import { SimulationBadge } from '@/components/ui/SimulationBadge';
 import { useToast } from '@/components/ui/Toast';
+import { safeNextPath } from '@/lib/auth/safe-redirect';
 import { useAuth } from '@/features/session/auth-provider';
-import { useAuthContext } from '@/features/session/auth-queries';
+import { pathForAccess } from '@/features/session/backoffice-access';
+import { useBackofficeAccess } from '@/features/session/use-backoffice-access';
 import { useDemoSession } from '@/features/session/demo-session';
 import { useBranches } from '@/features/store/hooks';
 import { cn } from '@/lib/cn';
@@ -203,7 +205,7 @@ function GoogleLoginScreen() {
   const t = useTranslations('backoffice.login');
   const router = useRouter();
   const auth = useAuth();
-  const context = useAuthContext();
+  const access = useBackofficeAccess();
   const { staff } = useDemoSession();
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -219,20 +221,28 @@ function GoogleLoginScreen() {
     setErrorKey(reason ? (AUTH_ERRORS[reason] ?? 'errorProvider') : null);
   }, []);
 
-  const access = context.data?.backofficeAccess === true;
+  const safeNext = next ? safeNextPath(next, '') : '';
+  const nextBackoffice =
+    safeNext === '/backoffice' || safeNext.startsWith('/backoffice/') ? safeNext : null;
   useEffect(() => {
-    if (auth.status === 'authenticated' && access && staff) {
-      const target =
-        next && next.startsWith('/backoffice') ? next : screenHref(ROLE_HOME[staff.role]);
-      router.replace(target);
+    if (access.state === 'STAFF_AUTHORIZED' && staff) {
+      router.replace(nextBackoffice ?? screenHref(ROLE_HOME[staff.role]));
+      return;
     }
-  }, [auth.status, access, staff, next, router]);
+    // Personal autorizado sin MFA completo: configurar (sin factor) o verificar (con factor).
+    const target = pathForAccess(access.state);
+    if (target && target.startsWith('/backoffice/mfa')) {
+      router.replace(
+        nextBackoffice ? `${target}?next=${encodeURIComponent(nextBackoffice)}` : target,
+      );
+    }
+  }, [access.state, staff, nextBackoffice, router]);
 
   const signIn = async () => {
     setPending(true);
     setFailure(null);
     try {
-      await auth.signInWithGoogle(next && next.startsWith('/backoffice') ? next : '/backoffice');
+      await auth.signInWithGoogle(nextBackoffice ?? '/backoffice');
     } catch {
       setPending(false);
       setFailure(t('errorProvider'));
@@ -240,10 +250,11 @@ function GoogleLoginScreen() {
   };
 
   const checking =
-    auth.status === 'loading' || (auth.status === 'authenticated' && context.isPending);
-  const denied =
-    auth.status === 'authenticated' &&
-    (context.isError || context.data?.backofficeAccess === false);
+    access.state === 'INITIALIZING' ||
+    access.state === 'MFA_ENROLLMENT_REQUIRED' ||
+    access.state === 'MFA_CHALLENGE_REQUIRED' ||
+    access.state === 'STAFF_AUTHORIZED';
+  const denied = access.state === 'STAFF_UNAUTHORIZED' || access.state === 'ERROR';
 
   return (
     <div className="auth">
@@ -302,7 +313,7 @@ function GoogleLoginScreen() {
             <div role="status" className="sm muted">
               {t('checking')}
             </div>
-          ) : auth.status === 'anonymous' ? (
+          ) : access.state === 'UNAUTHENTICATED' || access.state === 'SESSION_EXPIRED' ? (
             <button
               type="button"
               className="btn btn-primary block"
