@@ -7,9 +7,15 @@ import { PrismaClient } from '../src/generated/prisma/client.js';
  * No crea cuentas de Auth ni da acceso por sí solo: la persona queda vinculada en su primer inicio de
  * sesión con Google usando ese mismo correo. Idempotente.
  *
- * Uso: DATABASE_URL=… pnpm --filter sushimon-api staff:bootstrap -- --email persona@dominio.com --name "Nombre"
+ * Uso (toma DIRECT_URL/DATABASE_URL de sushimon-api/.env): pnpm --filter sushimon-api staff:bootstrap -- --email persona@dominio.com --name "Nombre"
  * La URL se toma del entorno (nunca como argumento) para no dejarla en el historial del shell.
  */
+try {
+  process.loadEnvFile('.env'); // no pisa variables ya definidas; se ignora si no existe
+} catch {
+  /* sin .env */
+}
+
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
   return i > -1 ? process.argv[i + 1] : undefined;
