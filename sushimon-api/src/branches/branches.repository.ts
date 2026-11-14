@@ -93,6 +93,11 @@ export class BranchesRepository {
     return row !== null;
   }
 
+  /** Existencia y estado administrativo (sin alcance ni filtro de activa). Para F08. */
+  async findStatus(id: string): Promise<{ id: string; active: boolean } | null> {
+    return this.prisma.branch.findUnique({ where: { id }, select: { id: true, active: true } });
+  }
+
   /**
    * Bloquea (FOR SHARE) las sucursales ACTIVAS de la lista dentro de la transacción y devuelve sus ids. Impide que
    * se desactiven entre la validación y la escritura de una asignación (usa el cliente `tx`, sin otra conexión).

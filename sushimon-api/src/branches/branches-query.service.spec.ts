@@ -26,6 +26,7 @@ function setup() {
     listPublic: vi.fn().mockResolvedValue([]),
     findPublicById: vi.fn().mockResolvedValue(null),
     existsActive: vi.fn().mockResolvedValue(true),
+    findStatus: vi.fn().mockResolvedValue({ id: A, active: false }),
     findIds: vi.fn().mockResolvedValue([A]),
     findAdminById: vi.fn().mockResolvedValue({ id: A }),
     listAdmin: vi.fn().mockResolvedValue({ items: [], total: 0 }),
@@ -46,6 +47,13 @@ describe('BranchesQueryService', () => {
     const { service, repo } = setup();
     await expect(service.existsActive(A)).resolves.toBe(true);
     expect(repo.existsActive).toHaveBeenCalledWith(A);
+  });
+
+  it('getStatus delega en el repositorio (inactiva distinta de inexistente)', async () => {
+    const { service, repo } = setup();
+    await expect(service.getStatus(A)).resolves.toEqual({ id: A, active: false });
+    repo.findStatus.mockResolvedValueOnce(null);
+    await expect(service.getStatus(B)).resolves.toBeNull();
   });
 
   it('listado admin: allBranches sin alcance restringido, con valores por defecto', async () => {

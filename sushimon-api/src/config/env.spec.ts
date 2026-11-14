@@ -19,6 +19,15 @@ describe('validateEnv', () => {
     expect(validateEnv({ DATABASE_URL: '', HEALTH_READY_TOKEN: '' }).DATABASE_URL).toBeUndefined();
   });
 
+  it('BUSINESS_TIMEZONE: default Guatemala, vacío = default, IANA inválida falla', () => {
+    expect(validateEnv({}).BUSINESS_TIMEZONE).toBe('America/Guatemala');
+    expect(validateEnv({ BUSINESS_TIMEZONE: '' }).BUSINESS_TIMEZONE).toBe('America/Guatemala');
+    expect(validateEnv({ BUSINESS_TIMEZONE: 'America/Mexico_City' }).BUSINESS_TIMEZONE).toBe(
+      'America/Mexico_City',
+    );
+    expect(() => validateEnv({ BUSINESS_TIMEZONE: 'Mars/Olympus' })).toThrow(/BUSINESS_TIMEZONE/);
+  });
+
   it('exige DATABASE_URL y token de salud en producción', () => {
     expect(() => validateEnv({ NODE_ENV: 'production' })).toThrow(
       /DATABASE_URL.*HEALTH_READY_TOKEN/,

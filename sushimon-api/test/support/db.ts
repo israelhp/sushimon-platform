@@ -65,6 +65,11 @@ export async function cleanupTestData(
       );
       await c.query(`DELETE FROM app.staff_users WHERE email LIKE '%@sushimon.test'`);
       await c.query('DELETE FROM app.customers WHERE auth_user_id = ANY($1::uuid[])', [authIds]);
+      // F08: horarios y cierres de las sucursales de la prueba (FK RESTRICT hacia branches).
+      await c.query('DELETE FROM app.branch_closures WHERE branch_id = ANY($1::uuid[])', [
+        branchIds,
+      ]);
+      await c.query('DELETE FROM app.branch_hours WHERE branch_id = ANY($1::uuid[])', [branchIds]);
       // La auditoría referencia la sucursal (FK RESTRICT): solo se borra la de las sucursales de la prueba.
       await c.query('DELETE FROM app.audit_events WHERE branch_id = ANY($1::uuid[])', [branchIds]);
       await c.query('DELETE FROM app.branches WHERE id = ANY($1::uuid[])', [branchIds]);

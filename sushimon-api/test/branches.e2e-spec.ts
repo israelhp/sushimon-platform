@@ -262,7 +262,8 @@ describe('Sucursales (e2e)', () => {
     it('inactiva o inexistente → 404 (sin caché pública); uuid inválido → 400', async () => {
       for (const id of [C, MISSING]) {
         const res = await http().get(`/v1/branches/${id}`).expect(404);
-        expect(res.headers['cache-control']).toBeUndefined();
+        // Los errores llevan `no-store` (filtro global, F08): nunca quedan en caché compartida.
+        expect(res.headers['cache-control']).toBe('no-store');
       }
       await http().get('/v1/branches/no-es-uuid').expect(400);
     });

@@ -8,6 +8,7 @@ import { rejectProtoKeysMiddleware } from './common/http/reject-proto-keys.middl
 import { requestIdMiddleware } from './common/request-id/request-id.middleware.js';
 import { validateEnv, type Env } from './config/env.js';
 import { AuthModule } from './auth/auth.module.js';
+import { BranchScheduleModule } from './branch-schedule/branch-schedule.module.js';
 import { BranchesModule } from './branches/branches.module.js';
 import { StaffModule } from './staff/staff.module.js';
 import { DatabaseModule } from './database/database.module.js';
@@ -35,6 +36,7 @@ import { HealthTokenGuard } from './health/health-token.guard.js';
     DatabaseModule,
     AuthModule,
     BranchesModule,
+    BranchScheduleModule,
     StaffModule,
   ],
   controllers: [HealthController],
