@@ -15,7 +15,7 @@ manual con Google contra el proyecto Supabase de pruebas en la nube se hace sigu
   (sin cookies hacia la API: no hay CSRF). El token no va a `localStorage`.
 - **API (NestJS)**: guard global **denegar por defecto** (`@Public()` para health). `JwtVerifierService` verifica firma
   (JWKS ES256/RS256; HS256 solo con `SUPABASE_JWT_SECRET`), emisor, audiencia, expiración, `sub` UUID y
-  `role = authenticated`. `@RequireStaff('permiso')` exige personal activo con ese permiso.
+  `role = authenticated`. `@RequireStaff('permiso')` exige personal activo con ese permiso **y sesión `aal2` (MFA TOTP, F02: `docs/security/mfa.md`)**.
 
 ```
 Navegador ──Google OAuth (PKCE)──▶ Supabase Auth ──code──▶ /auth/callback (Next) ──cookies──▶ sesión
@@ -24,12 +24,13 @@ Navegador ──Bearer JWT──▶ API ──JWKS (caché)──▶ verifica �
 
 ## Endpoints
 
-| Ruta                    | Uso                                                                                                                |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `GET /v1/auth/context`  | Identidad + si es personal activo (roles, permisos, sucursales) y `backofficeAccess`. No crea cliente.             |
-| `GET /v1/me`            | Perfil de cliente; lo crea de forma idempotente en el primer acceso.                                               |
-| `401`                   | Token ausente/ inválido/ expirado/ de otro emisor o audiencia: mismo mensaje, motivo solo en el log con requestId. |
-| `403` (`@RequireStaff`) | No es personal activo o falta el permiso: mismo mensaje en ambos casos.                                            |
+| Ruta                       | Uso                                                                                                                |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `GET /v1/auth/context`     | Identidad + `access` (`NOT_STAFF`/`MFA_REQUIRED`/`GRANTED`). Roles/permisos solo con aal2 (F02). No crea cliente.  |
+| `GET /v1/admin/me/context` | Contexto administrativo (personal activo + `aal2`). Ver `docs/security/mfa.md`.                                    |
+| `GET /v1/me`               | Perfil de cliente; lo crea de forma idempotente en el primer acceso.                                               |
+| `401`                      | Token ausente/ inválido/ expirado/ de otro emisor o audiencia: mismo mensaje, motivo solo en el log con requestId. |
+| `403` (`@RequireStaff`)    | No es personal activo o falta el permiso: mismo mensaje en ambos casos. Personal en `aal1`: `MFA_REQUIRED`.        |
 
 ## Primer acceso de un empleado (brecha `staff_users.auth_user_id`)
 

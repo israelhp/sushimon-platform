@@ -19,7 +19,7 @@ implemente (`contracts:check` exige que contrato y API coincidan). Los esquemas 
 | POST             | `/v1/payments/card`                                        | `PaymentResult`       | pago con tarjeta (NeoNet ⏳; mock: tarjetas de prueba) | pública                     |
 | POST             | `/v1/incidents`                                            | `Incident`            | reclamo de un pedido                                   | cliente/invitado verificado |
 | POST             | `/v1/job-applications`                                     | `JobApplication`      | postulación                                            | pública                     |
-| GET              | `/v1/auth/context`                                         | `AuthContextResponse` | identidad + autorización del token (✅ API F01)        | autenticado                 |
+| GET              | `/v1/auth/context`                                         | `AuthContextResponse` | identidad + autorización + MFA (✅ API F01/F02)        | autenticado                 |
 | GET/PATCH        | `/v1/me`                                                   | `Customer`            | perfil del cliente                                     | cliente                     |
 | GET/POST         | `/v1/me/addresses` · PATCH/DELETE `/v1/me/addresses/{id}`  | `Address`             | direcciones                                            | cliente                     |
 | GET/PUT/DELETE   | `/v1/me/favorites[/{productId}]`                           | `string[]`            | favoritos                                              | cliente                     |
