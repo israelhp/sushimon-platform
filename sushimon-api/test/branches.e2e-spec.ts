@@ -130,20 +130,6 @@ function fakeDb(seed: Row[]) {
       findUnique: vi.fn().mockResolvedValue(null),
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
-    /** Asignaciones del empleado de prueba (la API las vuelve a leer para el alcance del permiso). */
-    assignments: [] as StaffAssignmentFake[],
-    staffAssignment: {
-      findMany: vi.fn(
-        (a: { where: { role: { permissions: { some: { permission: { code: string } } } } } }) => {
-          const code = a.where.role.permissions.some.permission.code;
-          return Promise.resolve(
-            db.assignments
-              .filter((x) => x.permissions.includes(code))
-              .map((x) => ({ branchId: x.branchId })),
-          );
-        },
-      ),
-    },
     $queryRaw: vi.fn((_sql: unknown, id: string) =>
       Promise.resolve(branches.has(id) ? [{ id }] : []),
     ),
@@ -162,13 +148,19 @@ interface StaffAssignmentFake {
   permissions: string[];
 }
 
+const BRANCH_PERMISSIONS = ['branches.read', 'branches.create', 'branches.update'];
+
 function staffRow(assignments: StaffAssignmentFake[]) {
   return {
     id: STAFF_ID,
     fullName: 'Ana Admin',
     active: true,
     assignments: assignments.map((a, i) => ({
+      active: true,
       branchId: a.branchId,
+      branch: a.branchId
+        ? { id: a.branchId, name: `Sucursal ${i}`, code: `s-${i}`, active: true }
+        : null,
       role: {
         code: `rol-${i}`,
         permissions: a.permissions.map((code) => ({ permission: { code } })),
@@ -211,7 +203,6 @@ describe('Sucursales (e2e)', () => {
     assignments: StaffAssignmentFake[],
     claims: Record<string, unknown> = AAL2,
   ) => {
-    db.assignments = assignments;
     db.staffUser.findUnique.mockResolvedValue(staffRow(assignments));
     return bearer(claims);
   };
@@ -220,7 +211,7 @@ describe('Sucursales (e2e)', () => {
     claims: Record<string, unknown> = AAL2,
   ) =>
     asStaffWith(
-      [{ branchId: over.branchId ?? null, permissions: over.permissions ?? ['branches'] }],
+      [{ branchId: over.branchId ?? null, permissions: over.permissions ?? BRANCH_PERMISSIONS }],
       claims,
     );
 
@@ -305,8 +296,8 @@ describe('Sucursales (e2e)', () => {
       expect(db.branch.findMany).not.toHaveBeenCalled();
     });
 
-    it('aal2 sin el permiso branches → 403 en todas las operaciones', async () => {
-      const auth = await asStaff({ permissions: ['dashboard'] });
+    it('aal2 sin permisos de sucursales → 403 en todas las operaciones', async () => {
+      const auth = await asStaff({ permissions: ['dashboard.read'] });
       await http().get('/v1/admin/branches').set('Authorization', auth).expect(403);
       await http().get(`/v1/admin/branches/${A}`).set('Authorization', auth).expect(403);
       await http()
@@ -631,11 +622,61 @@ describe('Sucursales (e2e)', () => {
     });
   });
 
-  describe('alcance calculado solo con asignaciones que tienen el permiso `branches`', () => {
+  describe('permiso específico por operación', () => {
+    it('solo branches.read: lee, pero no crea ni edita (403)', async () => {
+      const auth = await asStaff({ permissions: ['branches.read'] });
+      await http().get('/v1/admin/branches').set('Authorization', auth).expect(200);
+      await http().get(`/v1/admin/branches/${A}`).set('Authorization', auth).expect(200);
+      await http()
+        .post('/v1/admin/branches')
+        .set('Authorization', auth)
+        .send({ code: 'nueva', name: 'N', address: 'D' })
+        .expect(403);
+      await http()
+        .patch(`/v1/admin/branches/${A}`)
+        .set('Authorization', auth)
+        .send({ name: 'X' })
+        .expect(403);
+      await http()
+        .patch(`/v1/admin/branches/${A}/status`)
+        .set('Authorization', auth)
+        .send({ active: true })
+        .expect(403);
+      expect(db.branch.create).not.toHaveBeenCalled();
+      expect(db.branch.update).not.toHaveBeenCalled();
+    });
+
+    it('solo branches.update: edita pero no lee ni crea', async () => {
+      const auth = await asStaff({ permissions: ['branches.update'] });
+      await http()
+        .patch(`/v1/admin/branches/${A}`)
+        .set('Authorization', auth)
+        .send({ name: 'Nuevo' })
+        .expect(200);
+      await http().get('/v1/admin/branches').set('Authorization', auth).expect(403);
+      await http()
+        .post('/v1/admin/branches')
+        .set('Authorization', auth)
+        .send({ code: 'nueva', name: 'N', address: 'D' })
+        .expect(403);
+    });
+
+    it('branches.create con alcance de UNA sucursal no basta para el alta (exige global)', async () => {
+      const auth = await asStaff({ permissions: ['branches.create'], branchId: A });
+      await http()
+        .post('/v1/admin/branches')
+        .set('Authorization', auth)
+        .send({ code: 'nueva', name: 'N', address: 'D' })
+        .expect(403);
+      expect(db.branch.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('alcance calculado por permiso y solo con asignaciones que lo tienen', () => {
     // Rol 1: `branches` solo en A. Rol 2: SIN `branches`, pero con alcance global (branch NULL).
     const mixed = (): StaffAssignmentFake[] => [
-      { branchId: A, permissions: ['branches'] },
-      { branchId: null, permissions: ['dashboard'] },
+      { branchId: A, permissions: BRANCH_PERMISSIONS },
+      { branchId: null, permissions: ['dashboard.read'] },
     ];
 
     it('POST → 403 (el alcance global de otro rol no habilita el alta)', async () => {
@@ -677,8 +718,8 @@ describe('Sucursales (e2e)', () => {
 
     it('una asignación global CON el permiso sí da alcance total y permite crear', async () => {
       const auth = await asStaffWith([
-        { branchId: A, permissions: ['branches'] },
-        { branchId: null, permissions: ['branches'] },
+        { branchId: A, permissions: BRANCH_PERMISSIONS },
+        { branchId: null, permissions: BRANCH_PERMISSIONS },
       ]);
       await http()
         .post('/v1/admin/branches')
@@ -693,7 +734,7 @@ describe('Sucursales (e2e)', () => {
         .get('/v1/admin/branches')
         .set('Authorization', await asStaff())
         .expect(200);
-      expect(db.staffAssignment.findMany).toHaveBeenCalledTimes(1);
+      expect(db.staffUser.findUnique).toHaveBeenCalledTimes(1);
     });
   });
 

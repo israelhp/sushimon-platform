@@ -13,11 +13,11 @@ import { ACTION_CLASS, useOrderText } from '../use-order-text';
 /** Tarjeta del tablero (`kcard`): abre el detalle y ofrece la siguiente acción del rol. */
 export function OrderCard({ order, now }: { order: Order; now: Date | null }) {
   const t = useTranslations('backoffice.orders');
-  const { role, branchById } = useShell();
+  const { grants, branchById } = useShell();
   const detail = useOrderDetail();
   const text = useOrderText();
   const actions = useOrderActions();
-  const action = nextAction(order, role);
+  const action = nextAction(order, grants);
   const late = isLate(order, now);
   const logistics = order.delivery !== null;
 

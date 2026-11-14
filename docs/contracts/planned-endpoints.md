@@ -5,6 +5,8 @@ adaptador mock**; se añaden a `openapi.yaml` (sección `paths`) en la Etapa 2/3
 implemente (`contracts:check` exige que contrato y API coincidan). Los esquemas ya están en
 `components/schemas` con `x-status: draft`.
 
+> Implementado en F03 (`API_IMPLEMENTED`): `/v1/admin/staff[...]`, `/v1/admin/roles[...]`, `/v1/admin/permissions` (reemplazan a `/v1/backoffice/users`).
+>
 > Implementado en F07 (`API_IMPLEMENTED`, ya en `openapi.yaml`): `GET /v1/branches[/{id}]` y `/v1/admin/branches[/{id}[/status]]`; se retiraron de esta tabla.
 
 | Método           | Ruta                                                       | Esquema de respuesta  | Uso                                                    | Auth prevista               |
@@ -37,7 +39,6 @@ implemente (`contracts:check` exige que contrato y API coincidan). Los esquemas 
 | GET/POST · PATCH | `/v1/backoffice/products[/{id}]`                           | `Product`             | catálogo (editar: admin; disponibilidad: encargado)    | personal                    |
 | GET/POST · PATCH | `/v1/backoffice/categories[/{id}]`                         | `Category`            | orden/visibilidad                                      | admin                       |
 | GET/POST · PATCH | `/v1/backoffice/promotions[/{id}]`                         | `Promotion`           | promociones                                            | admin                       |
-| GET/POST · PATCH | `/v1/backoffice/users[/{id}]`                              | `StaffUser`           | usuarios internos                                      | admin                       |
 | GET              | `/v1/backoffice/reports/summary?from&to&branchId`          | `ReportSummary`       | reportes                                               | admin/encargado             |
 | GET              | `/v1/backoffice/reports/history?from&to&branchId`          | `Order[]`             | historial                                              | admin/encargado             |
 

@@ -8,6 +8,7 @@ import type {
   OrderStatusChangeRequest,
   Rider,
   StaffPermission,
+  StaffUser,
 } from '@/lib/data-access/models';
 import { ORDER_STATUSES } from '@/lib/data-access/models';
 import { canDispatch } from '@/lib/order-status';
@@ -44,11 +45,22 @@ const byNewest = (a: Order, b: Order) => b.createdAt.localeCompare(a.createdAt);
 export const isSale = (o: Order) => !['received', 'rejected', 'cancelled'].includes(o.status);
 
 /** GET /v1/backoffice/me */
-export const getStaffMe: Handler = (req) => requireStaff(req);
+export const getStaffMe: Handler = (req): StaffUser => {
+  const actor = requireStaff(req);
+  return {
+    id: actor.id,
+    name: actor.name,
+    email: actor.email,
+    role: actor.role,
+    branchId: actor.scope.allBranches ? null : (actor.scope.branchIds[0] ?? null),
+    active: actor.record.active,
+    permissions: Object.keys(actor.grants),
+  };
+};
 
 /** GET /v1/backoffice/dashboard?branchId */
 export const getDashboard: Handler = (req): DashboardSummary => {
-  const user = requireStaff(req, 'dashboard');
+  const user = requireStaff(req, 'dashboard.read');
   const branchIds = scopedBranchIds(req, user);
   const date = today(req);
   const orders = ordersForDay(req, date, branchIds);
@@ -105,9 +117,18 @@ export const listBackofficeOrders: Handler = (req) => {
 };
 
 function permissionForStatus(to: OrderStatus): StaffPermission {
-  return to === 'accepted' || to === 'rejected' || to === 'cancelled'
-    ? 'orders.accept'
-    : 'orders.status';
+  switch (to) {
+    case 'accepted':
+      return 'orders.accept';
+    case 'rejected':
+      return 'orders.reject';
+    case 'cancelled':
+      return 'orders.cancel';
+    case 'preparing':
+      return 'orders.prepare';
+    default:
+      return 'orders.complete';
+  }
 }
 
 function liveOrderInScope(req: Req, id: string, permission: StaffPermission) {
@@ -133,7 +154,7 @@ export const changeOrderStatus: Handler = (req) => {
 export const dispatch: Handler = (req) => {
   const b = body<DispatchRequest>(req);
   const provider = oneOf(b.provider, ['pedidosya', 'own'] as const, 'provider');
-  const order = liveOrderInScope(req, req.params.id ?? '', 'orders.dispatch');
+  const order = liveOrderInScope(req, req.params.id ?? '', 'deliveries.assign');
   dispatchOrder(req, order, provider, str(b.riderId) || undefined);
   return order;
 };
@@ -141,7 +162,7 @@ export const dispatch: Handler = (req) => {
 /** POST /v1/backoffice/deliveries/quote — { orderId } → cotización PedidosYa SIMULADA. */
 export const quoteCourier: Handler = (req): CourierQuote => {
   const b = body<{ orderId: string }>(req);
-  const order = liveOrderInScope(req, str(b.orderId), 'orders.dispatch');
+  const order = liveOrderInScope(req, str(b.orderId), 'deliveries.assign');
   if (!canDispatch(order)) fail(409, 'El pedido no está listo para despacho');
   const t = now(req);
   return {
@@ -160,14 +181,14 @@ export const quoteCourier: Handler = (req): CourierQuote => {
 
 /** PATCH /v1/backoffice/deliveries/:orderId/advance — solo simulación. */
 export const advance: Handler = (req) => {
-  const order = liveOrderInScope(req, req.params.orderId ?? '', 'orders.dispatch');
+  const order = liveOrderInScope(req, req.params.orderId ?? '', 'deliveries.assign');
   advanceDelivery(req, order);
   return order;
 };
 
 /** GET /v1/backoffice/deliveries?from&to&branchId&provider */
 export const listDeliveries: Handler = (req) => {
-  const user = requireStaff(req, 'orders.dispatch');
+  const user = requireStaff(req, 'deliveries.assign');
   const branchIds = scopedBranchIds(req, user);
   const from = req.query.get('from') || today(req);
   const to = req.query.get('to') || from;
@@ -184,7 +205,7 @@ export const listDeliveries: Handler = (req) => {
 
 /** GET /v1/backoffice/riders?branchId */
 export const listRiders: Handler = (req): Rider[] => {
-  const user = requireStaff(req, 'orders.dispatch');
+  const user = requireStaff(req, 'deliveries.assign');
   const branchIds = scopedBranchIds(req, user);
   return req.store.riders
     .filter((r) => branchIds.includes(r.branchId))

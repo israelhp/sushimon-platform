@@ -21,7 +21,7 @@ import { cn } from '@/lib/cn';
 import type { StaffRole } from '@/lib/data-access/models';
 import { STAFF_ROLES } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
-import { ROLE_HOME } from '@/lib/permissions';
+import { homeScreen } from '@/lib/permissions';
 import { BoThemeButton } from './BoThemeButton';
 import { LOGIN_PATH, screenFromPath, screenHref } from './nav';
 import { branchShortName, useShell } from './shell-context';
@@ -192,10 +192,10 @@ function UserMenu() {
   if (!staff) return null;
 
   const switchRole = (role: StaffRole) => {
-    signInStaff(role);
+    const next = signInStaff(role);
     popover.close();
     toast.notify(t('shell.roleChanged', { role: t(`roles.${role}`) }));
-    router.push(screenHref(ROLE_HOME[role]));
+    router.push(screenHref(homeScreen(next.grants)));
   };
   const logout = () => {
     popover.close();

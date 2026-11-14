@@ -37,17 +37,41 @@ Navegador ──Bearer JWT──▶ API ──JWKS (caché)──▶ verifica �
 `auth_user_id` es **nullable** (ADR-0009). Un administrador preregistra al empleado por correo (minúsculas) con rol y
 sucursal; en su **primer inicio de sesión con Google** la API ejecuta un `UPDATE … WHERE email = $1 AND auth_user_id IS NULL
 AND active` atómico y lo vincula. Condiciones: sesión de OAuth con Google (`app_metadata.provider = google` y `amr`
-`oauth`), fila activa y sin vincular. Sin preregistro no hay acceso; nunca se crea personal automáticamente.
+`oauth`), **correo verificado** (`user_metadata.email_verified === true`; ausente o distinto = no vincula, default-deny),
+fila activa y sin vincular. Sin preregistro no hay acceso; nunca se crea personal automáticamente.
+
+**Riesgo residual y pendiente de entorno (Supabase):** `user_metadata` es editable por el propio usuario, así que
+`email_verified` solo filtra el caso explícito; la defensa real es de configuración y **no está verificada desde el
+repositorio**: (1) proveedor **Email deshabilitado** (sin registro con correo/contraseña de un tercero); (2) **linking
+automático de identidades controlado** (no permitir que una identidad de otro proveedor se enlace por correo al mismo
+`auth.users`). La API no exige `googleOAuth` en cada petición (la sesión puede refrescarse sin pasar por OAuth y romper F01);
+el vínculo solo ocurre en el primer acceso. Revisar ambos ajustes antes de producción.
 
 ### Primer administrador (proceso manual controlado)
 
 ```bash
-# DATABASE_URL (o DIRECT_URL) en el entorno; no se pasa como argumento
-pnpm --filter sushimon-api staff:bootstrap -- --email persona@dominio.com --name "Nombre Apellido"
+# DATABASE_URL (o DIRECT_URL) en el entorno; no se pasa como argumento. Correo y nombre: argumentos o
+# BOOTSTRAP_ADMIN_EMAIL / BOOTSTRAP_ADMIN_NAME (nunca en código).
+pnpm --filter sushimon-api staff:bootstrap -- --email persona@dominio.com --name "Nombre Apellido" --yes --confirm-host=<host-del-destino>
 ```
 
-Crea o reactiva la fila y la asignación `admin` (todas las sucursales). Quien tenga ese correo queda vinculado al
-iniciar sesión con Google. Idempotente. Ejecutarlo contra producción requiere autorización explícita.
+Prerrequisito: migración `0005_staff_rbac` aplicada (el rol `admin` ya contiene el catálogo granular).
+Protecciones (spec 006, D8):
+
+- Muestra el destino (host:puerto/base, **nunca** usuario ni contraseña) y exige `--yes` **y** `--confirm-host=<host>`
+  igual al host real del destino (evita ejecutarlo contra la base equivocada por un `.env` heredado); sin ellos, o con un
+  host distinto, no escribe nada (exit 2).
+- Los valores de los argumentos no pueden empezar por `--` (un valor olvidado no consume el flag siguiente).
+- Si promueve a administrador a una fila **ya vinculada** a una cuenta, lo avisa explícitamente en consola.
+- Si ya existe un administrador global **activo y vinculado** aborta (exit 3) salvo `--allow-existing-admin`
+  (recuperación, p. ej. cuenta perdida).
+- Idempotente: si el correo ya es administrador global activo no cambia ni audita (exit 0). Reactivar una fila o
+  asignación existente se avisa en consola.
+- Todo en una transacción con el candado de «último administrador»; escribe `staff.bootstrapped` en `audit_events`
+  (actor NULL, `created_by` NULL, sin correo).
+
+Quien tenga ese correo queda vinculado al iniciar sesión con Google. Ejecutarlo contra producción requiere
+autorización explícita.
 
 ## Configuración
 

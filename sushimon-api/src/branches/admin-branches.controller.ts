@@ -34,10 +34,12 @@ import {
 const UNAUTHORIZED = { status: 401, description: 'Token ausente, inválido o expirado' } as const;
 const NOT_FOUND = { status: 404, description: 'No existe o fuera de alcance' } as const;
 
-/** Backoffice de sucursales: JWT (global) → personal activo con permiso `branches` → aal2. Sin DELETE. */
+/**
+ * Backoffice de sucursales: JWT (global) → personal activo con el permiso de CADA operación → aal2. El alcance
+ * por sucursal se resuelve en los servicios con el permiso específico (ADR-0010). Sin DELETE.
+ */
 @ApiTags('branches')
 @ApiBearerAuth()
-@RequireStaff('branches')
 @Controller('admin/branches')
 export class AdminBranchesController {
   constructor(
@@ -46,6 +48,7 @@ export class AdminBranchesController {
   ) {}
 
   @Get()
+  @RequireStaff('branches.read')
   @ApiOperation({
     operationId: 'listAdminBranches',
     summary: 'Sucursales del backoffice (activas e inactivas, paginado)',
@@ -61,6 +64,7 @@ export class AdminBranchesController {
   }
 
   @Post()
+  @RequireStaff('branches.create')
   @ApiOperation({ operationId: 'createAdminBranch', summary: 'Crea una sucursal' })
   @ApiCreatedResponse({ type: AdminBranchDto })
   @ApiResponse({ status: 400, description: 'Datos inválidos' })
@@ -74,6 +78,7 @@ export class AdminBranchesController {
   }
 
   @Get(':id')
+  @RequireStaff('branches.read')
   @ApiOperation({
     operationId: 'getAdminBranch',
     summary: 'Detalle administrativo de una sucursal',
@@ -90,6 +95,7 @@ export class AdminBranchesController {
   }
 
   @Patch(':id')
+  @RequireStaff('branches.update')
   @HttpCode(200)
   @ApiOperation({
     operationId: 'updateAdminBranch',
@@ -108,6 +114,7 @@ export class AdminBranchesController {
   }
 
   @Patch(':id/status')
+  @RequireStaff('branches.update')
   @HttpCode(200)
   @ApiOperation({
     operationId: 'updateAdminBranchStatus',

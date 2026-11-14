@@ -1,6 +1,6 @@
 # Contrato HTTP canónico de Sushi Mon (Contract First).
 # Se diseña ANTES de implementar cada slice y se verifica contra NestJS con `pnpm contracts:check`.
-# Estado: F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
+# Estado: F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
 # Seguridad por defecto: Bearer JWT de Supabase Auth en todo salvo operaciones con `security: []` (health).
 # Transversal a TODAS las respuestas: cabecera `X-Request-Id`; errores con `ErrorResponse`; 429 cuando
 # se excede el rate limit global (no se repite por operación).
@@ -196,7 +196,7 @@ paths:
       operationId: listAdminBranches
       summary: Sucursales del backoffice (activas e inactivas, paginado)
       description: |
-        F07. Exige JWT → personal activo con el permiso `branches` → `aal2`. Solo devuelve las sucursales dentro
+        F07/F03. Exige JWT → personal activo con `branches.read` → `aal2`. Solo devuelve las sucursales dentro
         del alcance del empleado (todas, o las de sus asignaciones). Respuesta `Cache-Control: no-store`.
       tags: [branches]
       security:
@@ -248,7 +248,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: No es personal activo, falta el permiso `branches` o la sesión no es aal2
+          description: No es personal activo, falta `branches.read` o la sesión no es aal2
           content:
             application/json:
               schema:
@@ -257,7 +257,7 @@ paths:
       operationId: createAdminBranch
       summary: Crea una sucursal
       description: |
-        F07. Alta global: solo personal con asignación a TODAS las sucursales (`allBranches`) y permiso `branches`.
+        F07/F03. Alta global: solo personal con `branches.create` con alcance global (`grants['branches.create'].allBranches`).
         El `code` se normaliza (minúsculas) y es inmutable después. Se audita en `app.audit_events`.
         No hay tope de sucursales en la API (el "5" del prototipo es una decisión comercial pendiente).
       tags: [branches]
@@ -305,7 +305,7 @@ paths:
       operationId: getAdminBranch
       summary: Detalle administrativo de una sucursal
       description: |
-        404 si no existe o está fuera del alcance del empleado (no se distingue). Respuesta con `Cache-Control: no-store`.
+        Exige `branches.read`. 404 si no existe o está fuera del alcance del empleado (no se distingue). Respuesta con `Cache-Control: no-store`.
       tags: [branches]
       security:
         - bearer: []
@@ -331,7 +331,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: No es personal activo, falta el permiso `branches` o la sesión no es aal2
+          description: No es personal activo, falta `branches.read` o la sesión no es aal2
           content:
             application/json:
               schema:
@@ -346,7 +346,7 @@ paths:
       operationId: updateAdminBranch
       summary: Actualiza datos básicos de una sucursal
       description: |
-        Campos permitidos: nombre, teléfono, dirección y coordenadas. `code`, `active` y `createdAt` NO se aceptan
+        Exige `branches.update` en esa sucursal (404 fuera de alcance). Campos permitidos: nombre, teléfono, dirección y coordenadas. `code`, `active` y `createdAt` NO se aceptan
         (400): el estado se cambia con `PATCH .../status`. Los campos omitidos no se tocan; `phone`, `latitude` y
         `longitude` aceptan `null` para borrarlos. Latitud y longitud van juntas (ambas o ninguna). Un PATCH sin
         cambios reales no escribe ni audita.
@@ -397,7 +397,7 @@ paths:
       operationId: updateAdminBranchStatus
       summary: Activa o desactiva una sucursal (estado administrativo)
       description: |
-        Cambia `active`. Desactivar exige `reason`. Idempotente: si ya tiene ese estado devuelve la sucursal sin
+        Exige `branches.update` en esa sucursal. Cambia `active`. Desactivar exige `reason`. Idempotente: si ya tiene ese estado devuelve la sucursal sin
         escribir ni auditar. NO cancela ni reasigna pedidos en curso, ni borra empleados, productos o repartidores
         (política de pedidos en curso: pendiente con F20/F22).
       tags: [branches]
@@ -442,8 +442,513 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/staff:
+    get:
+      operationId: listAdminStaff
+      summary: Empleados del backoffice (paginado)
+      description: |
+        F03. Exige `staff.read`. Solo lista empleados con al menos una asignación dentro del alcance de `staff.read` del
+        solicitante (global = todos). `manageable` indica si el solicitante puede modificarlos (todas sus asignaciones dentro
+        del alcance y rol otorgable). `branchId` filtra por asignación a esa sucursal exacta (las asignaciones globales no
+        coinciden; usa `roleId` del rol admin). Respuesta `Cache-Control: no-store`. Nunca expone `authUserId`.
+      tags: [staff]
+      security:
+        - bearer: []
+      parameters:
+        - name: q
+          in: query
+          description: Busca por nombre o correo (contiene, sin distinguir mayúsculas). Máx. 100 caracteres.
+          schema: { type: string, maxLength: 100 }
+        - name: branchId
+          in: query
+          description: Empleados con una asignación a esta sucursal.
+          schema: { type: string, format: uuid }
+        - name: roleId
+          in: query
+          description: Empleados con una asignación de este rol.
+          schema: { type: string, format: uuid }
+        - name: active
+          in: query
+          description: Estado del empleado. Sin valor = todos.
+          schema: { type: boolean }
+        - name: identityStatus
+          in: query
+          description: Estado de vínculo de identidad.
+          schema: { $ref: '#/components/schemas/StaffIdentityStatus' }
+        - name: sort
+          in: query
+          description: Campo de orden.
+          schema: { type: string, enum: [fullName, email, createdAt], default: fullName }
+        - name: order
+          in: query
+          description: Sentido.
+          schema: { type: string, enum: [asc, desc], default: asc }
+        - name: page
+          in: query
+          description: Página.
+          schema: { type: integer, minimum: 1, maximum: 1000000, default: 1 }
+        - name: pageSize
+          in: query
+          description: Tamaño de página.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Página de empleados
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStaffPage'
+        '400':
+          description: Datos o parámetros inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      operationId: createAdminStaff
+      summary: Preautoriza a un empleado (sin crear cuenta de Auth)
+      description: |
+        F03. Exige `staff.create` y `staff.assign_roles` en el alcance de CADA asignación solicitada. Crea una fila
+        `staff_users` con `auth_user_id` NULL (`identityStatus = PENDING_LINK`) y sus asignaciones; la identidad se vincula
+        sola en su primer inicio de sesión con Google (ADR-0009). No crea usuarios en Supabase Auth, no envía correos y
+        `authUserId` no se acepta en la entrada. Correo normalizado a minúsculas. Regla del subconjunto: solo se otorgan roles
+        cuyos permisos posee el solicitante en el alcance destino; `branchId` null (global) solo con rol `admin` y solo si el
+        solicitante tiene alcance global. Se audita `staff.created` en la misma transacción.
+      tags: [staff]
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStaffRequest'
+      responses:
+        '201':
+          description: Empleado preautorizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStaff'
+        '400':
+          description: Datos o parámetros inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Ya existe un empleado con ese correo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/staff/{id}:
+    get:
+      operationId: getAdminStaff
+      summary: Detalle de un empleado
+      description: |
+        F03. Exige `staff.read`. 404 si no existe o no tiene ninguna asignación dentro del alcance del solicitante (no se
+        distingue). Expone `identityStatus` y `linkedAt`, nunca `authUserId`. Respuesta `Cache-Control: no-store`.
+      tags: [staff]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/StaffId'
+      responses:
+        '200':
+          description: Empleado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStaff'
+        '400':
+          description: Datos o parámetros inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o está fuera del alcance del empleado (no se distingue)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      operationId: updateAdminStaff
+      summary: Edita nombre o correo de un empleado
+      description: |
+        F03. Exige `staff.update` y que el empleado sea gestionable por el solicitante. Nadie puede modificar su propia cuenta
+        salvo `fullName`. El correo solo se puede cambiar mientras `identityStatus = PENDING_LINK`; en una identidad
+        vinculada responde 409 (procedimiento de cambio de correo: pendiente). Auditoría `staff.updated` solo con diff real.
+      tags: [staff]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/StaffId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStaffRequest'
+      responses:
+        '200':
+          description: Empleado actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStaff'
+        '400':
+          description: Datos o parámetros inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o está fuera del alcance del empleado (no se distingue)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Correo ya en uso, o correo de una identidad ya vinculada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/staff/{id}/status:
+    patch:
+      operationId: updateAdminStaffStatus
+      summary: Activa o desactiva a un empleado
+      description: |
+        F03. Exige `staff.disable` (activar y desactivar) y que el empleado sea gestionable. Desactivar exige `reason`; un
+        empleado no puede cambiar su propio estado. Corta el acceso en la siguiente solicitud (la API revalida en cada petición).
+        No puede dejar al sistema sin al menos un administrador global activo y vinculado (409; bloqueo transaccional).
+        Idempotente: sin cambio no escribe ni audita. Auditoría `staff.deactivated` / `staff.activated`.
+      tags: [staff]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/StaffId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStaffStatusRequest'
+      responses:
+        '200':
+          description: Empleado con su estado actual
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStaff'
+        '400':
+          description: Datos o parámetros inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o está fuera del alcance del empleado (no se distingue)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Dejaría al sistema sin administrador activo y vinculado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/staff/{id}/assignments:
+    put:
+      operationId: replaceAdminStaffAssignments
+      summary: Reemplaza TODAS las asignaciones de un empleado
+      description: |
+        F03. Exige `staff.assign_roles`. Reemplazo transaccional completo (al menos 1, sin duplicados). Cada asignación
+        añadida O retirada debe ser otorgable por el solicitante (regla del subconjunto en su alcance: posee todos los permisos
+        del rol en esa sucursal); `branchId` null solo con rol `admin` (y `admin` solo global); la sucursal debe existir y estar
+        activa. Nadie modifica sus propias asignaciones. No puede dejar al sistema sin administrador global activo y vinculado
+        (409). Idempotente: sin cambio no escribe ni audita. Auditoría `staff.assignments_changed` (diff).
+      tags: [staff]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/StaffId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplaceStaffAssignmentsRequest'
+      responses:
+        '200':
+          description: Empleado con sus asignaciones
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStaff'
+        '400':
+          description: Datos o parámetros inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o está fuera del alcance del empleado (no se distingue)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Dejaría al sistema sin administrador activo y vinculado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/roles:
+    get:
+      operationId: listAdminRoles
+      summary: Roles y sus permisos
+      description: |
+        F03. Exige `roles.read`. Catálogo acotado (sin paginación: pocos roles; los roles personalizados están pendientes).
+        Incluye `isSystem` (no editable) y cuántos empleados activos lo tienen asignado.
+      tags: [roles]
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Roles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRoleList'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/roles/{id}:
+    get:
+      operationId: getAdminRole
+      summary: Detalle de un rol
+      description: |
+        F03. Exige `roles.read`.
+      tags: [roles]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/RoleId'
+      responses:
+        '200':
+          description: Rol
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRole'
+        '400':
+          description: Datos o parámetros inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o está fuera del alcance del empleado (no se distingue)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/roles/{id}/permissions:
+    put:
+      operationId: replaceAdminRolePermissions
+      summary: Reemplaza los permisos de un rol
+      description: |
+        F03. Exige `roles.manage`. Reemplazo completo. Los roles `isSystem` (hoy `admin`) NO se editan (409). Regla del
+        subconjunto: cada permiso AÑADIDO debe poseerlo el solicitante con alcance global (el rol aplica a todas las
+        sucursales donde se asigne). Idempotente. Auditoría `role.permissions_changed` con permisos añadidos/retirados y
+        empleados afectados, en la misma transacción. Las nuevas decisiones rigen en la siguiente solicitud (sin caché).
+      tags: [roles]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/RoleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplaceRolePermissionsRequest'
+      responses:
+        '200':
+          description: Rol actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRole'
+        '400':
+          description: Datos o parámetros inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o está fuera del alcance del empleado (no se distingue)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: El rol es del sistema y no es editable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/permissions:
+    get:
+      operationId: listAdminPermissions
+      summary: Catálogo de permisos agrupado por módulo
+      description: |
+        F03. Exige `roles.read`. Catálogo fijo sembrado por migración (los permisos no se crean por API).
+      tags: [roles]
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Permisos por módulo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPermissionCatalog'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   parameters:
+    StaffId:
+      name: id
+      in: path
+      required: true
+      description: UUID del empleado (`staff_users.id`).
+      schema: { type: string, format: uuid }
+    RoleId:
+      name: id
+      in: path
+      required: true
+      description: UUID del rol.
+      schema: { type: string, format: uuid }
     BranchId:
       name: id
       in: path
@@ -540,6 +1045,214 @@ components:
           type: string
           maxLength: 200
           description: Obligatorio al desactivar; opcional al activar.
+    BranchRef:
+      type: object
+      required: [id, name, code]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        code: { type: string }
+    GrantScope:
+      type: object
+      description: |
+        Alcance de UN permiso: `allBranches` (asignación global) o las sucursales ACTIVAS donde lo posee.
+        Solo cuentan asignaciones activas de personal activo hacia sucursales activas.
+      required: [allBranches, branchIds]
+      properties:
+        allBranches: { type: boolean }
+        branchIds:
+          type: array
+          items: { type: string, format: uuid }
+    StaffIdentityStatus:
+      type: string
+      description: |
+        Derivado de `staff_users.auth_user_id`: PENDING_LINK = preautorizado, aún sin iniciar sesión con Google;
+        LINKED = identidad vinculada. Independiente de `active`.
+      enum: [PENDING_LINK, LINKED]
+    RoleRef:
+      type: object
+      required: [id, code, name]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+    StaffAssignmentView:
+      type: object
+      required: [role, branch, effective]
+      properties:
+        role: { $ref: '#/components/schemas/RoleRef' }
+        branch:
+          allOf:
+            - $ref: '#/components/schemas/BranchRef'
+          nullable: true
+          description: null = alcance GLOBAL (todas las sucursales; solo el rol admin).
+        effective:
+          type: boolean
+          description: false si la asignación está inactiva o su sucursal está inactiva (no concede acceso operativo).
+    StaffRef:
+      type: object
+      required: [id, fullName]
+      properties:
+        id: { type: string, format: uuid }
+        fullName: { type: string }
+    AdminStaff:
+      type: object
+      description: Nunca incluye `authUserId`.
+      required:
+        [
+          id,
+          fullName,
+          email,
+          active,
+          identityStatus,
+          linkedAt,
+          createdAt,
+          createdBy,
+          assignments,
+          manageable,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        fullName: { type: string }
+        email: { type: string, description: Minúsculas. }
+        active: { type: boolean }
+        identityStatus: { $ref: '#/components/schemas/StaffIdentityStatus' }
+        linkedAt:
+          {
+            type: string,
+            format: date-time,
+            nullable: true,
+            description: 'null si PENDING_LINK o vinculado antes de F03.',
+          }
+        createdAt: { type: string, format: date-time }
+        createdBy:
+          allOf:
+            - $ref: '#/components/schemas/StaffRef'
+          nullable: true
+          description: null = proceso manual (bootstrap) o anterior a F03.
+        assignments:
+          type: array
+          items: { $ref: '#/components/schemas/StaffAssignmentView' }
+        manageable:
+          type: boolean
+          description: El solicitante puede modificar a este empleado (alcance completo y roles otorgables). Solo orienta la UI.
+    AdminStaffPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminStaff' }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer, description: Total que cumple filtros y alcance. }
+    StaffAssignmentInput:
+      type: object
+      required: [roleId, branchId]
+      additionalProperties: false
+      properties:
+        roleId: { type: string, format: uuid }
+        branchId:
+          type: string
+          format: uuid
+          nullable: true
+          description: null = global (solo con el rol admin y solo otorgable con alcance global).
+    CreateStaffRequest:
+      type: object
+      required: [fullName, email, assignments]
+      additionalProperties: false
+      properties:
+        fullName: { type: string, minLength: 1, maxLength: 120 }
+        email:
+          { type: string, format: email, maxLength: 254, description: Se normaliza a minúsculas. }
+        assignments:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { $ref: '#/components/schemas/StaffAssignmentInput' }
+    UpdateStaffRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        fullName: { type: string, minLength: 1, maxLength: 120 }
+        email:
+          { type: string, format: email, maxLength: 254, description: Solo mientras PENDING_LINK. }
+    UpdateStaffStatusRequest:
+      type: object
+      required: [active]
+      additionalProperties: false
+      properties:
+        active: { type: boolean }
+        reason: { type: string, maxLength: 200, description: Obligatorio al desactivar. }
+    ReplaceStaffAssignmentsRequest:
+      type: object
+      required: [assignments]
+      additionalProperties: false
+      properties:
+        assignments:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { $ref: '#/components/schemas/StaffAssignmentInput' }
+    PermissionRef:
+      type: object
+      required: [code, description, module]
+      properties:
+        code: { type: string, example: orders.accept }
+        description: { type: string }
+        module: { type: string, description: 'Prefijo del código (orders, staff...).' }
+    AdminRole:
+      type: object
+      required: [id, code, name, isSystem, permissions, assignedStaffCount]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        isSystem: { type: boolean, description: Solo lectura (no editable por API). }
+        permissions:
+          type: array
+          items: { $ref: '#/components/schemas/PermissionRef' }
+        assignedStaffCount:
+          { type: integer, description: Empleados activos con una asignación activa de este rol. }
+    AdminRoleList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminRole' }
+    ReplaceRolePermissionsRequest:
+      type: object
+      required: [permissions]
+      additionalProperties: false
+      properties:
+        permissions:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, pattern: '^[a-z_]+\.[a-z_]+$' }
+    AdminPermissionModule:
+      type: object
+      required: [module, permissions]
+      properties:
+        module: { type: string }
+        permissions:
+          type: array
+          items:
+            type: object
+            required: [code, description]
+            properties:
+              code: { type: string }
+              description: { type: string }
+    AdminPermissionCatalog:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminPermissionModule' }
     AuthStaffAssignment:
       type: object
       required: [role, branchId]
@@ -552,7 +1265,8 @@ components:
           description: null = todas las sucursales.
     AuthStaffContext:
       type: object
-      required: [staffId, fullName, assignments, permissions, allBranches, branchIds]
+      required:
+        [staffId, fullName, assignments, permissions, allBranches, branchIds, grants, branches]
       properties:
         staffId: { type: string, format: uuid }
         fullName: { type: string }
@@ -565,10 +1279,25 @@ components:
           items: { $ref: '#/components/schemas/StaffPermission' }
         allBranches:
           type: boolean
-          description: true si alguna asignación activa no está limitada a una sucursal.
+          deprecated: true
+          description: |
+            Unión plana de todos los roles (solo orienta la UI; NUNCA autoriza). Usa `grants` para saber dónde aplica
+            cada permiso.
         branchIds:
           type: array
+          deprecated: true
           items: { type: string, format: uuid }
+        grants:
+          type: object
+          description: |
+            F03. Permiso -> alcance (`GrantScope`), calculado en el servidor solo con asignaciones activas de personal
+            activo hacia sucursales activas. Sin caché entre solicitudes: la revocación es inmediata.
+          additionalProperties:
+            $ref: '#/components/schemas/GrantScope'
+        branches:
+          type: array
+          description: Sucursales ACTIVAS sobre las que el empleado tiene algún permiso (todas las activas si tiene alcance global).
+          items: { $ref: '#/components/schemas/BranchRef' }
     AuthContextResponse:
       type: object
       required:
@@ -1307,21 +2036,14 @@ components:
     StaffRole:
       x-status: draft
       type: string
-      enum: [admin, manager, kitchen]
+      enum: [admin, manager, kitchen, staff]
     StaffPermission:
-      x-status: draft
       type: string
-      enum:
-        - dashboard
-        - orders.accept
-        - orders.status
-        - orders.dispatch
-        - products.edit
-        - products.availability
-        - promotions
-        - branches
-        - users
-        - reports
+      description: |
+        Código granular `modulo.accion` (F03, ADR-0010; catálogo en `GET /v1/admin/permissions`). Reemplaza los 10
+        permisos gruesos de F01 (dashboard, orders.status, products.edit, branches, users...). Es dato sembrado
+        por migración, por eso no se lista como enum.
+      pattern: '^[a-z_]+\.[a-z_]+$'
     StaffUser:
       x-status: draft
       type: object

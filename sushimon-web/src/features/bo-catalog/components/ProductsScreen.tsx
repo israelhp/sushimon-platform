@@ -23,7 +23,6 @@ import { errorMessage, isForbidden } from '@/features/bo-orders/error-message';
 import { cn } from '@/lib/cn';
 import type { Product } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
-import { can } from '@/lib/permissions';
 import {
   availabilityPatch,
   availabilityState,
@@ -50,12 +49,12 @@ export function ProductsScreen() {
   const t = useTranslations('backoffice.products');
   const tu = useTranslations('ui');
   const toast = useToast();
-  const { role } = useShell();
+  const { can } = useShell();
   const { scope, activeBranches, title: branchTitle } = useCatalogScope();
   const products = useBoProducts();
   const categories = useBoCategories();
   const setAvailability = useSetProductAvailability();
-  const canEdit = can(role, 'products.edit');
+  const canEdit = can('catalog.update');
 
   const [view, setView] = useState<View>('grid');
   const [query, setQuery] = useState('');

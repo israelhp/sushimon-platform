@@ -159,14 +159,14 @@ export interface paths {
         };
         /**
          * Sucursales del backoffice (activas e inactivas, paginado)
-         * @description F07. Exige JWT → personal activo con el permiso `branches` → `aal2`. Solo devuelve las sucursales dentro
+         * @description F07/F03. Exige JWT → personal activo con `branches.read` → `aal2`. Solo devuelve las sucursales dentro
          *     del alcance del empleado (todas, o las de sus asignaciones). Respuesta `Cache-Control: no-store`.
          */
         get: operations["listAdminBranches"];
         put?: never;
         /**
          * Crea una sucursal
-         * @description F07. Alta global: solo personal con asignación a TODAS las sucursales (`allBranches`) y permiso `branches`.
+         * @description F07/F03. Alta global: solo personal con `branches.create` con alcance global (`grants['branches.create'].allBranches`).
          *     El `code` se normaliza (minúsculas) y es inmutable después. Se audita en `app.audit_events`.
          *     No hay tope de sucursales en la API (el "5" del prototipo es una decisión comercial pendiente).
          */
@@ -186,7 +186,7 @@ export interface paths {
         };
         /**
          * Detalle administrativo de una sucursal
-         * @description 404 si no existe o está fuera del alcance del empleado (no se distingue). Respuesta con `Cache-Control: no-store`.
+         * @description Exige `branches.read`. 404 si no existe o está fuera del alcance del empleado (no se distingue). Respuesta con `Cache-Control: no-store`.
          */
         get: operations["getAdminBranch"];
         put?: never;
@@ -196,7 +196,7 @@ export interface paths {
         head?: never;
         /**
          * Actualiza datos básicos de una sucursal
-         * @description Campos permitidos: nombre, teléfono, dirección y coordenadas. `code`, `active` y `createdAt` NO se aceptan
+         * @description Exige `branches.update` en esa sucursal (404 fuera de alcance). Campos permitidos: nombre, teléfono, dirección y coordenadas. `code`, `active` y `createdAt` NO se aceptan
          *     (400): el estado se cambia con `PATCH .../status`. Los campos omitidos no se tocan; `phone`, `latitude` y
          *     `longitude` aceptan `null` para borrarlos. Latitud y longitud van juntas (ambas o ninguna). Un PATCH sin
          *     cambios reales no escribe ni audita.
@@ -219,11 +219,201 @@ export interface paths {
         head?: never;
         /**
          * Activa o desactiva una sucursal (estado administrativo)
-         * @description Cambia `active`. Desactivar exige `reason`. Idempotente: si ya tiene ese estado devuelve la sucursal sin
+         * @description Exige `branches.update` en esa sucursal. Cambia `active`. Desactivar exige `reason`. Idempotente: si ya tiene ese estado devuelve la sucursal sin
          *     escribir ni auditar. NO cancela ni reasigna pedidos en curso, ni borra empleados, productos o repartidores
          *     (política de pedidos en curso: pendiente con F20/F22).
          */
         patch: operations["updateAdminBranchStatus"];
+        trace?: never;
+    };
+    "/v1/admin/staff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Empleados del backoffice (paginado)
+         * @description F03. Exige `staff.read`. Solo lista empleados con al menos una asignación dentro del alcance de `staff.read` del
+         *     solicitante (global = todos). `manageable` indica si el solicitante puede modificarlos (todas sus asignaciones dentro
+         *     del alcance y rol otorgable). `branchId` filtra por asignación a esa sucursal exacta (las asignaciones globales no
+         *     coinciden; usa `roleId` del rol admin). Respuesta `Cache-Control: no-store`. Nunca expone `authUserId`.
+         */
+        get: operations["listAdminStaff"];
+        put?: never;
+        /**
+         * Preautoriza a un empleado (sin crear cuenta de Auth)
+         * @description F03. Exige `staff.create` y `staff.assign_roles` en el alcance de CADA asignación solicitada. Crea una fila
+         *     `staff_users` con `auth_user_id` NULL (`identityStatus = PENDING_LINK`) y sus asignaciones; la identidad se vincula
+         *     sola en su primer inicio de sesión con Google (ADR-0009). No crea usuarios en Supabase Auth, no envía correos y
+         *     `authUserId` no se acepta en la entrada. Correo normalizado a minúsculas. Regla del subconjunto: solo se otorgan roles
+         *     cuyos permisos posee el solicitante en el alcance destino; `branchId` null (global) solo con rol `admin` y solo si el
+         *     solicitante tiene alcance global. Se audita `staff.created` en la misma transacción.
+         */
+        post: operations["createAdminStaff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/staff/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detalle de un empleado
+         * @description F03. Exige `staff.read`. 404 si no existe o no tiene ninguna asignación dentro del alcance del solicitante (no se
+         *     distingue). Expone `identityStatus` y `linkedAt`, nunca `authUserId`. Respuesta `Cache-Control: no-store`.
+         */
+        get: operations["getAdminStaff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edita nombre o correo de un empleado
+         * @description F03. Exige `staff.update` y que el empleado sea gestionable por el solicitante. Nadie puede modificar su propia cuenta
+         *     salvo `fullName`. El correo solo se puede cambiar mientras `identityStatus = PENDING_LINK`; en una identidad
+         *     vinculada responde 409 (procedimiento de cambio de correo: pendiente). Auditoría `staff.updated` solo con diff real.
+         */
+        patch: operations["updateAdminStaff"];
+        trace?: never;
+    };
+    "/v1/admin/staff/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Activa o desactiva a un empleado
+         * @description F03. Exige `staff.disable` (activar y desactivar) y que el empleado sea gestionable. Desactivar exige `reason`; un
+         *     empleado no puede cambiar su propio estado. Corta el acceso en la siguiente solicitud (la API revalida en cada petición).
+         *     No puede dejar al sistema sin al menos un administrador global activo y vinculado (409; bloqueo transaccional).
+         *     Idempotente: sin cambio no escribe ni audita. Auditoría `staff.deactivated` / `staff.activated`.
+         */
+        patch: operations["updateAdminStaffStatus"];
+        trace?: never;
+    };
+    "/v1/admin/staff/{id}/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reemplaza TODAS las asignaciones de un empleado
+         * @description F03. Exige `staff.assign_roles`. Reemplazo transaccional completo (al menos 1, sin duplicados). Cada asignación
+         *     añadida O retirada debe ser otorgable por el solicitante (regla del subconjunto en su alcance: posee todos los permisos
+         *     del rol en esa sucursal); `branchId` null solo con rol `admin` (y `admin` solo global); la sucursal debe existir y estar
+         *     activa. Nadie modifica sus propias asignaciones. No puede dejar al sistema sin administrador global activo y vinculado
+         *     (409). Idempotente: sin cambio no escribe ni audita. Auditoría `staff.assignments_changed` (diff).
+         */
+        put: operations["replaceAdminStaffAssignments"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Roles y sus permisos
+         * @description F03. Exige `roles.read`. Catálogo acotado (sin paginación: pocos roles; los roles personalizados están pendientes).
+         *     Incluye `isSystem` (no editable) y cuántos empleados activos lo tienen asignado.
+         */
+        get: operations["listAdminRoles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/roles/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detalle de un rol
+         * @description F03. Exige `roles.read`.
+         */
+        get: operations["getAdminRole"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/roles/{id}/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reemplaza los permisos de un rol
+         * @description F03. Exige `roles.manage`. Reemplazo completo. Los roles `isSystem` (hoy `admin`) NO se editan (409). Regla del
+         *     subconjunto: cada permiso AÑADIDO debe poseerlo el solicitante con alcance global (el rol aplica a todas las
+         *     sucursales donde se asigne). Idempotente. Auditoría `role.permissions_changed` con permisos añadidos/retirados y
+         *     empleados afectados, en la misma transacción. Las nuevas decisiones rigen en la siguiente solicitud (sin caché).
+         */
+        put: operations["replaceAdminRolePermissions"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Catálogo de permisos agrupado por módulo
+         * @description F03. Exige `roles.read`. Catálogo fijo sembrado por migración (los permisos no se crean por API).
+         */
+        get: operations["listAdminPermissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
 }
@@ -293,6 +483,141 @@ export interface components {
             /** @description Obligatorio al desactivar; opcional al activar. */
             reason?: string;
         };
+        BranchRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            code: string;
+        };
+        /**
+         * @description Alcance de UN permiso: `allBranches` (asignación global) o las sucursales ACTIVAS donde lo posee.
+         *     Solo cuentan asignaciones activas de personal activo hacia sucursales activas.
+         */
+        GrantScope: {
+            allBranches: boolean;
+            branchIds: string[];
+        };
+        /**
+         * @description Derivado de `staff_users.auth_user_id`: PENDING_LINK = preautorizado, aún sin iniciar sesión con Google;
+         *     LINKED = identidad vinculada. Independiente de `active`.
+         * @enum {string}
+         */
+        StaffIdentityStatus: "PENDING_LINK" | "LINKED";
+        RoleRef: {
+            /** Format: uuid */
+            id: string;
+            code: string;
+            name: string;
+        };
+        StaffAssignmentView: {
+            role: components["schemas"]["RoleRef"];
+            /** @description null = alcance GLOBAL (todas las sucursales; solo el rol admin). */
+            branch: components["schemas"]["BranchRef"] | null;
+            /** @description false si la asignación está inactiva o su sucursal está inactiva (no concede acceso operativo). */
+            effective: boolean;
+        };
+        StaffRef: {
+            /** Format: uuid */
+            id: string;
+            fullName: string;
+        };
+        /** @description Nunca incluye `authUserId`. */
+        AdminStaff: {
+            /** Format: uuid */
+            id: string;
+            fullName: string;
+            /** @description Minúsculas. */
+            email: string;
+            active: boolean;
+            identityStatus: components["schemas"]["StaffIdentityStatus"];
+            /**
+             * Format: date-time
+             * @description null si PENDING_LINK o vinculado antes de F03.
+             */
+            linkedAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** @description null = proceso manual (bootstrap) o anterior a F03. */
+            createdBy: components["schemas"]["StaffRef"] | null;
+            assignments: components["schemas"]["StaffAssignmentView"][];
+            /** @description El solicitante puede modificar a este empleado (alcance completo y roles otorgables). Solo orienta la UI. */
+            manageable: boolean;
+        };
+        AdminStaffPage: {
+            items: components["schemas"]["AdminStaff"][];
+            page: number;
+            pageSize: number;
+            /** @description Total que cumple filtros y alcance. */
+            total: number;
+        };
+        StaffAssignmentInput: {
+            /** Format: uuid */
+            roleId: string;
+            /**
+             * Format: uuid
+             * @description null = global (solo con el rol admin y solo otorgable con alcance global).
+             */
+            branchId: string | null;
+        };
+        CreateStaffRequest: {
+            fullName: string;
+            /**
+             * Format: email
+             * @description Se normaliza a minúsculas.
+             */
+            email: string;
+            assignments: components["schemas"]["StaffAssignmentInput"][];
+        };
+        UpdateStaffRequest: {
+            fullName?: string;
+            /**
+             * Format: email
+             * @description Solo mientras PENDING_LINK.
+             */
+            email?: string;
+        };
+        UpdateStaffStatusRequest: {
+            active: boolean;
+            /** @description Obligatorio al desactivar. */
+            reason?: string;
+        };
+        ReplaceStaffAssignmentsRequest: {
+            assignments: components["schemas"]["StaffAssignmentInput"][];
+        };
+        PermissionRef: {
+            /** @example orders.accept */
+            code: string;
+            description: string;
+            /** @description Prefijo del código (orders, staff...). */
+            module: string;
+        };
+        AdminRole: {
+            /** Format: uuid */
+            id: string;
+            code: string;
+            name: string;
+            /** @description Solo lectura (no editable por API). */
+            isSystem: boolean;
+            permissions: components["schemas"]["PermissionRef"][];
+            /** @description Empleados activos con una asignación activa de este rol. */
+            assignedStaffCount: number;
+        };
+        AdminRoleList: {
+            items: components["schemas"]["AdminRole"][];
+        };
+        ReplaceRolePermissionsRequest: {
+            permissions: string[];
+        };
+        AdminPermissionModule: {
+            module: string;
+            permissions: {
+                code: string;
+                description: string;
+            }[];
+        };
+        AdminPermissionCatalog: {
+            items: components["schemas"]["AdminPermissionModule"][];
+        };
         AuthStaffAssignment: {
             role: components["schemas"]["StaffRole"];
             /**
@@ -308,9 +633,23 @@ export interface components {
             assignments: components["schemas"]["AuthStaffAssignment"][];
             /** @description Unión de permisos de los roles con asignación activa. */
             permissions: components["schemas"]["StaffPermission"][];
-            /** @description true si alguna asignación activa no está limitada a una sucursal. */
+            /**
+             * @deprecated
+             * @description Unión plana de todos los roles (solo orienta la UI; NUNCA autoriza). Usa `grants` para saber dónde aplica
+             *     cada permiso.
+             */
             allBranches: boolean;
+            /** @deprecated */
             branchIds: string[];
+            /**
+             * @description F03. Permiso -> alcance (`GrantScope`), calculado en el servidor solo con asignaciones activas de personal
+             *     activo hacia sucursales activas. Sin caché entre solicitudes: la revocación es inmediata.
+             */
+            grants: {
+                [key: string]: components["schemas"]["GrantScope"];
+            };
+            /** @description Sucursales ACTIVAS sobre las que el empleado tiene algún permiso (todas las activas si tiene alcance global). */
+            branches: components["schemas"]["BranchRef"][];
         };
         AuthContextResponse: {
             /**
@@ -782,9 +1121,13 @@ export interface components {
             busy: boolean;
         };
         /** @enum {string} */
-        StaffRole: "admin" | "manager" | "kitchen";
-        /** @enum {string} */
-        StaffPermission: "dashboard" | "orders.accept" | "orders.status" | "orders.dispatch" | "products.edit" | "products.availability" | "promotions" | "branches" | "users" | "reports";
+        StaffRole: "admin" | "manager" | "kitchen" | "staff";
+        /**
+         * @description Código granular `modulo.accion` (F03, ADR-0010; catálogo en `GET /v1/admin/permissions`). Reemplaza los 10
+         *     permisos gruesos de F01 (dashboard, orders.status, products.edit, branches, users...). Es dato sembrado
+         *     por migración, por eso no se lista como enum.
+         */
+        StaffPermission: string;
         StaffUser: {
             id: string;
             name: string;
@@ -954,6 +1297,10 @@ export interface components {
     };
     responses: never;
     parameters: {
+        /** @description UUID del empleado (`staff_users.id`). */
+        StaffId: string;
+        /** @description UUID del rol. */
+        RoleId: string;
         /** @description UUID de la sucursal. */
         BranchId: string;
     };
@@ -1227,7 +1574,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description No es personal activo, falta el permiso `branches` o la sesión no es aal2 */
+            /** @description No es personal activo, falta `branches.read` o la sesión no es aal2 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1337,7 +1684,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description No es personal activo, falta el permiso `branches` o la sesión no es aal2 */
+            /** @description No es personal activo, falta `branches.read` o la sesión no es aal2 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1474,6 +1821,614 @@ export interface operations {
             };
             /** @description No existe o fuera de alcance */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAdminStaff: {
+        parameters: {
+            query?: {
+                /** @description Busca por nombre o correo (contiene, sin distinguir mayúsculas). Máx. 100 caracteres. */
+                q?: string;
+                /** @description Empleados con una asignación a esta sucursal. */
+                branchId?: string;
+                /** @description Empleados con una asignación de este rol. */
+                roleId?: string;
+                /** @description Estado del empleado. Sin valor = todos. */
+                active?: boolean;
+                /** @description Estado de vínculo de identidad. */
+                identityStatus?: components["schemas"]["StaffIdentityStatus"];
+                /** @description Campo de orden. */
+                sort?: "fullName" | "email" | "createdAt";
+                /** @description Sentido. */
+                order?: "asc" | "desc";
+                /** @description Página. */
+                page?: number;
+                /** @description Tamaño de página. */
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de empleados */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminStaffPage"];
+                };
+            };
+            /** @description Datos o parámetros inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAdminStaff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateStaffRequest"];
+            };
+        };
+        responses: {
+            /** @description Empleado preautorizado */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminStaff"];
+                };
+            };
+            /** @description Datos o parámetros inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ya existe un empleado con ese correo */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAdminStaff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del empleado (`staff_users.id`). */
+                id: components["parameters"]["StaffId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Empleado */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminStaff"];
+                };
+            };
+            /** @description Datos o parámetros inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o está fuera del alcance del empleado (no se distingue) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAdminStaff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del empleado (`staff_users.id`). */
+                id: components["parameters"]["StaffId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateStaffRequest"];
+            };
+        };
+        responses: {
+            /** @description Empleado actualizado */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminStaff"];
+                };
+            };
+            /** @description Datos o parámetros inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o está fuera del alcance del empleado (no se distingue) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Correo ya en uso, o correo de una identidad ya vinculada */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAdminStaffStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del empleado (`staff_users.id`). */
+                id: components["parameters"]["StaffId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateStaffStatusRequest"];
+            };
+        };
+        responses: {
+            /** @description Empleado con su estado actual */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminStaff"];
+                };
+            };
+            /** @description Datos o parámetros inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o está fuera del alcance del empleado (no se distingue) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Dejaría al sistema sin administrador activo y vinculado */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    replaceAdminStaffAssignments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del empleado (`staff_users.id`). */
+                id: components["parameters"]["StaffId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceStaffAssignmentsRequest"];
+            };
+        };
+        responses: {
+            /** @description Empleado con sus asignaciones */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminStaff"];
+                };
+            };
+            /** @description Datos o parámetros inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o está fuera del alcance del empleado (no se distingue) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Dejaría al sistema sin administrador activo y vinculado */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAdminRoles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Roles */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRoleList"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAdminRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del rol. */
+                id: components["parameters"]["RoleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rol */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRole"];
+                };
+            };
+            /** @description Datos o parámetros inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o está fuera del alcance del empleado (no se distingue) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    replaceAdminRolePermissions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del rol. */
+                id: components["parameters"]["RoleId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceRolePermissionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Rol actualizado */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRole"];
+                };
+            };
+            /** @description Datos o parámetros inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o está fuera del alcance del empleado (no se distingue) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description El rol es del sistema y no es editable */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAdminPermissions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Permisos por módulo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPermissionCatalog"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría) */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

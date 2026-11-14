@@ -21,7 +21,6 @@ import { cn } from '@/lib/cn';
 import type { Order, OrderStatusEvent } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
 import { toBackofficeColumn } from '@/lib/order-status';
-import { can } from '@/lib/permissions';
 import { localDate, localTime } from '@/lib/time';
 import { useOrderDetail } from '../order-detail-context';
 import {
@@ -69,7 +68,7 @@ export function OrderDrawer({ orderId }: { orderId: string }) {
 function OrderDrawerContent({ order, onClose }: { order: Order; onClose: () => void }) {
   const t = useTranslations('backoffice.orders');
   const td = useTranslations('backoffice.orders.drawer');
-  const { role, branchById } = useShell();
+  const { grants, can, branchById } = useShell();
   const detail = useOrderDetail();
   const now = useNow();
   const text = useOrderText();
@@ -79,10 +78,13 @@ function OrderDrawerContent({ order, onClose }: { order: Order; onClose: () => v
   const isDelivery = order.fulfillment === 'delivery';
   const branch = branchById(order.branchId);
   const late = isLate(order, now);
-  const action = nextAction(order, role);
-  const blocked = dispatchBlockedForRole(order, role);
+  const action = nextAction(order, grants);
+  const blocked = dispatchBlockedForRole(order, grants);
   const steps = progressSteps(order);
-  const canAcceptReject = action === 'accept' && can(role, 'orders.accept');
+  const canAcceptReject =
+    action === 'accept' &&
+    can('orders.accept', order.branchId) &&
+    can('orders.reject', order.branchId);
   const hasActions = action !== null || blocked;
 
   const eyebrow = td('eyebrow', {
@@ -341,7 +343,7 @@ function historyLabel(event: OrderStatusEvent, t: Translator): string {
 function LogisticsSection({ order }: { order: Order }) {
   const t = useTranslations('backoffice.orders');
   const td = useTranslations('backoffice.orders.drawer');
-  const { role } = useShell();
+  const { can } = useShell();
   const text = useOrderText();
   const actions = useOrderActions();
   const delivery = order.delivery;
@@ -355,7 +357,7 @@ function LogisticsSection({ order }: { order: Order }) {
     !!delivery &&
     delivery.status !== 'delivered' &&
     delivery.status !== 'failed' &&
-    can(role, 'orders.dispatch');
+    can('deliveries.update', order.branchId);
 
   return (
     <section>

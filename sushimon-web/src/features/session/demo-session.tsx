@@ -18,7 +18,7 @@ import {
   type DemoSessionState,
   type DemoStaff,
 } from '@/lib/demo-session';
-import { DEMO_STAFF_BY_ROLE, STAFF_SEEDS } from '@/mocks/fixtures/staff';
+import { DEMO_STAFF_BY_ROLE, demoStaffFromSeed } from '@/mocks/fixtures/staff';
 import { DEMO_GOOGLE_ACCOUNTS } from '@/mocks/fixtures/orders';
 
 /**
@@ -58,7 +58,7 @@ export interface DemoSessionApi extends DemoSessionState {
   googleAccounts: readonly { email: string; name: string }[];
   signInCustomer: (account: { email: string; name: string }) => void;
   signOutCustomer: () => void;
-  /** Entra al backoffice con el usuario de demostración del rol (admin/manager/kitchen). */
+  /** Entra al backoffice con el usuario de demostración del rol (admin/manager/kitchen/staff). */
   signInStaff: (role: StaffRole) => DemoStaff;
   /** Entra con un usuario interno concreto (id del listado de usuarios). */
   signInStaffUser: (userId: string) => DemoStaff;
@@ -69,17 +69,7 @@ export interface DemoSessionApi extends DemoSessionState {
 
 const DemoSessionContext = createContext<DemoSessionApi | null>(null);
 
-function staffFromUser(userId: string): DemoStaff {
-  const user = STAFF_SEEDS.find((u) => u.id === userId);
-  if (!user) throw new Error(`Usuario de demostración desconocido: ${userId}`);
-  return {
-    userId: user.id,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-    branchId: user.branchId,
-  };
-}
+const staffFromUser = (userId: string): DemoStaff => demoStaffFromSeed(userId);
 
 export function DemoSessionProvider({ children }: { children: ReactNode }) {
   const state = useSyncExternalStore(subscribe, getSnapshot, () => EMPTY_DEMO_SESSION);

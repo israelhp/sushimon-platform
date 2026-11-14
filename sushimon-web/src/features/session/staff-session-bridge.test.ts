@@ -17,14 +17,19 @@ const base: AuthContext = {
     staffId: '00000000-0000-4000-8000-000000000002',
     fullName: 'Ana',
     assignments: [{ role: 'kitchen', branchId: BRANCH }],
-    permissions: ['orders.status'],
+    permissions: ['orders.read', 'orders.prepare'],
     allBranches: false,
     branchIds: [BRANCH],
+    grants: {
+      'orders.read': { allBranches: false, branchIds: [BRANCH] },
+      'orders.prepare': { allBranches: false, branchIds: [BRANCH] },
+    },
+    branches: [{ id: BRANCH, name: 'Zona 4', code: 'zona-4' }],
   },
 };
 
 describe('staffFromContext', () => {
-  it('toma el rol de mayor jerarquía y la sucursal asignada', () => {
+  it('toma el rol de mayor jerarquía y los grants y sucursales del servidor', () => {
     const ctx: AuthContext = {
       ...base,
       staff: {
@@ -35,10 +40,15 @@ describe('staffFromContext', () => {
         ],
       },
     };
-    expect(staffFromContext(ctx)).toMatchObject({ role: 'manager', branchId: BRANCH, name: 'Ana' });
+    expect(staffFromContext(ctx)).toMatchObject({
+      role: 'manager',
+      name: 'Ana',
+      grants: base.staff!.grants,
+      branches: [{ id: BRANCH }],
+    });
   });
 
-  it('administrador de todas las sucursales → branchId null', () => {
+  it('administrador global: grants con allBranches', () => {
     const ctx: AuthContext = {
       ...base,
       staff: {
@@ -46,9 +56,13 @@ describe('staffFromContext', () => {
         assignments: [{ role: 'admin', branchId: null }],
         allBranches: true,
         branchIds: [],
+        grants: { 'staff.read': { allBranches: true, branchIds: [] } },
       },
     };
-    expect(staffFromContext(ctx)).toMatchObject({ role: 'admin', branchId: null });
+    expect(staffFromContext(ctx)).toMatchObject({
+      role: 'admin',
+      grants: { 'staff.read': { allBranches: true } },
+    });
   });
 
   it('sin acceso al backoffice no hay personal (denegar por defecto)', () => {

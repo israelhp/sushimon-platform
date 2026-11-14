@@ -6,13 +6,9 @@ import type {
   PromotionInput,
   ReportGroup,
   ReportSummary,
-  StaffUser,
-  StaffUserInput,
 } from '@/lib/data-access/models';
-import { STAFF_ROLES } from '@/lib/data-access/models';
-import { permissionsFor, ROLE_PERMISSIONS } from '@/lib/permissions';
 import { localMinutes } from '@/lib/time';
-import { fail, isValidEmail, productView, promotionView, round2 } from '../domain';
+import { fail, productView, promotionView, round2 } from '../domain';
 import { clampRange } from '../factories/history';
 import type { ProductRecord } from '../store';
 import { isSale } from './backoffice';
@@ -82,7 +78,7 @@ function validateProduct(req: Req, p: ProductRecord) {
 
 /** POST /v1/backoffice/products (admin) */
 export const createProduct: Handler = (req): Product => {
-  requireStaff(req, 'products.edit');
+  requireStaff(req, 'catalog.create');
   const b = body<Product>(req);
   const id = slug(str(b.name)) || `producto-${req.store.sequences.product}`;
   const record: ProductRecord = {
@@ -118,7 +114,10 @@ export const updateProduct: Handler = (req): Product => {
   const b = body<Product>(req);
   const keys = Object.keys(b);
   const onlyAvailability = keys.length > 0 && keys.every((k) => k === 'availability');
-  const user = requireStaff(req, onlyAvailability ? 'products.availability' : 'products.edit');
+  const user = requireStaff(
+    req,
+    onlyAvailability ? 'catalog.manage_availability' : 'catalog.update',
+  );
   const index = req.store.products.findIndex((p) => p.id === req.params.id);
   const current = req.store.products[index];
   if (!current) fail(404, 'Producto no encontrado');
@@ -160,7 +159,7 @@ export const listBoCategories: Handler = (req): Category[] => {
 
 /** POST /v1/backoffice/categories (admin) */
 export const createCategory: Handler = (req): Category => {
-  requireStaff(req, 'products.edit');
+  requireStaff(req, 'catalog.create');
   const b = body<Category>(req);
   if (!str(b.name).trim()) fail(400, 'Escribe el nombre de la categoría');
   const base = slug(str(b.name)) || `categoria-${req.store.sequences.category}`;
@@ -186,7 +185,7 @@ export const createCategory: Handler = (req): Category => {
 
 /** PATCH /v1/backoffice/categories/:id — nombre, orden, visibilidad. */
 export const updateCategory: Handler = (req): Category => {
-  requireStaff(req, 'products.edit');
+  requireStaff(req, 'catalog.update');
   const b = body<Category>(req);
   const index = req.store.categories.findIndex((c) => c.id === req.params.id);
   const current = req.store.categories[index];
@@ -259,13 +258,13 @@ function parsePromotion(input: Partial<PromotionInput>) {
 
 /** GET /v1/backoffice/promotions */
 export const listBoPromotions: Handler = (req) => {
-  requireStaff(req, 'promotions');
+  requireStaff(req, 'promotions.read');
   return req.store.promotions.map((p) => promotionView(p, now(req)));
 };
 
 /** POST /v1/backoffice/promotions */
 export const createPromotion: Handler = (req) => {
-  requireStaff(req, 'promotions');
+  requireStaff(req, 'promotions.create');
   const data = parsePromotion(body<PromotionInput>(req));
   const promo = {
     ...data,
@@ -279,7 +278,7 @@ export const createPromotion: Handler = (req) => {
 
 /** PATCH /v1/backoffice/promotions/:id (campos parciales; p. ej. { active }) */
 export const updatePromotion: Handler = (req) => {
-  requireStaff(req, 'promotions');
+  requireStaff(req, 'promotions.update');
   const index = req.store.promotions.findIndex((p) => p.id === req.params.id);
   const current = req.store.promotions[index];
   if (!current) fail(404, 'Promoción no encontrada');
@@ -287,68 +286,6 @@ export const updatePromotion: Handler = (req) => {
   const next = { ...current, ...data };
   req.store.promotions[index] = next;
   return promotionView(next, now(req));
-};
-
-// ── Usuarios internos ─────────────────────────────────────────────────────────────────────
-
-function parseUser(req: Req, input: Partial<StaffUserInput>, selfId?: string) {
-  const name = str(input.name).trim();
-  const email = str(input.email).trim().toLowerCase();
-  if (!name || !isValidEmail(email)) fail(400, 'Completa el nombre y un correo válido');
-  const role = oneOf(input.role, STAFF_ROLES, 'role');
-  let branchId: string | null = null;
-  if (role !== 'admin') {
-    branchId = str(input.branchId);
-    if (!req.store.branches.some((b) => b.id === branchId && b.status === 'active')) {
-      fail(422, 'Elige una sucursal activa');
-    }
-  }
-  if (req.store.staff.some((u) => u.email === email && u.id !== selfId)) {
-    fail(409, 'Ya existe un usuario con ese correo');
-  }
-  const known: readonly string[] = ROLE_PERMISSIONS.admin;
-  if (
-    input.permissions !== undefined &&
-    (!Array.isArray(input.permissions) ||
-      input.permissions.some((p) => typeof p !== 'string' || !known.includes(p)))
-  ) {
-    fail(400, 'Permisos inválidos');
-  }
-  const permissions =
-    input.permissions === undefined ? permissionsFor(role) : [...new Set(input.permissions)];
-  return { name, email, role, branchId, permissions };
-}
-
-/** GET /v1/backoffice/users (admin) */
-export const listUsers: Handler = (req): StaffUser[] => {
-  requireStaff(req, 'users');
-  return req.store.staff;
-};
-
-/** POST /v1/backoffice/users (admin) — en la API real enviaría la invitación por correo. */
-export const createUser: Handler = (req): StaffUser => {
-  requireStaff(req, 'users');
-  const data = parseUser(req, body<StaffUserInput>(req));
-  const user: StaffUser = { id: `u${req.store.sequences.user++}`, active: true, ...data };
-  req.store.staff.push(user);
-  return user;
-};
-
-/** PATCH /v1/backoffice/users/:id (admin) */
-export const updateUser: Handler = (req): StaffUser => {
-  const me = requireStaff(req, 'users');
-  const index = req.store.staff.findIndex((u) => u.id === req.params.id);
-  const current = req.store.staff[index];
-  if (!current) fail(404, 'Usuario no encontrado');
-  const b = body<StaffUserInput>(req);
-  const data = parseUser(req, { ...current, ...b }, current.id);
-  const active = b.active === undefined ? current.active : b.active === true;
-  if (current.id === me.id && (!active || data.role !== 'admin')) {
-    fail(409, 'No puedes desactivarte ni quitarte el rol de administrador');
-  }
-  const next: StaffUser = { ...current, ...data, active };
-  req.store.staff[index] = next;
-  return next;
 };
 
 // ── Reportes ──────────────────────────────────────────────────────────────────────────────
@@ -364,7 +301,7 @@ const sales = (orders: Order[]) => round2(orders.filter(isSale).reduce((s, o) =>
 
 /** GET /v1/backoffice/reports/summary?from&to&branchId */
 export const getReportSummary: Handler = (req): ReportSummary => {
-  const user = requireStaff(req, 'reports');
+  const user = requireStaff(req, 'reports.read');
   const branchIds = scopedBranchIds(req, user);
   const range = rangeParams(req);
   const perDay = range.days.map((d) => ({ day: d, orders: ordersForDay(req, d, branchIds) }));
@@ -432,7 +369,7 @@ export const getReportSummary: Handler = (req): ReportSummary => {
 
 /** GET /v1/backoffice/reports/history?from&to&branchId — pedidos del rango (más recientes primero). */
 export const getReportHistory: Handler = (req): Order[] => {
-  const user = requireStaff(req, 'reports');
+  const user = requireStaff(req, 'reports.read');
   const branchIds = scopedBranchIds(req, user);
   const range = rangeParams(req);
   return range.days

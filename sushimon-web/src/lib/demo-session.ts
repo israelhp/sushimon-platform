@@ -1,4 +1,5 @@
-import type { StaffRole } from '@/lib/data-access/models';
+import type { BranchRef, StaffRole } from '@/lib/data-access/models';
+import type { Grants } from '@/lib/permissions';
 
 /**
  * Sesión de DEMOSTRACIÓN (cliente con "Google" simulado y personal del backoffice por rol).
@@ -21,9 +22,12 @@ export interface DemoStaff {
   userId: string;
   email: string;
   name: string;
+  /** Rol principal (solo para mostrar: avatar y etiqueta). */
   role: StaffRole;
-  /** null = todas las sucursales (admin). */
-  branchId: string | null;
+  /** Permisos con alcance por sucursal (F03). Instantánea inicial; el contexto administrativo la refresca. */
+  grants: Grants;
+  /** Sucursales activas autorizadas (selector del backoffice). */
+  branches: BranchRef[];
 }
 
 export interface DemoSessionState {
@@ -39,7 +43,9 @@ export function readDemoSession(): DemoSessionState {
     const raw = window.sessionStorage.getItem(DEMO_SESSION_KEY);
     if (!raw) return EMPTY_DEMO_SESSION;
     const parsed = JSON.parse(raw) as Partial<DemoSessionState>;
-    return { customer: parsed.customer ?? null, staff: parsed.staff ?? null };
+    // Sesiones guardadas antes de F03 no traen `grants`: se descartan (hay que volver a entrar).
+    const staff = parsed.staff && 'grants' in parsed.staff ? parsed.staff : null;
+    return { customer: parsed.customer ?? null, staff };
   } catch {
     return EMPTY_DEMO_SESSION;
   }

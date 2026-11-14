@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { IconLock } from '@/components/icons/bo';
 import { useShell } from './shell-context';
 import { screenHref } from './nav';
-import { ROLE_HOME } from '@/lib/permissions';
+import { homeScreen } from '@/lib/permissions';
 
 /**
  * Pantalla "sin permiso": por rol (ruta fuera del menú del rol) o porque el servidor respondió 403
@@ -14,7 +14,7 @@ import { ROLE_HOME } from '@/lib/permissions';
 export function ForbiddenScreen({ reason = 'role' }: { reason?: 'role' | 'server' }) {
   const t = useTranslations('backoffice.forbidden');
   const tr = useTranslations('backoffice.roles');
-  const { role } = useShell();
+  const { role, grants } = useShell();
   return (
     <div className="page">
       <div className="empty" role="alert">
@@ -23,7 +23,7 @@ export function ForbiddenScreen({ reason = 'role' }: { reason?: 'role' | 'server
         <div className="sm">
           {reason === 'server' ? t('bodyServer') : t('body', { role: tr(role) })}
         </div>
-        <Link className="btn btn-primary mt8" href={screenHref(ROLE_HOME[role])}>
+        <Link className="btn btn-primary mt8" href={screenHref(homeScreen(grants))}>
           {t('home')}
         </Link>
       </div>

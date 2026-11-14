@@ -1226,7 +1226,9 @@
     grid-template-columns: minmax(180px, 1.2fr) minmax(0, 1.6fr) 90px 110px 130px;
   }
   [data-zone='bo'] .cols-users {
-    grid-template-columns: minmax(210px, 1.4fr) minmax(200px, 1.3fr) 190px 120px 150px 110px;
+    grid-template-columns:
+      minmax(190px, 1.2fr) minmax(190px, 1.1fr) minmax(210px, 1.4fr)
+      170px 250px;
   }
   [data-zone='bo'] .edit-btn {
     gap: 6px;
@@ -1265,7 +1267,7 @@
     min-width: 1180px;
   }
   [data-zone='bo'] .min-users {
-    min-width: 960px;
+    min-width: 1060px;
   }
   [data-zone='bo'] .min-prod {
     min-width: 780px;

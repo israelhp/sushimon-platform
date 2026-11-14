@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { grantsForRole } from '@/mocks/testing';
 import type { Order } from '@/lib/data-access/models';
 import { createFixedClock } from '@/mocks/clock';
 import { createSeedStore } from '@/mocks/seed';
@@ -108,14 +109,14 @@ describe('acciones por rol', () => {
   const accepted = byId('MON-307055');
 
   it('el encargado despacha; cocina solo ve un bloqueo informativo', () => {
-    expect(nextAction(ready, 'manager')).toBe('dispatch');
-    expect(nextAction(ready, 'kitchen')).toBeNull();
-    expect(dispatchBlockedForRole(ready, 'kitchen')).toBe(true);
-    expect(dispatchBlockedForRole(ready, 'manager')).toBe(false);
+    expect(nextAction(ready, grantsForRole('manager'))).toBe('dispatch');
+    expect(nextAction(ready, grantsForRole('kitchen'))).toBeNull();
+    expect(dispatchBlockedForRole(ready, grantsForRole('kitchen'))).toBe(true);
+    expect(dispatchBlockedForRole(ready, grantsForRole('manager'))).toBe(false);
   });
 
   it('cocina avanza preparación pero no entrega a domicilio', () => {
-    expect(nextAction(accepted, 'kitchen')).toBe('prepare');
-    expect(nextAction(byId('MON-307050'), 'kitchen')).toBe('deliver'); // recoger en tienda
+    expect(nextAction(accepted, grantsForRole('kitchen'))).toBe('prepare');
+    expect(nextAction(byId('MON-307050'), grantsForRole('kitchen'))).toBe('deliver'); // recoger en tienda
   });
 });

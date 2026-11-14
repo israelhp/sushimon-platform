@@ -3,9 +3,8 @@ import type {
   DeliveryStatus,
   Order,
   OrderStatus,
-  StaffRole,
 } from '@/lib/data-access/models';
-import { can } from '@/lib/permissions';
+import { can, type Grants } from '@/lib/permissions';
 
 /**
  * Máquina ÚNICA de estados de pedido + mapeos a los estados/etiquetas de cada prototipo.
@@ -36,6 +35,7 @@ export type TransitionSource = 'staff' | 'logistics';
 export type TransitionCheck = { ok: true } | { ok: false; reason: string };
 
 type OrderLike = Pick<Order, 'status' | 'fulfillment' | 'payment' | 'delivery'>;
+type BranchOf = Partial<Pick<Order, 'branchId'>>;
 
 export function isPaymentSettledForAcceptance(order: Pick<Order, 'payment'>): boolean {
   return order.payment.method === 'cash' || order.payment.status === 'approved';
@@ -106,8 +106,8 @@ export function orderStatusForDelivery(
 }
 
 /** Regla de despacho del prototipo: listo + domicilio + sin logística activa + rol ≠ cocina. */
-export function canDispatch(order: OrderLike, role?: StaffRole | null): boolean {
-  const roleOk = role === undefined ? true : can(role, 'orders.dispatch');
+export function canDispatch(order: OrderLike & BranchOf, grants?: Grants | null): boolean {
+  const roleOk = grants === undefined ? true : can(grants, 'deliveries.assign', order.branchId);
   return (
     roleOk &&
     order.status === 'ready' &&
@@ -282,16 +282,18 @@ export type BackofficeNextAction = 'accept' | 'prepare' | 'ready' | 'dispatch' |
 
 /** Siguiente acción principal del prototipo (botón de la tarjeta/fila). */
 export function nextBackofficeAction(
-  order: OrderLike,
-  role: StaffRole,
+  order: OrderLike & BranchOf,
+  grants: Grants,
 ): BackofficeNextAction | null {
-  if (order.status === 'received' && can(role, 'orders.accept')) return 'accept';
-  if (order.status === 'accepted' && can(role, 'orders.status')) return 'prepare';
-  if (order.status === 'preparing' && can(role, 'orders.status')) return 'ready';
+  const allowed = (permission: Parameters<typeof can>[1]) =>
+    can(grants, permission, order.branchId);
+  if (order.status === 'received' && allowed('orders.accept')) return 'accept';
+  if (order.status === 'accepted' && allowed('orders.prepare')) return 'prepare';
+  if (order.status === 'preparing' && allowed('orders.complete')) return 'ready';
   if (order.status === 'ready' && order.fulfillment === 'delivery') {
-    return canDispatch(order, role) ? 'dispatch' : null;
+    return canDispatch(order, grants) ? 'dispatch' : null;
   }
-  if (order.status === 'ready' && can(role, 'orders.status')) return 'deliver';
+  if (order.status === 'ready' && allowed('orders.complete')) return 'deliver';
   return null;
 }
 

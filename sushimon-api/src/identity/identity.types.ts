@@ -4,17 +4,40 @@ export interface StaffAssignmentView {
   branchId: string | null;
 }
 
-/** Lo que el SERVIDOR sabe de un empleado activo: base de toda decisión de autorización. */
-export interface StaffContext {
-  staffId: string;
-  fullName: string;
-  assignments: StaffAssignmentView[];
-  permissions: string[];
+export interface BranchRef {
+  id: string;
+  name: string;
+  code: string;
+}
+
+/** Alcance de UN permiso: global o las sucursales ACTIVAS donde se posee. */
+export interface GrantScope {
   allBranches: boolean;
   branchIds: string[];
 }
 
-/** ¿Puede esta identidad operar sobre la sucursal indicada? (alcance por sucursal) */
-export function canAccessBranch(staff: StaffContext, branchId: string): boolean {
-  return staff.allBranches || staff.branchIds.includes(branchId);
+/** Permiso → alcance. Solo asignaciones activas de personal activo hacia sucursales activas (ADR-0010 d.2). */
+export type Grants = Record<string, GrantScope>;
+
+/**
+ * Lo que el SERVIDOR sabe de un empleado activo: base de toda decisión de autorización. Se calcula en cada
+ * solicitud (memoizado solo en `req`). `permissions`, `allBranches` y `branchIds` son la unión plana de todos
+ * los roles: solo orientan a la UI y NUNCA autorizan; la autorización usa `grants` (vía AuthorizationService).
+ */
+export interface StaffContext {
+  staffId: string;
+  fullName: string;
+  assignments: StaffAssignmentView[];
+  grants: Grants;
+  /**
+   * Sucursales activas de las asignaciones acotadas con algún permiso. Con alcance global, `IdentityService.withAllBranches`
+   * la completa con todas las activas (solo para los endpoints de contexto). Nunca autoriza.
+   */
+  branches: BranchRef[];
+  /** @deprecated Unión plana: no autoriza. */
+  permissions: string[];
+  /** @deprecated Unión plana: no autoriza. */
+  allBranches: boolean;
+  /** @deprecated Unión plana: no autoriza. */
+  branchIds: string[];
 }

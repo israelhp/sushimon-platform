@@ -1,4 +1,4 @@
-import { Controller, ForbiddenException, Get, Module, Param, Req } from '@nestjs/common';
+import { Controller, ForbiddenException, Get, Inject, Module, Param, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { Test } from '@nestjs/testing';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -30,19 +30,26 @@ async function createApp(keys: TestKeys, db: ReturnType<typeof fakeDb>) {
   const { PrismaService } = await import('../src/database/prisma.service.js');
   const { JWKS_RESOLVER } = await import('../src/auth/jwt-verifier.service.js');
   const { RequireStaff } = await import('../src/auth/staff.guard.js');
-  const { canAccessBranch } = await import('../src/identity/identity.types.js');
+  const { AuthorizationService } = await import('../src/auth/authorization.service.js');
 
   @Controller('probe')
   class ProbeController {
+    constructor(
+      @Inject(AuthorizationService)
+      private readonly authz: InstanceType<typeof AuthorizationService>,
+    ) {}
     @Get('staff') @RequireStaff() staff() {
       return { ok: true };
     }
-    @Get('users') @RequireStaff('users') users() {
+    @Get('users') @RequireStaff('staff.read') users() {
       return { ok: true };
     }
-    /** Alcance por sucursal: la ruta decide por recurso con canAccessBranch sobre el contexto del guard. */
-    @Get('branch/:id') @RequireStaff() branch(@Param('id') id: string, @Req() req: Request) {
-      if (!req.staff || !canAccessBranch(req.staff, id))
+    /** Alcance por sucursal: la ruta decide por recurso con `canAccess(permiso)` sobre el contexto del guard. */
+    @Get('branch/:id') @RequireStaff('orders.read') branch(
+      @Param('id') id: string,
+      @Req() req: Request,
+    ) {
+      if (!req.staff || !this.authz.canAccess(req.staff, 'orders.read', id))
         throw new ForbiddenException('Acceso denegado');
       return { ok: true };
     }
@@ -63,18 +70,28 @@ async function createApp(keys: TestKeys, db: ReturnType<typeof fakeDb>) {
 }
 
 function staffRow(
-  over: { active?: boolean; permissions?: string[]; branchId?: string | null } = {},
+  over: {
+    active?: boolean;
+    permissions?: string[];
+    branchId?: string | null;
+    branchActive?: boolean;
+  } = {},
 ) {
+  const branchId = over.branchId ?? null;
   return {
     id: STAFF_ID,
     fullName: 'Ana Admin',
     active: over.active ?? true,
     assignments: [
       {
-        branchId: over.branchId ?? null,
+        active: true,
+        branchId,
+        branch: branchId
+          ? { id: branchId, name: 'Zona 10', code: 'zona-10', active: over.branchActive ?? true }
+          : null,
         role: {
           code: 'manager',
-          permissions: (over.permissions ?? ['dashboard']).map((code) => ({
+          permissions: (over.permissions ?? ['dashboard.read']).map((code) => ({
             permission: { code },
           })),
         },
@@ -84,7 +101,7 @@ function staffRow(
 }
 
 function fakeDb() {
-  return {
+  const db = {
     customer: {
       count: vi.fn().mockResolvedValue(0),
       findUnique: vi.fn().mockResolvedValue(null),
@@ -101,8 +118,16 @@ function fakeDb() {
     staffUser: {
       findUnique: vi.fn().mockResolvedValue(null),
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      create: vi.fn(),
     },
+    branch: {
+      findMany: vi.fn().mockResolvedValue([{ id: BRANCH, name: 'Zona 10', code: 'zona-10' }]),
+    },
+    auditEvent: { create: vi.fn().mockResolvedValue({}) },
+    $transaction: vi.fn(),
   };
+  db.$transaction.mockImplementation((fn: (tx: typeof db) => Promise<unknown>) => fn(db));
+  return db;
 }
 
 describe('Autenticación y autorización (e2e)', () => {
@@ -216,7 +241,7 @@ describe('Autenticación y autorización (e2e)', () => {
 
     it('empleado activo: roles, permisos y alcance salen de la base de datos', async () => {
       db.staffUser.findUnique.mockResolvedValue(
-        staffRow({ permissions: ['dashboard', 'reports'], branchId: BRANCH }),
+        staffRow({ permissions: ['dashboard.read', 'reports.read'], branchId: BRANCH }),
       );
       const res = await http()
         .get('/v1/auth/context')
@@ -229,9 +254,14 @@ describe('Autenticación y autorización (e2e)', () => {
         staff: {
           staffId: STAFF_ID,
           assignments: [{ role: 'manager', branchId: BRANCH }],
-          permissions: ['dashboard', 'reports'],
+          permissions: ['dashboard.read', 'reports.read'],
           allBranches: false,
           branchIds: [BRANCH],
+          grants: {
+            'dashboard.read': { allBranches: false, branchIds: [BRANCH] },
+            'reports.read': { allBranches: false, branchIds: [BRANCH] },
+          },
+          branches: [{ id: BRANCH, name: 'Zona 10', code: 'zona-10' }],
         },
       });
     });
@@ -251,7 +281,10 @@ describe('Autenticación y autorización (e2e)', () => {
     });
 
     it('primer acceso del empleado preregistrado: vincula por correo verificado con Google', async () => {
-      db.staffUser.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(staffRow());
+      db.staffUser.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: STAFF_ID })
+        .mockResolvedValueOnce(staffRow());
       db.staffUser.updateMany.mockResolvedValue({ count: 1 });
       const res = await http()
         .get('/v1/auth/context')
@@ -261,12 +294,12 @@ describe('Autenticación y autorización (e2e)', () => {
       expect(res.body).toMatchObject({ backofficeAccess: false, access: 'MFA_REQUIRED' });
       expect(db.staffUser.updateMany).toHaveBeenCalledWith({
         where: { email: 'cliente@example.com', authUserId: null, active: true },
-        data: { authUserId: USER_ID },
+        data: { authUserId: USER_ID, linkedAt: expect.any(Date) as unknown },
       });
     });
 
     it('empleado activo en aal1: MFA_REQUIRED, sin permisos ni sucursales en la respuesta', async () => {
-      db.staffUser.findUnique.mockResolvedValue(staffRow({ permissions: ['dashboard'] }));
+      db.staffUser.findUnique.mockResolvedValue(staffRow({ permissions: ['dashboard.read'] }));
       const res = await http()
         .get('/v1/auth/context')
         .set('Authorization', await bearer())
@@ -279,6 +312,7 @@ describe('Autenticación y autorización (e2e)', () => {
         staff: null,
       });
       expect(JSON.stringify(res.body)).not.toContain('dashboard');
+      expect(JSON.stringify(res.body)).not.toContain('grants');
     });
 
     it('un token aal1 con aal2 solo en user_metadata/cabeceras/query sigue en aal1', async () => {
@@ -298,6 +332,107 @@ describe('Autenticación y autorización (e2e)', () => {
         .expect(200);
       expect(res.body).toMatchObject({ backofficeAccess: false });
       expect(db.staffUser.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('vinculación de identidad (preautorización por correo)', () => {
+    it.each([
+      ['correo marcado como no verificado', { user_metadata: { email_verified: false } }],
+      ['sin el claim email_verified (default-deny)', { user_metadata: { full_name: 'X' } }],
+      [
+        'proveedor distinto de Google',
+        { app_metadata: { provider: 'email', providers: ['email'] } },
+      ],
+    ])('NO vincula: %s', async (_n, claims) => {
+      db.staffUser.findUnique.mockResolvedValue(null);
+      const res = await http()
+        .get('/v1/auth/context')
+        .set('Authorization', await bearer(claims))
+        .expect(200);
+      expect(res.body).toMatchObject({ staffAuthorized: false, backofficeAccess: false });
+      expect(db.staffUser.updateMany).not.toHaveBeenCalled();
+      expect(db.auditEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('un cliente con perfil NO se vuelve empleado: sin preautorización no se crea ni vincula personal', async () => {
+      db.customer.count.mockResolvedValue(1);
+      db.customer.findUnique.mockResolvedValue({
+        id: 'c-9',
+        fullName: 'Cliente',
+        email: 'cliente@example.com',
+        phone: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+      });
+      db.staffUser.findUnique.mockResolvedValue(null);
+      db.staffUser.updateMany.mockResolvedValue({ count: 0 }); // no existe fila preautorizada
+      await http()
+        .get('/v1/admin/me/context')
+        .set('Authorization', await bearer(AAL2))
+        .expect(403);
+      const me = await http()
+        .get('/v1/me')
+        .set('Authorization', await bearer(AAL2))
+        .expect(200);
+      expect(me.body).toMatchObject({ isStaff: false });
+      expect(db.staffUser.create).not.toHaveBeenCalled();
+      expect(db.auditEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('dos identidades con el mismo correo: solo una se vincula (UPDATE atómico)', async () => {
+      const OTHER_USER = '8a9b1c2d-3e4f-4a5b-8c6d-7e8f9a0b1c2d';
+      // Fila preautorizada compartida: el UPDATE condicionado a `auth_user_id IS NULL` solo lo cumple el primero.
+      const row = { id: STAFF_ID, authUserId: null as string | null, email: 'cliente@example.com' };
+      db.staffUser.updateMany.mockImplementation(
+        (a: { where: { authUserId: null }; data: { authUserId: string } }) => {
+          if (row.authUserId === null) {
+            row.authUserId = a.data.authUserId;
+            return Promise.resolve({ count: 1 });
+          }
+          return Promise.resolve({ count: 0 });
+        },
+      );
+      db.staffUser.findUnique.mockImplementation(
+        (a: { where: { authUserId: string }; select: object }) => {
+          if (row.authUserId !== a.where.authUserId) return Promise.resolve(null);
+          return Promise.resolve({ ...staffRow(), id: row.id });
+        },
+      );
+      const [first, second] = await Promise.all([
+        http()
+          .get('/v1/auth/context')
+          .set('Authorization', await bearer(AAL2)),
+        http()
+          .get('/v1/auth/context')
+          .set('Authorization', await bearer({ ...AAL2, sub: OTHER_USER })),
+      ]);
+      const granted = [first, second].filter(
+        (r) => (r.body as { backofficeAccess: boolean }).backofficeAccess,
+      );
+      expect(granted).toHaveLength(1);
+      expect(row.authUserId).not.toBeNull();
+      expect(db.auditEvent.create).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('sin caché de autorización entre solicitudes', () => {
+    it('desactivar al empleado corta el acceso en la SIGUIENTE solicitud con el mismo JWT', async () => {
+      const token = await bearer(AAL2);
+      db.staffUser.findUnique.mockResolvedValue(staffRow());
+      await http().get('/v1/probe/staff').set('Authorization', token).expect(200);
+      db.staffUser.findUnique.mockResolvedValue(staffRow({ active: false }));
+      await http().get('/v1/probe/staff').set('Authorization', token).expect(403);
+    });
+
+    it('revocar un permiso rige de inmediato; una sucursal desactivada no concede acceso', async () => {
+      const token = await bearer(AAL2);
+      db.staffUser.findUnique.mockResolvedValue(staffRow({ permissions: ['staff.read'] }));
+      await http().get('/v1/probe/users').set('Authorization', token).expect(200);
+      db.staffUser.findUnique.mockResolvedValue(staffRow({ permissions: ['dashboard.read'] }));
+      await http().get('/v1/probe/users').set('Authorization', token).expect(403);
+      db.staffUser.findUnique.mockResolvedValue(
+        staffRow({ branchId: BRANCH, branchActive: false, permissions: ['staff.read'] }),
+      );
+      await http().get('/v1/probe/users').set('Authorization', token).expect(403);
     });
   });
 
@@ -331,7 +466,7 @@ describe('Autenticación y autorización (e2e)', () => {
     });
 
     it('empleado activo sin el permiso requerido → 403; con el permiso → 200', async () => {
-      db.staffUser.findUnique.mockResolvedValue(staffRow({ permissions: ['dashboard'] }));
+      db.staffUser.findUnique.mockResolvedValue(staffRow({ permissions: ['dashboard.read'] }));
       await http()
         .get('/v1/probe/users')
         .set('Authorization', await bearer(AAL2))
@@ -340,7 +475,7 @@ describe('Autenticación y autorización (e2e)', () => {
         .get('/v1/probe/staff')
         .set('Authorization', await bearer(AAL2))
         .expect(200);
-      db.staffUser.findUnique.mockResolvedValue(staffRow({ permissions: ['users'] }));
+      db.staffUser.findUnique.mockResolvedValue(staffRow({ permissions: ['staff.read'] }));
       await http()
         .get('/v1/probe/users')
         .set('Authorization', await bearer(AAL2))
@@ -348,7 +483,9 @@ describe('Autenticación y autorización (e2e)', () => {
     });
 
     it('empleado de otra sucursal → 403; de la suya → 200', async () => {
-      db.staffUser.findUnique.mockResolvedValue(staffRow({ branchId: BRANCH }));
+      db.staffUser.findUnique.mockResolvedValue(
+        staffRow({ branchId: BRANCH, permissions: ['orders.read'] }),
+      );
       await http()
         .get(`/v1/probe/branch/${OTHER_BRANCH}`)
         .set('Authorization', await bearer(AAL2))
@@ -366,7 +503,7 @@ describe('Autenticación y autorización (e2e)', () => {
 
   describe('MFA aal2 obligatorio en el backoffice', () => {
     it('empleado activo con permisos en aal1 → 403 MFA_REQUIRED', async () => {
-      db.staffUser.findUnique.mockResolvedValue(staffRow({ permissions: ['users'] }));
+      db.staffUser.findUnique.mockResolvedValue(staffRow({ permissions: ['staff.read'] }));
       const res = await http()
         .get('/v1/probe/users')
         .set('Authorization', await bearer())
@@ -417,7 +554,7 @@ describe('Autenticación y autorización (e2e)', () => {
 
     it('GET /v1/admin/me/context: aal2 → perfil, roles, permisos y sucursales del servidor', async () => {
       db.staffUser.findUnique.mockResolvedValue(
-        staffRow({ permissions: ['dashboard', 'orders'], branchId: BRANCH }),
+        staffRow({ permissions: ['dashboard.read', 'orders.read'], branchId: BRANCH }),
       );
       const res = await http()
         .get('/v1/admin/me/context')
@@ -431,9 +568,29 @@ describe('Autenticación y autorización (e2e)', () => {
           staffId: STAFF_ID,
           fullName: 'Ana Admin',
           assignments: [{ role: 'manager', branchId: BRANCH }],
-          permissions: ['dashboard', 'orders'],
+          permissions: ['dashboard.read', 'orders.read'],
           allBranches: false,
           branchIds: [BRANCH],
+          grants: {
+            'dashboard.read': { allBranches: false, branchIds: [BRANCH] },
+            'orders.read': { allBranches: false, branchIds: [BRANCH] },
+          },
+          branches: [{ id: BRANCH, name: 'Zona 10', code: 'zona-10' }],
+        },
+      });
+    });
+
+    it('GET /v1/admin/me/context: con alcance global, branches = todas las sucursales activas', async () => {
+      db.staffUser.findUnique.mockResolvedValue(staffRow({ permissions: ['dashboard.read'] }));
+      const res = await http()
+        .get('/v1/admin/me/context')
+        .set('Authorization', await bearer(AAL2))
+        .expect(200);
+      expect(res.body).toMatchObject({
+        staff: {
+          allBranches: true,
+          grants: { 'dashboard.read': { allBranches: true, branchIds: [] } },
+          branches: [{ id: BRANCH, name: 'Zona 10', code: 'zona-10' }],
         },
       });
     });

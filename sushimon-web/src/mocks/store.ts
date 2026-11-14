@@ -5,7 +5,7 @@ import type {
   JobApplication,
   Order,
   Product,
-  StaffUser,
+  StaffRole,
   StoreConfig,
 } from '@/lib/data-access/models';
 import type { DemoSessionState } from '@/lib/demo-session';
@@ -21,7 +21,7 @@ import type { MockScenario } from './scenarios';
  * el historial de días anteriores lo genera `factories/history.ts` de forma determinista.
  * NUNCA contiene PAN completo, CVV ni PIN: de una tarjeta solo marca, últimos 4 y referencia.
  */
-export const MOCK_STORE_VERSION = 2;
+export const MOCK_STORE_VERSION = 3;
 
 export type ProductRecord = Omit<Product, 'available'>;
 
@@ -29,6 +29,28 @@ export interface CustomerAccount {
   profile: Customer;
   addresses: Address[];
   favorites: string[];
+}
+
+/** Empleado (`staff_users` + `staff_assignments`) del mock. Nunca guarda `authUserId`: solo si está vinculado. */
+export interface StaffRecord {
+  id: string;
+  fullName: string;
+  email: string;
+  active: boolean;
+  /** false = PENDING_LINK. */
+  linked: boolean;
+  linkedAt: string | null;
+  createdAt: string;
+  createdById: string | null;
+  assignments: { roleId: string; branchId: string | null }[];
+}
+
+export interface RoleRecord {
+  id: string;
+  code: StaffRole;
+  name: string;
+  isSystem: boolean;
+  permissions: string[];
 }
 
 export interface MockStore {
@@ -42,7 +64,8 @@ export interface MockStore {
   products: ProductRecord[];
   promotions: PromotionSeed[];
   orders: Order[];
-  staff: StaffUser[];
+  staff: StaffRecord[];
+  roles: RoleRecord[];
   riders: RiderSeed[];
   accounts: Record<string, CustomerAccount>;
   jobApplications: JobApplication[];

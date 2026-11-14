@@ -8,7 +8,7 @@ import { useAuth } from './auth-provider';
 import { useAuthContext } from './auth-queries';
 import { useDemoSession } from './demo-session';
 
-const ROLE_PRIORITY: readonly StaffRole[] = ['admin', 'manager', 'kitchen'];
+const ROLE_PRIORITY: readonly StaffRole[] = ['admin', 'manager', 'staff', 'kitchen'];
 
 /** Adapta el contexto que calculó el SERVIDOR al modelo de personal que ya consume el shell. */
 export function staffFromContext(ctx: AuthContext): DemoStaff | null {
@@ -21,8 +21,9 @@ export function staffFromContext(ctx: AuthContext): DemoStaff | null {
     email: ctx.email ?? '',
     name: ctx.staff.fullName,
     role,
-    // El shell filtra por una sola sucursal; con varias se muestra la primera (limitación temporal).
-    branchId: ctx.staff.allBranches ? null : (ctx.staff.branchIds[0] ?? null),
+    // Permisos con alcance por sucursal y sucursales autorizadas, tal como los calculó el servidor (F03).
+    grants: ctx.staff.grants,
+    branches: ctx.staff.branches,
   };
 }
 

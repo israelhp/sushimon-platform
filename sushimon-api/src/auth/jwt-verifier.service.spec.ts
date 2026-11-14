@@ -53,6 +53,28 @@ describe('JwtVerifierService', () => {
     expect(p.googleOAuth).toBe(false);
   });
 
+  it('googleOAuth es false si el proveedor no es Google o el correo está marcado como no verificado', async () => {
+    const other = await verifier.verify(
+      await keys.sign({ app_metadata: { provider: 'email', providers: ['email'] } }),
+    );
+    expect(other.googleOAuth).toBe(false);
+    const unverified = await verifier.verify(
+      await keys.sign({ user_metadata: { full_name: 'X', email_verified: false } }),
+    );
+    expect(unverified.googleOAuth).toBe(false);
+    // Default-deny: sin el claim, el correo no cuenta como verificado.
+    const absent = await verifier.verify(await keys.sign({ user_metadata: { full_name: 'X' } }));
+    expect(absent.googleOAuth).toBe(false);
+    const nonBoolean = await verifier.verify(
+      await keys.sign({ user_metadata: { email_verified: 'true' } }),
+    );
+    expect(nonBoolean.googleOAuth).toBe(false);
+    const verified = await verifier.verify(
+      await keys.sign({ user_metadata: { full_name: 'X', email_verified: true } }),
+    );
+    expect(verified.googleOAuth).toBe(true);
+  });
+
   describe('nivel de aseguramiento (MFA)', () => {
     const totp = [
       { method: 'oauth', timestamp: 1 },

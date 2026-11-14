@@ -81,7 +81,7 @@ function DispatchFlow({ order, onClose }: { order: Order; onClose: () => void })
   const t = useTranslations('backoffice.dispatch');
   const toast = useToast();
   const detail = useOrderDetail();
-  const { role, branchById } = useShell();
+  const { grants, branchById } = useShell();
   const text = useDeliveryText();
   const riders = useRiders(order.branchId);
   const quoteMutation = useCourierQuote();
@@ -103,7 +103,7 @@ function DispatchFlow({ order, onClose }: { order: Order; onClose: () => void })
 
   const branch = branchById(order.branchId);
   const branchName = branch?.name ?? order.branchId;
-  const block = dispatchBlock(order, role);
+  const block = dispatchBlock(order, grants);
   const options = useMemo(() => ownRiderOptions(riders.data ?? [], order), [riders.data, order]);
   const available = options.filter((o) => o.available).length;
   const failedBefore = order.delivery?.status === 'failed';

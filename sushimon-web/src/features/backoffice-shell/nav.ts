@@ -1,6 +1,5 @@
 import type { BoNavIconKey } from '@/components/icons/bo';
-import { ROLE_MENU, type BackofficeScreen } from '@/lib/permissions';
-import type { StaffRole } from '@/lib/data-access/models';
+import { canSee, type BackofficeScreen, type Grants } from '@/lib/permissions';
 
 /** Ruta real de cada pantalla del backoffice. */
 export const BACKOFFICE_BASE = '/backoffice';
@@ -50,6 +49,7 @@ export const NAV: readonly NavSectionDef[] = [
     items: [
       { screen: 'sucursales', icon: 'store' },
       { screen: 'usuarios', icon: 'users' },
+      { screen: 'roles', icon: 'lock' },
       { screen: 'reportes', icon: 'chart' },
     ],
   },
@@ -57,11 +57,10 @@ export const NAV: readonly NavSectionDef[] = [
 
 const ALL_SCREENS = NAV.flatMap((s) => s.items.map((i) => i.screen));
 
-/** Secciones visibles para un rol (solo cosmético: la API decide). */
-export function navForRole(role: StaffRole): NavSectionDef[] {
-  const allowed = ROLE_MENU[role];
+/** Secciones visibles según los permisos (`grants`) del contexto administrativo (solo cosmético: la API decide). */
+export function navForGrants(grants: Grants | null | undefined): NavSectionDef[] {
   return NAV.map((section) => ({
     ...section,
-    items: section.items.filter((i) => allowed.includes(i.screen)),
+    items: section.items.filter((i) => canSee(grants, i.screen)),
   })).filter((section) => section.items.length > 0);
 }

@@ -149,7 +149,7 @@ export function BranchFormModal({
             id={errId(name)}
             className="xs"
             role="alert"
-            style={{ color: 'var(--bo-red)', fontWeight: 700 }}
+            style={{ color: 'var(--bo-red-text)', fontWeight: 700 }}
           >
             {error}
           </span>

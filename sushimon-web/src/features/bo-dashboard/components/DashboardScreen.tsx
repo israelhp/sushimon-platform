@@ -26,7 +26,7 @@ import { cn } from '@/lib/cn';
 import type { DashboardAlert, Order } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
 import { toBackofficeColumn } from '@/lib/order-status';
-import { canSee, can, type BackofficeScreen } from '@/lib/permissions';
+import type { BackofficeScreen } from '@/lib/permissions';
 import { localMinutes } from '@/lib/time';
 import { alertTone, latestOrders } from '../dashboard-view';
 
@@ -53,7 +53,7 @@ export function DashboardScreen() {
     ? t(greetingKey(Math.floor(localMinutes(now) / 60)), { name: firstName })
     : ' ';
   const go = (screen: BackofficeScreen) =>
-    canSee(shell.role, screen) ? () => router.push(screenHref(screen)) : undefined;
+    shell.canSee(screen) ? () => router.push(screenHref(screen)) : undefined;
   const data = dashboard.data;
 
   return (
@@ -249,7 +249,7 @@ function LatestOrders({
             <span style={{ textAlign: 'right' }}>{t('action')}</span>
           </div>
           {latest.map((order) => {
-            const action = nextAction(order, shell.role);
+            const action = nextAction(order, shell.grants);
             return (
               <div
                 key={order.id}
@@ -324,7 +324,7 @@ function AlertsCard({
   const shell = useShell();
   const detail = useOrderDetail();
   const dispatchModal = useDispatchModal();
-  const canDispatch = can(shell.role, 'orders.dispatch');
+  const canDispatch = shell.can('deliveries.assign');
 
   return (
     <section className="card">

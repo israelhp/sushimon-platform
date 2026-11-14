@@ -69,29 +69,6 @@ describe('validación de handlers de escritura del backoffice', () => {
     expect(await status(admin.createPromotion(h.client, { ...fixed, value: 99 }))).toBe(200);
   });
 
-  it('usuario: permissions debe ser un arreglo de permisos conocidos', async () => {
-    const h = createHarness();
-    h.asStaff('admin');
-    const user = { name: 'Nuevo', email: 'p@sushimon.gt', role: 'manager' as const };
-    for (const permissions of ['dashboard', { a: 1 }, ['inventado'], [1], [null]]) {
-      expect(
-        await status(
-          admin.createUser(h.client, {
-            ...user,
-            branchId: 'sucursal-2',
-            permissions: permissions as never,
-          }),
-        ),
-      ).toBe(400);
-    }
-    const ok = await admin.createUser(h.client, {
-      ...user,
-      branchId: 'sucursal-2',
-      permissions: ['dashboard'] as never,
-    });
-    expect(ok.permissions).toEqual(['dashboard']);
-  });
-
   it('operación simulada de sucursal: hours/coverage con null responden 400, no 500', async () => {
     const h = createHarness();
     h.asStaff('admin');

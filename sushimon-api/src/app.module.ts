@@ -9,6 +9,7 @@ import { requestIdMiddleware } from './common/request-id/request-id.middleware.j
 import { validateEnv, type Env } from './config/env.js';
 import { AuthModule } from './auth/auth.module.js';
 import { BranchesModule } from './branches/branches.module.js';
+import { StaffModule } from './staff/staff.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthController } from './health/health.controller.js';
 import { HealthTokenGuard } from './health/health-token.guard.js';
@@ -34,6 +35,7 @@ import { HealthTokenGuard } from './health/health-token.guard.js';
     DatabaseModule,
     AuthModule,
     BranchesModule,
+    StaffModule,
   ],
   controllers: [HealthController],
   providers: [HealthTokenGuard, { provide: APP_GUARD, useClass: AppThrottlerGuard }],

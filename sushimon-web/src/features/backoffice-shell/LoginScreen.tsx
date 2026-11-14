@@ -14,14 +14,14 @@ import { useDemoSession } from '@/features/session/demo-session';
 import { useBranches } from '@/features/store/hooks';
 import { cn } from '@/lib/cn';
 import type { StaffRole } from '@/lib/data-access/models';
-import { ROLE_HOME } from '@/lib/permissions';
+import { homeScreen } from '@/lib/permissions';
 import { DEMO_STAFF_BY_ROLE, STAFF_SEEDS } from '@/mocks/fixtures/staff';
 import { BoThemeButton } from './BoThemeButton';
 import { screenHref } from './nav';
 import { avatarStyle, staffInitials } from './staff-display';
 
 /** Cuentas de DEMOSTRACIÓN del selector "Entrar como (demo)" (una por rol). */
-const DEMO_ROLES: readonly StaffRole[] = ['admin', 'manager', 'kitchen'];
+const DEMO_ROLES: readonly StaffRole[] = ['admin', 'manager', 'kitchen', 'staff'];
 
 /**
  * Valor de relleno de la contraseña de demostración. NO se valida ni se envía: el acceso real
@@ -39,9 +39,11 @@ function DemoLoginScreen() {
   const branches = useBranches();
   const [role, setRole] = useState<StaffRole>('admin');
   const accounts = DEMO_ROLES.map((r) => {
-    const user = STAFF_SEEDS.find((u) => u.id === DEMO_STAFF_BY_ROLE[r])!;
-    const branch = user.branchId
-      ? (branches.data?.find((b) => b.id === user.branchId)?.name ?? user.branchId)
+    const seed = STAFF_SEEDS.find((u) => u.id === DEMO_STAFF_BY_ROLE[r])!;
+    const user = { name: seed.fullName, email: seed.email };
+    const branchId = seed.assignments.find((a) => a.branchId)?.branchId;
+    const branch = branchId
+      ? (branches.data?.find((b) => b.id === branchId)?.name ?? branchId)
       : null;
     return { role: r, user, branchLabel: branch ?? t('branchAll') };
   });
@@ -51,7 +53,7 @@ function DemoLoginScreen() {
 
   // Si ya hay sesión de demostración, no se muestra el acceso.
   useEffect(() => {
-    if (staff) router.replace(screenHref(ROLE_HOME[staff.role]));
+    if (staff) router.replace(screenHref(homeScreen(staff.grants)));
   }, [staff, router]);
 
   const pick = (next: StaffRole) => {
@@ -63,13 +65,15 @@ function DemoLoginScreen() {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    const user = STAFF_SEEDS.find((u) => u.active && u.email === email.trim().toLowerCase());
+    const user = STAFF_SEEDS.find(
+      (u) => u.active && u.linked && u.email === email.trim().toLowerCase(),
+    );
     if (!user) {
       setError(t('unknownUser'));
       return;
     }
     const next = signInStaffUser(user.id);
-    router.replace(screenHref(ROLE_HOME[next.role]));
+    router.replace(screenHref(homeScreen(next.grants)));
   };
 
   return (
@@ -226,7 +230,7 @@ function GoogleLoginScreen() {
     safeNext === '/backoffice' || safeNext.startsWith('/backoffice/') ? safeNext : null;
   useEffect(() => {
     if (access.state === 'STAFF_AUTHORIZED' && staff) {
-      router.replace(nextBackoffice ?? screenHref(ROLE_HOME[staff.role]));
+      router.replace(nextBackoffice ?? screenHref(homeScreen(staff.grants)));
       return;
     }
     // Personal autorizado sin MFA completo: configurar (sin factor) o verificar (con factor).

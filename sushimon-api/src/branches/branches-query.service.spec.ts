@@ -1,21 +1,25 @@
 import { NotFoundException } from '@nestjs/common';
+import { AuthorizationService } from '../auth/authorization.service.js';
+import type { IdentityService } from '../identity/identity.service.js';
 import type { StaffContext } from '../identity/identity.types.js';
+import {
+  globalStaff,
+  grantsOf,
+  mergeGrants,
+  scopedStaff,
+  staffContext,
+} from '../../test/support/staff-context.js';
 import { BranchesQueryService } from './branches-query.service.js';
-import type { BranchScopeService } from './branch-scope.service.js';
 import type { BranchesRepository } from './branches.repository.js';
 
 const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
 
-const staff = (over: Partial<StaffContext> = {}): StaffContext => ({
-  staffId: 's',
-  fullName: 'Ana',
-  assignments: [],
-  permissions: ['branches'],
-  allBranches: true,
-  branchIds: [],
-  ...over,
-});
+/** Empleado con `branches.read` global (por defecto) o solo en `branchIds` (`allBranches: false`). */
+const staff = (over: { allBranches?: boolean; branchIds?: string[] } = {}): StaffContext =>
+  over.allBranches === false
+    ? scopedStaff(['branches.read'], over.branchIds ?? [])
+    : globalStaff(['branches.read']);
 
 function setup() {
   const repo = {
@@ -26,16 +30,10 @@ function setup() {
     findAdminById: vi.fn().mockResolvedValue({ id: A }),
     listAdmin: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   };
-  const scopes = {
-    resolve: (s: StaffContext) =>
-      Promise.resolve({ allBranches: s.allBranches, branchIds: s.branchIds }),
-  };
+  const authorization = new AuthorizationService({} as IdentityService);
   return {
     repo,
-    service: new BranchesQueryService(
-      repo as unknown as BranchesRepository,
-      scopes as unknown as BranchScopeService,
-    ),
+    service: new BranchesQueryService(repo as unknown as BranchesRepository, authorization),
   };
 }
 
@@ -97,5 +95,19 @@ describe('BranchesQueryService', () => {
       [],
     );
     expect(repo.findIds).not.toHaveBeenCalled();
+  });
+
+  it('el alcance sale del permiso branches.read, no de otros permisos ni de la unión plana', async () => {
+    const { service, repo } = setup();
+    // branches.update es global, pero branches.read solo cubre A: el listado y el detalle se limitan a A.
+    const mixed = staffContext(
+      mergeGrants(grantsOf(['branches.update'], 'global'), grantsOf(['branches.read'], [A])),
+    );
+    await service.listAdmin(mixed, {});
+    expect(repo.listAdmin).toHaveBeenCalledWith(expect.objectContaining({ scope: [A] }));
+    await expect(service.getAdminById(mixed, B)).rejects.toBeInstanceOf(NotFoundException);
+    // Sin branches.read en absoluto: nada, aunque tenga alcance global en otros permisos.
+    const noRead = globalStaff(['branches.update']);
+    await expect(service.listAdmin(noRead, {})).resolves.toMatchObject({ total: 0 });
   });
 });

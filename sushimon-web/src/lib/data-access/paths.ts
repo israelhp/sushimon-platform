@@ -47,12 +47,20 @@ export const paths = {
   boCategory: (id: string) => `/v1/backoffice/categories/${seg(id)}`,
   boPromotions: () => '/v1/backoffice/promotions',
   boPromotion: (id: string) => `/v1/backoffice/promotions/${seg(id)}`,
-  /** F07 (contrato): administración de sucursales (JWT + permiso `branches` + aal2). */
+  /** F07 (contrato): administración de sucursales (JWT + `branches.*` + aal2). */
   adminBranches: () => '/v1/admin/branches',
   adminBranch: (id: string) => `/v1/admin/branches/${seg(id)}`,
   adminBranchStatus: (id: string) => `/v1/admin/branches/${seg(id)}/status`,
-  users: () => '/v1/backoffice/users',
-  user: (id: string) => `/v1/backoffice/users/${seg(id)}`,
+  /** F03 (contrato): empleados, asignaciones, roles y permisos granulares (JWT + `staff.*`/`roles.*` + aal2). */
+  adminContext: () => '/v1/admin/me/context',
+  adminStaff: () => '/v1/admin/staff',
+  adminStaffMember: (id: string) => `/v1/admin/staff/${seg(id)}`,
+  adminStaffStatus: (id: string) => `/v1/admin/staff/${seg(id)}/status`,
+  adminStaffAssignments: (id: string) => `/v1/admin/staff/${seg(id)}/assignments`,
+  adminRoles: () => '/v1/admin/roles',
+  adminRole: (id: string) => `/v1/admin/roles/${seg(id)}`,
+  adminRolePermissions: (id: string) => `/v1/admin/roles/${seg(id)}/permissions`,
+  adminPermissions: () => '/v1/admin/permissions',
   reportSummary: () => '/v1/backoffice/reports/summary',
   reportHistory: () => '/v1/backoffice/reports/history',
 

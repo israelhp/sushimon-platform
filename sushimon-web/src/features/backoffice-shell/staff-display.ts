@@ -17,6 +17,8 @@ export function avatarStyle(role: StaffRole): CSSProperties {
       return { background: 'var(--bo-red)', color: 'var(--bo-white)' };
     case 'kitchen':
       return { background: 'var(--bo-muted)', color: 'var(--bo-on-primary)' };
+    case 'staff':
+      return { background: 'var(--bo-secondary)', color: 'var(--bo-on-secondary)' };
   }
 }
 

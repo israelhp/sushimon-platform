@@ -10,6 +10,7 @@ import {
 } from './fixtures/orders';
 import { PRODUCT_SEEDS } from './fixtures/products';
 import { PROMOTION_SEEDS } from './fixtures/promotions';
+import { ROLE_SEEDS } from './fixtures/rbac';
 import { RIDER_SEEDS, STAFF_SEEDS } from './fixtures/staff';
 import { CATEGORY_SEEDS, STORE_CONFIG_SEED } from './fixtures/store';
 import { event, tierFor, totals } from './domain';
@@ -235,7 +236,21 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
     products: buildProducts(scenario),
     promotions,
     orders,
-    staff: structuredClone(STAFF_SEEDS),
+    roles: ROLE_SEEDS.map((r) => ({ ...r, permissions: [...r.permissions] })),
+    staff: STAFF_SEEDS.map((u) => ({
+      id: u.id,
+      fullName: u.fullName,
+      email: u.email,
+      active: u.active,
+      linked: u.linked,
+      linkedAt: null,
+      createdAt: u.createdAt,
+      createdById: u.createdById,
+      assignments: u.assignments.map((a) => ({
+        roleId: ROLE_SEEDS.find((r) => r.code === a.role)?.id ?? '',
+        branchId: a.branchId,
+      })),
+    })),
     riders: structuredClone(RIDER_SEEDS),
     accounts: { [DEMO_ACCOUNT.profile.email]: demoAccount },
     jobApplications: [],
@@ -249,7 +264,7 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
       product: 1,
       category: 1,
       promotion: 1,
-      user: 9,
+      user: 12,
       job: 1,
       quote: 1,
       payment: 1,
