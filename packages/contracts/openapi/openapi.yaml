@@ -136,8 +136,410 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /v1/branches:
+    get:
+      operationId: listPublicBranches
+      summary: Sucursales activas (público)
+      description: |
+        F07. Solo sucursales con `active = true` y solo campos públicos, ordenadas por nombre y código.
+        Sin autenticación. `active` es el estado ADMINISTRATIVO: NO implica que la sucursal esté abierta ahora
+        ni que acepte pedidos (horarios y cierres: F08; pausa operativa: ver specs/005-branches-management).
+        Lista vacía = ninguna sucursal activa. Caché compartida corta (`Cache-Control: public`).
+      tags: [branches]
+      security: []
+      responses:
+        '200':
+          description: Sucursales activas
+          headers:
+            Cache-Control:
+              description: public, max-age=60, s-maxage=300, stale-while-revalidate=600
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicBranchListResponse'
+  /v1/branches/{id}:
+    get:
+      operationId: getPublicBranch
+      summary: Detalle público de una sucursal activa
+      description: |
+        Sin autenticación. 404 si no existe o está inactiva (no se distingue; no revela sucursales internas).
+      tags: [branches]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+      responses:
+        '200':
+          description: Sucursal activa
+          headers:
+            Cache-Control:
+              description: public, max-age=60, s-maxage=300, stale-while-revalidate=600
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicBranch'
+        '400':
+          description: El identificador no es un UUID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o no está activa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/branches:
+    get:
+      operationId: listAdminBranches
+      summary: Sucursales del backoffice (activas e inactivas, paginado)
+      description: |
+        F07. Exige JWT → personal activo con el permiso `branches` → `aal2`. Solo devuelve las sucursales dentro
+        del alcance del empleado (todas, o las de sus asignaciones). Respuesta `Cache-Control: no-store`.
+      tags: [branches]
+      security:
+        - bearer: []
+      parameters:
+        - name: q
+          in: query
+          description: Busca por nombre o código (contiene, sin distinguir mayúsculas). Máx. 100 caracteres.
+          schema: { type: string, maxLength: 100 }
+        - name: active
+          in: query
+          description: Filtra por estado administrativo. Sin valor = todas.
+          schema: { type: boolean }
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [name, code, createdAt]
+            default: name
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000000, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Página de sucursales
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBranchPage'
+        '400':
+          description: Parámetros de consulta inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: No es personal activo, falta el permiso `branches` o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      operationId: createAdminBranch
+      summary: Crea una sucursal
+      description: |
+        F07. Alta global: solo personal con asignación a TODAS las sucursales (`allBranches`) y permiso `branches`.
+        El `code` se normaliza (minúsculas) y es inmutable después. Se audita en `app.audit_events`.
+        No hay tope de sucursales en la API (el "5" del prototipo es una decisión comercial pendiente).
+      tags: [branches]
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBranchRequest'
+      responses:
+        '201':
+          description: Sucursal creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBranch'
+        '400':
+          description: Datos inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Sin permiso, sin alcance global o sesión no aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Ya existe una sucursal con ese código
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/branches/{id}:
+    get:
+      operationId: getAdminBranch
+      summary: Detalle administrativo de una sucursal
+      description: |
+        404 si no existe o está fuera del alcance del empleado (no se distingue). Respuesta con `Cache-Control: no-store`.
+      tags: [branches]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+      responses:
+        '200':
+          description: Sucursal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBranch'
+        '400':
+          description: El identificador no es un UUID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: No es personal activo, falta el permiso `branches` o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o fuera de alcance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      operationId: updateAdminBranch
+      summary: Actualiza datos básicos de una sucursal
+      description: |
+        Campos permitidos: nombre, teléfono, dirección y coordenadas. `code`, `active` y `createdAt` NO se aceptan
+        (400): el estado se cambia con `PATCH .../status`. Los campos omitidos no se tocan; `phone`, `latitude` y
+        `longitude` aceptan `null` para borrarlos. Latitud y longitud van juntas (ambas o ninguna). Un PATCH sin
+        cambios reales no escribe ni audita.
+      tags: [branches]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBranchRequest'
+      responses:
+        '200':
+          description: Sucursal actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBranch'
+        '400':
+          description: Datos inválidos o campos no permitidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Sin permiso o sesión no aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o fuera de alcance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/branches/{id}/status:
+    patch:
+      operationId: updateAdminBranchStatus
+      summary: Activa o desactiva una sucursal (estado administrativo)
+      description: |
+        Cambia `active`. Desactivar exige `reason`. Idempotente: si ya tiene ese estado devuelve la sucursal sin
+        escribir ni auditar. NO cancela ni reasigna pedidos en curso, ni borra empleados, productos o repartidores
+        (política de pedidos en curso: pendiente con F20/F22).
+      tags: [branches]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBranchStatusRequest'
+      responses:
+        '200':
+          description: Sucursal con su estado actual
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBranch'
+        '400':
+          description: Datos inválidos (p. ej. desactivar sin motivo)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Sin permiso o sesión no aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o fuera de alcance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
+  parameters:
+    BranchId:
+      name: id
+      in: path
+      required: true
+      description: UUID de la sucursal.
+      schema: { type: string, format: uuid }
   schemas:
+    PublicBranch:
+      type: object
+      description: Campos públicos de una sucursal activa (nada administrativo).
+      required: [id, code, name, address, phone, latitude, longitude]
+      properties:
+        id: { type: string, format: uuid }
+        code:
+          { type: string, description: 'Identificador de negocio estable (slug en minúsculas).' }
+        name: { type: string }
+        address: { type: string }
+        phone: { type: string, nullable: true }
+        latitude: { type: number, nullable: true, minimum: -90, maximum: 90 }
+        longitude: { type: number, nullable: true, minimum: -180, maximum: 180 }
+    PublicBranchListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PublicBranch' }
+    AdminBranch:
+      type: object
+      required: [id, code, name, address, phone, latitude, longitude, active, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        address: { type: string }
+        phone: { type: string, nullable: true }
+        latitude: { type: number, nullable: true, minimum: -90, maximum: 90 }
+        longitude: { type: number, nullable: true, minimum: -180, maximum: 180 }
+        active:
+          type: boolean
+          description: Estado ADMINISTRATIVO. No es "abierta ahora" (F08) ni "acepta pedidos".
+        createdAt: { type: string, format: date-time }
+    AdminBranchPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminBranch' }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total:
+          { type: integer, description: 'Total de sucursales que cumplen el filtro y el alcance.' }
+    CreateBranchRequest:
+      type: object
+      required: [code, name, address]
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          minLength: 2
+          maxLength: 40
+          description: 'Se recorta y pasa a minúsculas; luego debe cumplir ^[a-z0-9]+(-[a-z0-9]+)*$.'
+        name: { type: string, minLength: 1, maxLength: 100 }
+        address: { type: string, minLength: 1, maxLength: 300 }
+        phone:
+          type: string
+          nullable: true
+          maxLength: 25
+          description: 'Opcional. Dígitos con +, espacios, guiones y paréntesis; 7 a 15 dígitos.'
+        latitude: { type: number, nullable: true, minimum: -90, maximum: 90 }
+        longitude: { type: number, nullable: true, minimum: -180, maximum: 180 }
+        active:
+          type: boolean
+          default: true
+          description: Estado inicial (por defecto activa).
+    UpdateBranchRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        address: { type: string, minLength: 1, maxLength: 300 }
+        phone: { type: string, nullable: true, maxLength: 25 }
+        latitude: { type: number, nullable: true, minimum: -90, maximum: 90 }
+        longitude: { type: number, nullable: true, minimum: -180, maximum: 180 }
+    UpdateBranchStatusRequest:
+      type: object
+      required: [active]
+      additionalProperties: false
+      properties:
+        active: { type: boolean }
+        reason:
+          type: string
+          maxLength: 200
+          description: Obligatorio al desactivar; opcional al activar.
     AuthStaffAssignment:
       type: object
       required: [role, branchId]

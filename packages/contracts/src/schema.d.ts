@@ -107,10 +107,192 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/branches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sucursales activas (público)
+         * @description F07. Solo sucursales con `active = true` y solo campos públicos, ordenadas por nombre y código.
+         *     Sin autenticación. `active` es el estado ADMINISTRATIVO: NO implica que la sucursal esté abierta ahora
+         *     ni que acepte pedidos (horarios y cierres: F08; pausa operativa: ver specs/005-branches-management).
+         *     Lista vacía = ninguna sucursal activa. Caché compartida corta (`Cache-Control: public`).
+         */
+        get: operations["listPublicBranches"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/branches/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detalle público de una sucursal activa
+         * @description Sin autenticación. 404 si no existe o está inactiva (no se distingue; no revela sucursales internas).
+         */
+        get: operations["getPublicBranch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/branches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sucursales del backoffice (activas e inactivas, paginado)
+         * @description F07. Exige JWT → personal activo con el permiso `branches` → `aal2`. Solo devuelve las sucursales dentro
+         *     del alcance del empleado (todas, o las de sus asignaciones). Respuesta `Cache-Control: no-store`.
+         */
+        get: operations["listAdminBranches"];
+        put?: never;
+        /**
+         * Crea una sucursal
+         * @description F07. Alta global: solo personal con asignación a TODAS las sucursales (`allBranches`) y permiso `branches`.
+         *     El `code` se normaliza (minúsculas) y es inmutable después. Se audita en `app.audit_events`.
+         *     No hay tope de sucursales en la API (el "5" del prototipo es una decisión comercial pendiente).
+         */
+        post: operations["createAdminBranch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/branches/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detalle administrativo de una sucursal
+         * @description 404 si no existe o está fuera del alcance del empleado (no se distingue). Respuesta con `Cache-Control: no-store`.
+         */
+        get: operations["getAdminBranch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Actualiza datos básicos de una sucursal
+         * @description Campos permitidos: nombre, teléfono, dirección y coordenadas. `code`, `active` y `createdAt` NO se aceptan
+         *     (400): el estado se cambia con `PATCH .../status`. Los campos omitidos no se tocan; `phone`, `latitude` y
+         *     `longitude` aceptan `null` para borrarlos. Latitud y longitud van juntas (ambas o ninguna). Un PATCH sin
+         *     cambios reales no escribe ni audita.
+         */
+        patch: operations["updateAdminBranch"];
+        trace?: never;
+    };
+    "/v1/admin/branches/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Activa o desactiva una sucursal (estado administrativo)
+         * @description Cambia `active`. Desactivar exige `reason`. Idempotente: si ya tiene ese estado devuelve la sucursal sin
+         *     escribir ni auditar. NO cancela ni reasigna pedidos en curso, ni borra empleados, productos o repartidores
+         *     (política de pedidos en curso: pendiente con F20/F22).
+         */
+        patch: operations["updateAdminBranchStatus"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description Campos públicos de una sucursal activa (nada administrativo). */
+        PublicBranch: {
+            /** Format: uuid */
+            id: string;
+            /** @description Identificador de negocio estable (slug en minúsculas). */
+            code: string;
+            name: string;
+            address: string;
+            phone: string | null;
+            latitude: number | null;
+            longitude: number | null;
+        };
+        PublicBranchListResponse: {
+            items: components["schemas"]["PublicBranch"][];
+        };
+        AdminBranch: {
+            /** Format: uuid */
+            id: string;
+            code: string;
+            name: string;
+            address: string;
+            phone: string | null;
+            latitude: number | null;
+            longitude: number | null;
+            /** @description Estado ADMINISTRATIVO. No es "abierta ahora" (F08) ni "acepta pedidos". */
+            active: boolean;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AdminBranchPage: {
+            items: components["schemas"]["AdminBranch"][];
+            page: number;
+            pageSize: number;
+            /** @description Total de sucursales que cumplen el filtro y el alcance. */
+            total: number;
+        };
+        CreateBranchRequest: {
+            /** @description Se recorta y pasa a minúsculas; luego debe cumplir ^[a-z0-9]+(-[a-z0-9]+)*$. */
+            code: string;
+            name: string;
+            address: string;
+            /** @description Opcional. Dígitos con +, espacios, guiones y paréntesis; 7 a 15 dígitos. */
+            phone?: string | null;
+            latitude?: number | null;
+            longitude?: number | null;
+            /**
+             * @description Estado inicial (por defecto activa).
+             * @default true
+             */
+            active: boolean;
+        };
+        UpdateBranchRequest: {
+            name?: string;
+            address?: string;
+            phone?: string | null;
+            latitude?: number | null;
+            longitude?: number | null;
+        };
+        UpdateBranchStatusRequest: {
+            active: boolean;
+            /** @description Obligatorio al desactivar; opcional al activar. */
+            reason?: string;
+        };
         AuthStaffAssignment: {
             role: components["schemas"]["StaffRole"];
             /**
@@ -771,7 +953,10 @@ export interface components {
         };
     };
     responses: never;
-    parameters: never;
+    parameters: {
+        /** @description UUID de la sucursal. */
+        BranchId: string;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;
@@ -923,6 +1108,372 @@ export interface operations {
             };
             /** @description Token ausente, inválido o expirado */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listPublicBranches: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sucursales activas */
+            200: {
+                headers: {
+                    /** @description public, max-age=60, s-maxage=300, stale-while-revalidate=600 */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicBranchListResponse"];
+                };
+            };
+        };
+    };
+    getPublicBranch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la sucursal. */
+                id: components["parameters"]["BranchId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sucursal activa */
+            200: {
+                headers: {
+                    /** @description public, max-age=60, s-maxage=300, stale-while-revalidate=600 */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicBranch"];
+                };
+            };
+            /** @description El identificador no es un UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o no está activa */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAdminBranches: {
+        parameters: {
+            query?: {
+                /** @description Busca por nombre o código (contiene, sin distinguir mayúsculas). Máx. 100 caracteres. */
+                q?: string;
+                /** @description Filtra por estado administrativo. Sin valor = todas. */
+                active?: boolean;
+                sort?: "name" | "code" | "createdAt";
+                order?: "asc" | "desc";
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de sucursales */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminBranchPage"];
+                };
+            };
+            /** @description Parámetros de consulta inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta el permiso `branches` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAdminBranch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateBranchRequest"];
+            };
+        };
+        responses: {
+            /** @description Sucursal creada */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminBranch"];
+                };
+            };
+            /** @description Datos inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Sin permiso, sin alcance global o sesión no aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ya existe una sucursal con ese código */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAdminBranch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la sucursal. */
+                id: components["parameters"]["BranchId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sucursal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminBranch"];
+                };
+            };
+            /** @description El identificador no es un UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta el permiso `branches` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o fuera de alcance */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAdminBranch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la sucursal. */
+                id: components["parameters"]["BranchId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateBranchRequest"];
+            };
+        };
+        responses: {
+            /** @description Sucursal actualizada */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminBranch"];
+                };
+            };
+            /** @description Datos inválidos o campos no permitidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Sin permiso o sesión no aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o fuera de alcance */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAdminBranchStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la sucursal. */
+                id: components["parameters"]["BranchId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateBranchStatusRequest"];
+            };
+        };
+        responses: {
+            /** @description Sucursal con su estado actual */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminBranch"];
+                };
+            };
+            /** @description Datos inválidos (p. ej. desactivar sin motivo) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Sin permiso o sesión no aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o fuera de alcance */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
