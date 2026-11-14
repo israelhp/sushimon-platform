@@ -23,6 +23,47 @@ export async function ensureAuthStub(client: pg.Client): Promise<void> {
   await client.query('CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY)');
 }
 
+/** ¿`auth.users` es la tabla real de Supabase (con sus columnas) y no el stub mínimo de PostgreSQL plano? */
+export async function hasRealSupabaseAuth(client: pg.Client): Promise<boolean> {
+  const res = await client.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM information_schema.columns
+     WHERE table_schema = 'auth' AND table_name = 'users'`,
+  );
+  return (res.rows[0]?.n ?? 0) > 1;
+}
+
+/**
+ * Borra SOLO los datos que crean las pruebas (para poder ejecutarlas contra un proyecto Supabase de pruebas):
+ * empleados con correo `@sushimon.test`, clientes/identidades creados por la prueba y sucursales de la prueba.
+ * Las filas de `auth.users` solo se borran si las insertó la prueba y no tienen correo (nunca usuarios reales).
+ */
+export async function cleanupTestData(
+  url: string,
+  created: { authUserIds: Iterable<string>; branchIds: Iterable<string> },
+): Promise<void> {
+  const authIds = [...created.authUserIds];
+  const branchIds = [...created.branchIds];
+  await withClient(url, async (c) => {
+    await c.query('BEGIN');
+    try {
+      await c.query(
+        `DELETE FROM app.staff_assignments WHERE staff_id IN
+           (SELECT id FROM app.staff_users WHERE email LIKE '%@sushimon.test')`,
+      );
+      await c.query(`DELETE FROM app.staff_users WHERE email LIKE '%@sushimon.test'`);
+      await c.query('DELETE FROM app.customers WHERE auth_user_id = ANY($1::uuid[])', [authIds]);
+      await c.query('DELETE FROM app.branches WHERE id = ANY($1::uuid[])', [branchIds]);
+      await c.query('DELETE FROM auth.users WHERE id = ANY($1::uuid[]) AND email IS NULL', [
+        authIds,
+      ]);
+      await c.query('COMMIT');
+    } catch (error) {
+      await c.query('ROLLBACK');
+      throw error;
+    }
+  });
+}
+
 export async function withClient<T>(url: string, fn: (c: pg.Client) => Promise<T>): Promise<T> {
   const client = new pg.Client({ connectionString: url });
   await client.connect();

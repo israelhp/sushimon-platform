@@ -5,7 +5,7 @@ import type { Principal } from '../src/auth/auth.types.js';
 import { validateEnv, type Env } from '../src/config/env.js';
 import { PrismaService } from '../src/database/prisma.service.js';
 import { IdentityService } from '../src/identity/identity.service.js';
-import { ensureAuthStub, migrate, TEST_URL, withClient } from './support/db.js';
+import { cleanupTestData, ensureAuthStub, migrate, TEST_URL, withClient } from './support/db.js';
 
 const url = TEST_URL;
 
@@ -24,8 +24,15 @@ describe.skipIf(!url)('Identidad contra PostgreSQL real', () => {
   let prisma: PrismaService;
   let identity: IdentityService;
 
-  const authUser = (id: string) =>
-    withClient(url as string, (c) => c.query('INSERT INTO auth.users (id) VALUES ($1)', [id]));
+  // Lo creado por las pruebas, para limpiarlo al final (permite ejecutarlas contra un proyecto de pruebas).
+  const createdAuthIds = new Set<string>();
+  const createdBranchIds = new Set<string>();
+  const authUser = (id: string) => {
+    createdAuthIds.add(id);
+    return withClient(url as string, (c) =>
+      c.query('INSERT INTO auth.users (id) VALUES ($1)', [id]),
+    );
+  };
 
   async function preregister(
     email: string,
@@ -51,6 +58,10 @@ describe.skipIf(!url)('Identidad contra PostgreSQL real', () => {
   });
   afterAll(async () => {
     await prisma.$disconnect();
+    await cleanupTestData(url as string, {
+      authUserIds: createdAuthIds,
+      branchIds: createdBranchIds,
+    });
   });
 
   describe('clientes', () => {
@@ -146,6 +157,7 @@ describe.skipIf(!url)('Identidad contra PostgreSQL real', () => {
       const branch = await prisma.branch.create({
         data: { code: `B-${randomUUID().slice(0, 6)}`, name: 'Sucursal' },
       });
+      createdBranchIds.add(branch.id);
       const p = principal();
       await authUser(p.authUserId);
       await preregister(p.email as string, { role: 'manager', branchId: branch.id });

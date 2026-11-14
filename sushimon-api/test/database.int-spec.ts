@@ -1,7 +1,14 @@
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../src/database/prisma.service.js';
 import { validateEnv, type Env } from '../src/config/env.js';
-import { ensureAuthStub, migrate, TEST_URL, withClient, withDatabase } from './support/db.js';
+import {
+  ensureAuthStub,
+  hasRealSupabaseAuth,
+  migrate,
+  TEST_URL,
+  withClient,
+  withDatabase,
+} from './support/db.js';
 
 const url = TEST_URL;
 const TABLES = [
@@ -86,7 +93,9 @@ describe.skipIf(!url)('PrismaService y migraciones contra PostgreSQL real', () =
     expect(by('kitchen')).toEqual(['orders.accept', 'orders.status']);
   });
 
-  it('sin esquema auth (PostgreSQL plano) la migración se aplica sin las FK a auth.users', async () => {
+  it('sin esquema auth (PostgreSQL plano) la migración se aplica sin las FK a auth.users', async (ctx) => {
+    // Crea y borra una base de datos aparte: solo tiene sentido en un PostgreSQL desechable, no en Supabase.
+    if (await withClient(url as string, hasRealSupabaseAuth)) ctx.skip();
     const plain = withDatabase(url as string, 'sushimon_plain_test');
     const dropPlain = (c: import('pg').Client) =>
       c.query('DROP DATABASE IF EXISTS sushimon_plain_test');

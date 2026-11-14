@@ -1,6 +1,13 @@
 import { defineConfig } from 'vitest/config';
 
-/** Pruebas contra PostgreSQL real. Requieren DATABASE_URL_TEST (p. ej. el servicio de CI o Docker local). */
+// DATABASE_URL_TEST puede vivir en sushimon-api/.env (no pisa variables ya definidas).
+try {
+  process.loadEnvFile('.env');
+} catch {
+  /* sin .env */
+}
+
+/** Pruebas contra PostgreSQL real. Requieren DATABASE_URL_TEST (servicio de CI, un PostgreSQL desechable o el proyecto Supabase de pruebas, con la conexión directa/session pooler 5432). */
 export default defineConfig({
   test: {
     globals: true,
