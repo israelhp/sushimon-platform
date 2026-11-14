@@ -85,7 +85,9 @@ describe('cuenta del cliente (/v1/me)', () => {
     const h = createHarness();
     h.asCustomer();
     expect(await status(account.updateMe(h.client, { phone: '12' }))).toBe(400);
-    expect((await account.updateMe(h.client, { phone: '5555-9999' })).phone).toBe('5555-9999');
+    // Normaliza a +502 como la API real (política de F04).
+    expect((await account.updateMe(h.client, { phone: '5555-9999' })).phone).toBe('+50255559999');
+    expect((await account.updateMe(h.client, { phone: null })).phone).toBe('');
     expect(await account.addFavorite(h.client, 'dumplings')).toEqual([
       'dumplings',
       'platanito-roll',
@@ -97,5 +99,34 @@ describe('cuenta del cliente (/v1/me)', () => {
       'calientito-roll',
     ]);
     expect(await status(account.addFavorite(h.client, 'no-existe'))).toBe(404);
+  });
+
+  it('F04: PATCH /v1/me rechaza correo, identidad y direcciones; conserva el nombre', async () => {
+    const h = createHarness();
+    h.asCustomer();
+    const before = await account.getMe(h.client);
+    expect(
+      await status(h.client.patch('/v1/me', { email: 'otro@ejemplo.com' }) as Promise<unknown>),
+    ).toBe(400);
+    expect(
+      await status(h.client.patch('/v1/me', { defaultAddressId: null }) as Promise<unknown>),
+    ).toBe(400);
+    expect(await status(account.updateMe(h.client, { fullName: '  ' }))).toBe(400);
+    const after = await account.updateMe(h.client, { phone: '5555-1234' });
+    expect(after.fullName).toBe(before.fullName);
+    expect(after.email).toBe(before.email);
+  });
+
+  it('F04: contexto agregado sin contadores de F05/F06/F23', async () => {
+    const h = createHarness();
+    h.asCustomer();
+    const ctx = await h.client.get<{
+      pendingSections: string[];
+      customer: { fullName: string };
+      avatarUrl: string | null;
+    }>('/v1/me/storefront');
+    expect(ctx.pendingSections).toEqual(['addresses', 'favorites', 'orders']);
+    expect(ctx.customer.fullName).toBe('Cliente Demo');
+    expect(ctx.avatarUrl).toBeNull();
   });
 });

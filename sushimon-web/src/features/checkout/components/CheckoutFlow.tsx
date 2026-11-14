@@ -222,14 +222,12 @@ export function CheckoutFlow() {
       if (
         extras.updateProfile &&
         me &&
-        (draft.contact.name.trim() !== me.fullName ||
-          draft.contact.phone.trim() !== me.phone ||
-          draft.contact.email.trim() !== me.email)
+        (draft.contact.name.trim() !== me.fullName || draft.contact.phone.trim() !== me.phone)
       ) {
+        // F04: el perfil guarda nombre y teléfono. El correo pertenece a la identidad y no se envía.
         updateMe.mutate({
           fullName: draft.contact.name.trim(),
           phone: draft.contact.phone.trim(),
-          email: draft.contact.email.trim(),
         });
       }
     }

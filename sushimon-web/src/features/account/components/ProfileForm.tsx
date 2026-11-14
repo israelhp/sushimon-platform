@@ -8,7 +8,7 @@ import { useToast } from '@/components/ui/Toast';
 import type { Address, Customer } from '@/lib/data-access/models';
 import { addressLine, addressTitle } from '../address-format';
 import { useAddressLabels } from '../use-address-labels';
-import { useAddresses, useMe, useUpdateMe } from '../hooks';
+import { useAddresses, useMe, useSetDefaultAddress, useUpdateMe } from '../hooks';
 import { hasErrors, validateProfile } from '../validation';
 import { AccountSection } from './AccountSection';
 import { Field } from './Field';
@@ -31,7 +31,7 @@ export function ProfileForm() {
       {me.data && addresses.data ? (
         // Al guardar, los datos del servidor cambian y el formulario se reinicia con ellos.
         <ProfileFields
-          key={`${me.data.fullName}|${me.data.phone}|${me.data.email}|${me.data.defaultAddressId ?? ''}`}
+          key={`${me.data.fullName}|${me.data.phone}|${me.data.defaultAddressId ?? ''}`}
           profile={me.data}
           addresses={addresses.data}
         />
@@ -47,10 +47,10 @@ function ProfileFields({ profile, addresses }: { profile: Customer; addresses: A
   const locale = useLocale();
   const { notify } = useToast();
   const update = useUpdateMe();
+  const setDefault = useSetDefaultAddress();
   const [values, setValues] = useState({
     fullName: profile.fullName,
     phone: profile.phone,
-    email: profile.email,
     defaultAddressId: profile.defaultAddressId ?? '',
   });
   const [submitted, setSubmitted] = useState(false);
@@ -63,7 +63,6 @@ function ProfileFields({ profile, addresses }: { profile: Customer; addresses: A
   const dirty =
     values.fullName.trim() !== profile.fullName ||
     values.phone.trim() !== profile.phone ||
-    values.email.trim() !== profile.email ||
     (values.defaultAddressId || null) !== profile.defaultAddressId;
   const selected = addresses.find((a) => a.id === values.defaultAddressId);
   const set = (patch: Partial<typeof values>) => setValues((v) => ({ ...v, ...patch }));
@@ -78,17 +77,24 @@ function ProfileFields({ profile, addresses }: { profile: Customer; addresses: A
       );
       return;
     }
+    // F04: nombre y teléfono van a /v1/me. La dirección predeterminada es de F05 (simulada, otra ruta).
+    const defaultChanged = (values.defaultAddressId || null) !== profile.defaultAddressId;
     update.mutate(
-      {
-        fullName: values.fullName.trim(),
-        phone: values.phone.trim(),
-        email: values.email.trim(),
-        defaultAddressId: values.defaultAddressId || null,
-      },
+      { fullName: values.fullName.trim(), phone: values.phone.trim() },
       {
         onSuccess: () => {
-          setSubmitted(false);
-          notify(t('saved'));
+          if (!defaultChanged) {
+            setSubmitted(false);
+            notify(t('saved'));
+            return;
+          }
+          setDefault.mutate(values.defaultAddressId || null, {
+            onSuccess: () => {
+              setSubmitted(false);
+              notify(t('saved'));
+            },
+            onError: () => setFailed(true),
+          });
         },
         onError: () => setFailed(true),
       },
@@ -134,19 +140,17 @@ function ProfileFields({ profile, addresses }: { profile: Customer; addresses: A
             />
           )}
         </Field>
-        <Field id="p-email" label={t('email')} error={message(visible.email)}>
-          {(props) => (
-            <input
-              {...props}
-              type="text"
-              inputMode="email"
-              autoComplete="email"
-              maxLength={254}
-              value={values.email}
-              onChange={(e) => set({ email: e.target.value })}
-            />
-          )}
-        </Field>
+        <div className="sm:col-span-2">
+          <span className="lbl" id="p-email-label">
+            {t('email')}
+          </span>
+          <p
+            aria-labelledby="p-email-label"
+            className="m-0 mt-1 break-all text-[15px] font-bold text-fg"
+          >
+            {profile.email}
+          </p>
+        </div>
         <p className="m-0 -mt-2 text-[12px] text-muted sm:col-span-2">{t('emailHelp')}</p>
 
         <div className="sm:col-span-2">
@@ -195,14 +199,14 @@ function ProfileFields({ profile, addresses }: { profile: Customer; addresses: A
 
       <button
         type="submit"
-        disabled={update.isPending || !dirty}
-        aria-busy={update.isPending}
+        disabled={update.isPending || setDefault.isPending || !dirty}
+        aria-busy={update.isPending || setDefault.isPending}
         className="btn btn-primary mt-4 w-full sm:w-auto"
       >
-        {update.isPending ? (
+        {update.isPending || setDefault.isPending ? (
           <LoaderCircle className="anim-spin h-5 w-5" aria-hidden="true" />
         ) : null}
-        {update.isPending ? t('saving') : t('save')}
+        {update.isPending || setDefault.isPending ? t('saving') : t('save')}
       </button>
     </form>
   );

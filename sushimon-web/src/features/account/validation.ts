@@ -19,12 +19,12 @@ export function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
 }
 
-export type ProfileErrorKey = 'validation.name' | 'validation.phone' | 'validation.email';
+/** F04: solo nombre y teléfono son editables; el correo es de la identidad (solo lectura). */
+export type ProfileErrorKey = 'validation.name' | 'validation.phone';
 
 export interface ProfileFormValues {
   fullName: string;
   phone: string;
-  email: string;
 }
 
 export type ProfileErrors = Partial<Record<keyof ProfileFormValues, ProfileErrorKey>>;
@@ -33,7 +33,6 @@ export function validateProfile(values: ProfileFormValues): ProfileErrors {
   const errors: ProfileErrors = {};
   if (values.fullName.trim().length < 3) errors.fullName = 'validation.name';
   if (!isValidPhone(values.phone)) errors.phone = 'validation.phone';
-  if (!isValidEmail(values.email)) errors.email = 'validation.email';
   return errors;
 }
 
