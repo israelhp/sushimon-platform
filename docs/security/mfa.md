@@ -79,10 +79,10 @@ Recomendación para F03: permitir enrolar un segundo factor TOTP de respaldo (la
 
 ## Riesgos y límites
 
-- **Enrolar un segundo factor con sesión aal1 (revisión de seguridad, ALTO, por verificar)**: la restricción «no enrolar si ya
-  hay factor verificado» está solo en la UI. Si Supabase permite `mfa.enroll` + `verify` a una sesión aal1 que ya tiene factor,
-  una sesión Google comprometida podría obtener `aal2` con su propio autenticador. **Antes de producción** comprobar en el
-  proyecto real que el enrolamiento adicional exige `aal2`; si no, limitar a 1 factor o mover el enrolamiento a la API (F03).
+- **Enrolar un segundo factor con sesión aal1: VERIFICADO, cerrado por Supabase (2026-11-14).** Con un factor TOTP ya
+  verificado, `POST /auth/v1/factors` con un token `aal1` responde `403 insufficient_aal` («AAL2 required to enroll a new
+  factor»). La restricción de la UI no es la única barrera. Probado manualmente contra el proyecto Supabase de pruebas.
+  Pendiente de observar: el primer enrolamiento (usuario sin factor) sí se permite en aal1, por diseño.
 - aal2 sin frescura: un token aal2 sirve hasta `exp`; para acciones sensibles futuras exigir `amr.totp.timestamp` reciente.
 - Falta log/auditoría de 403 `MFA_REQUIRED` y accesos denegados en los guards (sin PII) → F03.
 
