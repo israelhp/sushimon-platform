@@ -55,7 +55,8 @@ describe('createSeedStore', () => {
     expect(s.branches).toHaveLength(5);
     expect(s.promotions).toHaveLength(3);
     expect(s.promotions[0]?.items).toHaveLength(8);
-    expect(s.staff).toHaveLength(8);
+    expect(s.staff).toHaveLength(11);
+    expect(s.roles.map((r) => r.code)).toEqual(['admin', 'manager', 'kitchen', 'staff']);
     expect(s.riders).toHaveLength(6);
     // 15 pedidos del backoffice + 3 de la tienda
     expect(s.orders).toHaveLength(18);

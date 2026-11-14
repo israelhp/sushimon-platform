@@ -182,6 +182,7 @@ describe('vista de tabla', () => {
       'aria-pressed',
       'true',
     );
-    expect(within(chips).getByRole('button', { name: 'Sucursal 2' })).toBeDisabled();
+    // Solo sucursales autorizadas (grants del contexto): las ajenas no se ofrecen.
+    expect(within(chips).queryByRole('button', { name: 'Sucursal 2' })).toBeNull();
   });
 });

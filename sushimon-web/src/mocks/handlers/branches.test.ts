@@ -59,10 +59,10 @@ describe('F07 público: /v1/branches', () => {
 });
 
 describe('F07 admin: autorización y alcance', () => {
-  it('sin sesión 401; sin permiso `branches` 403; escenario forbidden 403', async () => {
+  it('sin sesión 401; cocina (sin branches.read) 403; escenario forbidden 403', async () => {
     const h = createHarness();
     expect(await status(branches.listAdminBranches(h.client))).toBe(401);
-    h.asStaff('manager');
+    h.asStaff('kitchen');
     expect(await status(branches.listAdminBranches(h.client))).toBe(403);
     expect(await status(branches.createAdminBranch(h.client, base))).toBe(403);
     const f = createHarness('forbidden');
@@ -70,15 +70,27 @@ describe('F07 admin: autorización y alcance', () => {
     expect(await status(branches.listAdminBranches(f.client))).toBe(403);
   });
 
-  it('con alcance por sucursal: lista solo la suya, detalle ajeno 404 y alta 403', async () => {
+  it('encargado (branches.read acotada): lista solo la suya, detalle ajeno 404, sin editar ni crear', async () => {
     const h = createHarness();
-    const manager = h.store.staff.find((u) => u.role === 'manager')!;
-    manager.permissions = [...manager.permissions, 'branches'];
-    h.asStaff('manager', manager.id);
+    h.asStaff('manager');
     const page = await branches.listAdminBranches(h.client);
-    expect(page.items.map((b) => b.id)).toEqual([manager.branchId]);
+    expect(page.items.map((b) => b.id)).toEqual(['sucursal-1']);
     expect(page.total).toBe(1);
     expect(await status(branches.getAdminBranch(h.client, 'sucursal-3'))).toBe(404);
+    // Sin `branches.update` / `branches.create`: 403 (el permiso se comprueba antes que el alcance).
+    expect(await status(branches.updateAdminBranch(h.client, 'sucursal-1', { name: 'X' }))).toBe(
+      403,
+    );
+    expect(await status(branches.createAdminBranch(h.client, base))).toBe(403);
+  });
+
+  it('con branches.update en su sucursal: edita la suya, la ajena 404 y el alta sigue siendo 403', async () => {
+    const h = createHarness();
+    h.store.roles.find((r) => r.code === 'manager')!.permissions.push('branches.update');
+    h.asStaff('manager');
+    expect(
+      (await branches.updateAdminBranch(h.client, 'sucursal-1', { name: 'Nuevo nombre' })).name,
+    ).toBe('Nuevo nombre');
     expect(await status(branches.updateAdminBranch(h.client, 'sucursal-3', { name: 'X' }))).toBe(
       404,
     );

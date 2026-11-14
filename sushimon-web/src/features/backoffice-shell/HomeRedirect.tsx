@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useEffect, useSyncExternalStore } from 'react';
 import { useDemoSession } from '@/features/session/demo-session';
-import { ROLE_HOME } from '@/lib/permissions';
+import { homeScreen } from '@/lib/permissions';
 import { LOGIN_PATH, screenHref } from './nav';
 
 const subscribeNever = () => () => {};
@@ -22,7 +22,7 @@ export function HomeRedirect() {
 
   useEffect(() => {
     if (!mounted) return;
-    router.replace(staff ? screenHref(ROLE_HOME[staff.role]) : LOGIN_PATH);
+    router.replace(staff ? screenHref(homeScreen(staff.grants)) : LOGIN_PATH);
   }, [mounted, staff, router]);
 
   return (

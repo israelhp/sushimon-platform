@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { grantsForRole } from '@/mocks/testing';
 import type { Order, OrderStatus } from './data-access/models';
 import {
   canDispatch,
@@ -77,8 +78,8 @@ describe('máquina de estados', () => {
 
   it('reglas de despacho', () => {
     const ready = order({ status: 'ready' });
-    expect(canDispatch(ready, 'manager')).toBe(true);
-    expect(canDispatch(ready, 'kitchen')).toBe(false);
+    expect(canDispatch(ready, grantsForRole('manager'))).toBe(true);
+    expect(canDispatch(ready, grantsForRole('kitchen'))).toBe(false);
     expect(canDispatch({ ...ready, fulfillment: 'pickup' })).toBe(false);
     const withDelivery = {
       ...ready,
@@ -158,12 +159,19 @@ describe('mapeos de UI', () => {
     expect(fromBackofficeColumn('cancelado')).toEqual(['rejected', 'cancelled']);
     expect(toBackofficeLogistics(order())).toBe('none');
     expect(toBackofficeLogistics(order({ status: 'delivered' }))).toBe('entregado');
-    expect(nextBackofficeAction(order(), 'kitchen')).toBe('accept');
-    expect(nextBackofficeAction(order({ status: 'accepted' }), 'kitchen')).toBe('prepare');
-    expect(nextBackofficeAction(order({ status: 'ready' }), 'kitchen')).toBeNull();
-    expect(nextBackofficeAction(order({ status: 'ready' }), 'manager')).toBe('dispatch');
-    expect(nextBackofficeAction(order({ status: 'ready', fulfillment: 'pickup' }), 'kitchen')).toBe(
-      'deliver',
+    expect(nextBackofficeAction(order(), grantsForRole('kitchen'))).toBe('accept');
+    expect(nextBackofficeAction(order({ status: 'accepted' }), grantsForRole('kitchen'))).toBe(
+      'prepare',
     );
+    expect(nextBackofficeAction(order({ status: 'ready' }), grantsForRole('kitchen'))).toBeNull();
+    expect(nextBackofficeAction(order({ status: 'ready' }), grantsForRole('manager'))).toBe(
+      'dispatch',
+    );
+    expect(
+      nextBackofficeAction(
+        order({ status: 'ready', fulfillment: 'pickup' }),
+        grantsForRole('kitchen'),
+      ),
+    ).toBe('deliver');
   });
 });

@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { demoStaffFromSeed } from '../src/mocks/fixtures/staff';
 
 /**
  * Accesibilidad automática (axe) por ruta y tema. Sin violaciones serias ni críticas.
@@ -12,7 +13,7 @@ interface RouteCase {
   /** Abre antes la sesión de DEMOSTRACIÓN del cliente (sessionStorage); las rutas de cuenta la necesitan. */
   signedIn?: boolean;
   /** Abre antes la sesión de DEMOSTRACIÓN del personal del backoffice con ese rol (sessionStorage). */
-  staff?: 'admin' | 'manager' | 'kitchen';
+  staff?: 'admin' | 'manager' | 'kitchen' | 'staff';
   /** Etiqueta para distinguir casos de la misma ruta (p. ej. pasos del checkout). */
   label?: string;
   /** Preferencias del cliente a precargar (carrito, modo de pedido…) en localStorage. */
@@ -225,6 +226,11 @@ export const A11Y_ROUTES: RouteCase[] = [
   },
   { path: '/backoffice/usuarios', ready: { role: 'heading', name: 'Usuarios' }, staff: 'admin' },
   {
+    path: '/backoffice/roles',
+    ready: { role: 'heading', name: 'Roles y permisos' },
+    staff: 'admin',
+  },
+  {
     path: '/backoffice/usuarios',
     label: 'modal usuario',
     ready: { role: 'heading', name: 'Usuarios' },
@@ -249,29 +255,12 @@ export const A11Y_ROUTES: RouteCase[] = [
   },
 ];
 
-/** Usuarios de demostración del personal por rol (coinciden con los fixtures del mock). */
+/** Usuarios de demostración del personal por rol, con los `grants` que calcula el mock (F03). */
 const STAFF_SESSIONS = {
-  admin: {
-    userId: 'u1',
-    email: 'ana.perez@sushimon.gt',
-    name: 'Ana Lucía Pérez',
-    role: 'admin',
-    branchId: null,
-  },
-  manager: {
-    userId: 'u2',
-    email: 'marco.gomez@sushimon.gt',
-    name: 'Marco Antonio Gómez',
-    role: 'manager',
-    branchId: 'sucursal-1',
-  },
-  kitchen: {
-    userId: 'u5',
-    email: 'cocina.z4@sushimon.gt',
-    name: 'Cocina Zona 4',
-    role: 'kitchen',
-    branchId: 'sucursal-1',
-  },
+  admin: demoStaffFromSeed('u1'),
+  manager: demoStaffFromSeed('u2'),
+  kitchen: demoStaffFromSeed('u5'),
+  staff: demoStaffFromSeed('u9'),
 } as const;
 
 for (const theme of ['light', 'dark'] as const) {

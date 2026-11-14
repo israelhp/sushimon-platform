@@ -1,9 +1,9 @@
 import type { AuthContext as AuthContextResponse } from '@/services/auth';
 import type { Address, AddressInput, Customer } from '@/lib/data-access/models';
-import { permissionsFor } from '@/lib/permissions';
 import { assertAddress, fail, isValidEmail, isValidPhone } from '../domain';
 import { settleReviews } from './orders';
 import { body, now, oneOf, requireCustomer, str, type Handler, type Req } from './shared';
+import { authStaffContext } from './staff';
 
 /**
  * Cuenta del cliente (`/v1/me/*`), equivalente al adaptador local `monsushi-account-v1` del
@@ -22,27 +22,21 @@ export const getAuthContext: Handler = (req): AuthContextResponse => {
   const { customer, staff } = req.context.session;
   if (!customer && !staff) fail(401, 'No autenticado');
   const email = (staff?.email ?? customer?.email ?? '').toLowerCase();
+  // El contexto sale del store (permisos vigentes), no de la sesión: un empleado desactivado ya no entra.
+  const record = staff ? req.store.staff.find((u) => u.id === staff.userId) : undefined;
+  const staffContext = record?.active ? authStaffContext(req, record) : null;
   return {
     authUserId: '00000000-0000-4000-8000-00000000d3a0',
     email,
     provider: 'google-demo',
     isCustomer: Boolean(customer),
     // Réplica de demostración: el personal simulado se trata como aal2 (no hay Supabase ni MFA reales).
-    aal: staff ? 'aal2' : 'aal1',
-    staffAuthorized: Boolean(staff),
+    aal: staffContext ? 'aal2' : 'aal1',
+    staffAuthorized: Boolean(staffContext),
     mfaRequired: false,
-    access: staff ? 'GRANTED' : 'NOT_STAFF',
-    staff: staff
-      ? {
-          staffId: '00000000-0000-4000-8000-00000000d3a1',
-          fullName: staff.name,
-          assignments: [{ role: staff.role, branchId: staff.branchId }],
-          permissions: permissionsFor(staff.role),
-          allBranches: staff.branchId === null,
-          branchIds: staff.branchId ? [staff.branchId] : [],
-        }
-      : null,
-    backofficeAccess: Boolean(staff),
+    access: staffContext ? 'GRANTED' : 'NOT_STAFF',
+    staff: staffContext,
+    backofficeAccess: Boolean(staffContext),
   };
 };
 

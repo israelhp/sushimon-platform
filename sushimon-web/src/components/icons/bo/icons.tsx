@@ -370,5 +370,6 @@ export const BO_NAV_ICONS = {
   store: IconStore,
   users: IconUsers,
   chart: IconChart,
+  lock: IconLock,
 } as const;
 export type BoNavIconKey = keyof typeof BO_NAV_ICONS;

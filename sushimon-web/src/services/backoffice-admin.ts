@@ -8,12 +8,10 @@ import type {
   Promotion,
   PromotionInput,
   ReportSummary,
-  StaffUser,
-  StaffUserInput,
 } from '@/lib/data-access/models';
 import { paths } from '@/lib/data-access/paths';
 
-/** Catálogo, promociones, usuarios y reportes del backoffice (las sucursales F07: `services/branches`). */
+/** Catálogo, promociones y reportes del backoffice (las sucursales F07: `services/branches`). */
 
 export type ProductInput = Pick<Product, 'name' | 'description' | 'price' | 'categoryId'> &
   Partial<
@@ -75,14 +73,6 @@ export const updateBranchOperations = (
   id: string,
   input: BranchOperationsUpdate,
 ) => client.patch<Branch>(paths.demoBranchOperation(id), input);
-
-export const listUsers = (client: DataClient) => client.get<StaffUser[]>(paths.users());
-
-export const createUser = (client: DataClient, input: StaffUserInput) =>
-  client.post<StaffUser>(paths.users(), input);
-
-export const updateUser = (client: DataClient, id: string, input: Partial<StaffUserInput>) =>
-  client.patch<StaffUser>(paths.user(id), input);
 
 export interface ReportFilters {
   /** YYYY-MM-DD; por defecto hoy. Se recorta a los 60 días disponibles (`clipped`). */

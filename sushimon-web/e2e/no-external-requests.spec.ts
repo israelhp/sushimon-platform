@@ -36,6 +36,7 @@ const BACKOFFICE_SCREENS = [
   'promociones',
   'sucursales',
   'usuarios',
+  'roles',
   'reportes',
 ];
 

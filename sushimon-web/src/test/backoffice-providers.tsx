@@ -18,6 +18,7 @@ import { createFixedClock, type FixedClock } from '@/mocks/clock';
 import { createMockDataClient } from '@/mocks/index';
 import type { MockScenario } from '@/mocks/scenarios';
 import { createSeedStore } from '@/mocks/seed';
+import type { MockStore } from '@/mocks/store';
 
 export interface RenderBackofficeOptions {
   scenario?: MockScenario;
@@ -31,6 +32,8 @@ export interface BackofficeTestApi {
   clock: FixedClock;
   /** Cliente de datos mock (para provocar cambios "del servidor" fuera de la UI). */
   client: DataClient;
+  /** Store del mock (para provocar cambios "del servidor" fuera de la UI, p. ej. revocar un permiso). */
+  store: MockStore;
 }
 
 /**
@@ -48,7 +51,7 @@ export async function renderBackoffice(
 
   function SessionSetup({ children }: { children: ReactNode }) {
     const session = useDemoSession();
-    current = { session, clock, client };
+    current = { session, clock, client, store };
     const [ready, setReady] = useState(false);
     useEffect(() => {
       if (role) session.signInStaff(role);
@@ -60,11 +63,12 @@ export async function renderBackoffice(
     return ready ? <>{children}</> : null;
   }
 
+  const store = createSeedStore(scenario);
   const client = createMockDataClient({
     scenario,
     latencyMs: 0,
     persist: false,
-    store: createSeedStore(scenario),
+    store,
     clock,
   });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

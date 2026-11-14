@@ -1,4 +1,5 @@
-import type { DeliveryStatus, Order, OrderStatusEvent, StaffRole } from '@/lib/data-access/models';
+import type { DeliveryStatus, Order, OrderStatusEvent } from '@/lib/data-access/models';
+import type { Grants } from '@/lib/permissions';
 import {
   BACKOFFICE_COLUMNS,
   DELIVERY_SEQUENCE,
@@ -170,16 +171,16 @@ export function historyNewestFirst(order: Pick<Order, 'history'>): OrderStatusEv
   return [...order.history].reverse();
 }
 
-export function nextAction(order: Order, role: StaffRole): BackofficeNextAction | null {
-  return nextBackofficeAction(order, role);
+export function nextAction(order: Order, grants: Grants): BackofficeNextAction | null {
+  return nextBackofficeAction(order, grants);
 }
 
 /** Cocina no puede despachar: ve un aviso informativo cuando el pedido a domicilio está listo. */
-export function dispatchBlockedForRole(order: Order, role: StaffRole): boolean {
+export function dispatchBlockedForRole(order: Order, grants: Grants): boolean {
   return (
     order.status === 'ready' &&
     order.fulfillment === 'delivery' &&
     (!order.delivery || order.delivery.status === 'failed') &&
-    nextBackofficeAction(order, role) !== 'dispatch'
+    nextBackofficeAction(order, grants) !== 'dispatch'
   );
 }

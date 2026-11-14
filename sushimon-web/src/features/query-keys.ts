@@ -2,6 +2,7 @@ import type { DeliveryQuoteArgs, ProductFilters } from '@/services/store';
 import type { BackofficeOrderFilters, DeliveryFilters } from '@/services/backoffice-orders';
 import type { ReportFilters } from '@/services/backoffice-admin';
 import type { AdminBranchFilters } from '@/services/branches';
+import type { AdminStaffFilters } from '@/services/staff';
 
 /**
  * Claves de TanStack Query centralizadas. Jerárquicas para invalidar por prefijo
@@ -56,7 +57,19 @@ export const queryKeys = {
     adminBranches: (filters: AdminBranchFilters = {}) =>
       ['backoffice', 'branches', 'list', filters] as const,
     adminBranch: (id: string) => ['backoffice', 'branches', 'detail', id] as const,
-    users: ['backoffice', 'users'] as const,
+    /** F03: contexto administrativo del propio empleado (`grants`, `branches`). */
+    adminContext: ['backoffice', 'admin-context'] as const,
+    /** F03: prefijo de empleados (listas y detalle). */
+    staff: ['backoffice', 'staff'] as const,
+    staffLists: ['backoffice', 'staff', 'list'] as const,
+    staffList: (filters: AdminStaffFilters = {}) =>
+      ['backoffice', 'staff', 'list', filters] as const,
+    staffDetail: (id: string) => ['backoffice', 'staff', 'detail', id] as const,
+    /** F03: prefijo de roles (listas y detalle). */
+    roles: ['backoffice', 'roles'] as const,
+    roleLists: ['backoffice', 'roles', 'list'] as const,
+    roleDetail: (id: string) => ['backoffice', 'roles', 'detail', id] as const,
+    permissions: ['backoffice', 'permissions'] as const,
     reportSummary: (filters: ReportFilters = {}) =>
       ['orders', 'reports', 'summary', filters] as const,
     reportHistory: (filters: ReportFilters = {}) =>

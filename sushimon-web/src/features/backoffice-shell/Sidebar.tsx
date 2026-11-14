@@ -14,7 +14,7 @@ import {
 } from '@/components/icons/bo';
 import { cn } from '@/lib/cn';
 import { useDemoSession } from '@/features/session/demo-session';
-import { LOGIN_PATH, navForRole, screenFromPath, screenHref } from './nav';
+import { LOGIN_PATH, navForGrants, screenFromPath, screenHref } from './nav';
 import { branchShortName, useShell } from './shell-context';
 import { avatarStyle, staffInitials } from './staff-display';
 import { PopoverRoot, usePopover } from './use-popover';
@@ -26,10 +26,15 @@ export function Sidebar({ newCount }: { newCount: number }) {
   const pathname = usePathname();
   const shell = useShell();
   const { staff, signOutStaff } = useDemoSession();
-  const sections = navForRole(shell.role);
+  const sections = navForGrants(shell.grants);
   const current = screenFromPath(pathname);
-  const staffBranch = staff?.branchId ? shell.branchById(staff.branchId)?.name : undefined;
-  const staffBranchLabel = staffBranch ?? staff?.branchId ?? t('shell.allBranches');
+  const global = Object.values(shell.grants).some((g) => g.allBranches);
+  const names = (staff?.branches ?? []).map((b) => b.name);
+  const staffBranchLabel = global
+    ? t('shell.allBranches')
+    : names.length <= 1
+      ? (names[0] ?? t('shell.allBranches'))
+      : t('shell.nBranches', { count: names.length });
 
   const logout = () => {
     signOutStaff();

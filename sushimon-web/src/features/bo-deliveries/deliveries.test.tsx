@@ -132,7 +132,7 @@ describe('pantalla Entregas', () => {
     await screen.findByText('#MON-307051');
     expect(screen.queryByText('#MON-307049')).toBeNull(); // sucursal 2
     expect(screen.getByRole('button', { name: 'Sucursal 1' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Sucursal 2' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Sucursal 2' })).toBeNull(); // no autorizada
   });
 
   it('cambia de periodo: 7 días trae el historial y respeta la paginación', async () => {

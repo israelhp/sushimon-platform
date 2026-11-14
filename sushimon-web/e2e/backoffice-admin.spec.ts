@@ -2,7 +2,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * Backoffice (bloque 5): Sucursales, Usuarios y Reportes con datos simulados. La sesión es de DEMOSTRACIÓN: ni
+ * Backoffice (bloque 5 + F03): Sucursales, Usuarios (empleados con asignaciones), Roles y Reportes con datos simulados. La sesión es de DEMOSTRACIÓN: ni
  * Google ni este acceso dan permisos; en mock, el adaptador reproduce las reglas de rol y sucursal del servidor.
  */
 
@@ -25,22 +25,26 @@ test('admin: crea un usuario, edita y desactiva una sucursal', async ({ page }) 
     .getByRole('link', { name: /Usuarios/ })
     .click();
   await expect(page).toHaveURL(/\/backoffice\/usuarios$/);
-  await expect(page.getByText('8 usuarios · 7 activos')).toBeVisible();
+  await expect(page.getByText('11 usuarios', { exact: true })).toBeVisible();
+  // La API no expone MFA por persona: la pantalla no inventa ese dato.
+  await expect(page.getByText(/MFA pendiente/i)).toHaveCount(0);
 
   await page.getByRole('button', { name: /Nuevo usuario/ }).click();
   const dialog = page.getByRole('dialog', { name: 'Nuevo usuario' });
   await dialog.getByRole('button', { name: 'Guardar usuario' }).click();
-  await expect(dialog.getByRole('alert')).toHaveText('Completa el nombre y un correo válido.');
+  await expect(dialog.getByText('Escribe el nombre completo.')).toBeVisible();
   await expect(dialog.getByLabel('Nombre completo')).toBeFocused();
 
   await dialog.getByLabel('Nombre completo').fill('Lucía Prueba');
   await dialog.getByLabel('Correo').fill('lucia.prueba@sushimon.gt');
-  await dialog.getByRole('button', { name: 'Sucursal 2' }).click();
+  await dialog.getByLabel('Rol de la asignación 1').selectOption({ label: 'Cocina' });
+  await dialog.getByLabel('Sucursal de la asignación 1').selectOption({ label: 'Sucursal 2' });
   await dialog.getByRole('button', { name: 'Guardar usuario' }).click();
   await expect(dialog).toBeHidden();
-  await expect(page.getByText('9 usuarios · 8 activos')).toBeVisible();
-  await expect(page.getByText('lucia.prueba@sushimon.gt')).toBeVisible();
-  await expect(page.locator('.toast', { hasText: 'invitación por correo simulada' })).toBeVisible();
+  await expect(page.getByText('12 usuarios', { exact: true })).toBeVisible();
+  await page.getByRole('searchbox', { name: 'Buscar usuarios' }).fill('lucia.prueba');
+  await expect(page.getByText('Pendiente de vincular Google')).toBeVisible();
+  await expect(page.locator('.toast', { hasText: 'quedó preautorizado' })).toBeVisible();
 
   await nav(page)
     .getByRole('link', { name: /Sucursales/ })
@@ -84,11 +88,13 @@ test('admin: crea una sucursal sin tope y rechaza un código duplicado', async (
   await expect(page.getByText('6 sucursales', { exact: true })).toBeVisible();
 });
 
-test('encargado: ve Reportes de su sucursal, pero no Usuarios ni Sucursales', async ({ page }) => {
+test('encargado: ve Reportes, Usuarios y Sucursales de su sucursal, sin crear sucursales', async ({
+  page,
+}) => {
   await enterAs(page, /Marco Antonio Gómez/);
   await expect(nav(page).getByRole('link', { name: /Reportes/ })).toBeVisible();
-  await expect(nav(page).getByRole('link', { name: /Usuarios/ })).toHaveCount(0);
-  await expect(nav(page).getByRole('link', { name: /Sucursales/ })).toHaveCount(0);
+  await expect(nav(page).getByRole('link', { name: /Usuarios/ })).toBeVisible();
+  await expect(nav(page).getByRole('link', { name: /Categorías/ })).toHaveCount(0);
 
   await nav(page)
     .getByRole('link', { name: /Reportes/ })
@@ -97,10 +103,22 @@ test('encargado: ve Reportes de su sucursal, pero no Usuarios ni Sucursales', as
   await expect(page.getByText('Sucursal 1 · Zona 4 · Cuatro Grados Norte').first()).toBeVisible();
   await expect(page.locator('.legend span')).toHaveCount(1);
 
+  // Usuarios: solo el personal de su sucursal.
   await page.goto('/backoffice/usuarios');
-  await expect(page.getByText('No tienes permiso para ver esta pantalla')).toBeVisible();
+  await expect(page.getByText('4 usuarios', { exact: true })).toBeVisible();
+  await expect(page.getByText('Karla Rodríguez')).toHaveCount(0);
+  // Sucursales: solo la suya y en modo lectura.
   await page.goto('/backoffice/sucursales');
-  await expect(page.getByText('No tienes permiso para ver esta pantalla')).toBeVisible();
+  await expect(page.getByText('1 sucursal', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Nueva sucursal/ })).toHaveCount(0);
+});
+
+test('cocina: no accede a Usuarios, Roles ni Sucursales', async ({ page }) => {
+  await enterAs(page, /Cocina Zona 4/);
+  for (const path of ['usuarios', 'roles', 'sucursales']) {
+    await page.goto(`/backoffice/${path}`);
+    await expect(page.getByText('No tienes permiso para ver esta pantalla')).toBeVisible();
+  }
 });
 
 test('reportes: el rango elegido da totales coherentes entre el resumen y el historial', async ({

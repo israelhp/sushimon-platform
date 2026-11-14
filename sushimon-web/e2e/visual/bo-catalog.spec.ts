@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { VIEWPORTS, capture, compareAndAttach, preparePage } from './harness';
+import { demoStaffFromSeed } from '../../src/mocks/fixtures/staff';
 
 /**
  * Fidelidad del catálogo del backoffice (Productos, Categorías, Promociones y sus modales) frente a las capturas
@@ -15,21 +16,10 @@ const FROZEN_AT = process.env.DEMO_NOW ?? '2026-11-11T13:00:00-06:00';
 const BASE = process.env.BASE_URL ?? `http://localhost:${process.env.E2E_PORT ?? 3100}`;
 const MAX_RATIO = Number(process.env.VISUAL_MAX_RATIO ?? 0.12);
 
+/** Sesiones de demostración con los `grants` que calcula el mock (F03). */
 const SESSIONS = {
-  admin: {
-    userId: 'u1',
-    email: 'ana.perez@sushimon.gt',
-    name: 'Ana Lucía Pérez',
-    role: 'admin',
-    branchId: null,
-  },
-  manager: {
-    userId: 'u2',
-    email: 'marco.gomez@sushimon.gt',
-    name: 'Marco Antonio Gómez',
-    role: 'manager',
-    branchId: 'sucursal-1',
-  },
+  admin: demoStaffFromSeed('u1'),
+  manager: demoStaffFromSeed('u2'),
 } as const;
 
 interface Screen {

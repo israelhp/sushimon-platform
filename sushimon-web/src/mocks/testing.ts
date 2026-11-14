@@ -1,8 +1,10 @@
 import type { StaffRole } from '@/lib/data-access/models';
 import type { DemoSessionState } from '@/lib/demo-session';
+import type { Grants } from '@/lib/permissions';
+import { roleSeedByCode } from './fixtures/rbac';
 import { createFixedClock, type FixedClock } from './clock';
 import { DEMO_CUSTOMER } from './fixtures/orders';
-import { DEMO_STAFF_BY_ROLE, STAFF_SEEDS } from './fixtures/staff';
+import { DEMO_STAFF_BY_ROLE, demoStaffFromSeed } from './fixtures/staff';
 import { createMockDataClient } from './index';
 import type { MockScenario } from './scenarios';
 import { createSeedStore } from './seed';
@@ -21,16 +23,15 @@ export interface TestHarness {
   asCustomer: (email?: string | null) => void;
 }
 
+/** Permisos de un rol con alcance GLOBAL (para probar funciones puras de la UI sin store). */
+export function grantsForRole(role: StaffRole): Grants {
+  return Object.fromEntries(
+    roleSeedByCode(role).permissions.map((code) => [code, { allBranches: true, branchIds: [] }]),
+  );
+}
+
 export function staffSession(role: StaffRole, userId?: string) {
-  const user = STAFF_SEEDS.find((u) => u.id === (userId ?? DEMO_STAFF_BY_ROLE[role]));
-  if (!user) throw new Error('usuario de prueba');
-  return {
-    userId: user.id,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-    branchId: user.branchId,
-  };
+  return demoStaffFromSeed(userId ?? DEMO_STAFF_BY_ROLE[role]);
 }
 
 export function createHarness(

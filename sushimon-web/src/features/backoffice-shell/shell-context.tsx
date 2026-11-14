@@ -13,8 +13,10 @@ import {
 import { useToast } from '@/components/ui/Toast';
 import { useSimulateIncomingOrder } from '@/features/backoffice/hooks';
 import { useDemoSession } from '@/features/session/demo-session';
+import { useAdminContext } from '@/features/staff/hooks';
 import { useBranches } from '@/features/store/hooks';
-import type { Branch, StaffRole } from '@/lib/data-access/models';
+import type { Branch, StaffPermission, StaffRole } from '@/lib/data-access/models';
+import { can, canSee, type BackofficeScreen, type Grants } from '@/lib/permissions';
 import { errorMessage } from '../bo-orders/error-message';
 
 /**
@@ -32,10 +34,15 @@ export function branchShortName(
 }
 
 export interface ShellApi {
+  /** Rol principal (solo para mostrar). La autorización se decide con `can` (grants). */
   role: StaffRole;
+  /** Permisos con alcance por sucursal (contexto administrativo; cosmético: la API decide). */
+  grants: Grants;
+  can: (permission: StaffPermission, branchId?: string | null) => boolean;
+  canSee: (screen: BackofficeScreen) => boolean;
   /** Sucursal elegida (undefined = todas). Para roles de sucursal siempre es la propia. */
   branchId: string | undefined;
-  /** El usuario solo ve su sucursal (no puede cambiarla). */
+  /** El usuario solo tiene una sucursal autorizada (no puede cambiarla). */
   branchLocked: boolean;
   setBranchId: (id: string | undefined) => void;
   branches: readonly Branch[];
@@ -73,12 +80,29 @@ export function BackofficeShellProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(id);
   }, [ring]);
 
-  const locked = !!staff?.branchId;
-  const branchId = locked ? (staff?.branchId ?? undefined) : pickedBranch;
-  // Solo sucursales operativas (las "próximamente" no reciben pedidos).
+  const adminContext = useAdminContext();
+  // El contexto del servidor manda; la instantánea de la sesión solo cubre hasta que llega.
+  const grants = useMemo<Grants>(
+    () => adminContext.data?.staff.grants ?? staff?.grants ?? {},
+    [adminContext.data, staff?.grants],
+  );
+  const authorized = adminContext.data?.staff.branches ?? staff?.branches;
+  const global = Object.values(grants).some((g) => g.allBranches);
+  const authorizedIds = useMemo(() => new Set((authorized ?? []).map((b) => b.id)), [authorized]);
+  const locked = !global && authorizedIds.size === 1;
+  const lockedBranch = locked ? [...authorizedIds][0] : undefined;
+  const branchId = locked
+    ? lockedBranch
+    : pickedBranch && (global || authorizedIds.has(pickedBranch))
+      ? pickedBranch
+      : undefined;
+  // Solo sucursales operativas (las "próximamente" no reciben pedidos) y autorizadas para el empleado.
   const branches = useMemo(
-    () => (branchesQuery.data ?? []).filter((b) => b.status === 'active'),
-    [branchesQuery.data],
+    () =>
+      (branchesQuery.data ?? []).filter(
+        (b) => b.status === 'active' && (global || authorizedIds.has(b.id)),
+      ),
+    [branchesQuery.data, global, authorizedIds],
   );
 
   const simulateOrder = useCallback(() => {
@@ -96,6 +120,9 @@ export function BackofficeShellProvider({ children }: { children: ReactNode }) {
       staff
         ? {
             role: staff.role,
+            grants,
+            can: (permission, forBranch) => can(grants, permission, forBranch),
+            canSee: (screen) => canSee(grants, screen),
             branchId,
             branchLocked: locked,
             setBranchId: (id) => {
@@ -114,6 +141,7 @@ export function BackofficeShellProvider({ children }: { children: ReactNode }) {
         : null,
     [
       staff,
+      grants,
       branchId,
       locked,
       branches,

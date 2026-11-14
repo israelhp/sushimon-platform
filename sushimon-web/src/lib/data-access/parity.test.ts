@@ -5,6 +5,7 @@ import * as account from '@/services/account';
 import * as admin from '@/services/backoffice-admin';
 import * as bo from '@/services/backoffice-orders';
 import * as orders from '@/services/orders';
+import * as staff from '@/services/staff';
 import * as store from '@/services/store';
 import { ApiError, codeForStatus } from './errors';
 import { createHttpClient } from './http-client';
@@ -198,6 +199,52 @@ describe('paridad mock ↔ http', () => {
       (c) => admin.getReportHistory(c, { from: '2026-11-10' }),
     ];
     expect(await run(steps, p.http)).toEqual(await run(steps, p.mock.client));
+  });
+
+  it('F03: empleados, roles y permisos producen los mismos resultados y errores', async () => {
+    const p = pair();
+    p.asStaff('manager');
+    const steps: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => staff.getAdminContext(c),
+      (c) => staff.listAdminStaff(c, { pageSize: 3, sort: 'email' }),
+      (c) => staff.getAdminStaff(c, 'u5'),
+      (c) => staff.getAdminStaff(c, 'u3'), // 404: fuera de alcance
+      (c) =>
+        staff.createAdminStaff(c, {
+          fullName: 'Nuevo Empleado',
+          email: 'Nuevo@Sushimon.gt',
+          assignments: [{ roleId: 'role-kitchen', branchId: 'sucursal-1' }],
+        }),
+      (c) =>
+        staff.createAdminStaff(c, {
+          fullName: 'Duplicado',
+          email: 'nuevo@sushimon.gt',
+          assignments: [{ roleId: 'role-kitchen', branchId: 'sucursal-1' }],
+        }), // 409
+      (c) =>
+        staff.createAdminStaff(c, {
+          fullName: 'Escalada',
+          email: 'esc@sushimon.gt',
+          assignments: [{ roleId: 'role-admin', branchId: null }],
+        }), // 403
+      (c) => staff.updateAdminStaff(c, 'u5', { fullName: 'Cocina Z4' }),
+      (c) => staff.updateAdminStaff(c, 'u2', { email: 'x@sushimon.gt' }), // 403: cuenta propia
+      (c) => staff.setAdminStaffStatus(c, 'u5', { active: false }), // 400
+      (c) => staff.setAdminStaffStatus(c, 'u5', { active: false, reason: 'Baja' }),
+      (c) => staff.setAdminStaffStatus(c, 'u2', { active: false, reason: 'x' }), // 403
+      (c) =>
+        staff.replaceAdminStaffAssignments(c, 'u9', {
+          assignments: [{ roleId: 'role-staff', branchId: 'sucursal-1' }],
+        }),
+      (c) => staff.listAdminRoles(c),
+      (c) => staff.listAdminPermissions(c),
+      (c) => staff.replaceAdminRolePermissions(c, 'role-kitchen', { permissions: ['orders.read'] }), // 403
+    ];
+    const a = await run(steps, p.mock.client);
+    expect(await run(steps, p.http)).toEqual(a);
+    expect(a.filter((x) => 'error' in x).map((x) => ('error' in x ? x.error.status : 0))).toEqual([
+      404, 409, 403, 403, 400, 403, 403,
+    ]);
   });
 
   it.each(['offline', 'error', 'forbidden', 'request-rejected', 'rider-unavailable'] as const)(

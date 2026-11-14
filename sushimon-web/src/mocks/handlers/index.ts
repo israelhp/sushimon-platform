@@ -6,6 +6,7 @@ import * as bo from './backoffice';
 import * as branches from './branches';
 import * as orders from './orders';
 import * as pub from './public';
+import * as staff from './staff';
 
 /**
  * Tabla de rutas del adaptador mock: las mismas de docs/contracts/planned-endpoints.md
@@ -67,9 +68,18 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'GET /v1/admin/branches/:id': branches.getAdminBranch,
   'PATCH /v1/admin/branches/:id': branches.updateAdminBranch,
   'PATCH /v1/admin/branches/:id/status': branches.updateAdminBranchStatus,
-  'GET /v1/backoffice/users': admin.listUsers,
-  'POST /v1/backoffice/users': admin.createUser,
-  'PATCH /v1/backoffice/users/:id': admin.updateUser,
+  // F03: empleados, roles y permisos (contrato)
+  'GET /v1/admin/me/context': staff.getAdminContext,
+  'GET /v1/admin/staff': staff.listAdminStaff,
+  'POST /v1/admin/staff': staff.createAdminStaff,
+  'GET /v1/admin/staff/:id': staff.getAdminStaff,
+  'PATCH /v1/admin/staff/:id': staff.updateAdminStaff,
+  'PATCH /v1/admin/staff/:id/status': staff.updateAdminStaffStatus,
+  'PUT /v1/admin/staff/:id/assignments': staff.replaceAdminStaffAssignments,
+  'GET /v1/admin/roles': staff.listAdminRoles,
+  'GET /v1/admin/roles/:id': staff.getAdminRole,
+  'PUT /v1/admin/roles/:id/permissions': staff.replaceAdminRolePermissions,
+  'GET /v1/admin/permissions': staff.listAdminPermissions,
   'GET /v1/backoffice/reports/summary': admin.getReportSummary,
   'GET /v1/backoffice/reports/history': admin.getReportHistory,
 

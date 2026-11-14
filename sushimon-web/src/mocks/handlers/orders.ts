@@ -413,7 +413,8 @@ export const demoSimulateOrder: Handler = (req) => {
   const open = req.store.branches.filter((x) => x.status === 'active' && x.isOpen);
   const n = req.store.sequences.order;
   const rng = rngFor(`simulate|${n}`);
-  const branchId = user.branchId ?? b.branchId ?? open[n % Math.max(open.length, 1)]?.id;
+  const ownBranch = user.scope.allBranches ? null : (user.scope.branchIds[0] ?? null);
+  const branchId = ownBranch ?? b.branchId ?? open[n % Math.max(open.length, 1)]?.id;
   const branch = req.store.branches.find((x) => x.id === branchId && x.status === 'active');
   if (!branch) fail(409, 'No hay sucursales abiertas');
   const pool = req.store.products.filter((p) => p.food && availableAt(p, branch.id));

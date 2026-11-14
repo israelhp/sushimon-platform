@@ -1,5 +1,5 @@
-import type { CourierQuote, Order, Rider, StaffRole } from '@/lib/data-access/models';
-import { can } from '@/lib/permissions';
+import type { CourierQuote, Order, Rider } from '@/lib/data-access/models';
+import { can, type Grants } from '@/lib/permissions';
 import { round2 } from './deliveries-view';
 
 /**
@@ -13,10 +13,10 @@ export type DispatchStep = 'choose' | 'loading' | 'quote' | 'own';
 export type DispatchBlock = 'role' | 'pickup' | 'notReady' | 'active' | null;
 
 export function dispatchBlock(
-  order: Pick<Order, 'status' | 'fulfillment' | 'delivery'>,
-  role: StaffRole,
+  order: Pick<Order, 'status' | 'fulfillment' | 'delivery'> & Partial<Pick<Order, 'branchId'>>,
+  grants: Grants,
 ): DispatchBlock {
-  if (!can(role, 'orders.dispatch')) return 'role';
+  if (!can(grants, 'deliveries.assign', order.branchId)) return 'role';
   if (order.fulfillment !== 'delivery') return 'pickup';
   if (order.status !== 'ready') return 'notReady';
   if (order.delivery && order.delivery.status !== 'failed') return 'active';

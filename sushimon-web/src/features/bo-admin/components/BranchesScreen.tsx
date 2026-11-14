@@ -18,7 +18,7 @@ import { useShell } from '@/features/backoffice-shell/shell-context';
 import { isForbidden } from '@/features/bo-orders/error-message';
 import { useBranches } from '@/features/store/hooks';
 import type { AdminBranch, Branch } from '@/lib/data-access/models';
-import { can } from '@/lib/permissions';
+import { canGlobally } from '@/lib/permissions';
 import { cn } from '@/lib/cn';
 import {
   branchStats,
@@ -57,7 +57,7 @@ type Modal =
 export function BranchesScreen() {
   const t = useTranslations('backoffice.branches');
   const tu = useTranslations('ui');
-  const { role } = useShell();
+  const { can, grants } = useShell();
   const [list, setList] = useState<BranchListState>(DEFAULT_BRANCH_LIST);
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState<Modal | null>(null);
@@ -89,7 +89,9 @@ export function BranchesScreen() {
 
   if (isForbidden(branches.error)) return <ForbiddenScreen reason="server" />;
 
-  const canEdit = can(role, 'branches');
+  const canEdit = can('branches.update');
+  // El alta es global (solo con `branches.create` en todas las sucursales); la API lo vuelve a exigir.
+  const canCreate = canGlobally(grants, 'branches.create');
   const setFilter = (patch: Partial<BranchListState>) =>
     setList((s) => ({ ...s, ...patch, page: 1 }));
   const clearFilters = () => {
@@ -125,7 +127,7 @@ export function BranchesScreen() {
           label={t('searchLabel')}
           placeholder={t('searchPlaceholder')}
         />
-        {canEdit ? (
+        {canCreate ? (
           <button
             type="button"
             className="btn btn-primary"

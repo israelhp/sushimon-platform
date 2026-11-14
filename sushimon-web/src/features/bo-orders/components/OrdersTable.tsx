@@ -45,11 +45,11 @@ export function OrdersTable({ orders }: { orders: readonly Order[] }) {
 
 function OrderRow({ order }: { order: Order }) {
   const t = useTranslations('backoffice.orders');
-  const { role, branchById } = useShell();
+  const { grants, branchById } = useShell();
   const detail = useOrderDetail();
   const text = useOrderText();
   const actions = useOrderActions();
-  const action = nextAction(order, role);
+  const action = nextAction(order, grants);
   const column = toBackofficeColumn(order);
 
   return (

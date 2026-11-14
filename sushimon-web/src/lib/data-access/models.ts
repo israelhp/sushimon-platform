@@ -61,6 +61,27 @@ export type StaffRole = S['StaffRole'];
 export type StaffPermission = S['StaffPermission'];
 export type StaffUser = S['StaffUser'];
 export type StaffUserInput = S['StaffUserInput'];
+/** F03 (ADR-0010): empleados, asignaciones rol+sucursal, roles y permisos granulares `modulo.accion`. */
+export type AdminStaff = S['AdminStaff'];
+export type AdminStaffPage = S['AdminStaffPage'];
+export type StaffAssignmentView = S['StaffAssignmentView'];
+export type StaffAssignmentInput = S['StaffAssignmentInput'];
+export type StaffIdentityStatus = S['StaffIdentityStatus'];
+export type CreateStaffRequest = S['CreateStaffRequest'];
+export type UpdateStaffRequest = S['UpdateStaffRequest'];
+export type UpdateStaffStatusRequest = S['UpdateStaffStatusRequest'];
+export type ReplaceStaffAssignmentsRequest = S['ReplaceStaffAssignmentsRequest'];
+export type AdminRole = S['AdminRole'];
+export type AdminRoleList = S['AdminRoleList'];
+export type PermissionRef = S['PermissionRef'];
+export type AdminPermissionModule = S['AdminPermissionModule'];
+export type AdminPermissionCatalog = S['AdminPermissionCatalog'];
+export type ReplaceRolePermissionsRequest = S['ReplaceRolePermissionsRequest'];
+export type GrantScope = S['GrantScope'];
+export type BranchRef = S['BranchRef'];
+export type RoleRef = S['RoleRef'];
+export type AuthStaffContext = S['AuthStaffContext'];
+export type AdminContextResponse = S['AdminContextResponse'];
 export type Customer = S['Customer'];
 export type Address = S['Address'];
 export type AddressInput = S['AddressInput'];
@@ -94,4 +115,9 @@ export const DELIVERY_TIERS = [
   'far',
 ] as const satisfies readonly DeliveryTierId[];
 
-export const STAFF_ROLES = ['admin', 'manager', 'kitchen'] as const satisfies readonly StaffRole[];
+export const STAFF_ROLES = [
+  'admin',
+  'manager',
+  'kitchen',
+  'staff',
+] as const satisfies readonly StaffRole[];

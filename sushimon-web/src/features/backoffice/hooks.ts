@@ -1,24 +1,21 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
-import type { BranchAvailability, PromotionInput, StaffUserInput } from '@/lib/data-access/models';
+import type { BranchAvailability, PromotionInput } from '@/lib/data-access/models';
 import { useDataClient } from '@/lib/data-access/provider';
 import {
   createCategory,
   createProduct,
   createPromotion,
-  createUser,
   getReportHistory,
   getReportSummary,
   listBoCategories,
   listBoProducts,
   listBoPromotions,
-  listUsers,
   setProductAvailability,
   updateCategory,
   updateProduct,
   updatePromotion,
-  updateUser,
   type CategoryInput,
   type ProductInput,
   type ReportFilters,
@@ -237,27 +234,7 @@ export function useSavePromotion() {
   );
 }
 
-// ── Administración ────────────────────────────────────────────────────────────────────────
-
-export function useUsers() {
-  const client = useDataClient();
-  const enabled = useStaffEnabled();
-  return useQuery({
-    queryKey: queryKeys.backoffice.users,
-    queryFn: () => listUsers(client),
-    enabled,
-  });
-}
-
-/** Crear (sin `id`) o editar (con `id`) un usuario interno — admin. */
-export function useSaveUser() {
-  const client = useDataClient();
-  return useInvalidatingMutation(
-    ({ id, input }: { id?: string; input: Partial<StaffUserInput> }) =>
-      id ? updateUser(client, id, input) : createUser(client, input as StaffUserInput),
-    [queryKeys.backoffice.users],
-  );
-}
+// ── Reportes ────────────────────────────────────────────────────────────────────────
 
 export function useReportSummary(filters: ReportFilters = {}) {
   const client = useDataClient();

@@ -14,7 +14,6 @@ import { ForbiddenScreen } from '@/features/backoffice-shell/ForbiddenScreen';
 import { useShell } from '@/features/backoffice-shell/shell-context';
 import { cn } from '@/lib/cn';
 import { BACKOFFICE_COLUMNS, fromBackofficeColumn } from '@/lib/order-status';
-import { can } from '@/lib/permissions';
 import { isForbidden } from '../error-message';
 import {
   countByColumn,
@@ -172,7 +171,7 @@ export function OrdersScreen() {
               {tt('clear')}
             </button>
             <span className="spacer" />
-            {can(shell.role, 'reports') ? (
+            {shell.can('reports.read') ? (
               <Link className="btn sm" href="/backoffice/reportes">
                 <IconHistory />
                 {tt('history')}

@@ -1,9 +1,9 @@
-import type { Branch, StaffUser } from '@/lib/data-access/models';
+import type { Branch } from '@/lib/data-access/models';
 import type { components } from '@sushimon/contracts';
 import { ApiError } from '@/lib/data-access/errors';
 import { branchView, fail, round2 } from '../domain';
 import type { BranchSeed } from '../fixtures/branches';
-import { body, now, oneOf, requireStaff, type Handler, type Req } from './shared';
+import { body, now, oneOf, requireStaff, type Handler, type Req, type StaffActor } from './shared';
 
 /**
  * F07 — Gestión de sucursales (contrato: `/v1/branches`, `/v1/admin/branches`). El mock aplica las mismas reglas que
@@ -64,10 +64,10 @@ export const getPublicBranch: Handler = (req): PublicBranch => {
 // ── Admin ─────────────────────────────────────────────────────────────────────────────────
 
 /** Sucursales dentro del alcance del empleado (null = todas). */
-const inScope = (user: StaffUser, b: BranchSeed) =>
-  user.branchId === null || b.id === user.branchId;
+const inScope = (user: StaffActor, b: BranchSeed) =>
+  user.scope.allBranches || user.scope.branchIds.includes(b.id);
 
-function scopedBranch(req: Req, user: StaffUser): BranchSeed {
+function scopedBranch(req: Req, user: StaffActor): BranchSeed {
   const found = req.store.branches.find((b) => b.id === req.params.id && inScope(user, b));
   // 404: no se distingue "no existe" de "fuera de alcance".
   if (!found) fail(404, 'Sucursal no encontrada');
@@ -80,7 +80,7 @@ const intParam = (raw: string | null, fallback: number) =>
 
 /** GET /v1/admin/branches — filtros q, active, sort, order, page, pageSize. */
 export const listAdminBranches: Handler = (req): S['AdminBranchPage'] => {
-  const user = requireStaff(req, 'branches');
+  const user = requireStaff(req, 'branches.read');
   const problems: string[] = [];
   const q = (req.query.get('q') ?? '').trim().toLowerCase();
   if (q.length > 100) problems.push('q: máximo 100 caracteres');
@@ -125,7 +125,7 @@ export const listAdminBranches: Handler = (req): S['AdminBranchPage'] => {
 
 /** GET /v1/admin/branches/:id */
 export const getAdminBranch: Handler = (req): AdminBranch => {
-  const user = requireStaff(req, 'branches');
+  const user = requireStaff(req, 'branches.read');
   return adminView(scopedBranch(req, user));
 };
 
@@ -193,8 +193,8 @@ const asRaw = (req: Req): Raw => body<Raw>(req) as Raw;
 
 /** POST /v1/admin/branches — alta global (solo personal con alcance a todas las sucursales). */
 export const createAdminBranch: Handler = (req): AdminBranch => {
-  const user = requireStaff(req, 'branches');
-  if (user.branchId !== null) fail(403, 'El alta de sucursales requiere alcance global');
+  const user = requireStaff(req, 'branches.create');
+  if (!user.scope.allBranches) fail(403, 'El alta de sucursales requiere alcance global');
   const raw = asRaw(req);
   const problems: string[] = [];
   rejectUnknown(
@@ -261,7 +261,7 @@ export const createAdminBranch: Handler = (req): AdminBranch => {
 
 /** PATCH /v1/admin/branches/:id — nombre, teléfono, dirección y coordenadas. */
 export const updateAdminBranch: Handler = (req): AdminBranch => {
-  const user = requireStaff(req, 'branches');
+  const user = requireStaff(req, 'branches.update');
   const current = scopedBranch(req, user);
   const raw = asRaw(req);
   const problems: string[] = [];
@@ -292,7 +292,7 @@ export const updateAdminBranch: Handler = (req): AdminBranch => {
 
 /** PATCH /v1/admin/branches/:id/status — estado ADMINISTRATIVO; desactivar exige motivo; idempotente. */
 export const updateAdminBranchStatus: Handler = (req): AdminBranch => {
-  const user = requireStaff(req, 'branches');
+  const user = requireStaff(req, 'branches.update');
   const current = scopedBranch(req, user);
   const raw = asRaw(req);
   const problems: string[] = [];
@@ -324,7 +324,7 @@ const HM = /^\d{2}:\d{2}$/;
 
 /** PATCH /v1/demo/branches/:id/operations — `isOpen`, zona, horario, radio y cobertura SIMULADOS. */
 export const updateBranchOperations: Handler = (req): Branch => {
-  requireStaff(req, 'branches');
+  requireStaff(req, 'branches.update');
   const b = body<Branch>(req);
   const current = req.store.branches.find((x) => x.id === req.params.id);
   if (!current) fail(404, 'Sucursal no encontrada');

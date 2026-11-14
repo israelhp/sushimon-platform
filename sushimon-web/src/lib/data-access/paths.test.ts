@@ -26,6 +26,19 @@ describe('paths', () => {
     );
   });
 
+  it('F03: rutas de empleados, roles y permisos del contrato (sin /v1/backoffice/users)', () => {
+    expect(paths.adminStaff()).toBe('/v1/admin/staff');
+    expect(paths.adminStaffMember('u 1')).toBe('/v1/admin/staff/u%201');
+    expect(paths.adminStaffStatus('u1')).toBe('/v1/admin/staff/u1/status');
+    expect(paths.adminStaffAssignments('u1')).toBe('/v1/admin/staff/u1/assignments');
+    expect(paths.adminRoles()).toBe('/v1/admin/roles');
+    expect(paths.adminRole('r1')).toBe('/v1/admin/roles/r1');
+    expect(paths.adminRolePermissions('r1')).toBe('/v1/admin/roles/r1/permissions');
+    expect(paths.adminPermissions()).toBe('/v1/admin/permissions');
+    expect(paths.adminContext()).toBe('/v1/admin/me/context');
+    expect(Object.keys(paths)).not.toContain('users');
+  });
+
   it('cada ruta de paths tiene handler mock (paridad de superficie)', () => {
     const patterns = Object.keys(mockRoutes).map((k) => {
       const pattern = k.split(' ')[1] ?? '';
@@ -46,7 +59,7 @@ describe('paths', () => {
       'utf8',
     );
     // Rutas del documento que el contrato real (F07) reemplazó: ahora son `/v1/admin/branches[...]`.
-    const superseded = new Set(['/v1/backoffice/branches']);
+    const superseded = new Set(['/v1/backoffice/branches', '/v1/backoffice/users']);
     const documented = [...doc.matchAll(/`(\/v1\/[^`?\s[]+)/g)]
       .map((m) => (m[1] ?? '').replace(/\{(\w+)\}/g, 'X'))
       .filter((path) => !superseded.has(path));

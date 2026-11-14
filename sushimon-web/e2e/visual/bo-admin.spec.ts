@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { VIEWPORTS, capture, compareAndAttach, preparePage } from './harness';
+import { demoStaffFromSeed } from '../../src/mocks/fixtures/staff';
 
 /**
  * Fidelidad de Sucursales, Usuarios (+ modal) y Reportes (resumen e historial) frente a las capturas del
@@ -14,13 +15,8 @@ const FROZEN_AT = process.env.DEMO_NOW ?? '2026-11-11T13:00:00-06:00';
 const BASE = process.env.BASE_URL ?? `http://localhost:${process.env.E2E_PORT ?? 3100}`;
 const MAX_RATIO = Number(process.env.VISUAL_MAX_RATIO ?? 0.12);
 
-const ADMIN = {
-  userId: 'u1',
-  email: 'ana.perez@sushimon.gt',
-  name: 'Ana Lucía Pérez',
-  role: 'admin',
-  branchId: null,
-} as const;
+/** Sesión de demostración del administrador, con los `grants` que calcula el mock (F03). */
+const ADMIN = demoStaffFromSeed('u1');
 
 interface Screen {
   /** Prefijo de la captura del prototipo (`{reference}-{viewport}-{theme}.png`). */
@@ -36,7 +32,7 @@ const visible = (page: Page, role: 'button' | 'tab', name: string | RegExp, exac
   page.getByRole(role, { name, exact }).filter({ visible: true }).first();
 
 const branches = (p: Page) => p.getByText(/sucursales configuradas/).waitFor({ timeout: 90_000 });
-const users = (p: Page) => p.getByText(/\d+ usuarios · \d+ activos/).waitFor({ timeout: 90_000 });
+const users = (p: Page) => p.getByText(/^\d+ usuarios?$/).waitFor({ timeout: 90_000 });
 const reports = (p: Page) =>
   p.getByRole('img', { name: /Pedidos por día y sucursal/ }).waitFor({ timeout: 90_000 });
 

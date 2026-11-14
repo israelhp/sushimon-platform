@@ -10,7 +10,6 @@ import { renderBackoffice } from '@/test/backoffice-providers';
 import { resetNavigationMock } from '@/test/next-navigation-mock';
 import { BranchesScreen } from './components/BranchesScreen';
 import { ReportsScreen } from './components/ReportsScreen';
-import { UsersScreen } from './components/UsersScreen';
 import { historyTotals } from './reports-view';
 
 vi.mock('next/navigation', async () => await import('@/test/next-navigation-mock'));
@@ -18,18 +17,11 @@ vi.mock('next/navigation', async () => await import('@/test/next-navigation-mock
 beforeEach(() => resetNavigationMock('/backoffice/sucursales'));
 
 const renderScreen = (
-  screenSlug: 'sucursales' | 'usuarios' | 'reportes',
+  screenSlug: 'sucursales' | 'reportes',
   role: StaffRole = 'admin',
   scenario: MockScenario = 'default',
 ) => {
-  const body =
-    screenSlug === 'sucursales' ? (
-      <BranchesScreen />
-    ) : screenSlug === 'usuarios' ? (
-      <UsersScreen />
-    ) : (
-      <ReportsScreen />
-    );
+  const body = screenSlug === 'sucursales' ? <BranchesScreen /> : <ReportsScreen />;
   return renderBackoffice(
     <BackofficeShell>
       <ScreenGuard screen={screenSlug}>{body}</ScreenGuard>
@@ -273,115 +265,19 @@ describe('sucursales', () => {
     expect(await screen.findByText('No tienes permiso para ver esta pantalla')).toBeVisible();
   });
 
-  it('el encargado no ve la pantalla', async () => {
+  it('el encargado ve solo su sucursal en modo lectura (sin alta ni edición)', async () => {
     await renderScreen('sucursales', 'manager');
+    expect(await screen.findByText('1 sucursal')).toBeVisible();
+    expect(screen.getByText('Sucursal 1', { selector: '.cname' })).toBeVisible();
+    expect(screen.queryByText('Sucursal 2', { selector: '.cname' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Nueva sucursal/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Editar a/ })).toBeNull();
+  });
+
+  it('cocina no ve la pantalla', async () => {
+    await renderScreen('sucursales', 'kitchen');
     expect(await screen.findByText('No tienes permiso para ver esta pantalla')).toBeVisible();
     expect(screen.queryByText('Nueva sucursal')).toBeNull();
-  });
-});
-
-describe('usuarios', () => {
-  it('lista los 8 usuarios con su rol y estado', async () => {
-    await renderScreen('usuarios');
-    expect(await screen.findByText('8 usuarios · 7 activos')).toBeVisible();
-    const table = screen.getByRole('table', { name: 'Usuarios internos' });
-    expect(within(table).getAllByRole('switch')).toHaveLength(8);
-    expect(within(table).getByText('Pedro Xicará')).toBeVisible();
-    expect(screen.getByRole('switch', { name: 'Usuario activo: Pedro Xicará' })).toHaveAttribute(
-      'aria-checked',
-      'false',
-    );
-    expect(screen.getAllByText('Administrador general').length).toBeGreaterThan(0);
-  });
-
-  it('busca por nombre o correo y muestra el estado vacío', async () => {
-    const user = userEvent.setup();
-    await renderScreen('usuarios');
-    await screen.findByText('8 usuarios · 7 activos');
-    await user.type(screen.getByRole('searchbox', { name: 'Buscar usuarios' }), 'cocina');
-    const table = screen.getByRole('table', { name: 'Usuarios internos' });
-    expect(within(table).getAllByRole('switch')).toHaveLength(3);
-    await user.clear(screen.getByRole('searchbox', { name: 'Buscar usuarios' }));
-    await user.type(screen.getByRole('searchbox', { name: 'Buscar usuarios' }), 'zzz');
-    expect(await screen.findByText('Ningún usuario coincide con la búsqueda.')).toBeVisible();
-  });
-
-  it('el modal valida nombre y correo, enfoca el primer error y no envía', async () => {
-    const user = userEvent.setup();
-    await renderScreen('usuarios');
-    await user.click(await screen.findByRole('button', { name: /Nuevo usuario/ }));
-    const dialog = await screen.findByRole('dialog', { name: 'Nuevo usuario' });
-    await user.click(within(dialog).getByRole('button', { name: 'Guardar usuario' }));
-    const name = within(dialog).getByLabelText('Nombre completo');
-    expect(name).toHaveFocus();
-    expect(within(dialog).getByRole('alert')).toHaveTextContent(
-      'Completa el nombre y un correo válido.',
-    );
-    expect(name).toHaveAccessibleDescription('Completa el nombre y un correo válido.');
-
-    await user.type(name, 'Lucía Prueba');
-    const email = within(dialog).getByLabelText('Correo');
-    await user.type(email, 'sin-arroba');
-    await user.click(within(dialog).getByRole('button', { name: 'Guardar usuario' }));
-    expect(email).toHaveFocus();
-    expect(email).toHaveAttribute('aria-invalid', 'true');
-    expect(name).not.toHaveAttribute('aria-invalid');
-  });
-
-  it('crea un usuario (encargado de una sucursal) y actualiza la lista', async () => {
-    const user = userEvent.setup();
-    await renderScreen('usuarios');
-    await user.click(await screen.findByRole('button', { name: /Nuevo usuario/ }));
-    const dialog = await screen.findByRole('dialog', { name: 'Nuevo usuario' });
-    await user.type(within(dialog).getByLabelText('Nombre completo'), 'Lucía Prueba');
-    await user.type(within(dialog).getByLabelText('Correo'), 'lucia.prueba@sushimon.gt');
-    await user.click(within(dialog).getByRole('button', { name: 'Sucursal 2' }));
-    await user.click(within(dialog).getByRole('button', { name: 'Guardar usuario' }));
-
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(await screen.findByText('9 usuarios · 8 activos')).toBeVisible();
-    expect(screen.getByText('Lucía Prueba')).toBeVisible();
-    expect(screen.getByText(/invitación por correo simulada/)).toBeVisible();
-  });
-
-  it('cambiar el rol a administrador fija la sucursal en "Todas" y deshabilita las demás', async () => {
-    const user = userEvent.setup();
-    await renderScreen('usuarios');
-    await user.click(await screen.findByRole('button', { name: /Nuevo usuario/ }));
-    const dialog = await screen.findByRole('dialog', { name: 'Nuevo usuario' });
-    await user.click(within(dialog).getByRole('button', { name: 'Administrador general' }));
-    expect(within(dialog).getByRole('button', { name: 'Todas' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    expect(within(dialog).getByRole('button', { name: 'Sucursal 1' })).toBeDisabled();
-    expect(within(dialog).getByRole('checkbox', { name: 'Gestionar usuarios' })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
-    await user.click(within(dialog).getByRole('button', { name: 'Cocina' }));
-    expect(within(dialog).getByRole('button', { name: 'Todas' })).toBeDisabled();
-    expect(within(dialog).getByRole('checkbox', { name: 'Gestionar usuarios' })).toHaveAttribute(
-      'aria-checked',
-      'false',
-    );
-  });
-
-  it('el servidor impide desactivarse a uno mismo y la UI lo informa', async () => {
-    const user = userEvent.setup();
-    await renderScreen('usuarios');
-    await user.click(await screen.findByRole('button', { name: 'Editar a Ana Lucía Pérez' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Editar usuario' });
-    expect(within(dialog).getByText(/Es tu propia cuenta/)).toBeVisible();
-    await user.click(within(dialog).getByRole('button', { name: 'Cocina' }));
-    await user.click(within(dialog).getByRole('button', { name: 'Guardar usuario' }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(/No puedes desactivarte/);
-  });
-
-  it('el encargado no accede a Usuarios', async () => {
-    await renderScreen('usuarios', 'manager');
-    expect(await screen.findByText('No tienes permiso para ver esta pantalla')).toBeVisible();
-    expect(screen.queryByRole('button', { name: /Nuevo usuario/ })).toBeNull();
   });
 });
 
