@@ -58,9 +58,12 @@ export async function cleanupTestData(
       await c.query(`DELETE FROM app.staff_users WHERE email LIKE '%@sushimon.test'`);
       await c.query('DELETE FROM app.customers WHERE auth_user_id = ANY($1::uuid[])', [authIds]);
       await c.query('DELETE FROM app.branches WHERE id = ANY($1::uuid[])', [branchIds]);
-      await c.query('DELETE FROM auth.users WHERE id = ANY($1::uuid[]) AND email IS NULL', [
-        authIds,
-      ]);
+      // Supabase real: solo filas sin correo (las de la prueba). Stub de PostgreSQL plano: no tiene columna email.
+      const realAuth = await hasRealSupabaseAuth(c);
+      await c.query(
+        `DELETE FROM auth.users WHERE id = ANY($1::uuid[])${realAuth ? ' AND email IS NULL' : ''}`,
+        [authIds],
+      );
       await c.query('COMMIT');
     } catch (error) {
       await c.query('ROLLBACK');
