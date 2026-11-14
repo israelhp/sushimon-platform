@@ -225,7 +225,7 @@ export function UsersScreen() {
           aria-label={t('orderToggle', { order: orderText })}
           onClick={() => setFilter({ order: list.order === 'asc' ? 'desc' : 'asc' })}
         >
-          {list.order === 'asc' ? '↑' : '↓'} {orderText}
+          <span aria-hidden="true">{list.order === 'asc' ? '↑' : '↓'}</span> {orderText}
         </button>
       </div>
 

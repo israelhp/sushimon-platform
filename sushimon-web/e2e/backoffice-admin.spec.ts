@@ -167,7 +167,7 @@ test('el modal Usuario abierto no tiene violaciones graves de accesibilidad', as
   await page.getByRole('button', { name: /Nuevo usuario/ }).click();
   const dialog = page.getByRole('dialog', { name: 'Nuevo usuario' });
   await dialog.getByRole('button', { name: 'Guardar usuario' }).click();
-  await expect(dialog.getByRole('alert')).toBeVisible();
+  await expect(dialog.getByRole('alert').first()).toBeVisible();
   const results = await new AxeBuilder({ page })
     .include('[role="dialog"]')
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

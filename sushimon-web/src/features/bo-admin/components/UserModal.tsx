@@ -163,7 +163,7 @@ export function UserModal({ staff, roles, isSelf = false, onClose }: UserModalPr
               id={`${formId}-name-error`}
               className="xs"
               role="alert"
-              style={{ color: 'var(--bo-red)', fontWeight: 700 }}
+              style={{ color: 'var(--bo-red-text)', fontWeight: 700 }}
             >
               {errors.fullName}
             </span>
@@ -193,7 +193,7 @@ export function UserModal({ staff, roles, isSelf = false, onClose }: UserModalPr
               id={`${formId}-email-error`}
               className="xs"
               role="alert"
-              style={{ color: 'var(--bo-red)', fontWeight: 700 }}
+              style={{ color: 'var(--bo-red-text)', fontWeight: 700 }}
             >
               {errors.email}
             </span>

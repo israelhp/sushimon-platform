@@ -131,7 +131,7 @@ export function AssignmentsEditor({
                   id={errId}
                   className="xs"
                   role="alert"
-                  style={{ color: 'var(--bo-red)', fontWeight: 700 }}
+                  style={{ color: 'var(--bo-red-text)', fontWeight: 700 }}
                 >
                   {rowError}
                 </span>
@@ -141,7 +141,7 @@ export function AssignmentsEditor({
         })}
       </ul>
       {errors?.assignments ? (
-        <span className="xs" role="alert" style={{ color: 'var(--bo-red)', fontWeight: 700 }}>
+        <span className="xs" role="alert" style={{ color: 'var(--bo-red-text)', fontWeight: 700 }}>
           {errors.assignments}
         </span>
       ) : null}

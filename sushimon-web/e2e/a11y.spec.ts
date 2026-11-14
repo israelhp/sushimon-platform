@@ -239,7 +239,7 @@ export const A11Y_ROUTES: RouteCase[] = [
       await page.getByRole('button', { name: /Nuevo usuario/ }).click();
       await page.getByRole('dialog', { name: 'Nuevo usuario' }).waitFor();
       await page.getByRole('button', { name: 'Guardar usuario' }).click();
-      await page.getByRole('dialog').getByRole('alert').waitFor();
+      await page.getByRole('dialog').getByRole('alert').first().waitFor();
     },
   },
   { path: '/backoffice/reportes', ready: { role: 'heading', name: 'Reportes' }, staff: 'admin' },

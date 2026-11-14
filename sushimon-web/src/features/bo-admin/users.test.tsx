@@ -115,7 +115,7 @@ describe('Usuarios · lista', () => {
     await user.click(screen.getByRole('button', { name: 'Siguiente' }));
     expect(await screen.findByText('Página 2 de 2')).toBeVisible();
     expect(await within(table()).findByText('Valeria Ixcoy')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: /Cambiar el orden/ }));
+    await user.click(screen.getByRole('button', { name: /cambiar el orden/i }));
     expect(await screen.findByText('Página 1 de 2')).toBeVisible();
     expect(await within(table()).findByText('Valeria Ixcoy')).toBeVisible();
   });

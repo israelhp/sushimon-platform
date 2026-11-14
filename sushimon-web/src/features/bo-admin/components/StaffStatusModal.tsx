@@ -112,7 +112,7 @@ export function StaffStatusModal({ staff, onClose }: { staff: AdminStaff; onClos
               id={errId}
               className="xs"
               role="alert"
-              style={{ color: 'var(--bo-red)', fontWeight: 700 }}
+              style={{ color: 'var(--bo-red-text)', fontWeight: 700 }}
             >
               {reasonError}
             </span>
