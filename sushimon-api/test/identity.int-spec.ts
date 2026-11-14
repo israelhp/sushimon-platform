@@ -25,6 +25,7 @@ function principal(over: Partial<Principal> = {}): Principal {
     googleOAuth: true,
     aal: 'aal1',
     displayName: 'Persona Prueba',
+    avatarUrl: null,
     ...over,
   };
 }

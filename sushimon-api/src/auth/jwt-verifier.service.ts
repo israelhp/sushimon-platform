@@ -143,5 +143,6 @@ function toPrincipal(payload: JWTPayload): Principal {
     aal,
     // Solo dato inicial para mostrar: se limpia de caracteres de control y se acota.
     displayName: name ? name.replace(/\p{Cc}/gu, '').slice(0, 120) || null : null,
+    avatarUrl: str(userMeta['avatar_url']) ?? str(userMeta['picture']),
   };
 }

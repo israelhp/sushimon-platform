@@ -19,6 +19,8 @@ export interface Principal {
   aal: 'aal1' | 'aal2';
   /** Nombre para mostrar (user_metadata es editable por el usuario: solo sirve de dato inicial). */
   displayName: string | null;
+  /** Imagen de perfil cruda de user_metadata (no confiable: se valida antes de exponerla; ver customers). */
+  avatarUrl: string | null;
 }
 
 declare global {
