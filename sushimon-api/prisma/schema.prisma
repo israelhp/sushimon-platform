@@ -47,15 +47,25 @@ model Customer {
 }
 
 model StaffUser {
-  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// NULL = empleado preregistrado que aún no inició sesión (ADR-0009). Se vincula una sola vez.
-  authUserId  String?           @unique @map("auth_user_id") @db.Uuid
-  fullName    String            @map("full_name")
+  authUserId   String?           @unique @map("auth_user_id") @db.Uuid
+  fullName     String            @map("full_name")
   /// Siempre en minúsculas (CHECK en la migración).
-  email       String            @unique
-  active      Boolean           @default(true)
-  assignments StaffAssignment[]
+  email        String            @unique
+  active       Boolean           @default(true)
+  /// Alta del registro (0005). Filas previas a F03: fecha de la migración.
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// Momento del vínculo con Auth (0005). NULL en filas vinculadas antes de F03 (dato desconocido). CHECK: requiere authUserId.
+  linkedAt     DateTime?         @map("linked_at") @db.Timestamptz(6)
+  /// Quién preautorizó (0005). NULL = proceso manual/bootstrap/anterior a F03; ON DELETE SET NULL.
+  createdBy    String?           @map("created_by") @db.Uuid
+  creator      StaffUser?        @relation("StaffCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  createdStaff StaffUser[]       @relation("StaffCreatedBy")
+  assignments  StaffAssignment[]
 
+  @@index([createdBy], map: "staff_users_created_by_idx")
+  @@index([createdAt(sort: Desc)], map: "staff_users_created_at_idx")
   @@map("staff_users")
   @@schema("app")
 }
@@ -64,6 +74,8 @@ model Role {
   id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code        String            @unique
   name        String
+  /// Rol del sistema (0005): solo `admin`; sus permisos no son editables por la API.
+  isSystem    Boolean           @default(false) @map("is_system")
   permissions RolePermission[]
   assignments StaffAssignment[]
 
@@ -88,6 +100,7 @@ model RolePermission {
   permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   @@id([roleId, permissionId])
+  @@index([permissionId], map: "role_permissions_permission_id_idx")
   @@map("role_permissions")
   @@schema("app")
 }

@@ -37,3 +37,14 @@ desde el agente; las propuestas pasan por ADR + revisión humana.
   `VALIDATE CONSTRAINT`). `audit_events.actor_id` no tiene FK a `staff_users` (el historial no debe bloquear ni
   perderse con el empleado); `branch_id` es `ON DELETE RESTRICT`. Brecha conocida: `audit_events` no es
   append-only a nivel BD (sin trigger que impida UPDATE/DELETE); pendiente para F36.
+- `0005_staff_rbac` (F03, ADR-0010, **propuesta sin aplicar; requiere aprobación humana**): añade `roles.is_system`
+  (solo `admin`), `staff_users.created_at/linked_at/created_by` (+ CHECK `linked_at` requiere `auth_user_id`), el rol
+  `staff`, 43 permisos `modulo.accion`, remapea `role_permissions` desde los gruesos y **borra 9 filas** de
+  `permissions` (`orders.accept` se conserva: está en el catálogo nuevo; el ADR habla de 10). Aborta con `RAISE` si hay
+  asignaciones `branch_id NULL` con rol distinto de `admin`, o `admin` con sucursal, o si el remapeo queda incompleto.
+  Trigger `staff_assignments_admin_global_guard` impone «branch_id NULL <=> admin». Índices: `staff_assignments(branch_id)
+WHERE active`, `role_permissions(permission_id)`, `lower(full_name)`, `created_by`, `created_at`. No toca `audit_events`
+  (sigue append-only por 0004). Impacto: filas previas de `staff_users` reciben `created_at = now()` y `linked_at` NULL.
+  Orden: aplicar 0005 y desplegar la API de F03 juntas (la API anterior consulta permisos gruesos que dejan de existir),
+  y **antes** de `staff:bootstrap`. Probar antes contra una copia desechable. Reversión manual descrita en el encabezado
+  del SQL.
