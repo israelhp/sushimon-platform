@@ -11,6 +11,6 @@
 - [x] T009 Pruebas web: estados, servicio MFA, pantallas, proxy
 - [x] T010 Docs: `docs/security/mfa.md`, `auth.md`, CLAUDE.md
 - [x] T020 Prueba manual real (Supabase de pruebas + Google + app TOTP, 2026-11-14): enrolar, verificar al reingresar, código incorrecto con reintento, cuenta no autorizada → access-denied, y `403 insufficient_aal` al enrolar un 2.º factor en aal1
-- [ ] T020b Prueba manual pendiente: URL directa del backoffice en aal1 y ausencia de bucles/parpadeo
+- [x] T020b Prueba manual (2026-11-14): URL directa del backoffice en aal1 redirige a verify sin mostrar el panel; sin bucles ni parpadeo
 - [ ] T021 E2E de navegador del flujo MFA contra Supabase local/cloud de pruebas
 - [ ] T022 (F03) Recuperación administrativa de MFA con auditoría y revocación de sesiones

@@ -1,8 +1,8 @@
 # MFA TOTP del backoffice (F02)
 
 Estado: **implementada y verificada manualmente** (2026-11-14) contra Supabase de pruebas con Google y app TOTP: enrolar,
-verificar al reingresar, código incorrecto con reintento, cuenta no autorizada. **Sin confirmar aún**: acceso directo por URL en
-aal1 y ausencia de bucles (T020b). Pruebas automáticas con JWT ES256 firmados y Supabase simulado.
+verificar al reingresar, código incorrecto con reintento, cuenta no autorizada, acceso directo por URL en aal1
+(redirige a verify) y ausencia de bucles/parpadeo. Pruebas automáticas con JWT ES256 firmados y Supabase simulado.
 
 ## Principio
 

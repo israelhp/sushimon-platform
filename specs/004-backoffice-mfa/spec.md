@@ -2,7 +2,7 @@
 
 **Rama**: `feature/F02-backoffice-mfa` (apilada sobre `feature/f01-auth-supabase`: F01 aún no está en `develop`)
 **Prioridad**: P0 · **Dependencias**: F01 · **Estado**: `INTEGRATED` (API y web probadas con dobles y, manualmente, contra Supabase + Google reales:
-enrolar, verificar, error y reintento, cuenta no autorizada). Falta confirmar acceso directo por URL en aal1 y bucles (T020b); sin E2E automatizado.
+enrolar, verificar, error y reintento, cuenta no autorizada). Acceso directo por URL en aal1 y ausencia de bucles/parpadeo confirmados a mano (T020b); sin E2E automatizado.
 
 ## Historias
 
