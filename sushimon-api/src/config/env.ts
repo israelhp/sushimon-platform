@@ -46,6 +46,19 @@ export const envSchema = z
     /** Saltos de proxy de confianza (p. ej. 1 detrás de Vercel/Render) para obtener la IP real. */
     TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
 
+    /** URL base del proyecto Supabase (p. ej. https://<ref>.supabase.co). */
+    SUPABASE_URL: optional(z.url()),
+    /** Audiencia esperada del JWT. Supabase usa `authenticated`. */
+    SUPABASE_JWT_AUDIENCE: z.string().min(1).default('authenticated'),
+    /** Emisor esperado. Por defecto `${SUPABASE_URL}/auth/v1`. */
+    SUPABASE_JWT_ISSUER: optional(z.string().min(1)),
+    /** JWKS con las claves públicas de firma. Por defecto `${SUPABASE_URL}/auth/v1/.well-known/jwks.json`. */
+    SUPABASE_JWKS_URL: optional(z.url()),
+    /** Secreto HS256 heredado (proyectos sin claves asimétricas). Solo servidor; si se omite, HS256 se rechaza. */
+    SUPABASE_JWT_SECRET: optional(z.string().min(32, 'mínimo 32 caracteres')),
+    /** Tolerancia de reloj al validar exp/nbf (segundos). */
+    AUTH_CLOCK_TOLERANCE_S: z.coerce.number().int().min(0).max(60).default(5),
+
     /** Token de `GET /v1/health/ready` (cabecera `x-health-token`). Obligatorio en producción. */
     HEALTH_READY_TOKEN: optional(z.string().min(16, 'mínimo 16 caracteres')),
   })
@@ -63,6 +76,13 @@ export const envSchema = z
         code: 'custom',
         path: ['HEALTH_READY_TOKEN'],
         message: 'obligatorio en producción',
+      });
+    }
+    if (!env.SUPABASE_URL && !(env.SUPABASE_JWT_ISSUER && env.SUPABASE_JWKS_URL)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['SUPABASE_URL'],
+        message: 'obligatoria en producción (o SUPABASE_JWT_ISSUER + SUPABASE_JWKS_URL)',
       });
     }
     if (env.CORS_ORIGINS.includes('*')) {

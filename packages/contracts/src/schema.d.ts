@@ -37,10 +37,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Contexto de identidad y autorización del token actual
+         * @description AUTENTICACIÓN ≠ AUTORIZACIÓN. Verifica el JWT de Supabase Auth (firma, emisor, audiencia,
+         *     expiración y sujeto) y devuelve lo que el SERVIDOR sabe de esa identidad: si es personal activo,
+         *     con qué roles, permisos y alcance de sucursal. La web lo usa solo para mostrar/ocultar UI; cada
+         *     endpoint vuelve a autorizar. En el primer acceso de un empleado preregistrado (`staff_users` sin
+         *     `auth_user_id`) vincula la identidad por correo verificado con Google.
+         */
+        get: operations["getAuthContext"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Perfil del cliente autenticado
+         * @description Devuelve el perfil de cliente (`app.customers`) del `auth.users.id` del token. Si todavía no existe
+         *     lo crea de forma idempotente a partir de las claims (el mismo UUID puede ser también empleado).
+         */
+        get: operations["getMe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AuthStaffAssignment: {
+            role: components["schemas"]["StaffRole"];
+            /**
+             * Format: uuid
+             * @description null = todas las sucursales.
+             */
+            branchId: string | null;
+        };
+        AuthStaffContext: {
+            /** Format: uuid */
+            staffId: string;
+            fullName: string;
+            assignments: components["schemas"]["AuthStaffAssignment"][];
+            /** @description Unión de permisos de los roles con asignación activa. */
+            permissions: components["schemas"]["StaffPermission"][];
+            /** @description true si alguna asignación activa no está limitada a una sucursal. */
+            allBranches: boolean;
+            branchIds: string[];
+        };
+        AuthContextResponse: {
+            /**
+             * Format: uuid
+             * @description auth.users.id (claim sub).
+             */
+            authUserId: string;
+            email: string | null;
+            /** @description Proveedor de identidad (p. ej. google). */
+            provider: string | null;
+            /** @description Existe un perfil de cliente para esta identidad. */
+            isCustomer: boolean;
+            /** @description null si no es personal activo con alguna asignación activa. */
+            staff: components["schemas"]["AuthStaffContext"] | null;
+            /** @description Indicador para la UI; el acceso real lo decide cada endpoint. */
+            backofficeAccess: boolean;
+        };
+        CustomerProfile: {
+            /** Format: uuid */
+            id: string;
+            fullName: string;
+            email: string | null;
+            phone: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        MeResponse: {
+            /** Format: uuid */
+            authUserId: string;
+            email: string | null;
+            customer: components["schemas"]["CustomerProfile"];
+            isStaff: boolean;
+        };
         ReadyResponse: {
             /** @enum {string} */
             status: "ok";
@@ -683,6 +779,64 @@ export interface operations {
             };
             /** @description Base de datos o esquema `app` no disponible */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAuthContext: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Contexto de la identidad */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthContextResponse"];
+                };
+            };
+            /** @description Token ausente, inválido, expirado o con emisor/audiencia incorrectos */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Perfil del cliente */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

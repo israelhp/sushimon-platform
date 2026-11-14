@@ -1,6 +1,7 @@
 # Contrato HTTP canónico de Sushi Mon (Contract First).
 # Se diseña ANTES de implementar cada slice y se verifica contra NestJS con `pnpm contracts:check`.
-# Estado: F00 (health y readiness). No se agregan endpoints ficticios.
+# Estado: F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me). No se agregan endpoints ficticios.
+# Seguridad por defecto: Bearer JWT de Supabase Auth en todo salvo operaciones con `security: []` (health).
 # Transversal a TODAS las respuestas: cabecera `X-Request-Id`; errores con `ErrorResponse`; 429 cuando
 # se excede el rate limit global (no se repite por operación).
 openapi: 3.0.3
@@ -17,6 +18,7 @@ paths:
       operationId: getHealth
       summary: Liveness probe
       tags: [health]
+      security: []
       responses:
         '200':
           description: OK
@@ -51,8 +53,122 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /v1/auth/context:
+    get:
+      operationId: getAuthContext
+      summary: Contexto de identidad y autorización del token actual
+      description: |
+        AUTENTICACIÓN ≠ AUTORIZACIÓN. Verifica el JWT de Supabase Auth (firma, emisor, audiencia,
+        expiración y sujeto) y devuelve lo que el SERVIDOR sabe de esa identidad: si es personal activo,
+        con qué roles, permisos y alcance de sucursal. La web lo usa solo para mostrar/ocultar UI; cada
+        endpoint vuelve a autorizar. En el primer acceso de un empleado preregistrado (`staff_users` sin
+        `auth_user_id`) vincula la identidad por correo verificado con Google.
+      tags: [auth]
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Contexto de la identidad
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthContextResponse'
+        '401':
+          description: Token ausente, inválido, expirado o con emisor/audiencia incorrectos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/me:
+    get:
+      operationId: getMe
+      summary: Perfil del cliente autenticado
+      description: |
+        Devuelve el perfil de cliente (`app.customers`) del `auth.users.id` del token. Si todavía no existe
+        lo crea de forma idempotente a partir de las claims (el mismo UUID puede ser también empleado).
+      tags: [me]
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Perfil del cliente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
+    AuthStaffAssignment:
+      type: object
+      required: [role, branchId]
+      properties:
+        role: { $ref: '#/components/schemas/StaffRole' }
+        branchId:
+          type: string
+          format: uuid
+          nullable: true
+          description: null = todas las sucursales.
+    AuthStaffContext:
+      type: object
+      required: [staffId, fullName, assignments, permissions, allBranches, branchIds]
+      properties:
+        staffId: { type: string, format: uuid }
+        fullName: { type: string }
+        assignments:
+          type: array
+          items: { $ref: '#/components/schemas/AuthStaffAssignment' }
+        permissions:
+          type: array
+          description: Unión de permisos de los roles con asignación activa.
+          items: { $ref: '#/components/schemas/StaffPermission' }
+        allBranches:
+          type: boolean
+          description: true si alguna asignación activa no está limitada a una sucursal.
+        branchIds:
+          type: array
+          items: { type: string, format: uuid }
+    AuthContextResponse:
+      type: object
+      required: [authUserId, email, provider, isCustomer, staff, backofficeAccess]
+      properties:
+        authUserId: { type: string, format: uuid, description: 'auth.users.id (claim sub).' }
+        email: { type: string, nullable: true }
+        provider:
+          { type: string, nullable: true, description: 'Proveedor de identidad (p. ej. google).' }
+        isCustomer:
+          type: boolean
+          description: Existe un perfil de cliente para esta identidad.
+        staff:
+          allOf:
+            - $ref: '#/components/schemas/AuthStaffContext'
+          nullable: true
+          description: null si no es personal activo con alguna asignación activa.
+        backofficeAccess:
+          type: boolean
+          description: Indicador para la UI; el acceso real lo decide cada endpoint.
+    CustomerProfile:
+      type: object
+      required: [id, fullName, email, phone, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        fullName: { type: string }
+        email: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    MeResponse:
+      type: object
+      required: [authUserId, email, customer, isStaff]
+      properties:
+        authUserId: { type: string, format: uuid }
+        email: { type: string, nullable: true }
+        customer: { $ref: '#/components/schemas/CustomerProfile' }
+        isStaff: { type: boolean }
     ReadyResponse:
       type: object
       required: [status, checks]

@@ -21,6 +21,9 @@ documentación incluida en `node_modules/next/dist/docs/` antes de usar APIs de 
 - **Accesibilidad**: HTML semántico, foco visible, etiquetas en controles, contraste AA, teclado completo.
 - **i18n**: `next-intl` sin prefijo en la URL (cookie `NEXT_LOCALE`, ADR-0005). Mensajes en
   `src/i18n/messages/{es,en}.json`; el backoffice vive en el espacio `backoffice` y se muestra solo en español.
+- **Auth** (F01): `NEXT_PUBLIC_AUTH_SOURCE=mock|supabase`. Real = Google + PKCE (`@supabase/ssr`), `proxy.ts` refresca
+  la sesión, `/auth/callback` canjea el código, la API recibe `Authorization: Bearer`. La UI solo muestra/oculta;
+  `GET /v1/auth/context` decide `backofficeAccess`. Destinos post-login solo con `safeNextPath`.
 - **Seguridad**: nada de secretos en `NEXT_PUBLIC_*`; `localStorage` solo para preferencias (tema/idioma),
   nunca autenticación/autorización; el backoffice oculta UI por permiso pero **la API decide**.
 - **Pruebas**: Vitest (`*.test.ts` en node, `*.test.tsx` en jsdom); Playwright en `e2e/` (flujos, axe) y

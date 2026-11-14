@@ -1,7 +1,7 @@
 # Seguridad
 
 Estado: ✅ controles de repositorio (hooks, escáner de secretos, CORS/validación/errores base en la API) ·
-📐 autenticación y autorización · ⏳ seguridad de proveedores. Reglas: `.claude/rules/security.md`, skill `auth-security`.
+✅ autenticación y autorización base (F01, ver `docs/security/auth.md`; Google real sin verificar) · ⏳ seguridad de proveedores. Reglas: `.claude/rules/security.md`, skill `auth-security`.
 
 ## Modelo de acceso (📐 slice `feature/google-oauth`)
 
@@ -9,7 +9,7 @@ Estado: ✅ controles de repositorio (hooks, escáner de secretos, CORS/validaci
   (`staff_assignments`) → autorización sobre el recurso. Denegar por defecto; el cliente no calcula permisos.
 - **Tienda**: navegación y checkout invitado; Google opcional; un cliente solo accede a sus datos. Consulta de pedido de
   invitado por número+teléfono: rate limiting y respuesta uniforme para no enumerar pedidos.
-- Bootstrap del primer administrador: proceso manual controlado (pendiente de definir ❓).
+- Bootstrap del primer administrador: `pnpm --filter sushimon-api staff:bootstrap` (manual y controlado; ver `docs/security/auth.md`).
 
 ## Controles base ya presentes
 

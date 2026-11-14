@@ -16,6 +16,8 @@ import type { ReactNode } from 'react';
 import { SimulationBadge } from '@/components/ui/SimulationBadge';
 import { useToast } from '@/components/ui/Toast';
 import { isOrderInProgress } from '@/lib/order-status';
+import { useAuth } from '@/features/session/auth-provider';
+import { useIdentity } from '@/features/session/auth-queries';
 import { useDemoSession } from '@/features/session/demo-session';
 import { Avatar } from '@/features/store-shell/components/Avatar';
 import { ErrorNotice } from '@/features/store-shell/components/ErrorNotice';
@@ -44,8 +46,56 @@ function Heading() {
 
 /** Hub de la cuenta: con sesión (de demostración) muestra el perfil y las secciones; sin sesión invita a entrar. */
 export function AccountHub() {
+  const auth = useAuth();
   const { customer } = useDemoSession();
+  if (auth.mode === 'supabase') return <RealAccountHub />;
   return customer ? <SignedInHub name={customer.name} email={customer.email} /> : <SignedOutHub />;
+}
+
+/**
+ * Cuenta con Supabase Auth real: perfil de `GET /v1/me`. Las secciones de pedidos, direcciones y favoritos
+ * llegan cuando sus módulos de API existan (hoy solo hay identidad), así que aquí no se simulan.
+ */
+function RealAccountHub() {
+  const t = useTranslations('account');
+  const tAuth = useTranslations('auth');
+  const auth = useAuth();
+  const me = useIdentity();
+  if (auth.status === 'loading' || (auth.status === 'authenticated' && me.isPending)) {
+    return (
+      <div className="wrap max-w-[720px] pb-10 pt-5 sm:pt-8" role="status">
+        <Heading />
+        <p className="m-0 text-muted">{tAuth('loadingSession')}</p>
+      </div>
+    );
+  }
+  if (auth.status === 'anonymous' || me.isError || !me.data) return <SignedOutHub />;
+  const { customer, email } = me.data;
+  return (
+    <div className="wrap max-w-[720px] pb-10 pt-5 sm:pt-8">
+      <Heading />
+      <section className="flex items-center gap-3.5 rounded-3xl border border-line bg-surface p-4 shadow-card sm:p-5">
+        <Avatar name={customer.fullName} className="h-14 w-14 text-[18px]" />
+        <div className="min-w-0 flex-1">
+          <p className="m-0 truncate font-extrabold">{customer.fullName}</p>
+          <p className="m-0 truncate text-[13px] text-muted">{email ?? customer.email}</p>
+          <p className="m-0 mt-1 flex flex-wrap items-center gap-1.5 text-[12px] font-bold text-muted">
+            <GoogleLogo className="h-3.5 w-3.5" /> {t('realProfile')}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void auth.signOut()}
+          aria-label={tAuth('signOut')}
+          className="btn !min-h-[40px] flex-none !px-3 text-sm min-[420px]:!px-4"
+        >
+          <LogOut className="h-4 w-4" aria-hidden="true" />{' '}
+          <span className="max-[419px]:hidden">{tAuth('signOut')}</span>
+        </button>
+      </section>
+      <p className="mt-4 text-[14px] text-muted">{t('realModulesPending')}</p>
+    </div>
+  );
 }
 
 function SignedOutHub() {
@@ -71,7 +121,7 @@ function SignedOutHub() {
         >
           <GoogleLogo /> {tAuth('continueGoogle')}
         </button>
-        <SimulationBadge className="ml-2 align-middle" />
+        {useAuth().mode === 'mock' ? <SimulationBadge className="ml-2 align-middle" /> : null}
       </section>
       <ul className="m-0 mt-4 grid list-none gap-2.5 p-0 sm:grid-cols-3">
         {benefits.map(({ Icon, text }) => (

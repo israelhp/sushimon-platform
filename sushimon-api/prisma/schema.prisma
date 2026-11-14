@@ -10,3 +10,93 @@ datasource db {
   provider = "postgresql"
   schemas  = ["app"]
 }
+
+// ---------------------------------------------------------------------------------------------
+// F01 · Identidad. `auth_user_id` referencia auth.users(id) (Supabase Auth); la FK se crea en SQL
+// (migración 0002) solo si el esquema `auth` existe, porque Prisma no modela el esquema de Supabase.
+// ---------------------------------------------------------------------------------------------
+
+model Branch {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String            @unique
+  name        String
+  phone       String?
+  assignments StaffAssignment[]
+
+  @@map("branches")
+  @@schema("app")
+}
+
+model Customer {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  authUserId String?  @unique @map("auth_user_id") @db.Uuid
+  fullName   String   @map("full_name")
+  email      String?
+  phone      String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("customers")
+  @@schema("app")
+}
+
+model StaffUser {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// NULL = empleado preregistrado que aún no inició sesión (ADR-0009). Se vincula una sola vez.
+  authUserId  String?           @unique @map("auth_user_id") @db.Uuid
+  fullName    String            @map("full_name")
+  /// Siempre en minúsculas (CHECK en la migración).
+  email       String            @unique
+  active      Boolean           @default(true)
+  assignments StaffAssignment[]
+
+  @@map("staff_users")
+  @@schema("app")
+}
+
+model Role {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String            @unique
+  name        String
+  permissions RolePermission[]
+  assignments StaffAssignment[]
+
+  @@map("roles")
+  @@schema("app")
+}
+
+model Permission {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String           @unique
+  description String
+  roles       RolePermission[]
+
+  @@map("permissions")
+  @@schema("app")
+}
+
+model RolePermission {
+  roleId       String     @map("role_id") @db.Uuid
+  permissionId String     @map("permission_id") @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+  @@schema("app")
+}
+
+model StaffAssignment {
+  id       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  staffId  String    @map("staff_id") @db.Uuid
+  roleId   String    @map("role_id") @db.Uuid
+  /// NULL = todas las sucursales.
+  branchId String?   @map("branch_id") @db.Uuid
+  active   Boolean   @default(true)
+  staff    StaffUser @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  role     Role      @relation(fields: [roleId], references: [id])
+  branch   Branch?   @relation(fields: [branchId], references: [id])
+
+  @@unique([staffId, roleId, branchId])
+  @@map("staff_assignments")
+  @@schema("app")
+}

@@ -25,6 +25,9 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'POST /v1/incidents': orders.createIncident,
   'POST /v1/job-applications': pub.createJobApplication,
 
+  // Identidad
+  'GET /v1/auth/context': account.getAuthContext,
+
   // Cliente
   'GET /v1/me': account.getMe,
   'PATCH /v1/me': account.updateMe,

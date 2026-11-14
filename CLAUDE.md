@@ -11,7 +11,7 @@ Monorepo pnpm con dos apps y un paquete de contratos:
 | `docs/`, `specs/`    | Arquitectura, ADRs, referencias, especificaciones (Spec Kit)                                 |
 
 Estado real: **Etapa 1 (UI First) completada con datos simulados** en `sushimon-web` (tienda +
-backoffice, estado `MOCK_ONLY`). La API (F00, `specs/002-api-foundations`) expone `GET /v1/health` y `GET /v1/health/ready` sobre Prisma 7 + esquema `app`; el resto de endpoints están
+backoffice, estado `MOCK_ONLY`). La API (F00 `specs/002-api-foundations`, F01 `specs/003-auth-supabase`) expone `GET /v1/health`, `GET /v1/health/ready`, `GET /v1/auth/context` y `GET /v1/me` sobre Prisma 7 + esquema `app` con JWT de Supabase Auth (denegar por defecto); el resto de endpoints están
 planificados en `docs/contracts/planned-endpoints.md`. Lee `docs/architecture/overview.md` para el
 mapa completo.
 
@@ -58,6 +58,7 @@ directo. Ver `docs/development/gitflow.md`.
 
 ```bash
 pnpm install            # reproducible (lockfile)
+pnpm dev                # API y web a la vez (3001 y 3000)
 pnpm dev:api            # http://localhost:3001  (health: /v1/health)
 pnpm dev:web            # http://localhost:3000
 pnpm check              # format, lint, typecheck, test, contracts, secretos, build

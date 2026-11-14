@@ -9,6 +9,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "dev": "pnpm --parallel --filter sushimon-api --filter sushimon-web dev",
     "dev:api": "pnpm --filter sushimon-api dev",
     "dev:web": "pnpm --filter sushimon-web dev",
     "lint": "pnpm -r --if-present lint",
@@ -23,10 +24,6 @@
     "secrets:scan": "node scripts/scan-secrets.mjs",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm contracts:check && pnpm secrets:scan && pnpm claude:validate && pnpm build",
     "prepare": "husky",
-    "db:local:start": "supabase start",
-    "db:local:stop": "supabase stop",
-    "db:local:status": "supabase status",
-    "db:local:migrate": "pnpm --filter sushimon-api db:migrate:deploy",
     "claude:validate": "node scripts/validate-claude-config.mjs"
   },
   "lint-staged": {
@@ -38,7 +35,6 @@
     "husky": "9.1.7",
     "lint-staged": "17.6.0",
     "prettier": "3.9.10",
-    "supabase": "^3.1.0",
     "yaml": "^2.8.0"
   }
 }
