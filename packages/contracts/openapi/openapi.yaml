@@ -1,6 +1,6 @@
 # Contrato HTTP canónico de Sushi Mon (Contract First).
 # Se diseña ANTES de implementar cada slice y se verifica contra NestJS con `pnpm contracts:check`.
-# Estado: F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
+# Estado: F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
 # Seguridad por defecto: Bearer JWT de Supabase Auth en todo salvo operaciones con `security: []` (health).
 # Transversal a TODAS las respuestas: cabecera `X-Request-Id`; errores con `ErrorResponse`; 429 cuando
 # se excede el rate limit global (no se repite por operación).
@@ -935,6 +935,434 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /v1/branches/{id}/hours:
+    get:
+      operationId: getBranchHours
+      summary: Horario semanal público y próximos cierres de una sucursal activa
+      description: |
+        F08. Sin autenticación. Horario semanal en HORA LOCAL del restaurante (`timezone`, `America/Guatemala`), `weekday`
+        ISO 1=lunes … 7=domingo, intervalos semiabiertos `[opensAt, closesAt)`. Siempre 7 días, ordenados por `weekday`, con
+        sus intervalos ordenados; `intervals: []` = sin atención ese día. `upcomingClosures` (máx. 10, próximos 30 días) NO
+        incluye el motivo. Una sucursal sin ningún intervalo responde 200 con los 7 días vacíos (la disponibilidad dirá
+        `SCHEDULE_NOT_CONFIGURED`). 404 si no existe o está inactiva (no se distingue). Es informativo: el checkout NUNCA
+        se apoya en esta respuesta cacheada.
+      tags: [branch-schedule]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+      responses:
+        '200':
+          description: Horario público
+          headers:
+            Cache-Control:
+              description: public, max-age=60, s-maxage=300, stale-while-revalidate=600
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicBranchHours'
+        '400':
+          description: El identificador no es un UUID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o no está activa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/branches/{id}/availability:
+    get:
+      operationId: getBranchAvailability
+      summary: Disponibilidad operativa actual de una sucursal activa
+      description: |
+        F08. Sin autenticación. Evalúa SIEMPRE con el reloj del servidor (no acepta fecha). Orden de evaluación:
+        horario sin configurar → cierre excepcional → fuera de horario → abierta. `isAcceptingOrders` equivale a
+        `isOpenNow` mientras no exista política de último pedido ni pausa operativa (pendiente de negocio). Informativo y
+        de caché muy corta: la validación DEFINITIVA al crear un pedido ocurre en el servidor (F20) contra la base de datos y
+        puede rechazar aunque esta respuesta dijera `OPEN`. 404 si no existe o está inactiva. Caché compartida dinámica: `max-age = s-maxage =
+        min(10, segundos enteros hasta nextTransitionAt)`; si faltan menos de 1 s, `no-store` (ninguna respuesta cacheada cruza una
+        transición). Toda respuesta de error lleva `Cache-Control: no-store`.
+      tags: [branch-schedule]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+      responses:
+        '200':
+          description: Disponibilidad
+          headers:
+            Cache-Control:
+              description: 'public, max-age=N, s-maxage=N con N = min(10, segundos enteros hasta nextTransitionAt); `no-store` si faltan menos de 1 s. Nunca stale-while-revalidate.'
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BranchAvailability'
+        '400':
+          description: El identificador no es un UUID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o no está activa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/branches/{id}/hours:
+    get:
+      operationId: getAdminBranchHours
+      summary: Horario semanal de una sucursal (backoffice)
+      description: |
+        F08. Exige `branches.read` en esa sucursal (404 si no existe o fuera de alcance; una sucursal inactiva SÍ se
+        puede consultar). Devuelve `version` (SHA-256 hex del horario canónico) que el PUT debe reenviar como
+        `expectedVersion`. Respuesta `Cache-Control: no-store`.
+      tags: [branch-schedule]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+      responses:
+        '200':
+          description: Horario con versión
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BranchHours'
+        '400':
+          description: El identificador no es un UUID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: No es personal activo, falta `branches.read` o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o fuera de alcance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      operationId: replaceAdminBranchHours
+      summary: Reemplaza el horario semanal completo (7 días)
+      description: |
+        F08. Exige `branches.manage_hours` en esa sucursal (404 fuera de alcance). Reemplaza los 7 días en una transacción
+        con bloqueo de la sucursal. Concurrencia optimista: `expectedVersion` debe coincidir con la versión vigente, si no
+        409 `HOURS_VERSION_CONFLICT` sin guardar. Si el horario resultante es idéntico al vigente responde 200 sin
+        escribir ni auditar (idempotente). Errores: 400 forma inválida (HH:mm, weekday, número de días, más de 6
+        intervalos por día, `expectedVersion` malformada); 422 `SCHEDULE_INVALID` con `violations` por día/intervalo
+        (`INTERVAL_OVERLAP`, `INTERVAL_RANGE_INVALID`; un turno que cruza medianoche debe dividirse en dos días). Respuesta `Cache-Control: no-store`.
+      tags: [branch-schedule]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplaceBranchHoursRequest'
+      responses:
+        '200':
+          description: Horario guardado (o ya vigente) con su nueva versión
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BranchHours'
+        '400':
+          description: Forma de la solicitud inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Falta `branches.manage_hours` o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o fuera de alcance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`HOURS_VERSION_CONFLICT` (el horario cambió desde que se leyó; recargar y reintentar) o `BRANCH_SCHEDULE_BUSY` (la sucursal está siendo modificada: lock timeout; reintentable, sin detalle interno).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`SCHEDULE_INVALID`. Reglas de horario violadas (ver `violations`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/branches/{id}/closures:
+    get:
+      operationId: listAdminBranchClosures
+      summary: Cierres extraordinarios de una sucursal (paginado)
+      description: |
+        F08. Exige `branches.read` en esa sucursal (404 fuera de alcance). `status`: `current` (default) = en curso +
+        futuros; `active`; `upcoming`; `past` (terminados); `all`. `from`/`to` filtran los cierres que se solapan con
+        `[from, to)`. Orden: `startsAt` ascendente (`past` y `all`: descendente), desempate por `id`. Incluye el motivo.
+        Respuesta `Cache-Control: no-store`.
+      tags: [branch-schedule]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [current, upcoming, active, past, all]
+            default: current
+        - name: from
+          in: query
+          description: Instante ISO 8601 con zona (Z u offset). Requiere `to` mayor si ambos se envían.
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          description: Instante ISO 8601 con zona (Z u offset).
+          schema: { type: string, format: date-time }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 10000, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Página de cierres
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BranchClosureList'
+        '400':
+          description: Parámetros de consulta inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: No es personal activo, falta `branches.read` o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o fuera de alcance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      operationId: createAdminBranchClosure
+      summary: Crea un cierre extraordinario
+      description: |
+        F08. Exige `branches.manage_hours` (404 fuera de alcance). Intervalo `[startsAt, endsAt)`. Reglas: `endsAt >
+        startsAt`; duración máx. 366 días; `startsAt` entre «ahora − 1 hora» y 2 años a futuro (retroactividad máx. 1 h: `STARTS_TOO_EARLY`); `endsAt` > ahora; máx. 100 cierres vigentes o futuros por sucursal (`CLOSURE_LIMIT_REACHED`, 422); `reason` opcional
+        (trim, máx. 200, nunca público). 400 forma/formato (incluye instantes sin zona); 422 `CLOSURE_RANGE_INVALID`;
+        409 `CLOSURE_OVERLAP` si se solapa con otro cierre de la sucursal (contiguos permitidos). Auditoría
+        `branch_closure.created`.
+      tags: [branch-schedule]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBranchClosureRequest'
+      responses:
+        '201':
+          description: Cierre creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BranchClosure'
+        '400':
+          description: Forma de la solicitud inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Falta `branches.manage_hours` o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o fuera de alcance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`CLOSURE_OVERLAP` (se solapa con otro cierre; el cierre en conflicto va en `violations[0].path` como `closures/<id>`) o `BRANCH_SCHEDULE_BUSY` (lock timeout; reintentable).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`CLOSURE_RANGE_INVALID` (rango, duración, horizonte, retroactividad `STARTS_TOO_EARLY` o cierre ya terminado) o `CLOSURE_LIMIT_REACHED` (más de 100 cierres vigentes o futuros en la sucursal).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/branches/{id}/closures/{closureId}:
+    patch:
+      operationId: updateAdminBranchClosure
+      summary: Edita, acorta o termina un cierre
+      description: |
+        F08. Exige `branches.manage_hours`. 404 si la sucursal está fuera de alcance o el cierre no pertenece a ella.
+        Según el estado del cierre (calculado con el reloj del servidor): FUTURO (`startsAt > ahora`): se puede cambiar
+        `startsAt` (no anterior a «ahora − 1 hora», `STARTS_TOO_EARLY`), `endsAt` y `reason`. EN CURSO (`startsAt <= ahora < endsAt`): solo `reason` y `endsAt`, y `endsAt` solo
+        puede ACORTAR (`startsAt < endsAt_nuevo <= endsAt_actual`). Para TERMINAR un cierre en curso se envía
+        `endsAt` con cualquier instante `<= ahora` (p. ej. la hora actual del cliente): el servidor lo fija a «ahora» y el
+        cierre pasa a `past`. TERMINADO (`endsAt <= ahora`): inmutable (409 `CLOSURE_NOT_EDITABLE`). Cambiar `startsAt` o
+        alargar `endsAt` en un cierre en curso => 409 `CLOSURE_NOT_EDITABLE`. `reason: null` borra el motivo. Sin cambios
+        reales => 200 sin escribir ni auditar. 409 `CLOSURE_OVERLAP` si el nuevo rango choca con otro cierre. Auditoría
+        `branch_closure.updated`.
+      tags: [branch-schedule]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+        - $ref: '#/components/parameters/ClosureId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBranchClosureRequest'
+      responses:
+        '200':
+          description: Cierre actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BranchClosure'
+        '400':
+          description: Forma de la solicitud inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Falta `branches.manage_hours` o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Sucursal o cierre inexistente o fuera de alcance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`CLOSURE_NOT_EDITABLE` (terminado, o cambio no permitido en curso), `CLOSURE_OVERLAP` o `BRANCH_SCHEDULE_BUSY` (lock timeout; reintentable).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`CLOSURE_RANGE_INVALID`. Rango o duración inválidos.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      operationId: deleteAdminBranchClosure
+      summary: Cancela (elimina) un cierre futuro
+      description: |
+        F08. Exige `branches.manage_hours`. Solo cierres FUTUROS (`startsAt > ahora`); borrado físico, el historial queda en
+        `audit_events` (`branch_closure.cancelled`). Un cierre en curso o terminado responde 409 `CLOSURE_NOT_DELETABLE`
+        (para uno en curso, usar PATCH con `endsAt` <= ahora). No idempotente: un cierre ya eliminado responde 404.
+      tags: [branch-schedule]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+        - $ref: '#/components/parameters/ClosureId'
+      responses:
+        '204':
+          description: Cierre eliminado
+        '400':
+          description: Identificador no UUID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Falta `branches.manage_hours` o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Sucursal o cierre inexistente o fuera de alcance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`CLOSURE_NOT_DELETABLE` (el cierre ya comenzó o terminó) o `BRANCH_SCHEDULE_BUSY` (lock timeout; reintentable).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   parameters:
     StaffId:
@@ -954,6 +1382,12 @@ components:
       in: path
       required: true
       description: UUID de la sucursal.
+      schema: { type: string, format: uuid }
+    ClosureId:
+      name: closureId
+      in: path
+      required: true
+      description: UUID del cierre extraordinario (`branch_closures.id`).
       schema: { type: string, format: uuid }
   schemas:
     PublicBranch:
@@ -1408,6 +1842,205 @@ components:
           type: array
           description: Mensajes de validación por campo (solo en 400).
           items: { type: string }
+        code:
+          type: string
+          description: |
+            Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
+            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`). Los clientes deben ramificar por `code`, nunca por `message`.
+        violations:
+          type: array
+          description: Violaciones estructuradas de reglas de negocio (422/409 de F08).
+          items: { $ref: '#/components/schemas/ErrorViolation' }
+    ErrorViolation:
+      type: object
+      description: Violación estructurada de una regla de negocio (F08). `path` localiza el elemento; `code` es estable.
+      required: [path, code, message]
+      properties:
+        path:
+          type: string
+          example: 'days[4].intervals[1]'
+          description: 'Ruta en la solicitud (p. ej. `days[4].intervals[1]`, `startsAt`) o, en CLOSURE_OVERLAP, `closures/<id>` del cierre en conflicto.'
+        code:
+          type: string
+          example: INTERVAL_OVERLAP
+        message: { type: string }
+    BranchHoursInterval:
+      type: object
+      description: |
+        Intervalo semiabierto `[opensAt, closesAt)` en hora LOCAL del restaurante. `opensAt < closesAt` estricto; no
+        existe cruce de medianoche (un turno nocturno se divide en dos días). `closesAt` admite `24:00` (fin del día).
+      required: [opensAt, closesAt]
+      additionalProperties: false
+      properties:
+        opensAt:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+          example: '11:00'
+        closesAt:
+          type: string
+          pattern: '^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$'
+          example: '24:00'
+    BranchHoursDay:
+      type: object
+      required: [weekday, intervals]
+      additionalProperties: false
+      properties:
+        weekday:
+          type: integer
+          enum: [1, 2, 3, 4, 5, 6, 7]
+          description: 'ISO 8601: 1 = lunes … 7 = domingo. NO es `Date.getDay()` (0 = domingo).'
+        intervals:
+          type: array
+          maxItems: 6
+          description: Ordenados por `opensAt` en las respuestas. Vacío = sin atención ese día.
+          items: { $ref: '#/components/schemas/BranchHoursInterval' }
+    BranchHours:
+      type: object
+      description: Horario semanal administrativo con su versión de concurrencia optimista.
+      required: [branchId, timezone, version, days]
+      properties:
+        branchId: { type: string, format: uuid }
+        timezone: { type: string, example: America/Guatemala }
+        version:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: SHA-256 (hex minúsculas) del horario canónico. Reenviar como `expectedVersion`.
+        days:
+          type: array
+          minItems: 7
+          maxItems: 7
+          description: Siempre 7 días, `weekday` 1..7 ascendente.
+          items: { $ref: '#/components/schemas/BranchHoursDay' }
+    PublicClosureWindow:
+      type: object
+      description: Ventana de cierre sin motivo (el motivo nunca es público).
+      required: [startsAt, endsAt]
+      properties:
+        startsAt: { type: string, format: date-time, description: 'Instante UTC (`...Z`).' }
+        endsAt: { type: string, format: date-time, description: 'Instante UTC (`...Z`).' }
+    PublicBranchHours:
+      type: object
+      required: [branchId, timezone, days, upcomingClosures]
+      properties:
+        branchId: { type: string, format: uuid }
+        timezone: { type: string, example: America/Guatemala }
+        days:
+          type: array
+          minItems: 7
+          maxItems: 7
+          items: { $ref: '#/components/schemas/BranchHoursDay' }
+        upcomingClosures:
+          type: array
+          maxItems: 10
+          description: Cierres en curso o que empiezan en los próximos 30 días, por `startsAt`. Sin motivo.
+          items: { $ref: '#/components/schemas/PublicClosureWindow' }
+    ReplaceBranchHoursRequest:
+      type: object
+      required: [expectedVersion, days]
+      additionalProperties: false
+      properties:
+        expectedVersion:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        days:
+          type: array
+          minItems: 7
+          maxItems: 7
+          description: Exactamente los 7 `weekday` 1..7, cada uno una vez, en cualquier orden.
+          items: { $ref: '#/components/schemas/BranchHoursDay' }
+    BranchClosure:
+      type: object
+      required: [id, branchId, startsAt, endsAt, reason, status]
+      properties:
+        id: { type: string, format: uuid }
+        branchId: { type: string, format: uuid }
+        startsAt: { type: string, format: date-time, description: 'Instante UTC (`...Z`).' }
+        endsAt:
+          { type: string, format: date-time, description: 'Instante UTC (`...Z`), exclusivo.' }
+        reason: { type: string, nullable: true, maxLength: 200 }
+        status:
+          type: string
+          enum: [upcoming, active, past]
+          description: Calculado con el reloj del servidor al responder.
+    CreateBranchClosureRequest:
+      type: object
+      required: [startsAt, endsAt]
+      additionalProperties: false
+      properties:
+        startsAt:
+          type: string
+          format: date-time
+          description: ISO 8601 CON zona (`Z` u offset como `-06:00`). Sin zona => 400. Se normaliza a UTC, truncado al segundo.
+        endsAt:
+          type: string
+          format: date-time
+          description: Igual que `startsAt`; debe ser posterior.
+        reason: { type: string, nullable: true, maxLength: 200 }
+    UpdateBranchClosureRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        reason: { type: string, nullable: true, maxLength: 200 }
+    BranchClosureList:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/BranchClosure' }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+    BranchAvailabilityReason:
+      type: string
+      enum: [OPEN, INACTIVE, OUTSIDE_BUSINESS_HOURS, EXCEPTIONAL_CLOSURE, SCHEDULE_NOT_CONFIGURED]
+      description: |
+        Motivo único por orden de evaluación. `INACTIVE` solo lo produce el puerto interno (HTTP público => 404).
+        No existen `ORDER_CUTOFF_REACHED` ni `OPERATIONS_PAUSED` (bloqueados: falta política/modelo de negocio).
+    BranchAvailability:
+      type: object
+      required:
+        - branchId
+        - timezone
+        - serverTime
+        - isOpenNow
+        - isAcceptingOrders
+        - reason
+        - nextOpensAt
+        - nextClosesAt
+        - nextTransitionAt
+      properties:
+        branchId: { type: string, format: uuid }
+        timezone: { type: string, example: America/Guatemala }
+        serverTime:
+          {
+            type: string,
+            format: date-time,
+            description: 'Instante UTC (`...Z`) de la evaluación.',
+          }
+        isOpenNow: { type: boolean }
+        isAcceptingOrders:
+          type: boolean
+          description: Hoy igual a `isOpenNow`. Siempre implica `isOpenNow`.
+        reason: { $ref: '#/components/schemas/BranchAvailabilityReason' }
+        nextOpensAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Próxima apertura real (si está cerrada); `null` si abierta o sin apertura en 14 días.
+        nextClosesAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Próximo cierre real (si está abierta); `null` si cerrada o sin cierre en 14 días.
+        nextTransitionAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: El menor no nulo de `nextOpensAt`/`nextClosesAt`. Horizonte máximo 14 días.
     # ─────────────────────────────────────────────────────────────────────────────────────────
     # Esquemas DRAFT (x-status: draft) — Etapa 1 UI First. Los consume sushimon-web (adaptador
     # mock) y se referenciarán desde `paths` slice a slice cuando la API los implemente.
@@ -1420,7 +2053,7 @@ components:
       properties:
         es: { type: string }
         en: { type: string }
-    BranchHours:
+    DraftBranchHours:
       x-status: draft
       description: Horario de un día (0 = domingo … 6 = sábado), hora local de Guatemala.
       type: object
@@ -1520,7 +2153,7 @@ components:
               close: { type: string }
         weeklyHours:
           type: array
-          items: { $ref: '#/components/schemas/BranchHours' }
+          items: { $ref: '#/components/schemas/DraftBranchHours' }
         schedule:
           type: object
           required: [stepMinutes, lastOrderBeforeClose, minLeadMinutes, days]
@@ -1567,7 +2200,7 @@ components:
         hoursLabel: { type: string }
         hours:
           type: array
-          items: { $ref: '#/components/schemas/BranchHours' }
+          items: { $ref: '#/components/schemas/DraftBranchHours' }
         radiusKm: { type: number }
         status: { type: string, enum: [active, coming_soon] }
         isOpen: { type: boolean, description: Interruptor abierta/cerrada del backoffice. }
@@ -1625,7 +2258,7 @@ components:
           description: happy_hour es un acceso a la promoción; no agrupa productos.
         illustration: { type: string }
         jpLabel: { type: string }
-    BranchAvailability:
+    DraftBranchAvailability:
       x-status: draft
       type: object
       required: [branchId, available]
@@ -1664,7 +2297,7 @@ components:
           description: Disponible en la sucursal pedida (o en alguna sucursal activa si no se indica).
         availability:
           type: array
-          items: { $ref: '#/components/schemas/BranchAvailability' }
+          items: { $ref: '#/components/schemas/DraftBranchAvailability' }
     HappyHourItem:
       x-status: draft
       type: object
