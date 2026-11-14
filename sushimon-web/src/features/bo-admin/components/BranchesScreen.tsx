@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
-import { IconPencil, IconPlus, IconStore } from '@/components/icons/bo';
+import { IconClock, IconPencil, IconPlus, IconStore } from '@/components/icons/bo';
 import { Banner } from '@/components/ui/Banner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Pill } from '@/components/ui/Pill';
@@ -34,6 +34,8 @@ import {
 } from '../branches-view';
 import { formatMoneyCompact } from '../format';
 import { BranchFormModal } from './BranchFormModal';
+import { BranchOperationalStatus } from './BranchOperationalStatus';
+import { BranchScheduleModal } from './BranchScheduleModal';
 import { BranchStatusModal } from './BranchStatusModal';
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -46,17 +48,20 @@ const dateFormat = new Intl.DateTimeFormat('es-GT', {
 type Modal =
   | { kind: 'create' }
   | { kind: 'edit'; branch: AdminBranch }
-  | { kind: 'status'; branch: AdminBranch };
+  | { kind: 'status'; branch: AdminBranch }
+  | { kind: 'schedule'; branch: AdminBranch };
 
 /**
  * Sucursales (admin) — F07. Lista paginada con búsqueda, filtro por estado y orden; alta, edición y activación /
- * desactivación (estado ADMINISTRATIVO, con motivo). El horario, la cobertura y las estadísticas siguen siendo
- * SIMULADOS (F08/F09/F33) y se rotulan «Simulación». El interruptor abierta/cerrada del prototipo ya no existe: la
- * pausa operativa queda pendiente (F08). La UI solo muestra/oculta; la API autoriza.
+ * desactivación (estado ADMINISTRATIVO, con motivo). F08: estado operativo diferenciado (abierta, cerrada por horario,
+ * cierre extraordinario, sin horario) y editor de horario semanal y cierres. La cobertura y las estadísticas siguen
+ * siendo SIMULADAS (F09/F33) y se rotulan «Simulación». La pausa operativa no existe (pendiente de negocio). La UI solo
+ * muestra/oculta; la API autoriza.
  */
 export function BranchesScreen() {
   const t = useTranslations('backoffice.branches');
   const tu = useTranslations('ui');
+  const ts = useTranslations('backoffice.branchSchedule');
   const { can, grants } = useShell();
   const [list, setList] = useState<BranchListState>(DEFAULT_BRANCH_LIST);
   const [search, setSearch] = useState('');
@@ -239,6 +244,10 @@ export function BranchesScreen() {
                     <dd>{coordinatesLabel(branch)}</dd>
                     <dt>{t('createdAt')}</dt>
                     <dd>{dateFormat.format(new Date(branch.createdAt))}</dd>
+                    <dt>{ts('status.label')}</dt>
+                    <dd>
+                      <BranchOperationalStatus branch={branch} />
+                    </dd>
                   </dl>
                   <div className="row gap8" style={{ flexWrap: 'wrap' }}>
                     <span className="sm muted" style={{ fontWeight: 700 }}>
@@ -247,8 +256,6 @@ export function BranchesScreen() {
                     <SimulationBadge zone="bo" />
                   </div>
                   <dl className="kv">
-                    <dt>{t('hours')}</dt>
-                    <dd>{ops ? ops.hoursLabel : t('pending')}</dd>
                     <dt>{t('coverage')}</dt>
                     <dd>{ops ? radiusLabel(ops) : t('pending')}</dd>
                   </dl>
@@ -274,6 +281,15 @@ export function BranchesScreen() {
                       {branch.active ? t('switchOn') : t('switchOff')}
                     </span>
                     <span className="spacer" />
+                    <button
+                      type="button"
+                      className="btn sm"
+                      aria-label={ts('openLabel', { name: branch.name })}
+                      onClick={() => setModal({ kind: 'schedule', branch })}
+                    >
+                      <IconClock size="sm" />
+                      {ts('open')}
+                    </button>
                     {canEdit ? (
                       <button
                         type="button"
@@ -341,6 +357,9 @@ export function BranchesScreen() {
       {modal?.kind === 'create' ? <BranchFormModal onClose={() => setModal(null)} /> : null}
       {modal?.kind === 'edit' ? (
         <BranchFormModal branch={modal.branch} onClose={() => setModal(null)} />
+      ) : null}
+      {modal?.kind === 'schedule' ? (
+        <BranchScheduleModal branch={modal.branch} onClose={() => setModal(null)} />
       ) : null}
       {modal?.kind === 'status' ? (
         <BranchStatusModal branch={modal.branch} onClose={() => setModal(null)} />

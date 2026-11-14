@@ -106,7 +106,7 @@ export function DeliveryStep({
       <OrderTypeFields
         data={data}
         typeError={show && !type ? t('validation.type') : undefined}
-        whenError={data.scheduleValid ? undefined : t('mode.whenInvalid')}
+        whenError={data.scheduleValid || data.hoursLoading ? undefined : t('mode.whenInvalid')}
       />
       {data.allClosed ? (
         <p className="notice notice-warn" role="status">

@@ -8,6 +8,11 @@ import {
   STORE_ORDER_SEEDS,
   type OrderSeed,
 } from './fixtures/orders';
+import {
+  BRANCH_HOURS_SEEDS,
+  CLOSURE_SEEDS,
+  branchClosedScenarioClosures,
+} from './fixtures/schedule';
 import { PRODUCT_SEEDS } from './fixtures/products';
 import { PROMOTION_SEEDS } from './fixtures/promotions';
 import { ROLE_SEEDS } from './fixtures/rbac';
@@ -195,9 +200,14 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
   const today = localDate(base);
   const empty = scenario === 'empty';
 
-  const branches = structuredClone(BRANCH_SEEDS).map((b) =>
-    scenario === 'branch-closed' && b.status === 'active' ? { ...b, isOpen: false } : b,
-  );
+  const branches = structuredClone(BRANCH_SEEDS);
+  // F08: `branch-closed` = cierre extraordinario en curso en cada sucursal activa (lo decide el motor, no un booleano).
+  const closures = [
+    ...structuredClone(CLOSURE_SEEDS),
+    ...(scenario === 'branch-closed'
+      ? branchClosedScenarioClosures(branches.filter((b) => b.active).map((b) => b.id))
+      : []),
+  ];
   const promotions = empty
     ? []
     : structuredClone(PROMOTION_SEEDS).map((p) =>
@@ -232,6 +242,10 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
     seededFor: today,
     config: structuredClone(STORE_CONFIG_SEED),
     branches,
+    branchHours: structuredClone(BRANCH_HOURS_SEEDS),
+    closures,
+    // Sucursal-5 (inactiva): la primera escritura de horario/cierres responde BRANCH_SCHEDULE_BUSY (reintentable).
+    scheduleBusy: { 'sucursal-5': 1 },
     categories: empty ? [] : structuredClone(CATEGORY_SEEDS),
     products: buildProducts(scenario),
     promotions,
@@ -270,6 +284,7 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
       payment: 1,
       courier: 32000,
       branch: 5,
+      closure: 3,
     },
   };
 }

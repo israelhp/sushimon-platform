@@ -24,6 +24,10 @@ export class ApiError extends Error {
     readonly requestId?: string,
     /** Mensajes de validación por campo (ErrorResponse.details, solo en 400). */
     readonly details?: readonly string[],
+    /** Código de negocio estable (`ErrorResponse.code`, p. ej. `HOURS_VERSION_CONFLICT`). Ramifica por él, no por `message`. */
+    readonly businessCode?: string,
+    /** Violaciones por elemento (`ErrorResponse.violations`: `path`, `code`, `message`). */
+    readonly violations?: readonly { path: string; code: string; message: string }[],
   ) {
     super(message);
     this.name = 'ApiError';

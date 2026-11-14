@@ -1,6 +1,6 @@
 import type { BoProductArtKind } from '@/components/icons/bo';
 import type {
-  BranchAvailability,
+  ProductBranchAvailability,
   Category,
   Product,
   Promotion,
@@ -55,7 +55,10 @@ export function availabilityState(
 }
 
 /** Cuerpo del PATCH para fijar la disponibilidad en el alcance (solo esas sucursales). */
-export function availabilityPatch(scope: readonly string[], value: boolean): BranchAvailability[] {
+export function availabilityPatch(
+  scope: readonly string[],
+  value: boolean,
+): ProductBranchAvailability[] {
   return scope.map((branchId) => ({ branchId, available: value }));
 }
 

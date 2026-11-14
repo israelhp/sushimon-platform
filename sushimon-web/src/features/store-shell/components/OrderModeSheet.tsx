@@ -9,7 +9,14 @@ import { Price } from '@/components/ui/Price';
 import { SimulationBadge } from '@/components/ui/SimulationBadge';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { cn } from '@/lib/cn';
-import type { Branch, FulfillmentType, OrderSchedule, StoreConfig } from '@/lib/data-access/models';
+import type {
+  Branch,
+  BranchHoursDay,
+  FulfillmentType,
+  OrderSchedule,
+  PublicClosureWindow,
+  StoreConfig,
+} from '@/lib/data-access/models';
 import { formatClock } from '@/lib/format';
 import { isScheduleValid, slotsFor } from '@/lib/schedule';
 import {
@@ -22,6 +29,8 @@ import {
   type DeliveryDraft,
   type DraftErrors,
 } from '@/features/order-mode/draft';
+import { BranchHoursDisclosure } from '@/features/branch-schedule/components/BranchHoursPanel';
+import { useBranchesAvailability, usePublicBranchHours } from '@/features/branch-schedule/hooks';
 import { usePublicBranches } from '@/features/branches/hooks';
 import { useBranchChangeInvalidation } from '@/features/order-mode/branch-selection';
 import { useOrderMode } from '@/features/order-mode/order-mode-context';
@@ -105,6 +114,9 @@ function initialDelivery(
     : DEFAULT_DELIVERY_DRAFT;
 }
 
+const NO_HOURS: BranchHoursDay[] = [];
+const NO_CLOSURES: PublicClosureWindow[] = [];
+
 function OrderModeSheetDialog({
   initialView,
   notice,
@@ -120,7 +132,7 @@ function OrderModeSheetDialog({
   const uid = useId();
   const { mode, setMode } = useOrderMode();
   const configQuery = useStoreConfig();
-  // Operación SIMULADA (horario, abierta ahora, cobertura: F08/F09) y lista PÚBLICA real (F07: solo activas).
+  // Cobertura SIMULADA (F09) y lista PÚBLICA real (F07: solo activas). «Abierta ahora» y horario vienen del servidor (F08).
   const branchesQuery = useBranches();
   const publicQuery = usePublicBranches();
   const invalidateOnBranchChange = useBranchChangeInvalidation();
@@ -130,6 +142,9 @@ function OrderModeSheetDialog({
     () => (branchesQuery.data ?? []).filter((b) => b.status === 'active'),
     [branchesQuery.data],
   );
+
+  const availability = useBranchesAvailability(publicBranches.map((b) => b.id));
+  const accepting = (id: string) => availability.byId[id]?.isAcceptingOrders;
 
   const [view, setView] = useState<OrderSheetVariant>(initialView);
   const [type, setType] = useState<FulfillmentType | null>(mode.type);
@@ -167,7 +182,7 @@ function OrderModeSheetDialog({
   // Sucursal de recogida: la elegida (si sigue activa en la lista pública) o la primera abierta (simulado).
   const pickupChoice =
     publicBranches.find((b) => b.id === pickupBranchId) ??
-    publicBranches.find((b) => branches.find((o) => o.id === b.id)?.openNow) ??
+    publicBranches.find((b) => accepting(b.id)) ??
     publicBranches[0] ??
     null;
   const pickupBranch = pickupChoice ? branches.find((b) => b.id === pickupChoice.id) : undefined;
@@ -175,36 +190,48 @@ function OrderModeSheetDialog({
     type === 'delivery' ? assignedBranch : type === 'pickup' ? pickupBranch : null;
 
   // ── Programación (horario de la sucursal activa o, mientras tanto, el de la marca) ────────
-  const hours = activeBranch?.hours ?? config?.weeklyHours ?? [];
+  const hoursQuery = usePublicBranchHours(
+    activeBranch?.id ??
+      publicBranches.find((b) => accepting(b.id))?.id ??
+      publicBranches[0]?.id ??
+      null,
+  );
+  const hours = hoursQuery.data?.days ?? NO_HOURS;
+  const closures = hoursQuery.data?.upcomingClosures ?? NO_CLOSURES;
   const days = useMemo(
-    () => (config && now ? dateOptions(config.schedule, hours, now, locale, labels) : []),
+    () => (config && now ? dateOptions(config.schedule, hours, now, locale, labels, closures) : []),
     // `labels` y `now` derivan de `config`/`locale`; `hours` cambia con la sucursal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [config, hours, locale],
+    [config, hours, closures, locale],
   );
   const when: OrderSchedule = useMemo(() => {
     if (view !== 'schedule' || !config || !now) return { kind: 'now' };
     if (
       wantedWhen.kind === 'scheduled' &&
-      isScheduleValid(config.schedule, hours, wantedWhen, now)
+      isScheduleValid(config.schedule, hours, wantedWhen, now, closures)
     ) {
       return wantedWhen;
     }
     const date = days.find((d) => d.date === (wantedWhen.date ?? ''))?.date ?? days[0]?.date;
-    const time = date ? firstSlot(config.schedule, hours, date, now) : null;
+    const time = date ? firstSlot(config.schedule, hours, date, now, closures) : null;
     return date && time ? { kind: 'scheduled', date, time } : { kind: 'now' };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, config, hours, wantedWhen, days]);
+  }, [view, config, hours, closures, wantedWhen, days]);
   const slots =
     config && now && when.kind === 'scheduled' && when.date
-      ? slotsFor(config.schedule, hours, when.date, now)
+      ? slotsFor(config.schedule, hours, when.date, now, closures)
       : [];
   const noSlots = view === 'schedule' && !!config && days.length === 0;
 
   const closedNow =
-    view === 'now' && !!type && !!activeBranch && !activeBranch.openNow ? activeBranch : null;
+    view === 'now' && !!type && !!activeBranch && accepting(activeBranch.id) === false
+      ? activeBranch
+      : null;
   const allClosed =
-    view === 'now' && !!type && branches.length > 0 && branches.every((b) => !b.openNow);
+    view === 'now' &&
+    !!type &&
+    branches.length > 0 &&
+    branches.every((b) => accepting(b.id) === false);
 
   const setDeliveryField = (patch: Partial<DeliveryDraft>) => {
     setDelivery((d) => ({ ...d, ...patch }));
@@ -345,7 +372,6 @@ function OrderModeSheetDialog({
                 ) : null}
                 {publicBranches.map((b) => {
                   const selected = pickupChoice?.id === b.id;
-                  const ops = branches.find((o) => o.id === b.id);
                   return (
                     <label
                       key={b.id}
@@ -368,7 +394,7 @@ function OrderModeSheetDialog({
                         <span className="block font-extrabold">{b.name}</span>
                         <span className="block truncate text-[13px] text-muted">{b.address}</span>
                       </span>
-                      {ops && !ops.openNow ? (
+                      {accepting(b.id) === false ? (
                         <span className="flex-none rounded-full bg-subtle px-2 py-0.5 text-[11px] font-extrabold text-muted">
                           {t('mode.closedBadge')}
                         </span>
@@ -378,6 +404,9 @@ function OrderModeSheetDialog({
                 })}
               </div>
             )}
+            {pickupChoice ? (
+              <BranchHoursDisclosure branchId={pickupChoice.id} name={pickupChoice.name} />
+            ) : null}
             <FieldError id={fieldId('branch-error')} message={err(errors.branch)} />
           </fieldset>
         ) : null}
@@ -513,7 +542,8 @@ function OrderModeSheetDialog({
             noSlots={noSlots}
             locale={locale}
             onPickDay={(date) => {
-              const time = config && now ? firstSlot(config.schedule, hours, date, now) : null;
+              const time =
+                config && now ? firstSlot(config.schedule, hours, date, now, closures) : null;
               if (time) setWantedWhen({ kind: 'scheduled', date, time });
             }}
             onPickTime={(time) => {

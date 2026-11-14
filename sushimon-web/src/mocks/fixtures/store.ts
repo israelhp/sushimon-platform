@@ -1,5 +1,5 @@
 import type {
-  BranchHours,
+  DraftBranchHours,
   Category,
   Department,
   DeliveryTier,
@@ -12,15 +12,18 @@ import type {
  * configuración, lista de categorías, tarifas/ETAs por nivel y lista departamento → municipio.
  */
 
-const day = (d: number, open: string, close: string): BranchHours => ({
+const day = (d: number, open: string, close: string): DraftBranchHours => ({
   day: d,
   open,
   close,
   closed: false,
 });
 
-/** Horario general de la marca (lun–jue 12–20, vie–sáb 12–22, dom 12–18). */
-export const STORE_WEEKLY_HOURS: BranchHours[] = [
+/**
+ * Horario general de la marca en el formato BORRADOR de `StoreConfig` (día 0–6; F17 lo reemplazará). La web NO lo usa
+ * para decidir disponibilidad ni horarios: el horario real es `GET /v1/branches/:id/hours` (F08, ISO 1–7).
+ */
+export const STORE_WEEKLY_HOURS: DraftBranchHours[] = [
   day(0, '12:00', '18:00'),
   day(1, '12:00', '20:00'),
   day(2, '12:00', '20:00'),

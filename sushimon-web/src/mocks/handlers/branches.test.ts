@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AdminBranch, AdminBranchPage, Branch, PublicBranch } from '@/lib/data-access/models';
 import { ApiError } from '@/lib/data-access/errors';
 import { paths } from '@/lib/data-access/paths';
-import * as admin from '@/services/backoffice-admin';
+import * as schedule from '@/services/branch-schedule';
 import * as branches from '@/services/branches';
 import { listBranches } from '@/services/store';
 import { createHarness } from '../testing';
@@ -157,7 +157,7 @@ describe('F07 admin: listado', () => {
 });
 
 describe('F07 admin: alta', () => {
-  it('crea, normaliza el código y aparece en público y en la operación simulada (cerrada, sin horario)', async () => {
+  it('crea, normaliza el código y aparece en público y en la operación simulada (sin horario configurado)', async () => {
     const h = createHarness();
     h.asStaff('admin');
     const created = await branches.createAdminBranch(h.client, {
@@ -176,7 +176,16 @@ describe('F07 admin: alta', () => {
     const pub = await branches.listPublicBranches(h.client);
     expect(pub.map((b) => b.code)).toContain('zona-11');
     const ops = (await listBranches(h.client)).find((b) => b.id === created.id) as Branch;
-    expect(ops).toMatchObject({ isOpen: false, openNow: false, hours: [], coverage: [] });
+    expect(ops).toMatchObject({ coverage: [] });
+    // F08: nace sin horario (no se asume abierta) y la disponibilidad lo dice el servidor.
+    const week = await schedule.getAdminBranchHours(h.client, created.id);
+    expect(week.days).toHaveLength(7);
+    expect(week.days.every((d) => d.intervals.length === 0)).toBe(true);
+    expect(await schedule.getBranchAvailability(h.client, created.id)).toMatchObject({
+      reason: 'SCHEDULE_NOT_CONFIGURED',
+      isOpenNow: false,
+      isAcceptingOrders: false,
+    });
   });
 
   it('un código duplicado responde 409 (también tras normalizar)', async () => {
@@ -328,17 +337,15 @@ describe('F07 admin: estado administrativo', () => {
     expect((await branches.listPublicBranches(h.client)).map((b) => b.id)).toContain('sucursal-4');
   });
 
-  it('`active` no deriva `isOpen`: la apertura simulada se conserva', async () => {
+  it('`active` no toca el horario ni los cierres (F08): solo cambia el estado administrativo', async () => {
     const h = createHarness();
     h.asStaff('admin');
-    await admin.updateBranchOperations(h.client, 'sucursal-2', { isOpen: false });
+    const before = (await schedule.getAdminBranchHours(h.client, 'sucursal-2')).version;
+    const closuresBefore = h.store.closures.length;
     await branches.setAdminBranchStatus(h.client, 'sucursal-2', { active: false, reason: 'x' });
     await branches.setAdminBranchStatus(h.client, 'sucursal-2', { active: true });
-    const ops = (await listBranches(h.client)).find((b) => b.id === 'sucursal-2')!;
-    expect(ops.isOpen).toBe(false);
-    // y desactivar una abierta tampoco cambia `isOpen`
-    await branches.setAdminBranchStatus(h.client, 'sucursal-1', { active: false, reason: 'x' });
-    expect(h.store.branches.find((b) => b.id === 'sucursal-1')!.isOpen).toBe(true);
+    expect((await schedule.getAdminBranchHours(h.client, 'sucursal-2')).version).toBe(before);
+    expect(h.store.closures).toHaveLength(closuresBefore);
   });
 
   it('cuerpo inválido 400 (active faltante o campos extra)', async () => {

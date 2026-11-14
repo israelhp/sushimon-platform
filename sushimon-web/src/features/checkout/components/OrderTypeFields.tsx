@@ -63,24 +63,27 @@ export function OrderTypeFields({
   const t = useTranslations();
   const locale = useLocale();
   const { mode, update } = useOrderMode();
-  const { config, now, hours } = data;
+  const { config, now, hours, closures } = data;
 
   const labels: WhenLabels = {
     asap: t('when.asap'),
     today: t('when.today'),
     tomorrow: t('when.tomorrow'),
   };
-  const days = config && now ? dateOptions(config.schedule, hours, now, locale, labels) : [];
+  const days =
+    config && now ? dateOptions(config.schedule, hours, now, locale, labels, closures) : [];
   const when = mode.when;
   const currentDate = when.kind === 'scheduled' ? when.date : days[0]?.date;
   const slots =
-    config && now && currentDate ? slotsFor(config.schedule, hours, currentDate, now) : [];
+    config && now && currentDate
+      ? slotsFor(config.schedule, hours, currentDate, now, closures)
+      : [];
 
   const setType = (type: FulfillmentType) => update({ type });
   const setWhen = (next: OrderSchedule) => update({ when: next });
   const pickDay = (date: string) => {
     if (!config || !now) return;
-    const time = firstSlot(config.schedule, hours, date, now);
+    const time = firstSlot(config.schedule, hours, date, now, closures);
     if (time) setWhen({ kind: 'scheduled', date, time });
   };
 

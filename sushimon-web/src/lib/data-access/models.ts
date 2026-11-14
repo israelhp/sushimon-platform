@@ -8,13 +8,32 @@ type S = components['schemas'];
 
 export type LocalizedText = S['LocalizedText'];
 export type StoreConfig = S['StoreConfig'];
+/**
+ * Borrador del contrato (`StoreConfig.weeklyHours`, día 0–6): NO se usa para decidir disponibilidad. El horario real
+ * de una sucursal es `BranchHours`/`PublicBranchHours` (F08, ISO 1–7, varios intervalos). Pendiente de F17.
+ */
+export type DraftBranchHours = S['DraftBranchHours'];
+/** F08: horario semanal administrativo con `version` (concurrencia optimista). */
 export type BranchHours = S['BranchHours'];
+export type BranchHoursDay = S['BranchHoursDay'];
+export type BranchHoursInterval = S['BranchHoursInterval'];
+export type PublicBranchHours = S['PublicBranchHours'];
+export type PublicClosureWindow = S['PublicClosureWindow'];
+export type ReplaceBranchHoursRequest = S['ReplaceBranchHoursRequest'];
+export type BranchClosure = S['BranchClosure'];
+export type BranchClosureList = S['BranchClosureList'];
+export type CreateBranchClosureRequest = S['CreateBranchClosureRequest'];
+export type UpdateBranchClosureRequest = S['UpdateBranchClosureRequest'];
+export type ErrorViolation = S['ErrorViolation'];
+/** F08: disponibilidad calculada por el SERVIDOR (la UI la consume, no la recalcula). */
+export type BranchAvailability = S['BranchAvailability'];
+export type BranchAvailabilityReason = S['BranchAvailabilityReason'];
 /**
  * `Branch` es el modelo UI RICO de la tienda y el backoffice: mezcla campos de F07 (id, nombre, dirección, teléfono) con
  * campos SIMULADOS de F08/F09 (`isOpen`, `openNow`, `hours`, `coverage`, `radiusKm`, `status`…). Se obtiene de
  * `paths.demoBranchOperations` (solo mock). Para lo que F07 posee usa `PublicBranch` / `AdminBranch` (contrato real).
  */
-export type Branch = S['Branch'];
+export type Branch = Omit<S['Branch'], 'hours' | 'hoursLabel' | 'isOpen' | 'openNow'>;
 /** F07: campos públicos de una sucursal activa. */
 export type PublicBranch = S['PublicBranch'];
 /** F07: sucursal del backoffice (con `active`, estado ADMINISTRATIVO, y `createdAt`). */
@@ -30,7 +49,8 @@ export type DeliveryTier = S['DeliveryTier'];
 export type DeliveryQuote = S['DeliveryQuote'];
 export type Category = S['Category'];
 export type Product = S['Product'];
-export type BranchAvailability = S['BranchAvailability'];
+/** Disponibilidad de un PRODUCTO por sucursal (borrador del catálogo; no confundir con `BranchAvailability`, F08). */
+export type ProductBranchAvailability = S['DraftBranchAvailability'];
 export type Promotion = S['Promotion'];
 export type PromotionInput = S['PromotionInput'];
 export type HappyHourItem = S['HappyHourItem'];

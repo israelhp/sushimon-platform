@@ -325,11 +325,13 @@ describe('catálogo y administración', () => {
     expect(await status(admin.listBoPromotions(h.client))).toBe(403);
   });
 
-  it('operación simulada de sucursales (isOpen)', async () => {
+  it('operación simulada de sucursales (zona y radio; el horario es F08)', async () => {
     const h = createHarness();
     h.asStaff('admin');
-    const closed = await admin.updateBranchOperations(h.client, 'sucursal-2', { isOpen: false });
-    expect(closed).toMatchObject({ isOpen: false, openNow: false });
+    const updated = await admin.updateBranchOperations(h.client, 'sucursal-2', { radiusKm: 7 });
+    expect(updated).toMatchObject({ id: 'sucursal-2', radiusKm: 7 });
+    expect(updated).not.toHaveProperty('isOpen');
+    expect(updated).not.toHaveProperty('openNow');
   });
 });
 

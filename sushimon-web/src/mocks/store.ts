@@ -10,6 +10,8 @@ import type {
 } from '@/lib/data-access/models';
 import type { DemoSessionState } from '@/lib/demo-session';
 import type { BranchSeed } from './fixtures/branches';
+import type { BranchHoursDay } from '@/lib/data-access/models';
+import type { ClosureRecord } from './fixtures/schedule';
 import type { PromotionSeed } from './fixtures/promotions';
 import type { RiderSeed } from './fixtures/staff';
 import type { Clock } from './clock';
@@ -21,7 +23,7 @@ import type { MockScenario } from './scenarios';
  * el historial de días anteriores lo genera `factories/history.ts` de forma determinista.
  * NUNCA contiene PAN completo, CVV ni PIN: de una tarjeta solo marca, últimos 4 y referencia.
  */
-export const MOCK_STORE_VERSION = 3;
+export const MOCK_STORE_VERSION = 4;
 
 export type ProductRecord = Omit<Product, 'available'>;
 
@@ -60,6 +62,15 @@ export interface MockStore {
   seededFor: string;
   config: Omit<StoreConfig, 'serverTime'>;
   branches: BranchSeed[];
+  /** F08: horario semanal por sucursal (7 días ISO 1–7). Ausente = sin horario configurado. */
+  branchHours: Record<string, BranchHoursDay[]>;
+  /** F08: cierres extraordinarios (instantes UTC). */
+  closures: ClosureRecord[];
+  /**
+   * F08: simulación DETERMINISTA de `BRANCH_SCHEDULE_BUSY` (lock timeout): nº de escrituras de horario/cierres de esa
+   * sucursal que fallarán con 409 antes de que una funcione. Opcional: stores anteriores no lo traen.
+   */
+  scheduleBusy?: Record<string, number>;
   categories: Category[];
   products: ProductRecord[];
   promotions: PromotionSeed[];
@@ -94,6 +105,7 @@ export interface MockStore {
     payment: number;
     courier: number;
     branch: number;
+    closure: number;
   };
 }
 

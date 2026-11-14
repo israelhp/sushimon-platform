@@ -1,4 +1,4 @@
-import type { BranchHours, OrderSchedule } from '@/lib/data-access/models';
+import type { BranchHoursDay, OrderSchedule, PublicClosureWindow } from '@/lib/data-access/models';
 import { formatClock, toIntlLocale } from '@/lib/format';
 import { availableDates, slotsFor, type ScheduleRules } from '@/lib/schedule';
 import { addDaysISO, localDate } from '@/lib/time';
@@ -63,13 +63,14 @@ export interface DateOption {
 /** Días con horarios disponibles (hasta `rules.days`), con etiqueta y subtítulo ("Hoy" / "11 nov"). */
 export function dateOptions(
   rules: ScheduleRules,
-  hours: BranchHours[],
+  hours: readonly BranchHoursDay[],
   now: Date,
   locale: string,
   labels: WhenLabels,
+  closures: readonly PublicClosureWindow[] = [],
 ): DateOption[] {
   const today = localDate(now);
-  return availableDates(rules, hours, now).map((date) => ({
+  return availableDates(rules, hours, now, closures).map((date) => ({
     date,
     label: dayLabel(date, today, locale, labels),
     sub: formatCalendarDate(date, locale, { day: 'numeric', month: 'short' }),
@@ -79,9 +80,10 @@ export function dateOptions(
 /** Primer horario disponible de un día (o null). */
 export function firstSlot(
   rules: ScheduleRules,
-  hours: BranchHours[],
+  hours: readonly BranchHoursDay[],
   date: string,
   now: Date,
+  closures: readonly PublicClosureWindow[] = [],
 ): string | null {
-  return slotsFor(rules, hours, date, now)[0] ?? null;
+  return slotsFor(rules, hours, date, now, closures)[0] ?? null;
 }

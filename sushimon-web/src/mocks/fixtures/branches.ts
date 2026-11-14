@@ -1,19 +1,19 @@
-import type { BranchHours, CoverageRule, DeliveryTierId } from '@/lib/data-access/models';
+import type { CoverageRule, DeliveryTierId } from '@/lib/data-access/models';
 
 /**
  * Sucursales conciliadas entre prototipos:
  * - id, área (es/en), estado activo/"próximamente" y COBERTURA: de la tienda (sucursal-1…5).
  * - zona, dirección, horario, teléfono y radio: del backoffice (s1…s3), conciliadas por nombre
  *   ("Sucursal 1" ↔ s1, etc.). sucursal-4 y sucursal-5 quedan "próximamente" (coming_soon).
- * `openNow` se calcula en el handler con el reloj.
+ * El horario y los cierres (F08) viven en `fixtures/schedule.ts`; la disponibilidad la calcula el handler con el reloj.
  */
 /**
  * Sucursal del mock. Mezcla DOS dominios que no deben confundirse:
  * - F07 (contrato real: `AdminBranch`/`PublicBranch`): `id`, `code`, `name`, `address`, `phone` ('' = sin teléfono),
  *   `latitude`/`longitude`, `active`, `createdAt`.
- * - SIMULADO (F08/F09/F33, sin contrato): `area`, `zoneLabel`, `hoursLabel`, `hours`, `radiusKm`, `isOpen`, `coverage`,
- *   `coverageLabels`. `status` es la vista operativa de `active` (`active` → 'active'; si no, 'coming_soon') y
- *   `isOpen` NUNCA se deriva de `active`.
+ * - SIMULADO (F09/F33, sin contrato): `area`, `zoneLabel`, `radiusKm`, `coverage`, `coverageLabels`. `status` es la vista
+ *   operativa de `active` (`active` → 'active'; si no, 'coming_soon'). F08 (horario, cierres, «abierta ahora») ya es
+ *   contrato y NO vive aquí.
  */
 export interface BranchSeed {
   id: string;
@@ -33,17 +33,11 @@ export interface BranchSeed {
   zoneLabel: string;
   address: string;
   phone: string;
-  hoursLabel: string;
-  hours: BranchHours[];
   radiusKm: number;
   status: 'active' | 'coming_soon';
-  isOpen: boolean;
   coverage: CoverageRule[];
   coverageLabels: string[];
 }
-
-const everyDay = (open: string, close: string): BranchHours[] =>
-  [0, 1, 2, 3, 4, 5, 6].map((day) => ({ day, open, close, closed: false }));
 
 const zones = (tier: DeliveryTierId, list: number[]): CoverageRule[] =>
   list.map((zone) => ({
@@ -71,11 +65,8 @@ const RAW_BRANCH_SEEDS: RawBranchSeed[] = [
     zoneLabel: 'Zona 4 · Cuatro Grados Norte',
     address: 'Vía 5, Zona 4, Cuatro Grados Norte, Ciudad de Guatemala',
     phone: '+502 2331-4410',
-    hoursLabel: 'Lun a dom · 12:00–22:00',
-    hours: everyDay('12:00', '22:00'),
     radiusKm: 5,
     status: 'active',
-    isOpen: true,
     coverage: [
       ...zones('near', [1, 4, 5, 9, 10, 13]),
       ...zones('mid', [2, 3, 7, 8, 11, 12, 14, 15]),
@@ -95,11 +86,8 @@ const RAW_BRANCH_SEEDS: RawBranchSeed[] = [
     zoneLabel: 'Zona 10 · Oakland',
     address: 'Diagonal 6, Zona 10, Ciudad de Guatemala',
     phone: '+502 2367-8822',
-    hoursLabel: 'Lun a dom · 12:00–23:00',
-    hours: everyDay('12:00', '23:00'),
     radiusKm: 4,
     status: 'active',
-    isOpen: true,
     coverage: [
       ...zones('near', [10, 14, 15, 16]),
       ...zones('mid', [1, 4, 5, 9, 13]),
@@ -118,11 +106,8 @@ const RAW_BRANCH_SEEDS: RawBranchSeed[] = [
     zoneLabel: 'Zona 16 · Cayalá',
     address: 'Boulevard Rafael Landívar, Zona 16, Paseo Cayalá',
     phone: '+502 2493-1150',
-    hoursLabel: 'Lun a dom · 12:00–22:00',
-    hours: everyDay('12:00', '22:00'),
     radiusKm: 6,
     status: 'active',
-    isOpen: true,
     coverage: [
       ...zones('near', [7, 8, 11, 12]),
       ...zones('mid', [1, 2, 3, 9, 13, 19, 21]),
@@ -141,11 +126,8 @@ const RAW_BRANCH_SEEDS: RawBranchSeed[] = [
     zoneLabel: 'Por definir',
     address: 'Por definir',
     phone: '',
-    hoursLabel: 'Próximamente',
-    hours: everyDay('12:00', '22:00'),
     radiusKm: 0,
     status: 'coming_soon',
-    isOpen: false,
     coverage: [],
     coverageLabels: [],
   },
@@ -157,11 +139,8 @@ const RAW_BRANCH_SEEDS: RawBranchSeed[] = [
     zoneLabel: 'Por definir',
     address: 'Por definir',
     phone: '',
-    hoursLabel: 'Próximamente',
-    hours: everyDay('12:00', '22:00'),
     radiusKm: 0,
     status: 'coming_soon',
-    isOpen: false,
     coverage: [],
     coverageLabels: [],
   },

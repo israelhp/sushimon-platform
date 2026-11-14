@@ -96,7 +96,16 @@ describe('createSeedStore', () => {
     expect(empty.historyEnabled).toBe(false);
 
     const closed = createSeedStore('branch-closed');
-    expect(closed.branches.filter((b) => b.status === 'active').every((b) => !b.isOpen)).toBe(true);
+    // F08: `branch-closed` = cierre extraordinario en curso en cada sucursal activa (no un booleano).
+    const activeIds = closed.branches.filter((b) => b.active).map((b) => b.id);
+    expect(activeIds.length).toBeGreaterThan(0);
+    for (const id of activeIds) {
+      expect(
+        closed.closures.some(
+          (c) => c.branchId === id && c.startsAt <= DEMO_BASE_TIME && DEMO_BASE_TIME < c.endsAt,
+        ),
+      ).toBe(true);
+    }
 
     const expired = createSeedStore('promotion-expired');
     expect(expired.promotions.every((p) => p.validTo < '2026-11-11')).toBe(true);

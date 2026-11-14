@@ -3,6 +3,8 @@
 import { useMemo } from 'react';
 import type {
   Branch,
+  BranchHoursDay,
+  PublicClosureWindow,
   DeliveryQuote,
   OrderSchedule,
   Product,
@@ -15,6 +17,7 @@ import { useCart } from '@/features/cart/cart-context';
 import { useProducts } from '@/features/catalog/hooks';
 import { checkZone, requiresZone } from '@/features/order-mode/draft';
 import { useOrderMode } from '@/features/order-mode/order-mode-context';
+import { useBranchesAvailability, usePublicBranchHours } from '@/features/branch-schedule/hooks';
 import { useBranches, useDeliveryQuote, useStoreConfig } from '@/features/store/hooks';
 import {
   hasAnyError,
@@ -25,6 +28,9 @@ import {
   type ContactErrors,
 } from './checkout-model';
 import { useCheckoutDraft } from './checkout-context';
+
+const NO_HOURS: BranchHoursDay[] = [];
+const NO_CLOSURES: PublicClosureWindow[] = [];
 
 export interface CheckoutRow {
   line: CartLine;
@@ -56,6 +62,9 @@ export function useCheckoutData() {
     [branchesQuery.data],
   );
 
+  // F08: la disponibilidad la calcula el servidor; aquí solo se consume (undefined = aún sin datos, no se asume cerrada).
+  const availability = useBranchesAvailability(activeBranches.map((b) => b.id));
+
   // ── Dirección y cotización ──────────────────────────────────────────────────────────────
   const nonexistentZones = config?.nonexistentZones ?? [];
   const needsZone = requiresZone(draft.address.department, draft.address.municipality);
@@ -83,7 +92,7 @@ export function useCheckoutData() {
   const pickupBranchId =
     activeBranches.find((b) => b.id === draft.pickupBranchId)?.id ??
     activeBranches.find((b) => b.id === mode.branchId)?.id ??
-    activeBranches.find((b) => b.openNow)?.id ??
+    activeBranches.find((b) => availability.byId[b.id]?.isAcceptingOrders)?.id ??
     activeBranches[0]?.id ??
     null;
   const branchId =
@@ -95,13 +104,26 @@ export function useCheckoutData() {
         ? pickupBranchId
         : null;
   const branch = activeBranches.find((b) => b.id === branchId) ?? null;
-  const hours = branch?.hours ?? config?.weeklyHours ?? [];
-  const closedNow = when.kind === 'now' && !!branch && !branch.openNow;
+  const branchAvailability = branch ? availability.byId[branch.id] : undefined;
+  // Horario para programar: el de la sucursal asignada o, mientras no hay una, el de la primera que recibe pedidos.
+  const hoursBranchId =
+    branch?.id ??
+    activeBranches.find((b) => availability.byId[b.id]?.isAcceptingOrders)?.id ??
+    activeBranches[0]?.id ??
+    null;
+  const hoursQuery = usePublicBranchHours(hoursBranchId);
+  const hours = hoursQuery.data?.days ?? NO_HOURS;
+  const closures = hoursQuery.data?.upcomingClosures ?? NO_CLOSURES;
+  const hoursLoading = !!hoursBranchId && hoursQuery.isPending;
+  const closedNow =
+    when.kind === 'now' && !!branch && branchAvailability?.isAcceptingOrders === false;
   const allClosed =
-    when.kind === 'now' && activeBranches.length > 0 && activeBranches.every((b) => !b.openNow);
+    when.kind === 'now' &&
+    activeBranches.length > 0 &&
+    activeBranches.every((b) => availability.byId[b.id]?.isAcceptingOrders === false);
   const scheduleValid =
     when.kind === 'now' ||
-    (!!config && !!now && isScheduleValid(config.schedule, hours, when, now));
+    (!!config && !!now && isScheduleValid(config.schedule, hours, when, now, closures));
 
   // ── Productos ───────────────────────────────────────────────────────────────────────────
   const productsQuery = useProducts();
@@ -157,6 +179,10 @@ export function useCheckoutData() {
     branch,
     pickupBranchId,
     hours,
+    closures,
+    hoursLoading,
+    branchAvailability,
+    availability: availability.byId,
     closedNow,
     allClosed,
     scheduleValid,

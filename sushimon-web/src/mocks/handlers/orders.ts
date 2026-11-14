@@ -13,7 +13,6 @@ import { isScheduleValid } from '@/lib/schedule';
 import {
   assertAddress,
   availableAt,
-  branchView,
   digits,
   event,
   fail,
@@ -27,6 +26,7 @@ import {
   totals,
   touch,
 } from '../domain';
+import { availabilityFor, upcomingClosuresOf, weekOf } from './schedule';
 import { TEST_CARDS } from '../fixtures/orders';
 import { pick, rngFor } from '../factories/random';
 import type { MockStore } from '../store';
@@ -128,10 +128,19 @@ export const createOrder: Handler = (req): Order => {
   if (branch.status !== 'active') fail(422, 'La sucursal aún no está disponible');
 
   const at = now(req);
-  if (schedule.kind === 'now' && !branchView(branch, at).openNow) {
+  // La validación definitiva la hace el servidor con el motor de disponibilidad (F08), no la respuesta pública cacheada.
+  if (schedule.kind === 'now' && !availabilityFor(req.store, branch, at).isAcceptingOrders) {
     fail(409, 'La sucursal está cerrada en este momento; programa tu pedido');
   }
-  if (!isScheduleValid(req.store.config.schedule, branch.hours, schedule, at)) {
+  if (
+    !isScheduleValid(
+      req.store.config.schedule,
+      weekOf(req.store, branch.id),
+      schedule,
+      at,
+      upcomingClosuresOf(req.store, branch.id, at),
+    )
+  ) {
     fail(422, 'Horario programado no disponible');
   }
 
@@ -410,7 +419,10 @@ const SIM_NAMES = [
 export const demoSimulateOrder: Handler = (req) => {
   const user = requireStaff(req);
   const b = (req.body && typeof req.body === 'object' ? req.body : {}) as { branchId?: string };
-  const open = req.store.branches.filter((x) => x.status === 'active' && x.isOpen);
+  const at0 = now(req);
+  const open = req.store.branches.filter(
+    (x) => x.status === 'active' && availabilityFor(req.store, x, at0).isAcceptingOrders,
+  );
   const n = req.store.sequences.order;
   const rng = rngFor(`simulate|${n}`);
   const ownBranch = user.scope.allBranches ? null : (user.scope.branchIds[0] ?? null);

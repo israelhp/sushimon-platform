@@ -3368,6 +3368,80 @@
     letter-spacing: 0.025em;
     color: var(--bo-text);
   }
+  /* Horario semanal y cierres (F08): añadido, no existe en el prototipo. */
+  [data-zone='bo'] .hrs {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  [data-zone='bo'] .hrs-day {
+    display: grid;
+    grid-template-columns: 170px minmax(0, 1fr);
+    gap: 10px 14px;
+    align-items: start;
+    padding: 10px 12px;
+    border: 1px solid var(--bo-line);
+    border-radius: 12px;
+    background: var(--bo-surface);
+  }
+  [data-zone='bo'] .hrs-day.off {
+    background: var(--bo-surface-2);
+  }
+  [data-zone='bo'] .hrs-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 40px;
+    font-weight: 800;
+  }
+  [data-zone='bo'] .hrs-ints {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+  [data-zone='bo'] .hrs-int {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  [data-zone='bo'] .hrs-time {
+    width: 96px;
+    text-align: center;
+  }
+  [data-zone='bo'] .hrs-err {
+    flex-basis: 100%;
+    color: var(--bo-red-text);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  [data-zone='bo'] .hrs-night {
+    border: 1px dashed var(--bo-line-strong);
+    border-radius: 12px;
+    padding: 12px;
+    background: var(--bo-surface-2);
+  }
+  [data-zone='bo'] .clo-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--bo-line);
+    border-radius: 12px;
+    background: var(--bo-surface);
+  }
+  [data-zone='bo'] .clo-main {
+    flex: 1 1 260px;
+    min-width: 0;
+  }
+  @media (max-width: 640px) {
+    [data-zone='bo'] .hrs-day {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
   /* Movimiento reducido */
   @media (prefers-reduced-motion: reduce) {
     [data-zone='bo'] *,
