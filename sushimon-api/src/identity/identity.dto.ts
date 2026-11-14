@@ -31,10 +31,29 @@ export class AuthContextResponse {
   provider!: string | null;
   @ApiProperty({ type: Boolean })
   isCustomer!: boolean;
+  @ApiProperty({ type: String, enum: ['aal1', 'aal2'] })
+  aal!: 'aal1' | 'aal2';
+  @ApiProperty({ type: Boolean })
+  staffAuthorized!: boolean;
+  @ApiProperty({ type: Boolean })
+  mfaRequired!: boolean;
+  @ApiProperty({ type: String, enum: ['NOT_STAFF', 'MFA_REQUIRED', 'GRANTED'] })
+  access!: 'NOT_STAFF' | 'MFA_REQUIRED' | 'GRANTED';
   @ApiPropertyOptional({ type: AuthStaffContextDto, nullable: true })
   staff!: AuthStaffContextDto | null;
   @ApiProperty({ type: Boolean })
   backofficeAccess!: boolean;
+}
+
+export class AdminContextResponse {
+  @ApiProperty({ type: String, format: 'uuid' })
+  authUserId!: string;
+  @ApiProperty({ type: String, nullable: true })
+  email!: string | null;
+  @ApiProperty({ type: String, enum: ['aal2'] })
+  aal!: 'aal2';
+  @ApiProperty({ type: AuthStaffContextDto })
+  staff!: AuthStaffContextDto;
 }
 
 export class CustomerProfileDto {

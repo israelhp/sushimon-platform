@@ -14,6 +14,7 @@ import { ApiForbiddenResponse } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { IdentityService } from '../identity/identity.service.js';
 import type { StaffContext } from '../identity/identity.types.js';
+import { MfaGuard } from './mfa.guard.js';
 
 const PERMISSIONS_KEY = 'auth:requiredPermissions';
 
@@ -56,10 +57,16 @@ export class StaffGuard implements CanActivate {
   }
 }
 
-/** Restringe la ruta a personal activo con los permisos dados. Combínalo con el guard global de JWT. */
+/**
+ * Restringe la ruta al BACKOFFICE: personal activo con los permisos dados Y sesión `aal2` (MFA TOTP).
+ * Orden fijo: JWT (global) → personal activo y permisos → MFA aal2. Toda ruta administrativa debe usar este
+ * decorador (a nivel de clase o de método); `StaffGuard` suelto NO exige MFA y no debe usarse en rutas.
+ */
 export const RequireStaff = (...permissions: string[]): MethodDecorator & ClassDecorator =>
   applyDecorators(
     SetMetadata(PERMISSIONS_KEY, permissions),
-    UseGuards(StaffGuard),
-    ApiForbiddenResponse({ description: 'No es personal activo o falta un permiso' }),
+    UseGuards(StaffGuard, MfaGuard),
+    ApiForbiddenResponse({
+      description: 'No es personal activo, falta un permiso o la sesión no es aal2 (MFA_REQUIRED)',
+    }),
   );

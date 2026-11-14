@@ -47,12 +47,37 @@ export interface paths {
         /**
          * Contexto de identidad y autorización del token actual
          * @description AUTENTICACIÓN ≠ AUTORIZACIÓN. Verifica el JWT de Supabase Auth (firma, emisor, audiencia,
-         *     expiración y sujeto) y devuelve lo que el SERVIDOR sabe de esa identidad: si es personal activo,
-         *     con qué roles, permisos y alcance de sucursal. La web lo usa solo para mostrar/ocultar UI; cada
+         *     expiración y sujeto) y devuelve lo que el SERVIDOR sabe de esa identidad: si es personal activo y si
+         *     su sesión ya cumple MFA (`aal2`, leído del JWT verificado). Funciona con sesión `aal1` (es el punto
+         *     de entrada para configurar/verificar el segundo factor) pero NO devuelve roles, permisos ni
+         *     sucursales hasta `aal2` (`access = GRANTED`). La web lo usa solo para mostrar/ocultar UI; cada
          *     endpoint vuelve a autorizar. En el primer acceso de un empleado preregistrado (`staff_users` sin
          *     `auth_user_id`) vincula la identidad por correo verificado con Google.
          */
         get: operations["getAuthContext"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/me/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Contexto administrativo del empleado (requiere aal2)
+         * @description Primer endpoint del backoffice. Exige, en este orden: JWT válido → personal activo con asignación
+         *     → sesión `aal2` (segundo factor TOTP verificado por Supabase Auth). Devuelve perfil básico, roles,
+         *     sucursales y permisos efectivos calculados en el servidor. Convención: TODA ruta administrativa
+         *     futura usa `@RequireStaff(...)` y hereda el mismo requisito `aal2`.
+         */
+        get: operations["getAdminContext"];
         put?: never;
         post?: never;
         delete?: never;
@@ -116,10 +141,33 @@ export interface components {
             provider: string | null;
             /** @description Existe un perfil de cliente para esta identidad. */
             isCustomer: boolean;
-            /** @description null si no es personal activo con alguna asignación activa. */
+            /**
+             * @description Nivel de aseguramiento de ESTA sesión, leído del JWT verificado (aal2 = TOTP verificado).
+             * @enum {string}
+             */
+            aal: "aal1" | "aal2";
+            /** @description Personal activo con asignación activa (independiente del nivel MFA). */
+            staffAuthorized: boolean;
+            /** @description Personal autorizado cuya sesión aún no es aal2 (debe configurar o verificar TOTP). */
+            mfaRequired: boolean;
+            /**
+             * @description NOT_STAFF = sin autorización administrativa; MFA_REQUIRED = personal activo en aal1;
+             *     GRANTED = personal activo en aal2.
+             * @enum {string}
+             */
+            access: "NOT_STAFF" | "MFA_REQUIRED" | "GRANTED";
+            /** @description Solo con `access = GRANTED`; null en cualquier otro caso (nada administrativo antes de aal2). */
             staff: components["schemas"]["AuthStaffContext"] | null;
-            /** @description Indicador para la UI; el acceso real lo decide cada endpoint. */
+            /** @description Igual a `access = GRANTED`. Indicador para la UI; el acceso real lo decide cada endpoint. */
             backofficeAccess: boolean;
+        };
+        AdminContextResponse: {
+            /** Format: uuid */
+            authUserId: string;
+            email: string | null;
+            /** @enum {string} */
+            aal: "aal2";
+            staff: components["schemas"]["AuthStaffContext"];
         };
         CustomerProfile: {
             /** Format: uuid */
@@ -808,6 +856,44 @@ export interface operations {
             };
             /** @description Token ausente, inválido, expirado o con emisor/audiencia incorrectos */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAdminContext: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Contexto administrativo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminContextResponse"];
+                };
+            };
+            /** @description Token ausente, inválido, expirado o con emisor/audiencia incorrectos */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta un permiso, o es personal con sesión `aal1` (mensaje `MFA_REQUIRED`). */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

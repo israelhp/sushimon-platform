@@ -15,6 +15,7 @@ function principal(over: Partial<Principal> = {}): Principal {
     email: `${randomUUID().slice(0, 8)}@sushimon.test`,
     provider: 'google',
     googleOAuth: true,
+    aal: 'aal1',
     displayName: 'Persona Prueba',
     ...over,
   };

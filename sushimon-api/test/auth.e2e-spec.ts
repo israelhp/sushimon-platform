@@ -1,4 +1,5 @@
-import { Controller, Get, Module } from '@nestjs/common';
+import { Controller, ForbiddenException, Get, Module, Param, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { Test } from '@nestjs/testing';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
@@ -6,6 +7,15 @@ import { createTestKeys, USER_ID, type TestKeys } from './support/tokens.js';
 
 const STAFF_ID = '99999999-9999-4999-8999-999999999999';
 const BRANCH = '11111111-1111-4111-8111-111111111111';
+const OTHER_BRANCH = '22222222-2222-4222-8222-222222222222';
+/** Claims de una sesión que completó el segundo factor TOTP (lo que emite Supabase Auth tras `mfa.verify`). */
+const AAL2 = {
+  aal: 'aal2',
+  amr: [
+    { method: 'oauth', timestamp: 1 },
+    { method: 'totp', timestamp: 2 },
+  ],
+};
 
 /** Rutas de prueba SOLO para verificar el guard de autorización (no existen en la API real). */
 async function createApp(keys: TestKeys, db: ReturnType<typeof fakeDb>) {
@@ -20,6 +30,7 @@ async function createApp(keys: TestKeys, db: ReturnType<typeof fakeDb>) {
   const { PrismaService } = await import('../src/database/prisma.service.js');
   const { JWKS_RESOLVER } = await import('../src/auth/jwt-verifier.service.js');
   const { RequireStaff } = await import('../src/auth/staff.guard.js');
+  const { canAccessBranch } = await import('../src/identity/identity.types.js');
 
   @Controller('probe')
   class ProbeController {
@@ -27,6 +38,12 @@ async function createApp(keys: TestKeys, db: ReturnType<typeof fakeDb>) {
       return { ok: true };
     }
     @Get('users') @RequireStaff('users') users() {
+      return { ok: true };
+    }
+    /** Alcance por sucursal: la ruta decide por recurso con canAccessBranch sobre el contexto del guard. */
+    @Get('branch/:id') @RequireStaff() branch(@Param('id') id: string, @Req() req: Request) {
+      if (!req.staff || !canAccessBranch(req.staff, id))
+        throw new ForbiddenException('Acceso denegado');
       return { ok: true };
     }
   }
@@ -188,6 +205,10 @@ describe('Autenticación y autorización (e2e)', () => {
         email: 'cliente@example.com',
         provider: 'google',
         isCustomer: true,
+        aal: 'aal1',
+        staffAuthorized: false,
+        mfaRequired: false,
+        access: 'NOT_STAFF',
         staff: null,
         backofficeAccess: false,
       });
@@ -199,10 +220,12 @@ describe('Autenticación y autorización (e2e)', () => {
       );
       const res = await http()
         .get('/v1/auth/context')
-        .set('Authorization', await bearer())
+        .set('Authorization', await bearer(AAL2))
         .expect(200);
       expect(res.body).toMatchObject({
         backofficeAccess: true,
+        access: 'GRANTED',
+        aal: 'aal2',
         staff: {
           staffId: STAFF_ID,
           assignments: [{ role: 'manager', branchId: BRANCH }],
@@ -234,11 +257,38 @@ describe('Autenticación y autorización (e2e)', () => {
         .get('/v1/auth/context')
         .set('Authorization', await bearer())
         .expect(200);
-      expect(res.body).toMatchObject({ backofficeAccess: true });
+      // Aunque se vincule, en aal1 todavía no hay acceso: debe completar MFA.
+      expect(res.body).toMatchObject({ backofficeAccess: false, access: 'MFA_REQUIRED' });
       expect(db.staffUser.updateMany).toHaveBeenCalledWith({
         where: { email: 'cliente@example.com', authUserId: null, active: true },
         data: { authUserId: USER_ID },
       });
+    });
+
+    it('empleado activo en aal1: MFA_REQUIRED, sin permisos ni sucursales en la respuesta', async () => {
+      db.staffUser.findUnique.mockResolvedValue(staffRow({ permissions: ['dashboard'] }));
+      const res = await http()
+        .get('/v1/auth/context')
+        .set('Authorization', await bearer())
+        .expect(200);
+      expect(res.body).toMatchObject({
+        staffAuthorized: true,
+        mfaRequired: true,
+        access: 'MFA_REQUIRED',
+        backofficeAccess: false,
+        staff: null,
+      });
+      expect(JSON.stringify(res.body)).not.toContain('dashboard');
+    });
+
+    it('un token aal1 con aal2 solo en user_metadata/cabeceras/query sigue en aal1', async () => {
+      db.staffUser.findUnique.mockResolvedValue(staffRow());
+      const res = await http()
+        .get('/v1/auth/context?aal=aal2')
+        .set('x-aal', 'aal2')
+        .set('Authorization', await bearer({ user_metadata: { aal: 'aal2' } }))
+        .expect(200);
+      expect(res.body).toMatchObject({ access: 'MFA_REQUIRED', aal: 'aal1' });
     });
 
     it('NO vincula si la sesión no viene de OAuth con Google', async () => {
@@ -264,33 +314,170 @@ describe('Autenticación y autorización (e2e)', () => {
       });
     });
 
-    it('empleado inactivo → 403', async () => {
+    it('empleado inactivo → 403 aunque la sesión sea aal2', async () => {
       db.staffUser.findUnique.mockResolvedValue(staffRow({ active: false }));
       await http()
         .get('/v1/probe/staff')
-        .set('Authorization', await bearer())
+        .set('Authorization', await bearer(AAL2))
         .expect(403);
+    });
+
+    it('cliente con MFA aal2 pero sin fila de personal → 403 genérico', async () => {
+      const res = await http()
+        .get('/v1/probe/staff')
+        .set('Authorization', await bearer(AAL2))
+        .expect(403);
+      expect((res.body as { message: string }).message).toBe('Acceso denegado');
     });
 
     it('empleado activo sin el permiso requerido → 403; con el permiso → 200', async () => {
       db.staffUser.findUnique.mockResolvedValue(staffRow({ permissions: ['dashboard'] }));
       await http()
         .get('/v1/probe/users')
-        .set('Authorization', await bearer())
+        .set('Authorization', await bearer(AAL2))
         .expect(403);
       await http()
         .get('/v1/probe/staff')
-        .set('Authorization', await bearer())
+        .set('Authorization', await bearer(AAL2))
         .expect(200);
       db.staffUser.findUnique.mockResolvedValue(staffRow({ permissions: ['users'] }));
       await http()
         .get('/v1/probe/users')
-        .set('Authorization', await bearer())
+        .set('Authorization', await bearer(AAL2))
+        .expect(200);
+    });
+
+    it('empleado de otra sucursal → 403; de la suya → 200', async () => {
+      db.staffUser.findUnique.mockResolvedValue(staffRow({ branchId: BRANCH }));
+      await http()
+        .get(`/v1/probe/branch/${OTHER_BRANCH}`)
+        .set('Authorization', await bearer(AAL2))
+        .expect(403);
+      await http()
+        .get(`/v1/probe/branch/${BRANCH}`)
+        .set('Authorization', await bearer(AAL2))
         .expect(200);
     });
 
     it('sin token, la ruta de personal responde 401 (no 403)', async () => {
       await http().get('/v1/probe/staff').expect(401);
+    });
+  });
+
+  describe('MFA aal2 obligatorio en el backoffice', () => {
+    it('empleado activo con permisos en aal1 → 403 MFA_REQUIRED', async () => {
+      db.staffUser.findUnique.mockResolvedValue(staffRow({ permissions: ['users'] }));
+      const res = await http()
+        .get('/v1/probe/users')
+        .set('Authorization', await bearer())
+        .expect(403);
+      expect((res.body as { message: string }).message).toBe('MFA_REQUIRED');
+    });
+
+    it('el cliente en aal1 NO recibe MFA_REQUIRED (no se revela qué correos son personal)', async () => {
+      const res = await http()
+        .get('/v1/probe/staff')
+        .set('Authorization', await bearer())
+        .expect(403);
+      expect((res.body as { message: string }).message).toBe('Acceso denegado');
+    });
+
+    it.each([
+      ['aal2 sin TOTP en amr', { aal: 'aal2' }],
+      ['claim aal2 con tipo inválido', { aal: ['aal2'], amr: AAL2.amr }],
+      ['TOTP en amr pero claim aal1', { aal: 'aal1', amr: AAL2.amr }],
+    ])('claim MFA falsificado o inválido (%s) → 403', async (_n, claims) => {
+      db.staffUser.findUnique.mockResolvedValue(staffRow());
+      await http()
+        .get('/v1/probe/staff')
+        .set('Authorization', await bearer(claims))
+        .expect(403);
+    });
+
+    it('un token aal2 con firma ajena no sirve (401)', async () => {
+      db.staffUser.findUnique.mockResolvedValue(staffRow());
+      const token = await keys.signWithForeignKey(AAL2);
+      await http().get('/v1/probe/staff').set('Authorization', `Bearer ${token}`).expect(401);
+    });
+
+    it('un token aal2 expirado no sirve (401): reutilizar un token antiguo no eleva nada', async () => {
+      db.staffUser.findUnique.mockResolvedValue(staffRow());
+      const token = await keys.sign(AAL2, { expiresIn: Math.floor(Date.now() / 1000) - 120 });
+      await http().get('/v1/probe/staff').set('Authorization', `Bearer ${token}`).expect(401);
+    });
+
+    it('no repite la consulta de personal dentro de una solicitud', async () => {
+      db.staffUser.findUnique.mockResolvedValue(staffRow());
+      await http()
+        .get('/v1/admin/me/context')
+        .set('Authorization', await bearer(AAL2))
+        .expect(200);
+      expect(db.staffUser.findUnique).toHaveBeenCalledTimes(1);
+    });
+
+    it('GET /v1/admin/me/context: aal2 → perfil, roles, permisos y sucursales del servidor', async () => {
+      db.staffUser.findUnique.mockResolvedValue(
+        staffRow({ permissions: ['dashboard', 'orders'], branchId: BRANCH }),
+      );
+      const res = await http()
+        .get('/v1/admin/me/context')
+        .set('Authorization', await bearer(AAL2))
+        .expect(200);
+      expect(res.body).toEqual({
+        authUserId: USER_ID,
+        email: 'cliente@example.com',
+        aal: 'aal2',
+        staff: {
+          staffId: STAFF_ID,
+          fullName: 'Ana Admin',
+          assignments: [{ role: 'manager', branchId: BRANCH }],
+          permissions: ['dashboard', 'orders'],
+          allBranches: false,
+          branchIds: [BRANCH],
+        },
+      });
+    });
+
+    it('GET /v1/admin/me/context: aal1 → 403, sin token → 401, desactivado en aal2 → 403', async () => {
+      db.staffUser.findUnique.mockResolvedValue(staffRow());
+      await http()
+        .get('/v1/admin/me/context')
+        .set('Authorization', await bearer())
+        .expect(403);
+      await http().get('/v1/admin/me/context').expect(401);
+      db.staffUser.findUnique.mockResolvedValue(staffRow({ active: false }));
+      await http()
+        .get('/v1/admin/me/context')
+        .set('Authorization', await bearer(AAL2))
+        .expect(403);
+    });
+
+    it('el cliente (aal1 o aal2) no obtiene contexto administrativo', async () => {
+      await http()
+        .get('/v1/admin/me/context')
+        .set('Authorization', await bearer())
+        .expect(403);
+      await http()
+        .get('/v1/admin/me/context')
+        .set('Authorization', await bearer(AAL2))
+        .expect(403);
+    });
+
+    it('los errores no filtran el correo ni los permisos del personal', async () => {
+      db.staffUser.findUnique.mockResolvedValue(staffRow({ permissions: ['secret-permission'] }));
+      const res = await http()
+        .get('/v1/probe/users')
+        .set('Authorization', await bearer())
+        .expect(403);
+      expect(JSON.stringify(res.body)).not.toContain('secret-permission');
+    });
+
+    it('las rutas públicas y /v1/me no exigen MFA', async () => {
+      await http().get('/v1/health').expect(200);
+      await http()
+        .get('/v1/me')
+        .set('Authorization', await bearer())
+        .expect(200);
     });
   });
 

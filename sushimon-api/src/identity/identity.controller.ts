@@ -1,8 +1,10 @@
 import { Controller, Get, Inject } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Principal } from '../auth/auth.types.js';
-import { CurrentUser } from '../auth/current-user.decorator.js';
-import { AuthContextResponse, MeResponse } from './identity.dto.js';
+import { CurrentStaff, CurrentUser } from '../auth/current-user.decorator.js';
+import { RequireStaff } from '../auth/staff.guard.js';
+import type { StaffContext } from './identity.types.js';
+import { AdminContextResponse, AuthContextResponse, MeResponse } from './identity.dto.js';
 import { IdentityService } from './identity.service.js';
 
 @ApiTags('auth')
@@ -23,14 +25,42 @@ export class AuthController {
       this.identity.getStaffContext(principal),
       this.identity.hasCustomer(principal.authUserId),
     ]);
+    const staffAuthorized = staff !== null;
+    const mfaOk = principal.aal === 'aal2';
+    const access = !staffAuthorized ? 'NOT_STAFF' : mfaOk ? 'GRANTED' : 'MFA_REQUIRED';
     return {
       authUserId: principal.authUserId,
       email: principal.email,
       provider: principal.provider,
       isCustomer,
-      staff,
-      backofficeAccess: staff !== null,
+      aal: principal.aal,
+      staffAuthorized,
+      mfaRequired: staffAuthorized && !mfaOk,
+      access,
+      // Roles, permisos y sucursales solo se revelan con la sesión aal2 (nada administrativo antes).
+      staff: access === 'GRANTED' ? staff : null,
+      backofficeAccess: access === 'GRANTED',
     };
+  }
+}
+
+@ApiTags('admin')
+@ApiBearerAuth()
+@RequireStaff()
+@Controller('admin')
+export class AdminController {
+  @Get('me/context')
+  @ApiOperation({
+    operationId: 'getAdminContext',
+    summary: 'Contexto administrativo del empleado (requiere aal2)',
+  })
+  @ApiOkResponse({ type: AdminContextResponse })
+  @ApiResponse({ status: 401, description: 'Token ausente, inválido o expirado' })
+  getAdminContext(
+    @CurrentUser() principal: Principal,
+    @CurrentStaff() staff: StaffContext,
+  ): AdminContextResponse {
+    return { authUserId: principal.authUserId, email: principal.email, aal: 'aal2', staff };
   }
 }
 
