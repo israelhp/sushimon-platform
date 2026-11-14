@@ -19,8 +19,13 @@ export function migrate(url: string): void {
 
 /** `auth.users` mínimo para PostgreSQL plano (en Supabase real/local ya existe y es el verdadero). */
 export async function ensureAuthStub(client: pg.Client): Promise<void> {
+  // En Supabase `auth.users` ya existe y `postgres` no puede crear objetos en ese esquema (ni con IF NOT EXISTS).
+  const found = await client.query<{ oid: string | null }>(
+    `SELECT to_regclass('auth.users') AS oid`,
+  );
+  if (found.rows[0]?.oid) return;
   await client.query('CREATE SCHEMA IF NOT EXISTS auth');
-  await client.query('CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY)');
+  await client.query('CREATE TABLE auth.users (id uuid PRIMARY KEY)');
 }
 
 /** ¿`auth.users` es la tabla real de Supabase (con sus columnas) y no el stub mínimo de PostgreSQL plano? */
