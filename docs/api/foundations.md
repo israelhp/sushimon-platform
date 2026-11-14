@@ -37,22 +37,23 @@ CORS por lista (`CORS_ORIGINS`, sin `*` en producción) · `helmet` · rate limi
 (`RATE_LIMIT_TTL_MS`/`RATE_LIMIT_MAX`; **por instancia**, no global exacto en serverless) · `TRUST_PROXY_HOPS`
 para IP real tras proxy · `/health/ready` con `x-health-token` comparado en tiempo constante.
 
-## Supabase local (recomendado para desarrollar)
+## Entorno de pruebas: Supabase en la nube
 
-Requiere Docker. La CLI es una devDependency (`supabase`); la configuración está en `supabase/config.toml`
-(puertos 54341–54349 para no chocar con otros proyectos Supabase locales; sin realtime, storage ni analytics;
-pooler de transacciones activo para imitar producción).
+No se usa Supabase local (se retiró la CLI y `supabase/`). El entorno de desarrollo y pruebas es un proyecto
+Supabase gratuito, separado de producción.
 
-1. `pnpm db:local:start` (la primera vez descarga varios GB de imágenes).
-2. Crear `sushimon-api/.env` con los valores del bloque «Supabase LOCAL» de `.env.example`
-   (`DATABASE_URL` por el pooler 54349, `DIRECT_URL` directa 54342) y un `HEALTH_READY_TOKEN`.
-3. `pnpm db:local:migrate` con las variables cargadas (crea el esquema `app`; requiere aprobación humana).
-4. `pnpm dev:api` y `curl -H "x-health-token: <token>" localhost:3001/v1/health/ready`.
-5. `pnpm db:local:stop` al terminar.
+1. En Supabase → Connect → ORM → Prisma, copiar `DATABASE_URL` (pooler de transacciones, 6543) y `DIRECT_URL`
+   (pooler de sesión, 5432) a `sushimon-api/.env` (sin corchetes; codificar caracteres especiales de la clave),
+   más `SUPABASE_URL` y un `HEALTH_READY_TOKEN`.
+2. `pnpm --filter sushimon-api db:migrate:deploy` desde `sushimon-api/` (requiere aprobación humana).
+3. `pnpm dev:api` y `curl -H "x-health-token: <token>" localhost:3001/v1/health/ready`.
 
-Studio <http://127.0.0.1:54343> · API <http://127.0.0.1:54341> · Mailpit <http://127.0.0.1:54344>.
-Las migraciones de la aplicación viven en `sushimon-api/prisma/migrations` (Prisma); `supabase/migrations`
-queda vacío a propósito para no tener dos fuentes de verdad.
+Las migraciones de la aplicación viven en `sushimon-api/prisma/migrations` (Prisma).
+
+Pruebas de integración: `DATABASE_URL_TEST` (en `sushimon-api/.env`, misma cadena directa 5432 que `DIRECT_URL`) y
+`pnpm --filter sushimon-api test:integration`. Contra este proyecto de pruebas crean datos marcados
+(`@sushimon.test`, sucursales de prueba, filas mínimas en `auth.users`) y los borran al terminar; no tocan datos
+reales. La prueba de PostgreSQL plano (crea otra base) se omite sola en Supabase. **Nunca** apuntar a producción.
 
 ## Pendiente
 

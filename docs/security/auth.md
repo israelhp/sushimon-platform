@@ -1,7 +1,7 @@
 # Autenticación y autorización (F01)
 
-Estado: **API y web implementadas y probadas** con tokens ES256 reales de Supabase Auth local. **No verificado**: el
-viaje de ida y vuelta con Google (requiere credenciales de Google Cloud) ni un proyecto Supabase en la nube.
+Estado: **API y web implementadas y probadas** con pruebas unitarias, e2e y de integración (JWT ES256 firmados en las pruebas). La verificación
+manual con Google contra el proyecto Supabase de pruebas en la nube se hace siguiendo esta guía.
 
 ## Modelo
 
@@ -53,8 +53,7 @@ iniciar sesión con Google. Idempotente. Ejecutarlo contra producción requiere 
 ### Google Cloud Console
 
 1. APIs y servicios → Credenciales → **ID de cliente OAuth** (aplicación web).
-2. **URI de redireccionamiento autorizado**: `https://<ref>.supabase.co/auth/v1/callback` (nube) y
-   `http://127.0.0.1:54341/auth/v1/callback` (local).
+2. **URI de redireccionamiento autorizado**: `https://<ref>.supabase.co/auth/v1/callback`.
 3. Guardar `client_id` y `secret`. **Nunca** al repositorio.
 
 ### Supabase (nube: Authentication)
@@ -64,12 +63,6 @@ iniciar sesión con Google. Idempotente. Ejecutarlo contra producción requiere 
 - **URL Configuration**: _Site URL_ = URL pública de la web; _Redirect URLs_ = `https://<dominio>/auth/callback`.
 - **JWT signing keys**: usar claves asimétricas (ES256). Con un proyecto heredado HS256, configurar
   `SUPABASE_JWT_SECRET` en la API (nunca en la web).
-
-### Local
-
-`supabase/config.toml` trae `[auth.external.google]` con `enabled = false`. Para probar Google en local:
-`SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID` y `…_SECRET` en `supabase/.env` (no versionado), poner `enabled = true` y
-`pnpm db:local:stop && pnpm db:local:start`.
 
 ### Variables
 
@@ -86,10 +79,9 @@ iniciar sesión con Google. Idempotente. Ejecutarlo contra producción requiere 
 ```bash
 pnpm --filter sushimon-api test && pnpm --filter sushimon-api test:e2e     # JWT, guards, endpoints (sin red)
 DATABASE_URL_TEST=… pnpm --filter sushimon-api test:integration           # vinculación, concurrencia, constraints
-pnpm db:local:start && pnpm --filter sushimon-api build && pnpm --filter sushimon-api smoke:auth:local
 ```
 
-`smoke:auth:local` crea un usuario en Supabase Auth local, obtiene un JWT ES256 **real** y lo valida contra la API.
+Prueba manual: entrar con Google en `/backoffice/login` (admin preregistrado) y en la tienda (cliente).
 
 ## Límites conocidos
 

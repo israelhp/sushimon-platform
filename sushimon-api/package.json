@@ -19,7 +19,6 @@
     "prisma:validate": "prisma validate",
     "db:migrate:deploy": "prisma migrate deploy",
     "test:integration": "vitest run --config vitest.config.integration.ts",
-    "smoke:auth:local": "node scripts/smoke-auth-local.mjs",
     "staff:bootstrap": "tsx scripts/bootstrap-admin.ts"
   },
   "dependencies": {

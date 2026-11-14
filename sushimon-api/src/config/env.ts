@@ -46,7 +46,7 @@ export const envSchema = z
     /** Saltos de proxy de confianza (p. ej. 1 detrás de Vercel/Render) para obtener la IP real. */
     TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
 
-    /** URL base del proyecto Supabase (p. ej. https://<ref>.supabase.co o http://127.0.0.1:54341 en local). */
+    /** URL base del proyecto Supabase (p. ej. https://<ref>.supabase.co). */
     SUPABASE_URL: optional(z.url()),
     /** Audiencia esperada del JWT. Supabase usa `authenticated`. */
     SUPABASE_JWT_AUDIENCE: z.string().min(1).default('authenticated'),
