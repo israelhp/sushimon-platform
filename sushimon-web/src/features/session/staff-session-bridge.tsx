@@ -12,7 +12,7 @@ const ROLE_PRIORITY: readonly StaffRole[] = ['admin', 'manager', 'kitchen'];
 
 /** Adapta el contexto que calculó el SERVIDOR al modelo de personal que ya consume el shell. */
 export function staffFromContext(ctx: AuthContext): DemoStaff | null {
-  if (!ctx.backofficeAccess || !ctx.staff) return null;
+  if (ctx.access !== 'GRANTED' || !ctx.backofficeAccess || !ctx.staff) return null;
   const roles = ctx.staff.assignments.map((a) => a.role);
   const role = ROLE_PRIORITY.find((r) => roles.includes(r));
   if (!role) return null;

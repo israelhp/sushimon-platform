@@ -27,6 +27,11 @@ export const getAuthContext: Handler = (req): AuthContextResponse => {
     email,
     provider: 'google-demo',
     isCustomer: Boolean(customer),
+    // Réplica de demostración: el personal simulado se trata como aal2 (no hay Supabase ni MFA reales).
+    aal: staff ? 'aal2' : 'aal1',
+    staffAuthorized: Boolean(staff),
+    mfaRequired: false,
+    access: staff ? 'GRANTED' : 'NOT_STAFF',
     staff: staff
       ? {
           staffId: '00000000-0000-4000-8000-00000000d3a1',

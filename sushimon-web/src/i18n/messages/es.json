@@ -1887,6 +1887,46 @@
           "incompleteContact": "Datos de contacto incompletos"
         }
       }
+    },
+    "mfa": {
+      "eyebrow": "Seguridad · Backoffice",
+      "setupTitle": "Configura la verificación en dos pasos",
+      "setupHelp": "El acceso al backoffice exige un segundo factor. Hasta completarlo no puedes usar el panel.",
+      "verifyTitle": "Verificación en dos pasos",
+      "verifyHelp": "Ingresa el código de 6 dígitos de tu aplicación autenticadora.",
+      "start": "Comenzar configuración",
+      "step1": "Instala una aplicación autenticadora (Google Authenticator, Authy, 1Password…).",
+      "step2": "Escanea el código QR o ingresa la clave manualmente.",
+      "step3": "Escribe el código de 6 dígitos que muestra la aplicación.",
+      "qrAlt": "Código QR para configurar tu aplicación autenticadora",
+      "manualTitle": "No puedo escanear el código",
+      "manualHelp": "Ingresa esta clave en tu aplicación autenticadora. No la compartas con nadie.",
+      "codeLabel": "Código de 6 dígitos",
+      "confirm": "Confirmar y activar",
+      "verify": "Verificar",
+      "factorLabel": "Dispositivo",
+      "factorOption": "Aplicación autenticadora {n}",
+      "checking": "Verificando acceso…",
+      "verifyingAccess": "Código verificado. Confirmando tu acceso…",
+      "retry": "Reintentar",
+      "signOut": "Cerrar sesión",
+      "errors": {
+        "invalidCode": "El código es incorrecto. Revisa que tengan 6 dígitos e inténtalo de nuevo.",
+        "expired": "El código expiró. Inténtalo con el código actual.",
+        "factorMissing": "No encontramos tu dispositivo de verificación. Reinicia la configuración.",
+        "rateLimited": "Demasiados intentos. Espera unos minutos antes de volver a intentarlo.",
+        "session": "Tu sesión expiró. Vuelve a iniciar sesión.",
+        "network": "No pudimos comunicarnos con el servidor. Inténtalo de nuevo.",
+        "unknown": "No se pudo completar la verificación."
+      }
+    },
+    "accessDenied": {
+      "eyebrow": "Backoffice · Sushi Mon",
+      "title": "Acceso denegado",
+      "body": "Tu cuenta no tiene acceso al backoffice. Si crees que es un error, contacta a un administrador.",
+      "store": "Volver a la tienda",
+      "signOut": "Cerrar sesión",
+      "checking": "Verificando acceso…"
     }
   }
 }

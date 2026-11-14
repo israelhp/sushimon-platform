@@ -8,6 +8,10 @@ const base: AuthContext = {
   email: 'ana@sushimon.test',
   provider: 'google',
   isCustomer: false,
+  aal: 'aal2',
+  staffAuthorized: true,
+  mfaRequired: false,
+  access: 'GRANTED',
   backofficeAccess: true,
   staff: {
     staffId: '00000000-0000-4000-8000-000000000002',
@@ -50,5 +54,12 @@ describe('staffFromContext', () => {
   it('sin acceso al backoffice no hay personal (denegar por defecto)', () => {
     expect(staffFromContext({ ...base, backofficeAccess: false, staff: null })).toBeNull();
     expect(staffFromContext({ ...base, backofficeAccess: false })).toBeNull();
+  });
+
+  it('personal en aal1 (MFA_REQUIRED) no se adopta aunque llegara un contexto de personal', () => {
+    expect(
+      staffFromContext({ ...base, aal: 'aal1', mfaRequired: true, access: 'MFA_REQUIRED' }),
+    ).toBeNull();
+    expect(staffFromContext({ ...base, access: 'NOT_STAFF' })).toBeNull();
   });
 });

@@ -1887,6 +1887,46 @@
           "incompleteContact": "Datos de contacto incompletos"
         }
       }
+    },
+    "mfa": {
+      "eyebrow": "Security · Backoffice",
+      "setupTitle": "Set up two-step verification",
+      "setupHelp": "Backoffice access requires a second factor. You cannot use the dashboard until it is done.",
+      "verifyTitle": "Two-step verification",
+      "verifyHelp": "Enter the 6-digit code from your authenticator app.",
+      "start": "Start setup",
+      "step1": "Install an authenticator app (Google Authenticator, Authy, 1Password…).",
+      "step2": "Scan the QR code or enter the key manually.",
+      "step3": "Type the 6-digit code shown by the app.",
+      "qrAlt": "QR code to set up your authenticator app",
+      "manualTitle": "I can't scan the code",
+      "manualHelp": "Enter this key in your authenticator app. Do not share it.",
+      "codeLabel": "6-digit code",
+      "confirm": "Confirm and enable",
+      "verify": "Verify",
+      "factorLabel": "Device",
+      "factorOption": "Authenticator app {n}",
+      "checking": "Checking access…",
+      "verifyingAccess": "Code verified. Confirming your access…",
+      "retry": "Retry",
+      "signOut": "Sign out",
+      "errors": {
+        "invalidCode": "The code is incorrect. Check it has 6 digits and try again.",
+        "expired": "The code expired. Try the current code.",
+        "factorMissing": "We could not find your verification device. Restart the setup.",
+        "rateLimited": "Too many attempts. Wait a few minutes.",
+        "session": "Your session expired. Sign in again.",
+        "network": "We could not reach the server. Try again.",
+        "unknown": "Verification could not be completed."
+      }
+    },
+    "accessDenied": {
+      "eyebrow": "Backoffice · Sushi Mon",
+      "title": "Access denied",
+      "body": "Your account has no backoffice access. If you think this is a mistake, contact an administrator.",
+      "store": "Back to the store",
+      "signOut": "Sign out",
+      "checking": "Checking access…"
     }
   }
 }
