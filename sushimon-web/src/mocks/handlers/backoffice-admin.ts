@@ -1,5 +1,5 @@
 import type {
-  BranchAvailability,
+  ProductBranchAvailability,
   Category,
   Order,
   Product,
@@ -48,10 +48,10 @@ export const listBoProducts: Handler = (req): Product[] => {
   return req.store.products.map((p) => productView(p));
 };
 
-function parseAvailability(req: Req, value: unknown): BranchAvailability[] {
+function parseAvailability(req: Req, value: unknown): ProductBranchAvailability[] {
   if (!Array.isArray(value)) fail(400, 'availability inválido');
   const known = new Set(req.store.branches.map((b) => b.id));
-  return value.map((a: Partial<BranchAvailability>) => {
+  return value.map((a: Partial<ProductBranchAvailability>) => {
     if (!a || !known.has(str(a.branchId)) || typeof a.available !== 'boolean') {
       fail(400, 'availability inválido');
     }

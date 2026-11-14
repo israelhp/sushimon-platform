@@ -15,6 +15,7 @@ import {
 import { cn } from '@/lib/cn';
 import { useDemoSession } from '@/features/session/demo-session';
 import { LOGIN_PATH, navForGrants, screenFromPath, screenHref } from './nav';
+import { useBranchesAvailability } from '@/features/branch-schedule/hooks';
 import { branchShortName, useShell } from './shell-context';
 import { avatarStyle, staffInitials } from './staff-display';
 import { PopoverRoot, usePopover } from './use-popover';
@@ -113,7 +114,9 @@ function BranchSelector() {
     : current
       ? `${current.name} · ${branchShortName(current)}`
       : shell.branchId;
-  const open = shell.branches.filter((b) => b.isOpen).length;
+  // F08: «abierta ahora» la calcula el servidor (disponibilidad pública de cada sucursal activa).
+  const availability = useBranchesAvailability(shell.branches.map((b) => b.id));
+  const open = shell.branches.filter((b) => availability.byId[b.id]?.isOpenNow).length;
 
   return (
     <PopoverRoot className="side-br" open={popover.open} onDismiss={popover.close}>

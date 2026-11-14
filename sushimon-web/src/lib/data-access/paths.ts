@@ -11,6 +11,9 @@ export const paths = {
   /** F07 (contrato): sucursales activas, solo campos públicos. */
   branches: () => '/v1/branches',
   branch: (id: string) => `/v1/branches/${seg(id)}`,
+  /** F08 (contrato): horario semanal público y disponibilidad (calculada por el servidor). */
+  branchHours: (id: string) => `/v1/branches/${seg(id)}/hours`,
+  branchAvailability: (id: string) => `/v1/branches/${seg(id)}/availability`,
   deliveryQuote: () => '/v1/delivery/quote',
   categories: () => '/v1/catalog/categories',
   products: () => '/v1/catalog/products',
@@ -51,6 +54,11 @@ export const paths = {
   adminBranches: () => '/v1/admin/branches',
   adminBranch: (id: string) => `/v1/admin/branches/${seg(id)}`,
   adminBranchStatus: (id: string) => `/v1/admin/branches/${seg(id)}/status`,
+  /** F08 (contrato): horario semanal y cierres extraordinarios (`branches.read` / `branches.manage_hours` + aal2). */
+  adminBranchHours: (id: string) => `/v1/admin/branches/${seg(id)}/hours`,
+  adminBranchClosures: (id: string) => `/v1/admin/branches/${seg(id)}/closures`,
+  adminBranchClosure: (id: string, closureId: string) =>
+    `/v1/admin/branches/${seg(id)}/closures/${seg(closureId)}`,
   /** F03 (contrato): empleados, asignaciones, roles y permisos granulares (JWT + `staff.*`/`roles.*` + aal2). */
   adminContext: () => '/v1/admin/me/context',
   adminStaff: () => '/v1/admin/staff',
@@ -69,8 +77,8 @@ export const paths = {
    * La UI solo las ofrece cuando `client.kind === 'mock'`.
    */
   /**
-   * Operación SIMULADA de las sucursales (horario, cobertura, abierta/cerrada, zona): pertenece a F08/F09 y aún no
-   * tiene contrato. La identidad y el estado administrativo (F07) viven en `branches`/`adminBranches`.
+   * Operación SIMULADA de las sucursales (cobertura, radio, zona: F09/F33), sin contrato todavía. El horario y la
+   * disponibilidad ya son contrato (F08: `branchHours`, `branchAvailability`). La identidad y el estado administrativo (F07) viven en `branches`/`adminBranches`.
    */
   demoBranchOperations: () => '/v1/demo/branches/operations',
   demoBranchOperation: (id: string) => `/v1/demo/branches/${seg(id)}/operations`,

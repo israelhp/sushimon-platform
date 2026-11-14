@@ -9,8 +9,7 @@ import type {
   Product,
   Promotion,
 } from '@/lib/data-access/models';
-import { isWithinHours } from '@/lib/schedule';
-import { localDate, localDayOfWeek, localMinutes, hmToMinutes } from '@/lib/time';
+import { localDate, localIsoWeekday, localMinutes, hmToMinutes } from '@/lib/time';
 import type { BranchSeed } from './fixtures/branches';
 import type { PromotionSeed } from './fixtures/promotions';
 import type { MockStore, ProductRecord } from './store';
@@ -50,9 +49,10 @@ export function normalizeOrderNumber(value: string): string {
 
 // ── Sucursales y cobertura ────────────────────────────────────────────────────────────────
 
-export function branchView(seed: BranchSeed, now: Date): Branch {
+export function branchView(seed: BranchSeed): Branch {
   // Se omiten los campos de identidad F07 (`code`, coordenadas, `active`, `createdAt`): esta es la vista OPERATIVA
-  // simulada (F08/F09); la identidad y el estado administrativo se leen de `/v1/branches` y `/v1/admin/branches`.
+  // simulada (cobertura: F09/F33); la identidad y el estado administrativo se leen de `/v1/branches` y
+  // `/v1/admin/branches`, y el horario/disponibilidad (F08) de `/v1/branches/:id/hours|availability`.
   const {
     legacyBackofficeId: _legacy,
     code,
@@ -63,10 +63,7 @@ export function branchView(seed: BranchSeed, now: Date): Branch {
     ...rest
   } = seed;
   void [_legacy, code, latitude, longitude, active, createdAt];
-  return {
-    ...rest,
-    openNow: seed.status === 'active' && seed.isOpen && isWithinHours(seed.hours, now),
-  };
+  return rest;
 }
 
 const TIER_RANK: DeliveryTierId[] = ['near', 'mid', 'extended', 'far'];
@@ -155,7 +152,7 @@ export function promotionView(seed: PromotionSeed, now: Date): Promotion {
 /** ¿La promoción aplica en este instante (día y hora)? Útil para la UI de Happy Hour. */
 export function isPromotionLiveAt(promo: Promotion, now: Date): boolean {
   if (promo.status !== 'current') return false;
-  const isoDay = ((localDayOfWeek(now) + 6) % 7) + 1;
+  const isoDay = localIsoWeekday(now);
   const m = localMinutes(now);
   return (
     promo.daysOfWeek.includes(isoDay) &&

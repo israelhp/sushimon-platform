@@ -72,6 +72,8 @@ export function createHttpClient(
         message,
         payload?.requestId ?? res.headers.get('x-request-id') ?? undefined,
         Array.isArray(payload?.details) ? payload.details : undefined,
+        typeof payload?.code === 'string' ? payload.code : undefined,
+        Array.isArray(payload?.violations) ? payload.violations : undefined,
       );
     }
     if (res.status === 204) return undefined as T;

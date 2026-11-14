@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { STORE_WEEKLY_HOURS } from '@/mocks/fixtures/store';
+import { BRANCH_HOURS_SEEDS } from '@/mocks/fixtures/schedule';
 import { dateOptions, firstSlot, formatWhen } from './when';
 
 const labels = { asap: 'Lo antes posible', today: 'Hoy', tomorrow: 'Mañana' };
@@ -43,11 +43,11 @@ describe('etiquetas de "cuándo"', () => {
   });
 
   it('ofrece 7 días con etiqueta y el primer horario respeta la anticipación', () => {
-    const days = dateOptions(rules, STORE_WEEKLY_HOURS, now, 'es', labels);
+    const days = dateOptions(rules, BRANCH_HOURS_SEEDS['sucursal-1']!, now, 'es', labels);
     expect(days).toHaveLength(7);
     expect(days[0]).toMatchObject({ date: '2026-11-11', label: 'Hoy', sub: '11 nov' });
     expect(days[1]).toMatchObject({ date: '2026-11-12', label: 'Mañana' });
-    expect(firstSlot(rules, STORE_WEEKLY_HOURS, '2026-11-11', now)).toBe('15:30');
-    expect(firstSlot(rules, STORE_WEEKLY_HOURS, '2026-11-12', now)).toBe('12:00');
+    expect(firstSlot(rules, BRANCH_HOURS_SEEDS['sucursal-1']!, '2026-11-11', now)).toBe('15:30');
+    expect(firstSlot(rules, BRANCH_HOURS_SEEDS['sucursal-1']!, '2026-11-12', now)).toBe('12:00');
   });
 });

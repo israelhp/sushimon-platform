@@ -56,6 +56,15 @@ const checkoutStep = (step: number, payment: 'card' | 'cash' = 'card') => ({
 export const A11Y_ROUTES: RouteCase[] = [
   // Cuenta, Más, empleo y 404 (bloque 6). Las de cuenta, con y sin sesión de demostración.
   { path: '/mas', ready: { role: 'heading', name: /^Más/ } },
+  {
+    path: '/mas',
+    label: 'horario de sucursal',
+    ready: { role: 'heading', name: /^Más/ },
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Ver horario: Sucursal 1' }).click();
+      await page.getByRole('region', { name: 'Horario de Sucursal 1' }).waitFor();
+    },
+  },
   { path: '/cuenta', ready: { role: 'heading', name: /Mi cuenta/ } },
   { path: '/cuenta', ready: { role: 'heading', name: /Mi cuenta/ }, signedIn: true },
   {
@@ -223,6 +232,103 @@ export const A11Y_ROUTES: RouteCase[] = [
     path: '/backoffice/sucursales',
     ready: { role: 'heading', name: 'Sucursales' },
     staff: 'admin',
+  },
+  // F08: editor de horario semanal y cierres extraordinarios.
+  {
+    path: '/backoffice/sucursales',
+    label: 'modal horario semanal',
+    ready: { role: 'heading', name: 'Sucursales' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Horario y cierres de Sucursal 1' }).click();
+      await page.getByRole('dialog', { name: 'Horario y cierres' }).waitFor();
+      await page.getByLabel('Apertura del intervalo 1 de Lunes').waitFor();
+    },
+  },
+  {
+    path: '/backoffice/sucursales',
+    label: 'horario con errores por intervalo',
+    ready: { role: 'heading', name: 'Sucursales' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Horario y cierres de Sucursal 1' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Horario y cierres' });
+      await dialog.getByLabel('Apertura del intervalo 1 de Viernes').waitFor();
+      await dialog.getByRole('button', { name: 'Agregar intervalo a Viernes' }).click();
+      await dialog.getByLabel('Apertura del intervalo 2 de Viernes').fill('20:00');
+      await dialog.getByLabel('Cierre del intervalo 2 de Viernes').fill('23:00');
+      await dialog.getByRole('button', { name: 'Guardar horario' }).click();
+      await dialog.getByText(/Se solapa con days\[4\]/).waitFor();
+    },
+  },
+  {
+    path: '/backoffice/sucursales',
+    label: 'cierres extraordinarios',
+    ready: { role: 'heading', name: 'Sucursales' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Horario y cierres de Sucursal 1' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Horario y cierres' });
+      await dialog.getByRole('tab', { name: 'Cierres' }).click();
+      await dialog.getByText('Motivo: Mantenimiento de campana extractora').waitFor();
+    },
+  },
+  {
+    path: '/backoffice/sucursales',
+    label: 'modal nuevo cierre con errores',
+    ready: { role: 'heading', name: 'Sucursales' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Horario y cierres de Sucursal 1' }).click();
+      await page.getByRole('tab', { name: 'Cierres' }).click();
+      await page.getByRole('button', { name: 'Nuevo cierre' }).click();
+      await page.getByRole('dialog', { name: 'Nuevo cierre' }).waitFor();
+      await page.getByRole('button', { name: 'Crear cierre' }).click();
+      await page.getByRole('dialog', { name: 'Nuevo cierre' }).getByRole('alert').first().waitFor();
+    },
+  },
+  {
+    path: '/backoffice/sucursales',
+    label: 'horario ocupado (BRANCH_SCHEDULE_BUSY)',
+    ready: { role: 'heading', name: 'Sucursales' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Horario y cierres de Sucursal 5' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Horario y cierres' });
+      await dialog.getByRole('switch', { name: 'Atiende el día Lunes' }).click();
+      await dialog.getByRole('button', { name: 'Guardar horario' }).click();
+      await page
+        .getByRole('dialog', { name: 'Guardar horario' })
+        .getByRole('button', { name: 'Confirmar y guardar' })
+        .click();
+      await dialog.getByText(/Otra persona está guardando cambios/).waitFor();
+    },
+  },
+  {
+    path: '/backoffice/sucursales',
+    label: 'cierre con inicio demasiado antiguo',
+    ready: { role: 'heading', name: 'Sucursales' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Horario y cierres de Sucursal 1' }).click();
+      await page.getByRole('tab', { name: 'Cierres' }).click();
+      await page.getByRole('button', { name: 'Nuevo cierre' }).click();
+      const form = page.getByRole('dialog', { name: 'Nuevo cierre' });
+      await form.getByLabel('Inicio (hora de Guatemala)').fill('2026-11-11T12:00');
+      await form.getByLabel('Fin (hora de Guatemala, no incluido)').fill('2026-11-11T18:00');
+      await form.getByRole('button', { name: 'Crear cierre' }).click();
+      await form.getByText('El inicio no puede ser anterior a una hora atrás.').waitFor();
+    },
+  },
+  {
+    path: '/backoffice/sucursales',
+    label: 'sucursal sin permiso de edición (encargado)',
+    ready: { role: 'heading', name: 'Sucursales' },
+    staff: 'manager',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Horario y cierres de Sucursal 1' }).click();
+      await page.getByText(/Solo lectura: no tienes permiso para modificar horarios/).waitFor();
+    },
   },
   { path: '/backoffice/usuarios', ready: { role: 'heading', name: 'Usuarios' }, staff: 'admin' },
   {

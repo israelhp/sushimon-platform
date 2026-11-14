@@ -6,6 +6,7 @@ import * as bo from './backoffice';
 import * as branches from './branches';
 import * as orders from './orders';
 import * as pub from './public';
+import * as schedule from './schedule';
 import * as staff from './staff';
 
 /**
@@ -17,6 +18,9 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'GET /v1/store/config': pub.getStoreConfig,
   'GET /v1/branches': branches.listPublicBranches,
   'GET /v1/branches/:id': branches.getPublicBranch,
+  // F08: horario público y disponibilidad (calculada con el reloj del servidor)
+  'GET /v1/branches/:id/hours': schedule.getPublicBranchHours,
+  'GET /v1/branches/:id/availability': schedule.getPublicBranchAvailability,
   'GET /v1/delivery/quote': pub.getDeliveryQuote,
   'GET /v1/catalog/categories': pub.listCategories,
   'GET /v1/catalog/products': pub.listProducts,
@@ -68,6 +72,13 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'GET /v1/admin/branches/:id': branches.getAdminBranch,
   'PATCH /v1/admin/branches/:id': branches.updateAdminBranch,
   'PATCH /v1/admin/branches/:id/status': branches.updateAdminBranchStatus,
+  // F08: horario semanal y cierres extraordinarios (contrato)
+  'GET /v1/admin/branches/:id/hours': schedule.getAdminBranchHours,
+  'PUT /v1/admin/branches/:id/hours': schedule.replaceAdminBranchHours,
+  'GET /v1/admin/branches/:id/closures': schedule.listAdminBranchClosures,
+  'POST /v1/admin/branches/:id/closures': schedule.createAdminBranchClosure,
+  'PATCH /v1/admin/branches/:id/closures/:closureId': schedule.updateAdminBranchClosure,
+  'DELETE /v1/admin/branches/:id/closures/:closureId': schedule.deleteAdminBranchClosure,
   // F03: empleados, roles y permisos (contrato)
   'GET /v1/admin/me/context': staff.getAdminContext,
   'GET /v1/admin/staff': staff.listAdminStaff,

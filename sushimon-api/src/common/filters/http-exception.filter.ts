@@ -16,6 +16,30 @@ export interface ErrorBody {
   requestId?: string;
   /** Detalle por campo en errores de validación (400). */
   details?: string[];
+  /** Código de negocio estable (opcional; p. ej. `HOURS_VERSION_CONFLICT`). */
+  code?: string;
+  /** Violaciones estructuradas de reglas de negocio (opcional; F08). */
+  violations?: { path: string; code: string; message: string }[];
+}
+
+/** Solo propaga violaciones bien formadas; descarta cualquier otro campo (nunca filtra datos internos). */
+function pickViolations(value: unknown): ErrorBody['violations'] {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const out: NonNullable<ErrorBody['violations']> = [];
+  for (const v of value as unknown[]) {
+    if (typeof v !== 'object' || v === null) return undefined;
+    const { path, code, message } = v as Record<string, unknown>;
+    if (typeof path !== 'string' || typeof code !== 'string' || typeof message !== 'string')
+      return undefined;
+    out.push({ path, code, message });
+  }
+  return out;
+}
+
+/** `name` y `code` de un error de Prisma (nunca su mensaje ni argumentos). */
+function prismaErrorLabel(error: Error): string {
+  const code = (error as unknown as { code?: unknown }).code;
+  return typeof code === 'string' ? `${error.name} code=${code}` : error.name;
 }
 
 /** Nunca filtra trazas ni detalles internos en errores 5xx. */
@@ -41,21 +65,34 @@ export class AllExceptionsFilter implements ExceptionFilter {
         : typeof payload['message'] === 'string'
           ? payload['message']
           : exception.message;
+      const code = typeof payload['code'] === 'string' ? payload['code'] : undefined;
+      const violations = pickViolations(payload['violations']);
       const body: ErrorBody = {
         statusCode: status,
         error: HttpStatus[status] ?? 'Error',
         message,
         ...(requestId ? { requestId } : {}),
         ...(details ? { details } : {}),
+        ...(code && status < 500 ? { code } : {}),
+        ...(violations && status < 500 ? { violations } : {}),
       };
       if (status >= 500) this.logger.error(`[${requestId ?? '-'}] ${exception.message}`);
+      res.setHeader('Cache-Control', 'no-store');
       res.status(status).json(body);
       return;
     }
 
+    // Errores de Prisma: solo `name` y `code`. Su mensaje/argumentos pueden incluir datos de la consulta (p. ej. `reason`).
+    const prismaError =
+      exception instanceof Error && exception.name.startsWith('PrismaClient')
+        ? prismaErrorLabel(exception)
+        : null;
     this.logger.error(
-      `[${requestId ?? '-'}] ${exception instanceof Error ? exception.stack : String(exception)}`,
+      `[${requestId ?? '-'}] ${
+        prismaError ?? (exception instanceof Error ? exception.stack : String(exception))
+      }`,
     );
+    res.setHeader('Cache-Control', 'no-store');
     res.status(500).json({
       statusCode: 500,
       error: 'INTERNAL_SERVER_ERROR',

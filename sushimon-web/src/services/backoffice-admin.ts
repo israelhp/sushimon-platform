@@ -1,7 +1,7 @@
 import type { DataClient } from '@/lib/data-access/types';
 import type {
   Branch,
-  BranchAvailability,
+  ProductBranchAvailability,
   Category,
   Order,
   Product,
@@ -33,7 +33,7 @@ export const updateProduct = (client: DataClient, id: string, input: Partial<Pro
 export const setProductAvailability = (
   client: DataClient,
   id: string,
-  availability: BranchAvailability[],
+  availability: ProductBranchAvailability[],
 ) => client.patch<Product>(paths.boProduct(id), { availability });
 
 export type CategoryInput = Pick<Category, 'name'> &
@@ -58,14 +58,11 @@ export const updatePromotion = (client: DataClient, id: string, input: Partial<P
   client.patch<Promotion>(paths.boPromotion(id), input);
 
 /**
- * 🎭 Solo simulación (F08/F09): `isOpen`, horario, radio y cobertura de una sucursal. La identidad y el estado
+ * 🎭 Solo simulación (F09/F33): zona, radio y cobertura de una sucursal (el horario es F08, ya es contrato). La identidad y el estado
  * administrativo (F07) se cambian con `services/branches`. Nada de esto está en el contrato real todavía.
  */
 export type BranchOperationsUpdate = Partial<
-  Pick<
-    Branch,
-    'isOpen' | 'zoneLabel' | 'hoursLabel' | 'hours' | 'radiusKm' | 'coverage' | 'coverageLabels'
-  >
+  Pick<Branch, 'zoneLabel' | 'radiusKm' | 'coverage' | 'coverageLabels'>
 >;
 
 export const updateBranchOperations = (

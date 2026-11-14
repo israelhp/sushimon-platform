@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ApiError } from '@/lib/data-access/errors';
 import type { CreateOrderRequest, Order } from '@/lib/data-access/models';
 import * as orders from '@/services/orders';
+import { getBranchAvailability } from '@/services/branch-schedule';
 import * as store from '@/services/store';
 import { createHarness } from '../testing';
 
@@ -53,11 +54,11 @@ describe('datos públicos', () => {
   it('sucursales: 3 activas abiertas ahora y 2 próximamente', async () => {
     const { client } = createHarness();
     const branches = await store.listBranches(client);
-    expect(branches.filter((b) => b.openNow).map((b) => b.id)).toEqual([
-      'sucursal-1',
-      'sucursal-2',
-      'sucursal-3',
-    ]);
+    const open: string[] = [];
+    for (const b of branches.filter((x) => x.status === 'active')) {
+      if ((await getBranchAvailability(client, b.id)).isOpenNow) open.push(b.id);
+    }
+    expect(open).toEqual(['sucursal-1', 'sucursal-2', 'sucursal-3']);
     expect(branches.filter((b) => b.status === 'coming_soon')).toHaveLength(2);
   });
 

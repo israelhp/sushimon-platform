@@ -7,6 +7,8 @@ implemente (`contracts:check` exige que contrato y API coincidan). Los esquemas 
 
 > Implementado en F03 (`API_IMPLEMENTED`): `/v1/admin/staff[...]`, `/v1/admin/roles[...]`, `/v1/admin/permissions` (reemplazan a `/v1/backoffice/users`).
 >
+> Definido en F08 (`CONTRACT_DEFINED`, ya en `openapi.yaml`; API pendiente): `GET /v1/branches/{id}/hours`, `GET /v1/branches/{id}/availability`, `GET|PUT /v1/admin/branches/{id}/hours`, `GET|POST /v1/admin/branches/{id}/closures`, `PATCH|DELETE /v1/admin/branches/{id}/closures/{closureId}`. Los esquemas draft `BranchHours`/`BranchAvailability` pasaron a `DraftBranchHours`/`DraftBranchAvailability`.
+>
 > Implementado en F07 (`API_IMPLEMENTED`, ya en `openapi.yaml`): `GET /v1/branches[/{id}]` y `/v1/admin/branches[/{id}[/status]]`; se retiraron de esta tabla.
 
 | Método           | Ruta                                                       | Esquema de respuesta  | Uso                                                    | Auth prevista               |

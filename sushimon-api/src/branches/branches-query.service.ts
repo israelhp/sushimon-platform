@@ -33,6 +33,11 @@ export class BranchesQueryService {
     return branch;
   }
 
+  /** `null` = no existe; si existe, su estado administrativo (F08: inactiva ≠ inexistente en el puerto interno). */
+  getStatus(id: string): Promise<{ id: string; active: boolean } | null> {
+    return this.repo.findStatus(id);
+  }
+
   existsActive(id: string): Promise<boolean> {
     return this.repo.existsActive(id);
   }

@@ -16,6 +16,10 @@ import { useCart } from '@/features/cart/cart-context';
 import { estimateSubtotal } from '@/features/cart/cart';
 import { useProducts } from '@/features/catalog/hooks';
 import { foodArtKind, productName, tileClass } from '@/features/catalog/localized';
+import { BranchNotAcceptingNotice } from '@/features/branch-schedule/components/BranchNotAcceptingNotice';
+import { useBranchAvailability } from '@/features/branch-schedule/hooks';
+import { usePublicBranches } from '@/features/branches/hooks';
+import { useOrderMode } from '@/features/order-mode/order-mode-context';
 import { STORE_ROUTES } from '../nav';
 import { useCartDrawer } from '../store-shell-context';
 import { ErrorNotice } from './ErrorNotice';
@@ -35,6 +39,11 @@ export function CartDrawer() {
   const { notify } = useToast();
   const cart = useCart();
   const products = useProducts();
+  // F08: aviso (solo UI) si la sucursal elegida no recibe pedidos ahora; lo calcula el servidor.
+  const { mode } = useOrderMode();
+  const publicBranches = usePublicBranches();
+  const branchAvailability = useBranchAvailability(mode.when.kind === 'now' ? mode.branchId : null);
+  const branchName = publicBranches.data?.find((b) => b.id === mode.branchId)?.name ?? '';
 
   const byId = new Map<string, Product>((products.data ?? []).map((p) => [p.id, p]));
   const rows = cart.lines.flatMap((line, index) => {
@@ -79,6 +88,13 @@ export function CartDrawer() {
           <span className="text-[13px] font-bold text-muted">{t('cart.delivery')}</span>
           <OrderModeButton />
         </div>
+        {branchName ? (
+          <BranchNotAcceptingNotice
+            name={branchName}
+            availability={branchAvailability.data}
+            className="mx-4 mt-3"
+          />
+        ) : null}
 
         {cart.lines.length === 0 ? (
           <EmptyState

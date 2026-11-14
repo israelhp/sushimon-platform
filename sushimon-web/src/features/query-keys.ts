@@ -2,6 +2,7 @@ import type { DeliveryQuoteArgs, ProductFilters } from '@/services/store';
 import type { BackofficeOrderFilters, DeliveryFilters } from '@/services/backoffice-orders';
 import type { ReportFilters } from '@/services/backoffice-admin';
 import type { AdminBranchFilters } from '@/services/branches';
+import type { ClosureFilters } from '@/services/branch-schedule';
 import type { AdminStaffFilters } from '@/services/staff';
 
 /**
@@ -23,6 +24,16 @@ export const queryKeys = {
     /** Prefijo de las cotizaciones de envío (cambian si cambia el conjunto de sucursales activas). */
     deliveryQuotes: ['store', 'delivery-quote'] as const,
     deliveryQuote: (args: DeliveryQuoteArgs) => ['store', 'delivery-quote', args] as const,
+  },
+  /**
+   * F08 (spec 007 D16): horario y disponibilidad PÚBLICOS por sucursal, jerárquicos: `branches.byId(id)` invalida los dos.
+   * La disponibilidad se refresca en `nextTransitionAt` (no por polling).
+   */
+  branches: {
+    all: ['branches'] as const,
+    byId: (id: string) => ['branches', id] as const,
+    hours: (id: string) => ['branches', id, 'hours'] as const,
+    availability: (id: string) => ['branches', id, 'availability'] as const,
   },
   catalog: {
     all: ['catalog'] as const,
@@ -57,6 +68,11 @@ export const queryKeys = {
     adminBranches: (filters: AdminBranchFilters = {}) =>
       ['backoffice', 'branches', 'list', filters] as const,
     adminBranch: (id: string) => ['backoffice', 'branches', 'detail', id] as const,
+    /** F08: horario y cierres ADMIN de una sucursal (`byBranch` es el prefijo de ambos). */
+    branchSchedule: (id: string) => ['backoffice', 'branches', 'schedule', id] as const,
+    branchHours: (id: string) => ['backoffice', 'branches', 'schedule', id, 'hours'] as const,
+    branchClosures: (id: string, filters: ClosureFilters = {}) =>
+      ['backoffice', 'branches', 'schedule', id, 'closures', filters] as const,
     /** F03: contexto administrativo del propio empleado (`grants`, `branches`). */
     adminContext: ['backoffice', 'admin-context'] as const,
     /** F03: prefijo de empleados (listas y detalle). */

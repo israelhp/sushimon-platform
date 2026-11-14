@@ -416,6 +416,153 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/branches/{id}/hours": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Horario semanal público y próximos cierres de una sucursal activa
+         * @description F08. Sin autenticación. Horario semanal en HORA LOCAL del restaurante (`timezone`, `America/Guatemala`), `weekday`
+         *     ISO 1=lunes … 7=domingo, intervalos semiabiertos `[opensAt, closesAt)`. Siempre 7 días, ordenados por `weekday`, con
+         *     sus intervalos ordenados; `intervals: []` = sin atención ese día. `upcomingClosures` (máx. 10, próximos 30 días) NO
+         *     incluye el motivo. Una sucursal sin ningún intervalo responde 200 con los 7 días vacíos (la disponibilidad dirá
+         *     `SCHEDULE_NOT_CONFIGURED`). 404 si no existe o está inactiva (no se distingue). Es informativo: el checkout NUNCA
+         *     se apoya en esta respuesta cacheada.
+         */
+        get: operations["getBranchHours"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/branches/{id}/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Disponibilidad operativa actual de una sucursal activa
+         * @description F08. Sin autenticación. Evalúa SIEMPRE con el reloj del servidor (no acepta fecha). Orden de evaluación:
+         *     horario sin configurar → cierre excepcional → fuera de horario → abierta. `isAcceptingOrders` equivale a
+         *     `isOpenNow` mientras no exista política de último pedido ni pausa operativa (pendiente de negocio). Informativo y
+         *     de caché muy corta: la validación DEFINITIVA al crear un pedido ocurre en el servidor (F20) contra la base de datos y
+         *     puede rechazar aunque esta respuesta dijera `OPEN`. 404 si no existe o está inactiva. Caché compartida dinámica: `max-age = s-maxage =
+         *     min(10, segundos enteros hasta nextTransitionAt)`; si faltan menos de 1 s, `no-store` (ninguna respuesta cacheada cruza una
+         *     transición). Toda respuesta de error lleva `Cache-Control: no-store`.
+         */
+        get: operations["getBranchAvailability"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/branches/{id}/hours": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Horario semanal de una sucursal (backoffice)
+         * @description F08. Exige `branches.read` en esa sucursal (404 si no existe o fuera de alcance; una sucursal inactiva SÍ se
+         *     puede consultar). Devuelve `version` (SHA-256 hex del horario canónico) que el PUT debe reenviar como
+         *     `expectedVersion`. Respuesta `Cache-Control: no-store`.
+         */
+        get: operations["getAdminBranchHours"];
+        /**
+         * Reemplaza el horario semanal completo (7 días)
+         * @description F08. Exige `branches.manage_hours` en esa sucursal (404 fuera de alcance). Reemplaza los 7 días en una transacción
+         *     con bloqueo de la sucursal. Concurrencia optimista: `expectedVersion` debe coincidir con la versión vigente, si no
+         *     409 `HOURS_VERSION_CONFLICT` sin guardar. Si el horario resultante es idéntico al vigente responde 200 sin
+         *     escribir ni auditar (idempotente). Errores: 400 forma inválida (HH:mm, weekday, número de días, más de 6
+         *     intervalos por día, `expectedVersion` malformada); 422 `SCHEDULE_INVALID` con `violations` por día/intervalo
+         *     (`INTERVAL_OVERLAP`, `INTERVAL_RANGE_INVALID`; un turno que cruza medianoche debe dividirse en dos días). Respuesta `Cache-Control: no-store`.
+         */
+        put: operations["replaceAdminBranchHours"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/branches/{id}/closures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cierres extraordinarios de una sucursal (paginado)
+         * @description F08. Exige `branches.read` en esa sucursal (404 fuera de alcance). `status`: `current` (default) = en curso +
+         *     futuros; `active`; `upcoming`; `past` (terminados); `all`. `from`/`to` filtran los cierres que se solapan con
+         *     `[from, to)`. Orden: `startsAt` ascendente (`past` y `all`: descendente), desempate por `id`. Incluye el motivo.
+         *     Respuesta `Cache-Control: no-store`.
+         */
+        get: operations["listAdminBranchClosures"];
+        put?: never;
+        /**
+         * Crea un cierre extraordinario
+         * @description F08. Exige `branches.manage_hours` (404 fuera de alcance). Intervalo `[startsAt, endsAt)`. Reglas: `endsAt >
+         *     startsAt`; duración máx. 366 días; `startsAt` entre «ahora − 1 hora» y 2 años a futuro (retroactividad máx. 1 h: `STARTS_TOO_EARLY`); `endsAt` > ahora; máx. 100 cierres vigentes o futuros por sucursal (`CLOSURE_LIMIT_REACHED`, 422); `reason` opcional
+         *     (trim, máx. 200, nunca público). 400 forma/formato (incluye instantes sin zona); 422 `CLOSURE_RANGE_INVALID`;
+         *     409 `CLOSURE_OVERLAP` si se solapa con otro cierre de la sucursal (contiguos permitidos). Auditoría
+         *     `branch_closure.created`.
+         */
+        post: operations["createAdminBranchClosure"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/branches/{id}/closures/{closureId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Cancela (elimina) un cierre futuro
+         * @description F08. Exige `branches.manage_hours`. Solo cierres FUTUROS (`startsAt > ahora`); borrado físico, el historial queda en
+         *     `audit_events` (`branch_closure.cancelled`). Un cierre en curso o terminado responde 409 `CLOSURE_NOT_DELETABLE`
+         *     (para uno en curso, usar PATCH con `endsAt` <= ahora). No idempotente: un cierre ya eliminado responde 404.
+         */
+        delete: operations["deleteAdminBranchClosure"];
+        options?: never;
+        head?: never;
+        /**
+         * Edita, acorta o termina un cierre
+         * @description F08. Exige `branches.manage_hours`. 404 si la sucursal está fuera de alcance o el cierre no pertenece a ella.
+         *     Según el estado del cierre (calculado con el reloj del servidor): FUTURO (`startsAt > ahora`): se puede cambiar
+         *     `startsAt` (no anterior a «ahora − 1 hora», `STARTS_TOO_EARLY`), `endsAt` y `reason`. EN CURSO (`startsAt <= ahora < endsAt`): solo `reason` y `endsAt`, y `endsAt` solo
+         *     puede ACORTAR (`startsAt < endsAt_nuevo <= endsAt_actual`). Para TERMINAR un cierre en curso se envía
+         *     `endsAt` con cualquier instante `<= ahora` (p. ej. la hora actual del cliente): el servidor lo fija a «ahora» y el
+         *     cierre pasa a `past`. TERMINADO (`endsAt <= ahora`): inmutable (409 `CLOSURE_NOT_EDITABLE`). Cambiar `startsAt` o
+         *     alargar `endsAt` en un cierre en curso => 409 `CLOSURE_NOT_EDITABLE`. `reason: null` borra el motivo. Sin cambios
+         *     reales => 200 sin escribir ni auditar. 409 `CLOSURE_OVERLAP` si el nuevo rango choca con otro cierre. Auditoría
+         *     `branch_closure.updated`.
+         */
+        patch: operations["updateAdminBranchClosure"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -728,13 +875,172 @@ export interface components {
             requestId?: string;
             /** @description Mensajes de validación por campo (solo en 400). */
             details?: string[];
+            /**
+             * @description Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
+             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`). Los clientes deben ramificar por `code`, nunca por `message`.
+             */
+            code?: string;
+            /** @description Violaciones estructuradas de reglas de negocio (422/409 de F08). */
+            violations?: components["schemas"]["ErrorViolation"][];
+        };
+        /** @description Violación estructurada de una regla de negocio (F08). `path` localiza el elemento; `code` es estable. */
+        ErrorViolation: {
+            /**
+             * @description Ruta en la solicitud (p. ej. `days[4].intervals[1]`, `startsAt`) o, en CLOSURE_OVERLAP, `closures/<id>` del cierre en conflicto.
+             * @example days[4].intervals[1]
+             */
+            path: string;
+            /** @example INTERVAL_OVERLAP */
+            code: string;
+            message: string;
+        };
+        /**
+         * @description Intervalo semiabierto `[opensAt, closesAt)` en hora LOCAL del restaurante. `opensAt < closesAt` estricto; no
+         *     existe cruce de medianoche (un turno nocturno se divide en dos días). `closesAt` admite `24:00` (fin del día).
+         */
+        BranchHoursInterval: {
+            /** @example 11:00 */
+            opensAt: string;
+            /** @example 24:00 */
+            closesAt: string;
+        };
+        BranchHoursDay: {
+            /**
+             * @description ISO 8601: 1 = lunes … 7 = domingo. NO es `Date.getDay()` (0 = domingo).
+             * @enum {integer}
+             */
+            weekday: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+            /** @description Ordenados por `opensAt` en las respuestas. Vacío = sin atención ese día. */
+            intervals: components["schemas"]["BranchHoursInterval"][];
+        };
+        /** @description Horario semanal administrativo con su versión de concurrencia optimista. */
+        BranchHours: {
+            /** Format: uuid */
+            branchId: string;
+            /** @example America/Guatemala */
+            timezone: string;
+            /** @description SHA-256 (hex minúsculas) del horario canónico. Reenviar como `expectedVersion`. */
+            version: string;
+            /** @description Siempre 7 días, `weekday` 1..7 ascendente. */
+            days: components["schemas"]["BranchHoursDay"][];
+        };
+        /** @description Ventana de cierre sin motivo (el motivo nunca es público). */
+        PublicClosureWindow: {
+            /**
+             * Format: date-time
+             * @description Instante UTC (`...Z`).
+             */
+            startsAt: string;
+            /**
+             * Format: date-time
+             * @description Instante UTC (`...Z`).
+             */
+            endsAt: string;
+        };
+        PublicBranchHours: {
+            /** Format: uuid */
+            branchId: string;
+            /** @example America/Guatemala */
+            timezone: string;
+            days: components["schemas"]["BranchHoursDay"][];
+            /** @description Cierres en curso o que empiezan en los próximos 30 días, por `startsAt`. Sin motivo. */
+            upcomingClosures: components["schemas"]["PublicClosureWindow"][];
+        };
+        ReplaceBranchHoursRequest: {
+            expectedVersion: string;
+            /** @description Exactamente los 7 `weekday` 1..7, cada uno una vez, en cualquier orden. */
+            days: components["schemas"]["BranchHoursDay"][];
+        };
+        BranchClosure: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            branchId: string;
+            /**
+             * Format: date-time
+             * @description Instante UTC (`...Z`).
+             */
+            startsAt: string;
+            /**
+             * Format: date-time
+             * @description Instante UTC (`...Z`), exclusivo.
+             */
+            endsAt: string;
+            reason: string | null;
+            /**
+             * @description Calculado con el reloj del servidor al responder.
+             * @enum {string}
+             */
+            status: "upcoming" | "active" | "past";
+        };
+        CreateBranchClosureRequest: {
+            /**
+             * Format: date-time
+             * @description ISO 8601 CON zona (`Z` u offset como `-06:00`). Sin zona => 400. Se normaliza a UTC, truncado al segundo.
+             */
+            startsAt: string;
+            /**
+             * Format: date-time
+             * @description Igual que `startsAt`; debe ser posterior.
+             */
+            endsAt: string;
+            reason?: string | null;
+        };
+        UpdateBranchClosureRequest: {
+            /** Format: date-time */
+            startsAt?: string;
+            /** Format: date-time */
+            endsAt?: string;
+            reason?: string | null;
+        };
+        BranchClosureList: {
+            items: components["schemas"]["BranchClosure"][];
+            page: number;
+            pageSize: number;
+            total: number;
+        };
+        /**
+         * @description Motivo único por orden de evaluación. `INACTIVE` solo lo produce el puerto interno (HTTP público => 404).
+         *     No existen `ORDER_CUTOFF_REACHED` ni `OPERATIONS_PAUSED` (bloqueados: falta política/modelo de negocio).
+         * @enum {string}
+         */
+        BranchAvailabilityReason: "OPEN" | "INACTIVE" | "OUTSIDE_BUSINESS_HOURS" | "EXCEPTIONAL_CLOSURE" | "SCHEDULE_NOT_CONFIGURED";
+        BranchAvailability: {
+            /** Format: uuid */
+            branchId: string;
+            /** @example America/Guatemala */
+            timezone: string;
+            /**
+             * Format: date-time
+             * @description Instante UTC (`...Z`) de la evaluación.
+             */
+            serverTime: string;
+            isOpenNow: boolean;
+            /** @description Hoy igual a `isOpenNow`. Siempre implica `isOpenNow`. */
+            isAcceptingOrders: boolean;
+            reason: components["schemas"]["BranchAvailabilityReason"];
+            /**
+             * Format: date-time
+             * @description Próxima apertura real (si está cerrada); `null` si abierta o sin apertura en 14 días.
+             */
+            nextOpensAt: string | null;
+            /**
+             * Format: date-time
+             * @description Próximo cierre real (si está abierta); `null` si cerrada o sin cierre en 14 días.
+             */
+            nextClosesAt: string | null;
+            /**
+             * Format: date-time
+             * @description El menor no nulo de `nextOpensAt`/`nextClosesAt`. Horizonte máximo 14 días.
+             */
+            nextTransitionAt: string | null;
         };
         LocalizedText: {
             es: string;
             en?: string;
         };
         /** @description Horario de un día (0 = domingo … 6 = sábado), hora local de Guatemala. */
-        BranchHours: {
+        DraftBranchHours: {
             day: number;
             /** @example 12:00 */
             open: string;
@@ -792,7 +1098,7 @@ export interface components {
                 open: string;
                 close: string;
             }[];
-            weeklyHours: components["schemas"]["BranchHours"][];
+            weeklyHours: components["schemas"]["DraftBranchHours"][];
             schedule: {
                 stepMinutes: number;
                 lastOrderBeforeClose: number;
@@ -813,7 +1119,7 @@ export interface components {
             address: string;
             phone: string;
             hoursLabel: string;
-            hours: components["schemas"]["BranchHours"][];
+            hours: components["schemas"]["DraftBranchHours"][];
             radiusKm: number;
             /** @enum {string} */
             status: "active" | "coming_soon";
@@ -854,7 +1160,7 @@ export interface components {
             illustration?: string;
             jpLabel?: string;
         };
-        BranchAvailability: {
+        DraftBranchAvailability: {
             branchId: string;
             available: boolean;
         };
@@ -871,7 +1177,7 @@ export interface components {
             food: boolean;
             /** @description Disponible en la sucursal pedida (o en alguna sucursal activa si no se indica). */
             available: boolean;
-            availability: components["schemas"]["BranchAvailability"][];
+            availability: components["schemas"]["DraftBranchAvailability"][];
         };
         HappyHourItem: {
             id: string;
@@ -1303,6 +1609,8 @@ export interface components {
         RoleId: string;
         /** @description UUID de la sucursal. */
         BranchId: string;
+        /** @description UUID del cierre extraordinario (`branch_closures.id`). */
+        ClosureId: string;
     };
     requestBodies: never;
     headers: never;
@@ -2429,6 +2737,531 @@ export interface operations {
             };
             /** @description Sin el permiso requerido, sesión no aal2 o regla anti-escalada (mensaje genérico; el motivo queda en auditoría) */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getBranchHours: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la sucursal. */
+                id: components["parameters"]["BranchId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Horario público */
+            200: {
+                headers: {
+                    /** @description public, max-age=60, s-maxage=300, stale-while-revalidate=600 */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicBranchHours"];
+                };
+            };
+            /** @description El identificador no es un UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o no está activa */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getBranchAvailability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la sucursal. */
+                id: components["parameters"]["BranchId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Disponibilidad */
+            200: {
+                headers: {
+                    /** @description public, max-age=N, s-maxage=N con N = min(10, segundos enteros hasta nextTransitionAt); `no-store` si faltan menos de 1 s. Nunca stale-while-revalidate. */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BranchAvailability"];
+                };
+            };
+            /** @description El identificador no es un UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o no está activa */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAdminBranchHours: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la sucursal. */
+                id: components["parameters"]["BranchId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Horario con versión */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BranchHours"];
+                };
+            };
+            /** @description El identificador no es un UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `branches.read` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o fuera de alcance */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    replaceAdminBranchHours: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la sucursal. */
+                id: components["parameters"]["BranchId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceBranchHoursRequest"];
+            };
+        };
+        responses: {
+            /** @description Horario guardado (o ya vigente) con su nueva versión */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BranchHours"];
+                };
+            };
+            /** @description Forma de la solicitud inválida */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `branches.manage_hours` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o fuera de alcance */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `HOURS_VERSION_CONFLICT` (el horario cambió desde que se leyó; recargar y reintentar) o `BRANCH_SCHEDULE_BUSY` (la sucursal está siendo modificada: lock timeout; reintentable, sin detalle interno). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `SCHEDULE_INVALID`. Reglas de horario violadas (ver `violations`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAdminBranchClosures: {
+        parameters: {
+            query?: {
+                status?: "current" | "upcoming" | "active" | "past" | "all";
+                /** @description Instante ISO 8601 con zona (Z u offset). Requiere `to` mayor si ambos se envían. */
+                from?: string;
+                /** @description Instante ISO 8601 con zona (Z u offset). */
+                to?: string;
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path: {
+                /** @description UUID de la sucursal. */
+                id: components["parameters"]["BranchId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de cierres */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BranchClosureList"];
+                };
+            };
+            /** @description Parámetros de consulta inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `branches.read` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o fuera de alcance */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAdminBranchClosure: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la sucursal. */
+                id: components["parameters"]["BranchId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateBranchClosureRequest"];
+            };
+        };
+        responses: {
+            /** @description Cierre creado */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BranchClosure"];
+                };
+            };
+            /** @description Forma de la solicitud inválida */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `branches.manage_hours` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o fuera de alcance */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `CLOSURE_OVERLAP` (se solapa con otro cierre; el cierre en conflicto va en `violations[0].path` como `closures/<id>`) o `BRANCH_SCHEDULE_BUSY` (lock timeout; reintentable). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `CLOSURE_RANGE_INVALID` (rango, duración, horizonte, retroactividad `STARTS_TOO_EARLY` o cierre ya terminado) o `CLOSURE_LIMIT_REACHED` (más de 100 cierres vigentes o futuros en la sucursal). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAdminBranchClosure: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la sucursal. */
+                id: components["parameters"]["BranchId"];
+                /** @description UUID del cierre extraordinario (`branch_closures.id`). */
+                closureId: components["parameters"]["ClosureId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cierre eliminado */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Identificador no UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `branches.manage_hours` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Sucursal o cierre inexistente o fuera de alcance */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `CLOSURE_NOT_DELETABLE` (el cierre ya comenzó o terminó) o `BRANCH_SCHEDULE_BUSY` (lock timeout; reintentable). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAdminBranchClosure: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la sucursal. */
+                id: components["parameters"]["BranchId"];
+                /** @description UUID del cierre extraordinario (`branch_closures.id`). */
+                closureId: components["parameters"]["ClosureId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateBranchClosureRequest"];
+            };
+        };
+        responses: {
+            /** @description Cierre actualizado */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BranchClosure"];
+                };
+            };
+            /** @description Forma de la solicitud inválida */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `branches.manage_hours` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Sucursal o cierre inexistente o fuera de alcance */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `CLOSURE_NOT_EDITABLE` (terminado, o cambio no permitido en curso), `CLOSURE_OVERLAP` o `BRANCH_SCHEDULE_BUSY` (lock timeout; reintentable). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `CLOSURE_RANGE_INVALID`. Rango o duración inválidos. */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

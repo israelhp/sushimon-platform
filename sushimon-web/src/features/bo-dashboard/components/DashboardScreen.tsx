@@ -9,6 +9,7 @@ import { Kpi } from '@/components/ui/Kpi';
 import { StatusPill } from '@/components/ui/Pill';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useDashboard } from '@/features/backoffice/hooks';
+import { useBranchesAvailability } from '@/features/branch-schedule/hooks';
 import { ForbiddenScreen } from '@/features/backoffice-shell/ForbiddenScreen';
 import { screenHref } from '@/features/backoffice-shell/nav';
 import { branchShortName, useShell } from '@/features/backoffice-shell/shell-context';
@@ -161,6 +162,8 @@ function ByBranchCard({ data }: { data: ReturnType<typeof useDashboard>['data'] 
   const t = useTranslations('backoffice.panel.byBranch');
   const shell = useShell();
   const max = Math.max(1, ...(data?.byBranch.map((b) => b.orders) ?? [1]));
+  // F08: estado «abierta/cerrada» calculado por el servidor, no un booleano local.
+  const availability = useBranchesAvailability((data?.byBranch ?? []).map((b) => b.branchId));
   return (
     <section className="card">
       <div className="card-h">
@@ -200,9 +203,14 @@ function ByBranchCard({ data }: { data: ReturnType<typeof useDashboard>['data'] 
                 {formatMoney(row.sales)}
               </span>
               <span className="hide-sm">
-                <StatusPill zone="bo" tone={branch?.isOpen === false ? 'muted' : 'success'}>
-                  {branch?.isOpen === false ? t('closed') : t('open')}
-                </StatusPill>
+                {availability.byId[row.branchId] ? (
+                  <StatusPill
+                    zone="bo"
+                    tone={availability.byId[row.branchId]?.isOpenNow ? 'success' : 'muted'}
+                  >
+                    {availability.byId[row.branchId]?.isOpenNow ? t('open') : t('closed')}
+                  </StatusPill>
+                ) : null}
               </span>
             </button>
           );

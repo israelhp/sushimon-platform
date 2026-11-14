@@ -14,6 +14,8 @@ import {
 import { useLocale, useTranslations } from 'next-intl';
 import { SimulationBadge } from '@/components/ui/SimulationBadge';
 import { formatMoney } from '@/lib/format';
+import { BranchHoursDisclosure } from '@/features/branch-schedule/components/BranchHoursPanel';
+import { useAvailabilityText } from '@/features/branch-schedule/use-availability-text';
 import { useOrderMode } from '@/features/order-mode/order-mode-context';
 import { dateOptions, firstSlot } from '@/features/order-mode/when';
 import { MapLinks } from '@/features/store-shell/components/StoreFooter';
@@ -45,12 +47,19 @@ function Notice({
 /** Aviso "la sucursal está cerrada": solo se puede programar (escenario `branch-closed`). */
 function ClosedBranchNotice({ data, onSchedule }: { data: CheckoutData; onSchedule: () => void }) {
   const t = useTranslations();
+  const text = useAvailabilityText();
   if (!data.closedNow || !data.branch) return null;
+  const next = data.branchAvailability?.nextOpensAt;
   return (
     <div className="notice notice-warn items-center" role="alert">
       <TriangleAlert className="mt-0.5 h-[18px] w-[18px] flex-none" aria-hidden="true" />
       <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2">
-        <span>{t('mode.closedNow', { a: data.branch.name })}</span>
+        <span>
+          {t('mode.closedNow', { a: data.branch.name })}
+          {next && data.branchAvailability
+            ? ` ${t('branchSchedule.notice.opensLater', { when: text.when(next, data.branchAvailability.serverTime) })}`
+            : ''}
+        </span>
         <button type="button" className="link-btn !min-h-0 text-sm" onClick={onSchedule}>
           {t('mode.schedule')}
         </button>
@@ -84,12 +93,17 @@ export function ShippingStep({
   /** Cambia a "programar" con el primer horario disponible y vuelve a Entrega. */
   const schedule = () => {
     if (config && now) {
-      const first = dateOptions(config.schedule, data.hours, now, locale, {
-        asap: '',
-        today: '',
-        tomorrow: '',
-      })[0];
-      const time = first ? firstSlot(config.schedule, data.hours, first.date, now) : null;
+      const first = dateOptions(
+        config.schedule,
+        data.hours,
+        now,
+        locale,
+        { asap: '', today: '', tomorrow: '' },
+        data.closures,
+      )[0];
+      const time = first
+        ? firstSlot(config.schedule, data.hours, first.date, now, data.closures)
+        : null;
       if (first && time) update({ when: { kind: 'scheduled', date: first.date, time } });
     }
     goTo(2);
@@ -118,7 +132,7 @@ export function ShippingStep({
                 title={b.name}
                 sub={area(b)}
                 badge={
-                  !b.openNow ? (
+                  data.availability[b.id]?.isAcceptingOrders === false ? (
                     <span className="rounded-full bg-subtle px-2 py-0.5 text-[11px] font-extrabold text-muted">
                       {t('mode.closedBadge')}
                     </span>
@@ -127,6 +141,12 @@ export function ShippingStep({
               />
             ))}
           </div>
+          {pickupId ? (
+            <BranchHoursDisclosure
+              branchId={pickupId}
+              name={branches.find((b) => b.id === pickupId)?.name ?? ''}
+            />
+          ) : null}
         </fieldset>
         {config && branches[0] && pickupId === branches[0].id ? <MapLinks config={config} /> : null}
         <ClosedBranchNotice data={data} onSchedule={schedule} />

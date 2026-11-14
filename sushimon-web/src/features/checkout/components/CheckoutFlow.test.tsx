@@ -180,6 +180,70 @@ describe('checkout · entrega y validaciones', () => {
   });
 });
 
+describe('checkout · sucursal que no recibe pedidos (F08, solo UI)', () => {
+  async function toShipping(user: UserEvent) {
+    await toStep(user, 'Entrega');
+    await user.click(screen.getByRole('button', { name: 'Cambiar' }));
+    await user.clear(await screen.findByLabelText('Nombre del cliente'));
+    await user.type(screen.getByLabelText('Nombre del cliente'), 'Ana López');
+    await user.clear(screen.getByLabelText('Número de teléfono'));
+    await user.type(screen.getByLabelText('Número de teléfono'), '55551234');
+    await user.clear(screen.getByLabelText(/^Correo/));
+    await user.type(screen.getByLabelText(/^Correo/), 'ana@ejemplo.com');
+    await next(user, /Continuar a envío/i);
+    await screen.findByRole('heading', { level: 1, name: 'Envío' });
+  }
+
+  it('con un cierre extraordinario en curso avisa, muestra cuándo abre y bloquea el avance', async () => {
+    const user = userEvent.setup();
+    await openCheckout({ scenario: 'branch-closed' });
+    await toStep(user, 'Entrega');
+    expect(
+      await screen.findByText(/No hay sucursales abiertas en este momento/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cambiar' }));
+    await user.clear(await screen.findByLabelText('Nombre del cliente'));
+    await user.type(screen.getByLabelText('Nombre del cliente'), 'Ana López');
+    await user.clear(screen.getByLabelText('Número de teléfono'));
+    await user.type(screen.getByLabelText('Número de teléfono'), '55551234');
+    await user.clear(screen.getByLabelText(/^Correo/));
+    await user.type(screen.getByLabelText(/^Correo/), 'ana@ejemplo.com');
+    await next(user, /Continuar a envío/i);
+    await screen.findByRole('heading', { level: 1, name: 'Envío' });
+    const notice = await screen.findByRole('alert');
+    expect(notice).toHaveTextContent('Sucursal 1 está cerrada en este momento');
+    // la próxima apertura la calcula el servidor (fin del cierre: mañana 1:00 p. m.)
+    expect(notice).toHaveTextContent('Abre mañana a las 1:00 p. m.');
+    // no se avanza a Pago mientras la sucursal no recibe pedidos
+    await next(user, /Continuar a pago/i);
+    expect(heading()).toHaveTextContent('Envío');
+  });
+
+  it('«Programar» ofrece un horario que respeta el cierre', async () => {
+    const user = userEvent.setup();
+    const view = await openCheckout({ scenario: 'branch-closed' });
+    await toShipping(user);
+    await user.click(await screen.findByRole('button', { name: 'Programar' }));
+    await screen.findByRole('heading', { level: 1, name: 'Entrega' });
+    await waitFor(() =>
+      expect(view.api().mode.mode.when).toEqual({
+        kind: 'scheduled',
+        date: '2026-11-12',
+        time: '13:00',
+      }),
+    );
+  });
+
+  it('sin cierre no muestra aviso de sucursal cerrada', async () => {
+    const user = userEvent.setup();
+    await openCheckout();
+    await toShipping(user);
+    expect(screen.queryByText(/está cerrada en este momento/)).not.toBeInTheDocument();
+    await next(user, /Continuar a pago/i);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Pago' })).toBeInTheDocument();
+  });
+});
+
 describe('checkout · envío y cobertura', () => {
   it('muestra la tarifa por zona y el tiempo estimado (simulado)', async () => {
     const user = userEvent.setup();

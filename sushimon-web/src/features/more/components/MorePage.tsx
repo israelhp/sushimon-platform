@@ -24,6 +24,7 @@ import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { LocaleToggle } from '@/i18n/LocaleToggle';
 import { useAddresses, useFavorites, useMe } from '@/features/account/hooks';
+import { PublicBranchesHours } from '@/features/branch-schedule/components/PublicBranchesHours';
 import { useStoreConfig } from '@/features/store/hooks';
 import { useDemoSession } from '@/features/session/demo-session';
 import { Avatar } from '@/features/store-shell/components/Avatar';
@@ -271,6 +272,8 @@ export function MorePage() {
           </>
         ) : null}
       </div>
+
+      <PublicBranchesHours />
 
       <details className="mb-6 overflow-hidden rounded-2xl border border-line bg-surface">
         <summary className="flex min-h-[56px] cursor-pointer list-none items-center gap-3 px-4 font-extrabold [&::-webkit-details-marker]:hidden">

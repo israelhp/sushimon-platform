@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
-import type { BranchAvailability, PromotionInput } from '@/lib/data-access/models';
+import type { ProductBranchAvailability, PromotionInput } from '@/lib/data-access/models';
 import { useDataClient } from '@/lib/data-access/provider';
 import {
   createCategory,
@@ -189,7 +189,7 @@ export function useSaveProduct() {
 export function useSetProductAvailability() {
   const client = useDataClient();
   return useInvalidatingMutation(
-    ({ id, availability }: { id: string; availability: BranchAvailability[] }) =>
+    ({ id, availability }: { id: string; availability: ProductBranchAvailability[] }) =>
       setProductAvailability(client, id, availability),
     [queryKeys.catalog.all],
   );

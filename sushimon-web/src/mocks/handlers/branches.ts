@@ -1,6 +1,7 @@
 import type { Branch } from '@/lib/data-access/models';
 import type { components } from '@sushimon/contracts';
 import { ApiError } from '@/lib/data-access/errors';
+import { emptyWeek } from '@/lib/branch-hours';
 import { branchView, fail, round2 } from '../domain';
 import type { BranchSeed } from '../fixtures/branches';
 import { body, now, oneOf, requireStaff, type Handler, type Req, type StaffActor } from './shared';
@@ -244,18 +245,16 @@ export const createAdminBranch: Handler = (req): AdminBranch => {
     longitude: longitude ?? null,
     active,
     createdAt: now(req).toISOString(),
-    // SIMULADO (F08/F09): una sucursal nueva nace sin horario, sin cobertura y cerrada.
+    // SIMULADO (F09): una sucursal nueva nace sin cobertura. F08: sin horario configurado (no se asume abierta).
     area: { es: address, en: address },
     zoneLabel: '',
-    hoursLabel: 'Pendiente (F08)',
-    hours: [],
     radiusKm: 0,
     status: active ? 'active' : 'coming_soon',
-    isOpen: false,
     coverage: [],
     coverageLabels: [],
   };
   req.store.branches.push(seed);
+  req.store.branchHours[seed.id] = emptyWeek();
   return adminView(seed);
 };
 
@@ -308,7 +307,7 @@ export const updateAdminBranchStatus: Handler = (req): AdminBranch => {
   const active = raw.active === true;
   if (current.active !== active) {
     current.active = active;
-    // Vista operativa simulada: una sucursal inactiva no ofrece pedidos. NO se toca `isOpen` (F08).
+    // Vista operativa simulada (F09): una sucursal inactiva no ofrece pedidos. Su horario y cierres no se tocan (F08).
     current.status = active ? 'active' : 'coming_soon';
   }
   return adminView(current);
@@ -316,46 +315,23 @@ export const updateAdminBranchStatus: Handler = (req): AdminBranch => {
 
 // ── 🎭 Operación simulada (F08/F09/F33): solo existe en el mock ──────────────────────────────
 
-/** GET /v1/demo/branches/operations — vista operativa (horario, cobertura, abierta/cerrada) de TODAS las sucursales. */
+/** GET /v1/demo/branches/operations — vista operativa SIMULADA (cobertura, radio, zona) de TODAS las sucursales. */
 export const listBranchOperations: Handler = (req): Branch[] =>
-  req.store.branches.map((b) => branchView(b, now(req)));
+  req.store.branches.map((b) => branchView(b));
 
-const HM = /^\d{2}:\d{2}$/;
-
-/** PATCH /v1/demo/branches/:id/operations — `isOpen`, zona, horario, radio y cobertura SIMULADOS. */
+/** PATCH /v1/demo/branches/:id/operations — zona, radio y cobertura SIMULADOS (el horario es F08: `PUT /v1/admin/branches/:id/hours`). */
 export const updateBranchOperations: Handler = (req): Branch => {
   requireStaff(req, 'branches.update');
   const b = body<Branch>(req);
   const current = req.store.branches.find((x) => x.id === req.params.id);
   if (!current) fail(404, 'Sucursal no encontrada');
   const next = { ...current };
-  if (b.isOpen !== undefined) next.isOpen = b.isOpen === true;
-  for (const key of ['zoneLabel', 'hoursLabel'] as const) {
-    if (b[key] !== undefined) next[key] = typeof b[key] === 'string' ? b[key].trim() : '';
+  if (b.zoneLabel !== undefined) {
+    next.zoneLabel = typeof b.zoneLabel === 'string' ? b.zoneLabel.trim() : '';
   }
   if (b.radiusKm !== undefined) {
     if (!(typeof b.radiusKm === 'number' && b.radiusKm >= 0)) fail(400, 'Radio inválido');
     next.radiusKm = round2(b.radiusKm);
-  }
-  if (b.hours !== undefined) {
-    if (!Array.isArray(b.hours) || b.hours.length !== 7) fail(400, 'Horario inválido');
-    for (const h of b.hours) {
-      if (
-        !h ||
-        typeof h !== 'object' ||
-        !HM.test(String(h.open)) ||
-        !HM.test(String(h.close)) ||
-        (!h.closed && h.open >= h.close)
-      ) {
-        fail(400, 'Horario inválido');
-      }
-    }
-    next.hours = b.hours.map((h, day) => ({
-      day,
-      open: h.open,
-      close: h.close,
-      closed: !!h.closed,
-    }));
   }
   if (b.coverage !== undefined) {
     if (!Array.isArray(b.coverage) || b.coverage.some((r) => !r || typeof r !== 'object')) {
@@ -373,5 +349,5 @@ export const updateBranchOperations: Handler = (req): Branch => {
     next.coverageLabels = b.coverageLabels.map(String);
   }
   Object.assign(current, next);
-  return branchView(current, now(req));
+  return branchView(current);
 };

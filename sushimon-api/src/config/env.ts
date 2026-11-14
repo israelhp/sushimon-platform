@@ -18,6 +18,16 @@ const optional = <T extends z.ZodType>(schema: T) =>
     schema.optional(),
   );
 
+/** Zona IANA válida para `Intl.DateTimeFormat` (la rechaza con RangeError si no existe). */
+const ianaTimeZone = z.string().refine((tz) => {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}, 'debe ser una zona horaria IANA válida (p. ej. America/Guatemala)');
+
 /**
  * Esquema de variables de entorno. Falla al arrancar si la configuración es inválida.
  * Los secretos (DATABASE_URL, DIRECT_URL, HEALTH_READY_TOKEN) solo viven en el entorno.
@@ -58,6 +68,12 @@ export const envSchema = z
     SUPABASE_JWT_SECRET: optional(z.string().min(32, 'mínimo 32 caracteres')),
     /** Tolerancia de reloj al validar exp/nbf (segundos). */
     AUTH_CLOCK_TOLERANCE_S: z.coerce.number().int().min(0).max(60).default(5),
+
+    /** Zona horaria del negocio (F08): los horarios semanales son hora local de esta zona. */
+    BUSINESS_TIMEZONE: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      ianaTimeZone.default('America/Guatemala'),
+    ),
 
     /** Token de `GET /v1/health/ready` (cabecera `x-health-token`). Obligatorio en producción. */
     HEALTH_READY_TOKEN: optional(z.string().min(16, 'mínimo 16 caracteres')),

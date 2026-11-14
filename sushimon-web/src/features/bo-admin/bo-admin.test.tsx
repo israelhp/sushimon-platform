@@ -244,11 +244,12 @@ describe('sucursales', () => {
     expect(within(card('Sucursal 4')).getByText('Activa')).toBeVisible();
   });
 
-  it('la pantalla no maneja abierta/cerrada: escenario branch-closed no cambia el estado administrativo', async () => {
+  it('estado administrativo y operativo son distintos: branch-closed sigue «Activa» pero con cierre extraordinario', async () => {
     await renderScreen('sucursales', 'admin', 'branch-closed');
     await screen.findByText('5 sucursales');
     expect(screen.getAllByText('Activa')).toHaveLength(3);
-    expect(screen.queryByText(/Cerrada/)).toBeNull();
+    expect(await screen.findAllByText('Cierre extraordinario')).toHaveLength(3);
+    expect(screen.queryByText('Abierta ahora')).toBeNull();
   });
 
   it('estado de carga, error con reintento y 403 del servidor', async () => {
