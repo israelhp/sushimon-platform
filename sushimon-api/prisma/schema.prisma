@@ -29,8 +29,40 @@ model Branch {
   createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   assignments StaffAssignment[]
   auditEvents AuditEvent[]
+  hours       BranchHour[]
+  closures    BranchClosure[]
 
   @@map("branches")
+  @@schema("app")
+}
+
+/// F08 (migración 0006). Intervalo semiabierto [opensAt, closesAt) en hora de pared; `weekday` ISO (1=lunes … 7=domingo).
+/// `closesAt` puede ser 24:00:00, que un `DateTime` de JS no representa: el repositorio lee/escribe esta tabla con
+/// SQL crudo (`opens_at::text`, `$1::time`) y NO con el cliente tipado. CHECK y EXCLUDE (sin solapes) solo en SQL.
+model BranchHour {
+  branchId String   @map("branch_id") @db.Uuid
+  weekday  Int      @db.SmallInt
+  opensAt  DateTime @map("opens_at") @db.Time(0)
+  closesAt DateTime @map("closes_at") @db.Time(0)
+  branch   Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  @@id([branchId, weekday, opensAt])
+  @@map("branch_hours")
+  @@schema("app")
+}
+
+/// F08 (migración 0006). Cierre temporal [startsAt, endsAt); CHECK endsAt > startsAt y EXCLUDE de solapes en SQL.
+/// `reason` es interno (nunca público).
+model BranchClosure {
+  id       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  branchId String   @map("branch_id") @db.Uuid
+  startsAt DateTime @map("starts_at") @db.Timestamptz(6)
+  endsAt   DateTime @map("ends_at") @db.Timestamptz(6)
+  reason   String?
+  branch   Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  @@index([branchId, startsAt, endsAt], map: "branch_closures_branch_starts_idx")
+  @@map("branch_closures")
   @@schema("app")
 }
 
