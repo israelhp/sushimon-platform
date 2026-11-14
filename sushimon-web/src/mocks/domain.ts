@@ -51,8 +51,18 @@ export function normalizeOrderNumber(value: string): string {
 // ── Sucursales y cobertura ────────────────────────────────────────────────────────────────
 
 export function branchView(seed: BranchSeed, now: Date): Branch {
-  const { legacyBackofficeId: _legacy, ...rest } = seed;
-  void _legacy;
+  // Se omiten los campos de identidad F07 (`code`, coordenadas, `active`, `createdAt`): esta es la vista OPERATIVA
+  // simulada (F08/F09); la identidad y el estado administrativo se leen de `/v1/branches` y `/v1/admin/branches`.
+  const {
+    legacyBackofficeId: _legacy,
+    code,
+    latitude,
+    longitude,
+    active,
+    createdAt,
+    ...rest
+  } = seed;
+  void [_legacy, code, latitude, longitude, active, createdAt];
   return {
     ...rest,
     openNow: seed.status === 'active' && seed.isOpen && isWithinHours(seed.hours, now),

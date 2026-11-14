@@ -92,22 +92,26 @@ describe('validación de handlers de escritura del backoffice', () => {
     expect(ok.permissions).toEqual(['dashboard']);
   });
 
-  it('sucursal: hours/coverage con null responden 400, no 500', async () => {
+  it('operación simulada de sucursal: hours/coverage con null responden 400, no 500', async () => {
     const h = createHarness();
     h.asStaff('admin');
     expect(
-      await status(admin.updateBranch(h.client, 'sucursal-2', { hours: [null] as never })),
+      await status(
+        admin.updateBranchOperations(h.client, 'sucursal-2', { hours: [null] as never }),
+      ),
     ).toBe(400);
     const seven = Array.from({ length: 7 }, () => ({ day: 0, open: '10:00', close: '20:00' }));
     expect(
       await status(
-        admin.updateBranch(h.client, 'sucursal-2', {
+        admin.updateBranchOperations(h.client, 'sucursal-2', {
           hours: [...seven.slice(0, 6), null] as never,
         }),
       ),
     ).toBe(400);
     expect(
-      await status(admin.updateBranch(h.client, 'sucursal-2', { coverage: [null] as never })),
+      await status(
+        admin.updateBranchOperations(h.client, 'sucursal-2', { coverage: [null] as never }),
+      ),
     ).toBe(400);
   });
 });

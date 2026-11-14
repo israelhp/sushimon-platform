@@ -5,13 +5,17 @@ import { createContext, useContext, useMemo, useState, type ReactNode } from 're
 /** Variante de la hoja de modo de pedido: "pedir ahora" (solo recoger/domicilio) o "programar" (día y hora). */
 export type OrderSheetVariant = 'now' | 'schedule';
 
+/** Aviso opcional al abrir la hoja (p. ej., la sucursal elegida dejó de estar disponible). */
+export type OrderSheetNotice = 'branchRemoved';
+
 export interface StoreShellApi {
   cartOpen: boolean;
   openCart: () => void;
   closeCart: () => void;
   /** Hoja de modo de pedido abierta (o null). */
   orderSheet: OrderSheetVariant | null;
-  openOrderSheet: (variant?: OrderSheetVariant) => void;
+  orderSheetNotice: OrderSheetNotice | null;
+  openOrderSheet: (variant?: OrderSheetVariant, notice?: OrderSheetNotice) => void;
   closeOrderSheet: () => void;
   /** Modal de inicio de sesión simulado. */
   authOpen: boolean;
@@ -28,6 +32,7 @@ const StoreShellContext = createContext<StoreShellApi | null>(null);
 export function StoreShellProvider({ children }: { children: ReactNode }) {
   const [cartOpen, setCartOpen] = useState(false);
   const [orderSheet, setOrderSheet] = useState<OrderSheetVariant | null>(null);
+  const [orderSheetNotice, setOrderSheetNotice] = useState<OrderSheetNotice | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
 
   const api = useMemo<StoreShellApi>(
@@ -36,13 +41,20 @@ export function StoreShellProvider({ children }: { children: ReactNode }) {
       openCart: () => setCartOpen(true),
       closeCart: () => setCartOpen(false),
       orderSheet,
-      openOrderSheet: (variant = 'now') => setOrderSheet(variant),
-      closeOrderSheet: () => setOrderSheet(null),
+      orderSheetNotice,
+      openOrderSheet: (variant = 'now', notice) => {
+        setOrderSheetNotice(notice ?? null);
+        setOrderSheet(variant);
+      },
+      closeOrderSheet: () => {
+        setOrderSheet(null);
+        setOrderSheetNotice(null);
+      },
       authOpen,
       openAuth: () => setAuthOpen(true),
       closeAuth: () => setAuthOpen(false),
     }),
-    [cartOpen, orderSheet, authOpen],
+    [cartOpen, orderSheet, orderSheetNotice, authOpen],
   );
   return <StoreShellContext.Provider value={api}>{children}</StoreShellContext.Provider>;
 }
@@ -61,8 +73,13 @@ export function useAuthModal() {
 
 /** Abre/cierra la hoja de modo de pedido (recoger/domicilio, ahora/programar). */
 export function useOrderSheet() {
-  const { orderSheet, openOrderSheet, closeOrderSheet } = useStoreShell();
-  return { variant: orderSheet, open: openOrderSheet, close: closeOrderSheet };
+  const { orderSheet, orderSheetNotice, openOrderSheet, closeOrderSheet } = useStoreShell();
+  return {
+    variant: orderSheet,
+    notice: orderSheetNotice,
+    open: openOrderSheet,
+    close: closeOrderSheet,
+  };
 }
 
 /** Abre/cierra el carrito lateral. */

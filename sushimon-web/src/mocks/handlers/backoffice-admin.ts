@@ -1,5 +1,4 @@
 import type {
-  Branch,
   BranchAvailability,
   Category,
   Order,
@@ -13,7 +12,7 @@ import type {
 import { STAFF_ROLES } from '@/lib/data-access/models';
 import { permissionsFor, ROLE_PERMISSIONS } from '@/lib/permissions';
 import { localMinutes } from '@/lib/time';
-import { branchView, fail, isValidEmail, productView, promotionView, round2 } from '../domain';
+import { fail, isValidEmail, productView, promotionView, round2 } from '../domain';
 import { clampRange } from '../factories/history';
 import type { ProductRecord } from '../store';
 import { isSale } from './backoffice';
@@ -288,77 +287,6 @@ export const updatePromotion: Handler = (req) => {
   const next = { ...current, ...data };
   req.store.promotions[index] = next;
   return promotionView(next, now(req));
-};
-
-// ── Sucursales ────────────────────────────────────────────────────────────────────────────
-
-/** GET /v1/backoffice/branches — admin: todas; resto: la suya. */
-export const listBoBranches: Handler = (req): Branch[] => {
-  const user = requireStaff(req);
-  return req.store.branches
-    .filter((b) => user.branchId === null || b.id === user.branchId)
-    .map((b) => branchView(b, now(req)));
-};
-
-/** PATCH /v1/backoffice/branches/:id (admin) */
-export const updateBranch: Handler = (req): Branch => {
-  requireStaff(req, 'branches');
-  const b = body<Branch>(req);
-  const index = req.store.branches.findIndex((x) => x.id === req.params.id);
-  const current = req.store.branches[index];
-  if (!current) fail(404, 'Sucursal no encontrada');
-  const next = { ...current };
-  if (b.name !== undefined) {
-    if (!str(b.name).trim()) fail(400, 'Nombre requerido');
-    next.name = str(b.name).trim();
-  }
-  if (b.isOpen !== undefined) next.isOpen = b.isOpen === true;
-  if (b.status !== undefined)
-    next.status = oneOf(b.status, ['active', 'coming_soon'] as const, 'status');
-  for (const key of ['zoneLabel', 'address', 'phone', 'hoursLabel'] as const) {
-    if (b[key] !== undefined) next[key] = str(b[key]).trim();
-  }
-  if (b.radiusKm !== undefined) {
-    if (!(typeof b.radiusKm === 'number' && b.radiusKm >= 0)) fail(400, 'Radio inválido');
-    next.radiusKm = b.radiusKm;
-  }
-  if (b.hours !== undefined) {
-    if (!Array.isArray(b.hours) || b.hours.length !== 7) fail(400, 'Horario inválido');
-    for (const h of b.hours) {
-      if (
-        !h ||
-        typeof h !== 'object' ||
-        !HM.test(str(h.open)) ||
-        !HM.test(str(h.close)) ||
-        (!h.closed && h.open >= h.close)
-      ) {
-        fail(400, 'Horario inválido');
-      }
-    }
-    next.hours = b.hours.map((h, day) => ({
-      day,
-      open: h.open,
-      close: h.close,
-      closed: !!h.closed,
-    }));
-  }
-  if (b.coverage !== undefined) {
-    if (!Array.isArray(b.coverage) || b.coverage.some((r) => !r || typeof r !== 'object')) {
-      fail(400, 'Cobertura inválida');
-    }
-    next.coverage = b.coverage.map((r) => ({
-      department: str(r.department),
-      municipality: str(r.municipality),
-      zone: r.zone === null ? null : str(r.zone),
-      tier: oneOf(r.tier, ['near', 'mid', 'extended', 'far'] as const, 'tier'),
-    }));
-  }
-  if (b.coverageLabels !== undefined) {
-    if (!Array.isArray(b.coverageLabels)) fail(400, 'Cobertura inválida');
-    next.coverageLabels = b.coverageLabels.map(str);
-  }
-  req.store.branches[index] = next;
-  return branchView(next, now(req));
 };
 
 // ── Usuarios internos ─────────────────────────────────────────────────────────────────────

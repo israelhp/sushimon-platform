@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Branch, StaffUser } from '@/lib/data-access/models';
 import {
-  BRANCH_CAP,
-  branchCapacity,
-  branchStats,
-  radiusLabel,
-  validateBranchForm,
-} from './branches-view';
-import {
   activeAdminCount,
   emptyUserForm,
   isValidEmail,
@@ -21,64 +14,6 @@ import {
 
 const branch = (id: string, status: Branch['status']): Branch =>
   ({ id, name: id, status, radiusKm: 5 }) as Branch;
-
-describe('tope de 5 sucursales', () => {
-  it('con 3 activas ofrece 2 espacios con las sucursales "próximamente"', () => {
-    const all = [
-      branch('1', 'active'),
-      branch('2', 'active'),
-      branch('3', 'active'),
-      branch('4', 'coming_soon'),
-      branch('5', 'coming_soon'),
-    ];
-    const cap = branchCapacity(all);
-    expect(BRANCH_CAP).toBe(5);
-    expect(cap).toMatchObject({ count: 3, cap: 5, full: false, unassignedSlots: 0 });
-    expect(cap.slots.map((b) => b.id)).toEqual(['4', '5']);
-  });
-
-  it('con 5 activas queda lleno y sin espacios', () => {
-    const all = ['1', '2', '3', '4', '5'].map((id) => branch(id, 'active'));
-    expect(branchCapacity(all)).toMatchObject({
-      count: 5,
-      full: true,
-      slots: [],
-      unassignedSlots: 0,
-    });
-  });
-
-  it('si faltan registros por activar, el espacio libre queda sin asignar (sin endpoint de alta)', () => {
-    const cap = branchCapacity([branch('1', 'active'), branch('2', 'coming_soon')]);
-    expect(cap.slots).toHaveLength(1);
-    expect(cap.unassignedSlots).toBe(3);
-  });
-
-  it('radio y estadísticas', () => {
-    expect(radiusLabel({ radiusKm: 4 })).toBe('Radio 4 km');
-    expect(radiusLabel({ radiusKm: 0 })).toBe('—');
-    expect(branchStats('1', [{ branchId: '1', orders: 3, sales: 90 }], undefined)).toEqual({
-      orders: 3,
-      sales: 90,
-      active: 0,
-    });
-  });
-
-  it('valida el formulario de sucursal', () => {
-    const ok = {
-      name: 'A',
-      zoneLabel: '',
-      address: 'Calle',
-      phone: '',
-      hoursLabel: '',
-      radiusKm: '4',
-    };
-    expect(validateBranchForm(ok)).toEqual({});
-    expect(
-      Object.keys(validateBranchForm({ ...ok, name: ' ', address: '', radiusKm: '' })),
-    ).toEqual(['name', 'address', 'radiusKm']);
-    expect(validateBranchForm({ ...ok, radiusKm: '-1' }).radiusKm).toBeTruthy();
-  });
-});
 
 describe('usuarios', () => {
   it('valida el correo como el servidor', () => {

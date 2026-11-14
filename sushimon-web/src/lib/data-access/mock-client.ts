@@ -99,7 +99,10 @@ export function createMockClient<TStore, TContext = undefined>(
     if (scenario === 'error') {
       throw new ApiError(500, 'server_error', 'Error del servidor (simulado)');
     }
-    if (scenario === 'forbidden' && path.startsWith('/v1/backoffice')) {
+    if (
+      scenario === 'forbidden' &&
+      (path.startsWith('/v1/backoffice') || path.startsWith('/v1/admin'))
+    ) {
       throw new ApiError(403, 'forbidden', 'Permiso insuficiente (simulado)');
     }
     if (scenario === 'request-rejected' && method !== 'GET') {

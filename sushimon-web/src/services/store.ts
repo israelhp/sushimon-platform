@@ -15,7 +15,12 @@ import { paths } from '@/lib/data-access/paths';
 
 export const getStoreConfig = (client: DataClient) => client.get<StoreConfig>(paths.storeConfig());
 
-export const listBranches = (client: DataClient) => client.get<Branch[]>(paths.branches());
+/**
+ * Vista OPERATIVA SIMULADA de las sucursales (horario, abierta ahora, cobertura: F08/F09, sin contrato todavía).
+ * Para identidad y estado administrativo (F07) usa `services/branches`.
+ */
+export const listBranches = (client: DataClient) =>
+  client.get<Branch[]>(paths.demoBranchOperations());
 
 export interface DeliveryQuoteArgs {
   department: string;

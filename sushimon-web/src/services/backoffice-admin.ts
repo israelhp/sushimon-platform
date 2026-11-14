@@ -13,7 +13,7 @@ import type {
 } from '@/lib/data-access/models';
 import { paths } from '@/lib/data-access/paths';
 
-/** Catálogo, promociones, sucursales, usuarios y reportes del backoffice. */
+/** Catálogo, promociones, usuarios y reportes del backoffice (las sucursales F07: `services/branches`). */
 
 export type ProductInput = Pick<Product, 'name' | 'description' | 'price' | 'categoryId'> &
   Partial<
@@ -59,27 +59,22 @@ export const createPromotion = (client: DataClient, input: PromotionInput) =>
 export const updatePromotion = (client: DataClient, id: string, input: Partial<PromotionInput>) =>
   client.patch<Promotion>(paths.boPromotion(id), input);
 
-export type BranchUpdate = Partial<
+/**
+ * 🎭 Solo simulación (F08/F09): `isOpen`, horario, radio y cobertura de una sucursal. La identidad y el estado
+ * administrativo (F07) se cambian con `services/branches`. Nada de esto está en el contrato real todavía.
+ */
+export type BranchOperationsUpdate = Partial<
   Pick<
     Branch,
-    | 'name'
-    | 'isOpen'
-    | 'status'
-    | 'zoneLabel'
-    | 'address'
-    | 'phone'
-    | 'hoursLabel'
-    | 'hours'
-    | 'radiusKm'
-    | 'coverage'
-    | 'coverageLabels'
+    'isOpen' | 'zoneLabel' | 'hoursLabel' | 'hours' | 'radiusKm' | 'coverage' | 'coverageLabels'
   >
 >;
 
-export const listBoBranches = (client: DataClient) => client.get<Branch[]>(paths.boBranches());
-
-export const updateBranch = (client: DataClient, id: string, input: BranchUpdate) =>
-  client.patch<Branch>(paths.boBranch(id), input);
+export const updateBranchOperations = (
+  client: DataClient,
+  id: string,
+  input: BranchOperationsUpdate,
+) => client.patch<Branch>(paths.demoBranchOperation(id), input);
 
 export const listUsers = (client: DataClient) => client.get<StaffUser[]>(paths.users());
 

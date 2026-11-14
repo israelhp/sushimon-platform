@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { ProductSheetHost } from '@/features/catalog/components/product-sheet-host';
 import { ProductSheetProvider } from '@/features/catalog/product-sheet-context';
+import { BranchSelectionGuard } from '@/features/order-mode/branch-selection';
 import { StoreShellProvider } from '../store-shell-context';
 import { AuthModal } from './AuthModal';
 import { CartDrawer } from './CartDrawer';
@@ -21,6 +22,7 @@ import { StoreHeader } from './StoreHeader';
 export function StoreOverlays() {
   return (
     <>
+      <BranchSelectionGuard />
       <CartDrawer />
       <OrderModeSheet />
       <AuthModal />

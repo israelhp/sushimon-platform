@@ -21,7 +21,7 @@ import type { MockScenario } from './scenarios';
  * el historial de días anteriores lo genera `factories/history.ts` de forma determinista.
  * NUNCA contiene PAN completo, CVV ni PIN: de una tarjeta solo marca, últimos 4 y referencia.
  */
-export const MOCK_STORE_VERSION = 1;
+export const MOCK_STORE_VERSION = 2;
 
 export type ProductRecord = Omit<Product, 'available'>;
 
@@ -70,6 +70,7 @@ export interface MockStore {
     quote: number;
     payment: number;
     courier: number;
+    branch: number;
   };
 }
 

@@ -23,7 +23,10 @@ export function useStoreConfig() {
 /** Sucursales (activas y "próximamente") con `openNow`. */
 export function useBranches() {
   const client = useDataClient();
-  return useQuery({ queryKey: queryKeys.store.branches, queryFn: () => listBranches(client) });
+  return useQuery({
+    queryKey: queryKeys.store.branchOperations,
+    queryFn: () => listBranches(client),
+  });
 }
 
 /**

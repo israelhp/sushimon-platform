@@ -9,7 +9,6 @@ import type {
 import {
   assertAddress,
   bestBranchFor,
-  branchView,
   fail,
   feeFor,
   isValidEmail,
@@ -26,10 +25,6 @@ export const getStoreConfig: Handler = (req): StoreConfig => ({
   ...req.store.config,
   serverTime: now(req).toISOString(),
 });
-
-/** GET /v1/branches — todas (activas y "próximamente"). */
-export const listBranches: Handler = (req) =>
-  req.store.branches.map((b) => branchView(b, now(req)));
 
 function quoteFor(req: Req, address: OrderAddress, branchId?: string | null): DeliveryQuote {
   const createdAt = now(req).toISOString();

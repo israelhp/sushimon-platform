@@ -51,7 +51,7 @@ Es/en, claro/oscuro (preferencia en `localStorage`: aceptable solo como preferen
 
 ## C. Inconsistencias prototipo ↔ DBML y decisiones requeridas
 
-1. **Tope de 5 sucursales** (UI) vs. sin límite en el modelo → regla de negocio en API o solo UI ❓.
+1. **Tope de 5 sucursales** (UI) vs. sin límite en el modelo → regla de negocio en API o solo UI ❓. F07: la UI y la API NO imponen tope (decisión comercial pendiente); el «abierta/cerrada» del prototipo no se mapea a `active` (estado administrativo): la pausa operativa queda pendiente (F08) y horario/cobertura/estadísticas siguen simulados (F08/F09/F33).
 2. **Cobertura por “radio”** y “[Zonas por definir]” (UI) vs. `delivery_zones` por municipio con `base_fee` ❓ (B7 en gap analysis).
 3. **Estados en español** del prototipo vs. `text` libre en DBML → catálogo de estados y transiciones por spec.
 4. **Costo PedidosYa / diferencia cobrada** (UI) sin columnas equivalentes → ver brechas B3–B4.

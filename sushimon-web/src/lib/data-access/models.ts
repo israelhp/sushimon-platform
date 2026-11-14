@@ -9,7 +9,20 @@ type S = components['schemas'];
 export type LocalizedText = S['LocalizedText'];
 export type StoreConfig = S['StoreConfig'];
 export type BranchHours = S['BranchHours'];
+/**
+ * `Branch` es el modelo UI RICO de la tienda y el backoffice: mezcla campos de F07 (id, nombre, dirección, teléfono) con
+ * campos SIMULADOS de F08/F09 (`isOpen`, `openNow`, `hours`, `coverage`, `radiusKm`, `status`…). Se obtiene de
+ * `paths.demoBranchOperations` (solo mock). Para lo que F07 posee usa `PublicBranch` / `AdminBranch` (contrato real).
+ */
 export type Branch = S['Branch'];
+/** F07: campos públicos de una sucursal activa. */
+export type PublicBranch = S['PublicBranch'];
+/** F07: sucursal del backoffice (con `active`, estado ADMINISTRATIVO, y `createdAt`). */
+export type AdminBranch = S['AdminBranch'];
+export type AdminBranchPage = S['AdminBranchPage'];
+export type CreateBranchRequest = S['CreateBranchRequest'];
+export type UpdateBranchRequest = S['UpdateBranchRequest'];
+export type UpdateBranchStatusRequest = S['UpdateBranchStatusRequest'];
 export type CoverageRule = S['CoverageRule'];
 export type Department = S['Department'];
 export type DeliveryTierId = S['DeliveryTierId'];

@@ -18,7 +18,7 @@ const nav = (page: Page) => page.getByRole('navigation', { name: 'Menú principa
 const kpi = (page: Page, label: string) =>
   page.locator('.kpi', { has: page.locator('.kpi-label', { hasText: new RegExp(`^${label}$`) }) });
 
-test('admin: crea un usuario y edita una sucursal', async ({ page }) => {
+test('admin: crea un usuario, edita y desactiva una sucursal', async ({ page }) => {
   await enterAs(page, /Ana Lucía Pérez/);
 
   await nav(page)
@@ -45,38 +45,43 @@ test('admin: crea un usuario y edita una sucursal', async ({ page }) => {
   await nav(page)
     .getByRole('link', { name: /Sucursales/ })
     .click();
-  await expect(page.getByText('3 de 5 sucursales configuradas')).toBeVisible();
+  await expect(page.getByText('5 sucursales', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Editar Sucursal 2' }).click();
   const edit = page.getByRole('dialog', { name: 'Editar sucursal' });
-  await edit.getByLabel('Teléfono').fill('+502 2222-3333');
+  await edit.getByLabel('Teléfono (opcional)').fill('+502 2222-3333');
   await edit.getByRole('button', { name: 'Guardar sucursal' }).click();
   await expect(edit).toBeHidden();
   await expect(page.getByText('+502 2222-3333')).toBeVisible();
 
-  // Cerrar una sucursal con el interruptor.
-  const sw = page.getByRole('switch', { name: 'Sucursal abierta: Sucursal 3' });
+  // Desactivar una sucursal (estado administrativo) exige confirmar y dar un motivo.
+  const sw = page.getByRole('switch', { name: 'Sucursal activa: Sucursal 3' });
   await sw.click();
+  const confirm = page.getByRole('dialog', { name: 'Desactivar sucursal' });
+  await confirm.getByRole('button', { name: 'Desactivar sucursal' }).click();
+  await expect(confirm.getByText('Escribe el motivo de la desactivación.')).toBeVisible();
+  await confirm.getByLabel('Motivo de la desactivación').fill('Remodelación');
+  await confirm.getByRole('button', { name: 'Desactivar sucursal' }).click();
+  await expect(confirm).toBeHidden();
   await expect(sw).toHaveAttribute('aria-checked', 'false');
-  await expect(page.getByText('Cerrada · no recibe pedidos')).toBeVisible();
+  await expect(page.getByText('Inactiva · oculta en la tienda')).toHaveCount(3);
 });
 
-test('admin: al llegar a 5 sucursales el alta se deshabilita y explica el tope', async ({
-  page,
-}) => {
+test('admin: crea una sucursal sin tope y rechaza un código duplicado', async ({ page }) => {
   await enterAs(page, /Ana Lucía Pérez/);
   await page.goto('/backoffice/sucursales');
-  await page
-    .getByRole('button', { name: /Agregar sucursal/ })
-    .first()
-    .click();
-  await page
-    .getByRole('button', { name: /Agregar sucursal/ })
-    .first()
-    .click();
-  await expect(page.getByText('5 de 5 sucursales configuradas')).toBeVisible();
-  const full = page.getByRole('button', { name: /Límite de 5 sucursales alcanzado/ });
-  await expect(full).toHaveAttribute('aria-disabled', 'true');
-  await expect(page.getByText(/pendiente de decisión del negocio/)).toBeVisible();
+  await page.getByRole('button', { name: /Nueva sucursal/ }).click();
+  const dialog = page.getByRole('dialog', { name: 'Nueva sucursal' });
+  await dialog.getByLabel('Código').fill('sucursal-1');
+  await dialog.getByLabel('Nombre', { exact: true }).fill('Duplicada');
+  await dialog.getByLabel('Dirección').fill('Calle 1');
+  await dialog.getByRole('button', { name: 'Crear sucursal' }).click();
+  await expect(dialog.getByText(/Ya existe una sucursal con ese código/).first()).toBeVisible();
+
+  await dialog.getByLabel('Código').fill('zona-11');
+  await dialog.getByLabel('Nombre', { exact: true }).fill('Zona 11');
+  await dialog.getByRole('button', { name: 'Crear sucursal' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText('6 sucursales', { exact: true })).toBeVisible();
 });
 
 test('encargado: ve Reportes de su sucursal, pero no Usuarios ni Sucursales', async ({ page }) => {

@@ -7,8 +7,25 @@ import type { BranchHours, CoverageRule, DeliveryTierId } from '@/lib/data-acces
  *   ("Sucursal 1" ↔ s1, etc.). sucursal-4 y sucursal-5 quedan "próximamente" (coming_soon).
  * `openNow` se calcula en el handler con el reloj.
  */
+/**
+ * Sucursal del mock. Mezcla DOS dominios que no deben confundirse:
+ * - F07 (contrato real: `AdminBranch`/`PublicBranch`): `id`, `code`, `name`, `address`, `phone` ('' = sin teléfono),
+ *   `latitude`/`longitude`, `active`, `createdAt`.
+ * - SIMULADO (F08/F09/F33, sin contrato): `area`, `zoneLabel`, `hoursLabel`, `hours`, `radiusKm`, `isOpen`, `coverage`,
+ *   `coverageLabels`. `status` es la vista operativa de `active` (`active` → 'active'; si no, 'coming_soon') y
+ *   `isOpen` NUNCA se deriva de `active`.
+ */
 export interface BranchSeed {
   id: string;
+  /** F07: identificador de negocio (slug, minúsculas, inmutable). */
+  code: string;
+  /** F07: sin valores ficticios; null hasta que alguien los capture. */
+  latitude: number | null;
+  longitude: number | null;
+  /** F07: estado administrativo. */
+  active: boolean;
+  /** F07: fecha de alta (ISO). */
+  createdAt: string;
   /** id equivalente en el prototipo del backoffice (trazabilidad). */
   legacyBackofficeId: string | null;
   name: string;
@@ -43,7 +60,9 @@ const whole = (municipality: string, tier: DeliveryTierId): CoverageRule => ({
   tier,
 });
 
-export const BRANCH_SEEDS: BranchSeed[] = [
+type RawBranchSeed = Omit<BranchSeed, 'code' | 'latitude' | 'longitude' | 'active' | 'createdAt'>;
+
+const RAW_BRANCH_SEEDS: RawBranchSeed[] = [
   {
     id: 'sucursal-1',
     legacyBackofficeId: 's1',
@@ -148,5 +167,15 @@ export const BRANCH_SEEDS: BranchSeed[] = [
   },
 ];
 
-/** Tope de sucursales (regla de UI; la regla de servidor está pendiente ❓). */
-export const MAX_BRANCHES = 5;
+/** Alta fija de las sucursales sembradas (determinista). */
+export const BRANCH_SEED_CREATED_AT = '2026-01-15T18:00:00.000Z';
+
+/** Sembradas: el `code` es el id actual; sin coordenadas (no se inventan) y `active` según el estado del prototipo. */
+export const BRANCH_SEEDS: BranchSeed[] = RAW_BRANCH_SEEDS.map((b) => ({
+  ...b,
+  code: b.id,
+  latitude: null,
+  longitude: null,
+  active: b.status === 'active',
+  createdAt: BRANCH_SEED_CREATED_AT,
+}));

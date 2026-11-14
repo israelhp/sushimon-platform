@@ -8,7 +8,9 @@ const seg = (value: string) => encodeURIComponent(value);
 export const paths = {
   // Públicas
   storeConfig: () => '/v1/store/config',
+  /** F07 (contrato): sucursales activas, solo campos públicos. */
   branches: () => '/v1/branches',
+  branch: (id: string) => `/v1/branches/${seg(id)}`,
   deliveryQuote: () => '/v1/delivery/quote',
   categories: () => '/v1/catalog/categories',
   products: () => '/v1/catalog/products',
@@ -45,8 +47,10 @@ export const paths = {
   boCategory: (id: string) => `/v1/backoffice/categories/${seg(id)}`,
   boPromotions: () => '/v1/backoffice/promotions',
   boPromotion: (id: string) => `/v1/backoffice/promotions/${seg(id)}`,
-  boBranches: () => '/v1/backoffice/branches',
-  boBranch: (id: string) => `/v1/backoffice/branches/${seg(id)}`,
+  /** F07 (contrato): administración de sucursales (JWT + permiso `branches` + aal2). */
+  adminBranches: () => '/v1/admin/branches',
+  adminBranch: (id: string) => `/v1/admin/branches/${seg(id)}`,
+  adminBranchStatus: (id: string) => `/v1/admin/branches/${seg(id)}/status`,
   users: () => '/v1/backoffice/users',
   user: (id: string) => `/v1/backoffice/users/${seg(id)}`,
   reportSummary: () => '/v1/backoffice/reports/summary',
@@ -56,6 +60,12 @@ export const paths = {
    * 🎭 Solo simulación: existen únicamente en el adaptador mock (nunca en la API real).
    * La UI solo las ofrece cuando `client.kind === 'mock'`.
    */
+  /**
+   * Operación SIMULADA de las sucursales (horario, cobertura, abierta/cerrada, zona): pertenece a F08/F09 y aún no
+   * tiene contrato. La identidad y el estado administrativo (F07) viven en `branches`/`adminBranches`.
+   */
+  demoBranchOperations: () => '/v1/demo/branches/operations',
+  demoBranchOperation: (id: string) => `/v1/demo/branches/${seg(id)}/operations`,
   demoAdvanceOrder: (id: string) => `/v1/demo/orders/${seg(id)}/advance`,
   demoSimulateOrder: () => '/v1/demo/orders/simulate',
 } as const;
