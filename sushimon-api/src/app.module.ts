@@ -9,6 +9,8 @@ import { requestIdMiddleware } from './common/request-id/request-id.middleware.j
 import { validateEnv, type Env } from './config/env.js';
 import { AuthModule } from './auth/auth.module.js';
 import { BranchScheduleModule } from './branch-schedule/branch-schedule.module.js';
+import { DeliveryCoverageModule } from './delivery-coverage/delivery-coverage.module.js';
+import { LocationsModule } from './locations/locations.module.js';
 import { BranchesModule } from './branches/branches.module.js';
 import { StaffModule } from './staff/staff.module.js';
 import { DatabaseModule } from './database/database.module.js';
@@ -37,6 +39,8 @@ import { HealthTokenGuard } from './health/health-token.guard.js';
     AuthModule,
     BranchesModule,
     BranchScheduleModule,
+    LocationsModule,
+    DeliveryCoverageModule,
     StaffModule,
   ],
   controllers: [HealthController],
