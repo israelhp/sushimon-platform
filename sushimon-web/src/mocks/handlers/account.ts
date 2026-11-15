@@ -1,9 +1,12 @@
 import type { AuthContext as AuthContextResponse } from '@/services/auth';
-import type { Address, AddressInput, Customer } from '@/lib/data-access/models';
-import { assertAddress, fail, isValidEmail, isValidPhone } from '../domain';
+import type { Address, AddressInput, Customer, MeResponse } from '@/lib/data-access/models';
+import { assertAddress, fail } from '../domain';
 import { settleReviews } from './orders';
 import { body, now, oneOf, requireCustomer, str, type Handler, type Req } from './shared';
 import { authStaffContext } from './staff';
+
+/** Identidad simulada (UUID fijo y determinista, como en /v1/auth/context). */
+const AUTH_USER_ID = '00000000-0000-4000-8000-00000000d3a0';
 
 /**
  * Cuenta del cliente (`/v1/me/*`), equivalente al adaptador local `monsushi-account-v1` del
@@ -26,7 +29,7 @@ export const getAuthContext: Handler = (req): AuthContextResponse => {
   const record = staff ? req.store.staff.find((u) => u.id === staff.userId) : undefined;
   const staffContext = record?.active ? authStaffContext(req, record) : null;
   return {
-    authUserId: '00000000-0000-4000-8000-00000000d3a0',
+    authUserId: AUTH_USER_ID,
     email,
     provider: 'google-demo',
     isCustomer: Boolean(customer),
@@ -40,33 +43,95 @@ export const getAuthContext: Handler = (req): AuthContextResponse => {
   };
 };
 
-/** GET /v1/me */
-export const getMe: Handler = (req): Customer => requireCustomer(req).profile;
+const CUSTOMER_ID = '00000000-0000-4000-8000-00000000c001';
+const CUSTOMER_CREATED_AT = '2026-01-15T12:00:00.000Z';
 
-/** PATCH /v1/me — { fullName?, phone?, email?, defaultAddressId? } */
-export const updateMe: Handler = (req): Customer => {
+/** Forma del perfil de cliente que devuelve la API real (F04 · contrato MeResponse). */
+function meResponse(profile: Customer): MeResponse & { defaultAddressId: string | null } {
+  return {
+    authUserId: AUTH_USER_ID,
+    email: profile.email || null,
+    customer: {
+      id: CUSTOMER_ID,
+      fullName: profile.fullName,
+      email: profile.email || null,
+      phone: profile.phone || null,
+      createdAt: CUSTOMER_CREATED_AT,
+    },
+    isStaff: false,
+    // Extensión de SIMULACIÓN: la dirección predeterminada es de F05 y aún no está en el contrato de F04.
+    defaultAddressId: profile.defaultAddressId,
+  };
+}
+
+/** Campos que F04 permite editar. Cualquier otro (correo, identidad, roles…) responde 400, como la API real. */
+const EDITABLE_PROFILE_FIELDS = new Set(['fullName', 'phone']);
+
+/** Réplica de la política de teléfono de la API: Guatemala → +502XXXXXXXX; internacional E.164; vacío = null. */
+function normalizeMockPhone(raw: unknown): string | null | 'invalid' {
+  if (raw === null) return null;
+  const compact = str(raw)
+    .trim()
+    .replace(/[\s\-().]/g, '');
+  if (!compact) return null;
+  const gt = /^(?:\+?502)?(\d{8})$/.exec(compact);
+  if (gt) return `+502${gt[1]}`;
+  if (/^\+502/.test(compact)) return 'invalid';
+  const intl = /^\+([1-9]\d{7,14})$/.exec(compact);
+  return intl ? `+${intl[1]}` : 'invalid';
+}
+
+/** GET /v1/me */
+export const getMe: Handler = (req) => meResponse(requireCustomer(req).profile);
+
+/** PATCH /v1/me — solo { fullName?, phone? }; omitido = sin cambios; phone null/vacío = borrar. */
+export const updateMe: Handler = (req) => {
   const account = requireCustomer(req);
-  const b = body<Customer>(req);
+  const b = body<{ fullName: string; phone: string | null }>(req);
+  for (const key of Object.keys(b)) {
+    if (!EDITABLE_PROFILE_FIELDS.has(key)) fail(400, `Campo no permitido: ${key}`);
+  }
   const next = { ...account.profile };
   if (b.fullName !== undefined) {
-    if (str(b.fullName).trim().length < 3) fail(400, 'Escribe tu nombre completo');
-    next.fullName = str(b.fullName).trim();
+    const name = str(b.fullName).replace(/\s+/g, ' ').trim();
+    if (name.length < 2 || name.length > 120) fail(400, 'Escribe tu nombre completo');
+    next.fullName = name;
   }
   if (b.phone !== undefined) {
-    if (!isValidPhone(str(b.phone))) fail(400, 'Teléfono inválido');
-    next.phone = str(b.phone).trim();
-  }
-  if (b.email !== undefined) {
-    if (!isValidEmail(str(b.email))) fail(400, 'Correo inválido');
-    next.email = str(b.email).trim();
-  }
-  if (b.defaultAddressId !== undefined) {
-    if (b.defaultAddressId !== null && !account.addresses.some((a) => a.id === b.defaultAddressId))
-      fail(404, 'Dirección no encontrada');
-    next.defaultAddressId = b.defaultAddressId;
+    const phone = normalizeMockPhone(b.phone);
+    if (phone === 'invalid') fail(400, 'Teléfono inválido');
+    next.phone = phone ?? '';
   }
   account.profile = next;
-  return next;
+  return meResponse(next);
+};
+
+/** GET /v1/me/storefront — contexto agregado; sin contadores de F05, F06 ni F23 (secciones pendientes). */
+export const getStorefront: Handler = (req) => {
+  const { profile } = requireCustomer(req);
+  return {
+    authUserId: AUTH_USER_ID,
+    email: profile.email || null,
+    provider: 'google-demo',
+    avatarUrl: null,
+    customer: meResponse(profile).customer,
+    isStaff: false,
+    pendingSections: ['addresses', 'favorites', 'orders'],
+  };
+};
+
+/**
+ * PUT /v1/demo/me/default-address — SIMULACIÓN de F05 (no existe en la API real todavía).
+ * Se mantiene fuera de PATCH /v1/me para que F04 no acepte campos de direcciones.
+ */
+export const setDemoDefaultAddress: Handler = (req) => {
+  const account = requireCustomer(req);
+  const b = body<{ addressId: string | null }>(req);
+  if (b.addressId !== null && !account.addresses.some((a) => a.id === b.addressId)) {
+    fail(404, 'Dirección no encontrada');
+  }
+  account.profile = { ...account.profile, defaultAddressId: b.addressId ?? null };
+  return { defaultAddressId: account.profile.defaultAddressId };
 };
 
 function parseAddress(req: Req, input: Partial<AddressInput>) {

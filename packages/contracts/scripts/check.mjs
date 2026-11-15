@@ -23,10 +23,17 @@ if (readFileSync(schemaPath, 'utf8') !== before) {
 const tmp = mkdtempSync(join(tmpdir(), 'sushimon-openapi-'));
 try {
   const emitted = join(tmp, 'api-openapi.json');
-  execFileSync('pnpm', ['exec', 'tsx', 'scripts/emit-openapi.ts', emitted], {
-    cwd: apiDir,
-    stdio: 'inherit',
-  });
+  // En Windows pnpm es un shim `pnpm.cmd`, que execFileSync no ejecuta sin shell (ENOENT / EINVAL).
+  const isWindows = process.platform === 'win32';
+  execFileSync(
+    isWindows ? 'pnpm.cmd' : 'pnpm',
+    ['exec', 'tsx', 'scripts/emit-openapi.ts', emitted],
+    {
+      cwd: apiDir,
+      stdio: 'inherit',
+      shell: isWindows,
+    },
+  );
   const diff = diffContracts(
     loadYaml(join(pkgDir, 'openapi/openapi.yaml')),
     JSON.parse(readFileSync(emitted, 'utf8')),

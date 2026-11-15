@@ -159,7 +159,7 @@ Convenciones: `weekday` ISO 1–7 (nunca `getDay`; el único punto de conversió
 cierres usan `datetime-local` en hora de Guatemala y envían UTC. Refetch de la disponibilidad en `nextTransitionAt`
 (tope 10 min) y al enfocar la ventana; sin polling por segundo.
 
-## F09 — Geografía, zonas propias y cobertura (spec 008, ADR-0012)
+## F09 — Geografía, zonas propias y cobertura (spec 008, ADR-0013)
 
 Estado: **web conectada al contrato; API implementada y commiteada, integración http real NO verificada** (en la web el
 flujo es `MOCK_ONLY` mientras `NEXT_PUBLIC_DATA_SOURCE=mock`). Las 10 operaciones (`listLocationDepartments`,

@@ -52,7 +52,7 @@ Es/en, claro/oscuro (preferencia en `localStorage`: aceptable solo como preferen
 ## C. Inconsistencias prototipo ↔ DBML y decisiones requeridas
 
 1. **Tope de 5 sucursales** (UI) vs. sin límite en el modelo → regla de negocio en API o solo UI ❓. F07: la UI y la API NO imponen tope (decisión comercial pendiente); el «abierta/cerrada» del prototipo no se mapea a `active` (estado administrativo): la pausa operativa NO existe (pendiente de decisión de negocio, spec 007 D9). F08: horario semanal, cierres extraordinarios y estado operativo (abierta / cerrada por horario / cierre extraordinario / sin horario) ya están conectados al contrato (mock); cobertura y estadísticas siguen simuladas (F09/F33).
-2. **Cobertura por “radio”** y “[Zonas por definir]” (UI) vs. `delivery_zones` por municipio con `base_fee`: **resuelto en F09 (ADR-0012)**: cobertura por municipio + zona opcional; el radio se descarta y la web ya no lo muestra ni lo usa.
+2. **Cobertura por “radio”** y “[Zonas por definir]” (UI) vs. `delivery_zones` por municipio con `base_fee`: **resuelto en F09 (ADR-0013)**: cobertura por municipio + zona opcional; el radio se descarta y la web ya no lo muestra ni lo usa.
 3. **Estados en español** del prototipo vs. `text` libre en DBML → catálogo de estados y transiciones por spec.
 4. **Costo PedidosYa / diferencia cobrada** (UI) sin columnas equivalentes → ver brechas B3–B4.
 5. **Despacho elegible entre PedidosYa y propio** (UI) sin columna de proveedor → B1.

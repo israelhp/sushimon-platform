@@ -3,7 +3,7 @@
 **Rama**: `feature/F09-delivery-zones-coverage` (desde `develop` con F00–F08)
 **Prioridad**: P0 · **Dependencias**: F00, F01, F02, F03 (RBAC), F07 (sucursales) · **Independiente de F08** (no importa `branch-schedule`)
 **Relacionadas (solo contratos reutilizables)**: F05 (direcciones), F19 (checkout), F20 (pedidos), F27/F28 (motoristas), F29 (PedidosYa real)
-**Estado global**: `CONTRACT_DEFINED` (contrato + spec + ADR-0012; sin API ni web; sin migración). Ver estados por componente.
+**Estado global**: `CONTRACT_DEFINED` (contrato + spec + ADR-0013; sin API ni web; sin migración). Ver estados por componente.
 
 ## Alcance
 
@@ -41,7 +41,7 @@ F09 **no** es una integración externa completa: existir un mock no cambia el es
   `mocks/fixtures/store.ts:42-65`); `coveringBranch` (`features/checkout/coverage.ts`); `GET /v1/delivery/quote` simulado
   (`mocks/handlers/public.ts`); `BranchesScreen` muestra `coverageLabels` y radio (`bo-admin/components/BranchesScreen.tsx:259-264`);
   `DispatchModal` simula PedidosYa (`bo-deliveries`). Gap B7 (`docs/database/schema-gap-analysis.md:29`): el prototipo habla de «radio»;
-  el modelo vigente es municipio/zona → **ADR-0012 cierra B7 a favor de municipio + zona** (el radio queda descartado).
+  el modelo vigente es municipio/zona → **ADR-0013 cierra B7 a favor de municipio + zona** (el radio queda descartado).
 - Colisión de nombres: el contrato ya tenía los esquemas draft `Department` y `Municipality` (forma del mock). Se renombraron a
   `DraftDepartment`/`DraftMunicipality` (como F08 con `DraftBranchHours`); `models.ts` mantiene el alias `Department` → `DraftDepartment`
   (cambio de 1 línea; `pnpm --filter sushimon-web typecheck` verde). La web de F09 migra a los esquemas nuevos y retira los drafts.
@@ -65,7 +65,7 @@ PROVIDER_UNDETERMINED | NO_ZONE_COVERAGE`. Son códigos NUESTROS; nunca se reenv
   crea la fila. Desactivar zonas propias NO borra zonas, motoristas, entregas en curso ni pedidos; solo impide nuevas elegibilidades.
 - **D5 Zonas propias** (`delivery_zones`): `branch_id`, `municipality_id`, `zone_label` (NULL permitido), `zone_key`, `base_fee numeric(12,2)`,
   `active`, `version`, `created_at`, `updated_at`. Sin borrado físico: solo `PATCH …/status`. Columnas nuevas respecto al DBML (`zone_key`,
-  `version`, `created_at`, `updated_at`) justificadas en ADR-0012. La tabla es nueva, así que no hay riesgo de migrar datos.
+  `version`, `created_at`, `updated_at`) justificadas en ADR-0013. La tabla es nueva, así que no hay riesgo de migrar datos.
 - **D6 Normalización de `zone_label`** (la API es la única fuente; documentada y probada): NFC → eliminar caracteres de control → recorte →
   colapso de cualquier secuencia de espacios (Unicode `\s`) a un espacio → vacío ⇒ `NULL`; máx. 60 caracteres tras normalizar (400 si excede o
   trae caracteres de control). **Etiqueta legible** (`zone_label`) conserva mayúsculas y acentos. **Clave** (`zone_key`) = etiqueta normalizada →

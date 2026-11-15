@@ -13,6 +13,7 @@ import { DeliveryCoverageModule } from './delivery-coverage/delivery-coverage.mo
 import { LocationsModule } from './locations/locations.module.js';
 import { BranchesModule } from './branches/branches.module.js';
 import { StaffModule } from './staff/staff.module.js';
+import { CustomersModule } from './customers/customers.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthController } from './health/health.controller.js';
 import { HealthTokenGuard } from './health/health-token.guard.js';
@@ -42,6 +43,7 @@ import { HealthTokenGuard } from './health/health-token.guard.js';
     LocationsModule,
     DeliveryCoverageModule,
     StaffModule,
+    CustomersModule,
   ],
   controllers: [HealthController],
   providers: [HealthTokenGuard, { provide: APP_GUARD, useClass: AppThrottlerGuard }],
@@ -51,5 +53,7 @@ export class AppModule implements NestModule {
     consumer.apply(requestIdMiddleware, rejectProtoKeysMiddleware).forRoutes('*path');
     // Todo el backoffice: nunca se almacena en caché (incluidos 401/403).
     consumer.apply(noStoreMiddleware).forRoutes('admin/*path');
+    // Perfil propio del cliente (F01 + F04): datos personales, nunca en caché compartida.
+    consumer.apply(noStoreMiddleware).forRoutes('me', 'me/*path');
   }
 }

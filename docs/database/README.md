@@ -93,7 +93,7 @@ authenticated`, porque en Supabase los privilegios por defecto sobre tablas nuev
   - Pruebas: `sushimon-api/test/migration-0006.int-spec.ts` (PostgreSQL plano desechable vía `DATABASE_URL_TEST`; se
     omite sin ella o si hay Supabase real). Las mismas restricciones se comprobaron aplicando 0001..0006 en PGlite
     0.4.3 en memoria. Reversión manual descrita en el encabezado del SQL.
-- `0007_delivery_geography_coverage` (F09, `specs/008-delivery-zones-coverage`, ADR-0012; **migración existente, sin aplicar a bases reales;
+- `0007_delivery_geography_coverage` (F09, `specs/008-delivery-zones-coverage`, ADR-0013; **migración existente, sin aplicar a bases reales;
   requiere aprobación humana**): incremental y no destructiva (solo `CREATE` + seed). No es relanzable el DDL; el seed sí es idempotente.
   - **Tablas**: `departments` y `municipalities` (DBML tal cual + CHECK `name` no vacío y sin espacios en bordes; UNIQUE `name` y
     `(department_id, name)`); `delivery_zones` (DBML + `zone_key`, `version`, `created_at`, `updated_at`); `branch_delivery_settings`
@@ -118,4 +118,4 @@ authenticated`, porque en Supabase los privilegios por defecto sobre tablas nuev
     `auth.users` es la de Supabase real). Los mismos casos (salvo la carrera concurrente, que requiere varias conexiones) se comprobaron
     aplicando 0001..0007 en PGlite 0.4.3 en memoria.
   - **Fuente de verdad**: `docs/references/monsushi_dbdiagram.dbml` NO se edita; la evolución del modelo (columnas y tabla nuevas, `UNIQUE`
-    sobre `zone_key`, CHECK) vive en la migración + ADR-0012.
+    sobre `zone_key`, CHECK) vive en la migración + ADR-0013.

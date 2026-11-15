@@ -1,4 +1,4 @@
-# ADR-0012 Geografía, cobertura por proveedor y zonas propias de entrega
+# ADR-0013 Geografía, cobertura por proveedor y zonas propias de entrega
 
 **Estado**: **propuesta** (2026-11-14, F09). Se acepta al fusionar `specs/008-delivery-zones-coverage`.
 

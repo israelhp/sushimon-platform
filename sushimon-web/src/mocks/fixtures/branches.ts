@@ -10,7 +10,7 @@
  * - F07 (contrato real: `AdminBranch`/`PublicBranch`): `id`, `code`, `name`, `address`, `phone` ('' = sin teléfono),
  *   `latitude`/`longitude`, `active`, `createdAt`.
  * - SIMULADO (F33, sin contrato): `area`, `zoneLabel`. La cobertura (F09) vive en `fixtures/delivery.ts` y la API; el radio y
- *   los niveles se retiraron (ADR-0012). `status` es la vista
+ *   los niveles se retiraron (ADR-0013). `status` es la vista
  *   operativa de `active` (`active` → 'active'; si no, 'coming_soon'). F08 (horario, cierres, «abierta ahora») ya es
  *   contrato y NO vive aquí.
  */

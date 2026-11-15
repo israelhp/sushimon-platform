@@ -62,7 +62,7 @@ export function branchView(seed: BranchSeed): Branch {
     ...rest
   } = seed;
   void [_legacy, code, latitude, longitude, active, createdAt];
-  // F09 (ADR-0012): `radiusKm`, `coverage` y `coverageLabels` quedaron RETIRADOS como fuente de cobertura. El contrato
+  // F09 (ADR-0013): `radiusKm`, `coverage` y `coverageLabels` quedaron RETIRADOS como fuente de cobertura. El contrato
   // (borrador `Branch`) aún los exige; se emiten vacíos y NADIE los lee. La cobertura real es `checkDeliveryCoverage`.
   return { ...rest, radiusKm: 0, coverage: [], coverageLabels: [] };
 }

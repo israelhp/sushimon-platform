@@ -104,6 +104,34 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
+        /**
+         * Actualiza nombre y teléfono del perfil del cliente autenticado
+         * @description Actualización parcial: los campos omitidos no cambian. El cliente se identifica solo por el JWT; no
+         *     existe forma de elegir otra identidad. El correo, la identidad, los roles y los permisos NO se pueden
+         *     modificar aquí (400 por campo no permitido).
+         */
+        patch: operations["updateMe"];
+        trace?: never;
+    };
+    "/v1/me/storefront": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Contexto agregado de Mi cuenta (una sola solicitud)
+         * @description Devuelve la identidad (Supabase Auth), el perfil comercial y las secciones de Mi cuenta que aún
+         *     no tienen contrato (`pendingSections`). Nunca representa como `0` datos de F05, F06 o F23 que
+         *     todavía no existen. Crea el perfil de forma idempotente si todavía no existe.
+         */
+        get: operations["getCustomerStorefront"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
         patch?: never;
         trace?: never;
     };
@@ -1047,9 +1075,43 @@ export interface components {
         MeResponse: {
             /** Format: uuid */
             authUserId: string;
+            /** @description Correo de la identidad de Supabase Auth (solo lectura). */
             email: string | null;
             customer: components["schemas"]["CustomerProfile"];
             isStaff: boolean;
+        };
+        /**
+         * @description Campos editables del perfil comercial. Omitido = sin cambios. `phone: null` o cadena vacía borra el teléfono.
+         *     Cualquier otra propiedad (identidad, correo, roles, permisos, `customerId`…) responde 400.
+         */
+        UpdateCustomerProfileRequest: {
+            /**
+             * @description Se recortan espacios y se colapsan los internos. Solo letras (incluidas tildes y ñ), espacios,
+             *     apóstrofos, guiones y puntos; debe contener al menos una letra. Sin `null`.
+             */
+            fullName?: string;
+            /**
+             * @description Guatemala: 8 dígitos locales, con o sin `+502`/`502`; se guarda como `+502XXXXXXXX`.
+             *     Otros países: `+` seguido de 8 a 15 dígitos (E.164), sin prefijo de país asumido.
+             */
+            phone?: string | null;
+        };
+        CustomerStorefrontContext: {
+            /** Format: uuid */
+            authUserId: string;
+            /** @description Correo de la identidad (Auth), no editable. */
+            email: string | null;
+            /** @description Proveedor de identidad (p. ej. google). */
+            provider: string | null;
+            /**
+             * Format: uri
+             * @description Imagen de la identidad de Google (https, dominio permitido). Null si no existe. No se copia a almacenamiento propio.
+             */
+            avatarUrl: string | null;
+            customer: components["schemas"]["CustomerProfile"];
+            isStaff: boolean;
+            /** @description Secciones de Mi cuenta sin contrato implementado todavía. No tienen contadores. */
+            pendingSections: ("addresses" | "favorites" | "orders")[];
         };
         ReadyResponse: {
             /** @enum {string} */
@@ -2147,6 +2209,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCustomerProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Perfil actualizado */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            /** @description Datos inválidos (formato, longitud o campo no permitido) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getCustomerStorefront: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Contexto de cuenta del cliente autenticado */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerStorefrontContext"];
                 };
             };
             /** @description Token ausente, inválido o expirado */

@@ -31,6 +31,8 @@ export const paths = {
   // Cliente
   authContext: () => '/v1/auth/context',
   me: () => '/v1/me',
+  /** F04 (contrato): contexto agregado de Mi cuenta. */
+  myStorefront: () => '/v1/me/storefront',
   myAddresses: () => '/v1/me/addresses',
   myAddress: (id: string) => `/v1/me/addresses/${seg(id)}`,
   myFavorites: () => '/v1/me/favorites',
@@ -91,6 +93,8 @@ export const paths = {
   demoBranchOperations: () => '/v1/demo/branches/operations',
   /** Escenario SIMULADO de PedidosYa para la cobertura (solo mock; nunca existe en la API real). */
   demoPedidosyaCoverage: () => '/v1/demo/delivery/pedidosya-coverage',
+  /** 🎭 F05 simulado: dirección predeterminada (no está en la API todavía). */
+  demoDefaultAddress: () => '/v1/demo/me/default-address',
   demoAdvanceOrder: (id: string) => `/v1/demo/orders/${seg(id)}/advance`,
   demoSimulateOrder: () => '/v1/demo/orders/simulate',
 } as const;
