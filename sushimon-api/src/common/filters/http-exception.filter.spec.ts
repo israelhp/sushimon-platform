@@ -113,4 +113,33 @@ describe('AllExceptionsFilter', () => {
     expect(JSON.stringify(res.json.mock.calls[0])).not.toContain('sensible');
     expect(res.status).toHaveBeenCalledWith(500);
   });
+
+  it('5xx: solo CATALOG_UNAVAILABLE conserva `code`; otro code y las violations se descartan', () => {
+    vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const res = fakeRes();
+    new AllExceptionsFilter().catch(
+      codedException(503, 'CATALOG_UNAVAILABLE', 'Catálogo no disponible', [
+        { path: 'x', code: 'Y', message: 'detalle interno' },
+      ]),
+      hostWith(res, 'req-3'),
+    );
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({
+      statusCode: 503,
+      error: 'SERVICE_UNAVAILABLE',
+      code: 'CATALOG_UNAVAILABLE',
+      message: 'Catálogo no disponible',
+      requestId: 'req-3',
+    });
+
+    for (const [status, code] of [
+      [503, 'OTHER_UNAVAILABLE'],
+      [500, 'INTERNAL_DETAIL'],
+      [502, 'CATALOG_UNAVAILABLE_X'],
+    ] as const) {
+      const other = fakeRes();
+      new AllExceptionsFilter().catch(codedException(status, code, 'm'), hostWith(other));
+      expect(other.json.mock.calls[0]?.[0]).not.toHaveProperty('code');
+    }
+  });
 });

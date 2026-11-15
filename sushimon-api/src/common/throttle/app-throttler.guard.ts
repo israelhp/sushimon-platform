@@ -7,6 +7,11 @@ import { codedException } from '../errors/coded-exception.js';
 export const COVERAGE_CHECK_THROTTLE = { default: { limit: 30, ttl: 60_000 } };
 export const LOCATIONS_THROTTLE = { default: { limit: 60, ttl: 60_000 } };
 
+/** Favoritos del cliente (F06 D13). Por IP; cada handler tiene su contador. */
+export const FAVORITES_LIST_THROTTLE = { default: { limit: 120, ttl: 60_000 } };
+export const FAVORITES_ADD_THROTTLE = { default: { limit: 60, ttl: 60_000 } };
+export const FAVORITES_REMOVE_THROTTLE = { default: { limit: 60, ttl: 60_000 } };
+
 /** Mismo token que usa @nestjs/throttler internamente para las opciones del módulo. */
 const THROTTLER_OPTIONS = 'THROTTLER:MODULE_OPTIONS';
 

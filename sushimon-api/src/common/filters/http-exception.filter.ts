@@ -22,6 +22,12 @@ export interface ErrorBody {
   violations?: { path: string; code: string; message: string }[];
 }
 
+/**
+ * Únicos `code` que se exponen en respuestas 5xx (F06 D9). El resto de 5xx nunca lleva `code` ni `violations`.
+ * Añadir uno exige justificarlo en la spec: es un contrato público.
+ */
+const PUBLIC_5XX_CODES: ReadonlySet<string> = new Set(['CATALOG_UNAVAILABLE']);
+
 /** Solo propaga violaciones bien formadas; descarta cualquier otro campo (nunca filtra datos internos). */
 function pickViolations(value: unknown): ErrorBody['violations'] {
   if (!Array.isArray(value) || value.length === 0) return undefined;
@@ -73,7 +79,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         message,
         ...(requestId ? { requestId } : {}),
         ...(details ? { details } : {}),
-        ...(code && status < 500 ? { code } : {}),
+        ...(code && (status < 500 || PUBLIC_5XX_CODES.has(code)) ? { code } : {}),
         ...(violations && status < 500 ? { violations } : {}),
       };
       if (status >= 500) this.logger.error(`[${requestId ?? '-'}] ${exception.message}`);
