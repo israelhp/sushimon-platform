@@ -36,10 +36,10 @@ src/mocks/
   store.ts             tipo MockStore + persistencia en sessionStorage (clave sushimon-mock-store-v1:<escenario>)
   domain.ts            reglas puras (totales, validaciones, fail(), failCode()/badRequest() con `code`/`violations`)
   coverage.ts          motor de cobertura F09 (OWN, PedidosYa simulado, elegibilidad A–G): réplica de la API
-  handlers/            public · orders · account · backoffice · backoffice-admin · logistics · schedule · delivery (F09) · index (mockRoutes)
+  handlers/            public · orders · account · backoffice · backoffice-admin · logistics · schedule · delivery (F09) · favorites (F06) · index (mockRoutes)
   index.ts             createMockDataClient({ scenario, latencyMs?, store?, clock?, session?, persist? })
   testing.ts           createHarness() para pruebas
-src/services/          store · orders · account · backoffice-orders · backoffice-admin
+src/services/          store · orders · account · favorites (F06) · backoffice-orders · backoffice-admin
 src/features/          query-keys · <dominio>/hooks.ts · cart/ · order-mode/ · session/ · account/reorder.ts
 ```
 
@@ -194,3 +194,34 @@ Claves TanStack: `locations.departments()` / `.municipalities(id)` (≥ 1 h, nun
 `.detail(id)`, `deliverySettings.branch(id)`, `deliveryCoverage.check(branch, municipio, zona)` (30 s, sin refetch por foco).
 Tras guardar una zona se invalidan las listas, su detalle y la cobertura de ESA sucursal; tras cambiar la configuración, la de
 la sucursal y su cobertura. La etiqueta de zona de la tienda (`Zona 10`) es la misma que escribe el backoffice (`lib/delivery-zone.ts`).
+
+## F06 — Favoritos del cliente (spec 009, ADR-0014)
+
+Estado: **web `MOCK_ONLY`, alineada al contrato; API implementada y commiteada (catálogo `BLOCKED` por F11, dependencia interna)**. El
+flujo real de extremo a extremo NO existe hasta F11: sin catálogo la API responde `503 CATALOG_UNAVAILABLE` al marcar y `UNKNOWN` al
+listar, y `NEXT_PUBLIC_DATA_SOURCE=http` rompería también menú y carrito (no hay catálogo `http`). Operaciones: `listMyFavorites`,
+`addMyFavorite`, `removeMyFavorite` → `services/favorites.ts`, `features/favorites/hooks.ts`, `mocks/handlers/favorites.ts`.
+
+| Pieza                                                                                                                                              | Estado                                                                                                   |
+| -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `GET` con `favoriteProductIds` completos + página (`pageSize=0` ⇒ solo ids), `limit`, `catalogStatus`; 400 de forma                                | simulado (emula al servidor)                                                                             |
+| `PUT`/`DELETE` idempotentes (204), 404 `PRODUCT_NOT_FOUND`, 422 `FAVORITES_LIMIT_REACHED` (200), 503 `CATALOG_UNAVAILABLE`, aislamiento por cuenta | simulado; estado `ACTIVE/INACTIVE/UNAVAILABLE/REMOVED/UNKNOWN` derivado del catálogo mock                |
+| Escenario "catálogo no disponible"                                                                                                                 | `MockStore.favoritesCatalog = 'unavailable'` (pruebas y e2e); la API real lo está hasta F11              |
+| 503 `FAVORITES_BUSY` (candado/tiempo agotados, reintentable)                                                                                       | simulado de forma determinista con `MockStore.favoritesBusy` (nº de altas que fallan antes de funcionar) |
+| 429 `RATE_LIMITED`, `Cache-Control`, UUID de producto, throttle por IP                                                                             | no simulado (lo hace la API); en MOCK_ONLY el id es el **slug** y se valida por existencia               |
+| Mis favoritos: unión con `useProducts()` (precio solo del catálogo), filas seguras para no disponible/retirado/`UNKNOWN`, quitar                   | implementado (contra el mock); imagen del resumen NO se pinta (requiere `remotePatterns`, F11)           |
+| "Agregar al carrito" desde favoritos                                                                                                               | reutiliza `ProductCard` (carrito local mock); el carrito real es F18                                     |
+| Favoritos locales de invitado                                                                                                                      | **descartado** (D14): el corazón del visitante abre el login y no crea nada                              |
+
+Claves TanStack con la identidad en la raíz (`queryKeys.customer.favorites.*`): `['customer', scope, 'favorites', 'ids'|'list', page]`,
+`scope` = id de Supabase Auth o `demo:<correo>`. UN solo query de `ids` (`staleTime` 5 min: las mutaciones propias ya lo actualizan; los cambios desde OTRO dispositivo aparecen en el
+siguiente refetch o montaje en frío) observado por `FavoritesProvider` (un observer, una mutación y un lector de identidad para toda la
+tienda); cada `FavoriteButton` se suscribe solo a SU producto (`useIsFavorite`/`useIsFavoritePending`, `useSyncExternalStore`), así que
+marcar A no re-renderiza B (test con `Profiler`). El contador de Mi cuenta/Más usa `useFavoriteIds`; Mis favoritos usa `list(page)` (30 s) y siembra `ids` con la misma respuesta. `CustomerCacheGuard`
+(`features/session/customer-scope.tsx`; además `signOut` limpia `['customer']` explícitamente) descarta las claves `['customer', otraIdentidad]` al cerrar sesión o cambiar de cuenta. Mutación
+optimista: `cancelQueries`, rollback SOLO del producto afectado, sin doble envío por producto (`aria-busy`/`aria-disabled`), invalidación
+de `ids` y listas solo al terminar la última mutación en vuelo. Errores por `code` (`features/favorites/errors.ts`), nunca por `message`.
+
+Retirado: `queryKeys.account.favorites`, `useFavorites`, los favoritos `string[]` del store/handler y el texto "se guardan en este
+dispositivo" (`fav.guestNote`). `MOCK_STORE_VERSION` sube a 6 (los favoritos pasan a `{ productId, addedAt }`; los stores persistidos
+anteriores se descartan y se vuelven a sembrar). `home/favorites-section.tsx` es una selección editorial (`featured`), NO los favoritos del cliente.

@@ -79,7 +79,25 @@ export const queryKeys = {
     all: ['account'] as const,
     me: ['account', 'me'] as const,
     addresses: ['account', 'addresses'] as const,
-    favorites: ['account', 'favorites'] as const,
+  },
+  /**
+   * F06 (spec 009 D15): datos del CLIENTE con la IDENTIDAD en la raíz (`scope` = id de Supabase Auth, o `demo:<correo>` en el
+   * mock; nunca vacío: sin sesión las consultas no se habilitan). Otra cuenta jamás puede leer la caché ajena porque su
+   * clave difiere; al cerrar sesión o cambiar de cuenta `useCustomerCacheGuard` descarta las claves del `scope` anterior.
+   */
+  customer: {
+    all: ['customer'] as const,
+    favorites: {
+      all: (scope: string) => ['customer', scope, 'favorites'] as const,
+      /** Ids completos (`pageSize=0`): el estado de TODOS los corazones y el contador. */
+      ids: (scope: string) => ['customer', scope, 'favorites', 'ids'] as const,
+      /** Prefijo de TODAS las páginas de Mis favoritos. */
+      lists: (scope: string) => ['customer', scope, 'favorites', 'list'] as const,
+      list: (scope: string, page: number) =>
+        ['customer', scope, 'favorites', 'list', page] as const,
+      /** Clave común de las mutaciones (alta/baja): permite saber cuántas hay en vuelo. */
+      mutation: (scope: string) => ['customer', scope, 'favorites', 'mutate'] as const,
+    },
   },
   backoffice: {
     all: ['backoffice'] as const,

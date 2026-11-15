@@ -25,14 +25,21 @@ import type { MockScenario } from './scenarios';
  * el historial de días anteriores lo genera `factories/history.ts` de forma determinista.
  * NUNCA contiene PAN completo, CVV ni PIN: de una tarjeta solo marca, últimos 4 y referencia.
  */
-export const MOCK_STORE_VERSION = 5;
+export const MOCK_STORE_VERSION = 6;
 
 export type ProductRecord = Omit<Product, 'available'>;
+
+/** F06: favorito del cliente (`customer_favorites`). Sin precios ni datos del producto: solo el id y cuándo se marcó. */
+export interface FavoriteRecord {
+  productId: string;
+  addedAt: string;
+}
 
 export interface CustomerAccount {
   profile: Customer;
   addresses: Address[];
-  favorites: string[];
+  /** Favoritos de ESTA cuenta (el store está aislado por correo: una cuenta nunca ve los de otra). */
+  favorites: FavoriteRecord[];
 }
 
 /** Empleado (`staff_users` + `staff_assignments`) del mock. Nunca guarda `authUserId`: solo si está vinculado. */
@@ -82,6 +89,16 @@ export interface MockStore {
    * (`UNKNOWN` + `BLOCKED_EXTERNAL`). `available`/`unavailable` solo existen en el mock y se rotulan `MOCK`/`simulated`.
    */
   pedidosyaCoverage: 'unknown' | 'available' | 'unavailable';
+  /**
+   * F06: ¿el catálogo puede validar/resumir productos? Hasta F11 la API real responde SIEMPRE `unavailable` (503
+   * `CATALOG_UNAVAILABLE` al marcar; `UNKNOWN` al listar). El mock arranca `available` para poder mostrar la UI completa.
+   */
+  favoritesCatalog: 'available' | 'unavailable';
+  /**
+   * F06: simulación DETERMINISTA de `FAVORITES_BUSY` (candado o tiempo de la transacción agotados): nº de altas (PUT)
+   * que fallarán con 503 antes de que una funcione. Opcional: ausente = 0.
+   */
+  favoritesBusy?: number;
   categories: Category[];
   products: ProductRecord[];
   promotions: PromotionSeed[];

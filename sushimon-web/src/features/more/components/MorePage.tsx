@@ -23,7 +23,8 @@ import { useTheme } from '@/components/theme/ThemeProvider';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { LocaleToggle } from '@/i18n/LocaleToggle';
-import { useAddresses, useFavorites, useMe } from '@/features/account/hooks';
+import { useAddresses, useMe } from '@/features/account/hooks';
+import { useFavoriteIds } from '@/features/favorites/hooks';
 import { PublicBranchesHours } from '@/features/branch-schedule/components/PublicBranchesHours';
 import { useStoreConfig } from '@/features/store/hooks';
 import { useDemoSession } from '@/features/session/demo-session';
@@ -90,7 +91,7 @@ export function MorePage() {
   const config = useStoreConfig();
   const me = useMe();
   const addresses = useAddresses();
-  const favorites = useFavorites();
+  const favorites = useFavoriteIds();
   const data = config.data;
   const whatsapp = data ? data.whatsappOrdersNumber.replace(/\D/g, '') : '';
   const profile = me.data;
@@ -153,7 +154,7 @@ export function MorePage() {
         <Row
           icon={ic(Heart)}
           title={t('hub.favorites')}
-          sub={t('hub.favoritesSub', { a: customer ? (favorites.data?.length ?? 0) : 0 })}
+          sub={t('hub.favoritesSub', { a: customer ? favorites.total : 0 })}
           href="/cuenta/favoritos"
         />
         <Row

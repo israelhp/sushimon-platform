@@ -200,25 +200,6 @@ export const deleteAddress: Handler = (req) => {
   return undefined;
 };
 
-/** GET /v1/me/favorites → productId[] (más reciente primero) */
-export const listFavorites: Handler = (req): string[] => requireCustomer(req).favorites;
-
-/** PUT /v1/me/favorites/:productId */
-export const addFavorite: Handler = (req): string[] => {
-  const account = requireCustomer(req);
-  const id = req.params.productId ?? '';
-  if (!req.store.products.some((p) => p.id === id)) fail(404, 'Producto no encontrado');
-  if (!account.favorites.includes(id)) account.favorites.unshift(id);
-  return account.favorites;
-};
-
-/** DELETE /v1/me/favorites/:productId */
-export const removeFavorite: Handler = (req): string[] => {
-  const account = requireCustomer(req);
-  account.favorites = account.favorites.filter((f) => f !== req.params.productId);
-  return account.favorites;
-};
-
 /** GET /v1/me/orders — pedidos del cliente (por correo), más recientes primero. */
 export const listMyOrders: Handler = (req) => {
   const { profile } = requireCustomer(req);

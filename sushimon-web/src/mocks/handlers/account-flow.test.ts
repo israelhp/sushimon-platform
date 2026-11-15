@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '@/lib/data-access/errors';
 import * as account from '@/services/account';
+import * as favorites from '@/services/favorites';
 import { createHarness } from '../testing';
 
 async function status(p: Promise<unknown>): Promise<number> {
@@ -39,7 +40,10 @@ describe('cuenta del cliente (/v1/me)', () => {
     });
     const addresses = await account.listAddresses(h.client);
     expect(addresses.map((a) => a.id)).toEqual(['demo-casa', 'demo-trabajo']);
-    expect(await account.listFavorites(h.client)).toEqual(['platanito-roll', 'calientito-roll']);
+    expect((await favorites.listMyFavoriteIds(h.client)).favoriteProductIds).toEqual([
+      'platanito-roll',
+      'calientito-roll',
+    ]);
     const orders = await account.listMyOrders(h.client);
     expect(orders.map((o) => o.id)).toEqual(['MON-490217', 'MON-482193', 'MON-479850']);
   });
@@ -81,24 +85,13 @@ describe('cuenta del cliente (/v1/me)', () => {
     );
   });
 
-  it('perfil y favoritos', async () => {
+  it('perfil', async () => {
     const h = createHarness();
     h.asCustomer();
     expect(await status(account.updateMe(h.client, { phone: '12' }))).toBe(400);
     // Normaliza a +502 como la API real (política de F04).
     expect((await account.updateMe(h.client, { phone: '5555-9999' })).phone).toBe('+50255559999');
     expect((await account.updateMe(h.client, { phone: null })).phone).toBe('');
-    expect(await account.addFavorite(h.client, 'dumplings')).toEqual([
-      'dumplings',
-      'platanito-roll',
-      'calientito-roll',
-    ]);
-    expect(await account.addFavorite(h.client, 'dumplings')).toHaveLength(3);
-    expect(await account.removeFavorite(h.client, 'platanito-roll')).toEqual([
-      'dumplings',
-      'calientito-roll',
-    ]);
-    expect(await status(account.addFavorite(h.client, 'no-existe'))).toBe(404);
   });
 
   it('F04: PATCH /v1/me rechaza correo, identidad y direcciones; conserva el nombre', async () => {

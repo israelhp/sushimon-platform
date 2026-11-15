@@ -59,12 +59,4 @@ export const updateAddress = (client: DataClient, id: string, input: Partial<Add
 export const deleteAddress = (client: DataClient, id: string) =>
   client.delete<void>(paths.myAddress(id));
 
-export const listFavorites = (client: DataClient) => client.get<string[]>(paths.myFavorites());
-
-export const addFavorite = (client: DataClient, productId: string) =>
-  client.put<string[]>(paths.myFavorite(productId));
-
-export const removeFavorite = (client: DataClient, productId: string) =>
-  client.delete<string[]>(paths.myFavorite(productId));
-
 export const listMyOrders = (client: DataClient) => client.get<Order[]>(paths.myOrders());

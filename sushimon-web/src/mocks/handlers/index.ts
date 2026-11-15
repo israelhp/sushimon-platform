@@ -5,6 +5,7 @@ import * as admin from './backoffice-admin';
 import * as bo from './backoffice';
 import * as branches from './branches';
 import * as delivery from './delivery';
+import * as favorites from './favorites';
 import * as orders from './orders';
 import * as pub from './public';
 import * as schedule from './schedule';
@@ -44,9 +45,9 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'POST /v1/me/addresses': account.createAddress,
   'PATCH /v1/me/addresses/:id': account.updateAddress,
   'DELETE /v1/me/addresses/:id': account.deleteAddress,
-  'GET /v1/me/favorites': account.listFavorites,
-  'PUT /v1/me/favorites/:productId': account.addFavorite,
-  'DELETE /v1/me/favorites/:productId': account.removeFavorite,
+  'GET /v1/me/favorites': favorites.listMyFavorites,
+  'PUT /v1/me/favorites/:productId': favorites.addMyFavorite,
+  'DELETE /v1/me/favorites/:productId': favorites.removeMyFavorite,
   'GET /v1/me/orders': account.listMyOrders,
 
   // Backoffice

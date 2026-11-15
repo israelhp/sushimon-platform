@@ -5,6 +5,7 @@ import * as account from '@/services/account';
 import * as admin from '@/services/backoffice-admin';
 import * as bo from '@/services/backoffice-orders';
 import * as coverage from '@/services/delivery-coverage';
+import * as favorites from '@/services/favorites';
 import * as zones from '@/services/delivery-zones';
 import * as locations from '@/services/locations';
 import * as orders from '@/services/orders';
@@ -91,6 +92,7 @@ function pair(scenario: MockScenario = 'default') {
   const http = httpBackedBy(backend);
   return {
     mock,
+    backend,
     http,
     asStaff: (role: Parameters<TestHarness['asStaff']>[0]) => {
       mock.asStaff(role);
@@ -258,8 +260,8 @@ describe('paridad mock ↔ http', () => {
         }),
       (c) => account.deleteAddress(c, 'addr-1'),
       (c) => account.deleteAddress(c, 'addr-1'),
-      (c) => account.addFavorite(c, 'dumplings'),
-      (c) => account.removeFavorite(c, 'dumplings'),
+      (c) => favorites.addMyFavorite(c, 'dumplings'),
+      (c) => favorites.removeMyFavorite(c, 'dumplings'),
       (c) => account.listMyOrders(c),
     ];
     // Se ejecuta de forma intercalada para que ambas sesiones cambien a la vez.
@@ -274,6 +276,73 @@ describe('paridad mock ↔ http', () => {
       error: { status: 401, code: 'unauthorized', message: 'Inicia sesión para continuar' },
     });
     expect(a[4]).toEqual({ ok: null });
+  });
+
+  it('favoritos (F06): idempotencia 204, 404/422/503 con `code`, aislamiento y degradación del catálogo', async () => {
+    const p = pair();
+    const steps: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => favorites.listMyFavoriteIds(c), // 401 sin sesión
+      (c) => favorites.addMyFavorite(c, 'dumplings'),
+      async (c) => {
+        p.asCustomer();
+        return favorites.listMyFavorites(c, { page: 1, pageSize: 20 });
+      },
+      (c) => favorites.listMyFavoriteIds(c),
+      (c) => favorites.addMyFavorite(c, 'dumplings'),
+      (c) => favorites.addMyFavorite(c, 'dumplings'), // idempotente
+      (c) => favorites.addMyFavorite(c, 'no-existe'), // 404 PRODUCT_NOT_FOUND
+      (c) => favorites.listMyFavorites(c, { page: 2, pageSize: 1 }),
+      (c) => favorites.listMyFavorites(c, { page: 1, pageSize: 51 }), // 400
+      (c) => favorites.removeMyFavorite(c, 'dumplings'),
+      (c) => favorites.removeMyFavorite(c, 'dumplings'), // idempotente
+      async (c) => {
+        // Tope: 200 favoritos => un producto nuevo recibe 422 FAVORITES_LIMIT_REACHED.
+        for (const side of [p.mock, p.backend]) {
+          side.store.accounts['cliente@ejemplo.com']!.favorites = Array.from(
+            { length: 200 },
+            (_, i) => ({
+              productId: `retirado-${i}`,
+              addedAt: `2026-01-01T00:${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}.000Z`,
+            }),
+          );
+        }
+        return favorites.addMyFavorite(c, 'dumplings');
+      },
+      async (c) => {
+        // Candado agotado: 503 FAVORITES_BUSY (reintentable) y el siguiente intento funciona.
+        const side = c === p.http ? p.backend : p.mock;
+        side.store.accounts['cliente@ejemplo.com']!.favorites = [];
+        side.store.favoritesBusy = 1;
+        return favorites.addMyFavorite(c, 'dumplings');
+      },
+      (c) => favorites.addMyFavorite(c, 'dumplings'),
+      async (c) => {
+        // Catálogo no disponible: 503 CATALOG_UNAVAILABLE y GET degradado a UNKNOWN.
+        p.mock.store.favoritesCatalog = 'unavailable';
+        p.backend.store.favoritesCatalog = 'unavailable';
+        return favorites.addMyFavorite(c, 'dumplings');
+      },
+      (c) => favorites.listMyFavorites(c, { page: 1, pageSize: 3 }),
+    ];
+    const a: Outcome[] = [];
+    const b: Outcome[] = [];
+    for (const step of steps) {
+      a.push(...(await run([step], p.mock.client)));
+      b.push(...(await run([step], p.http)));
+    }
+    expect(b).toEqual(a);
+    const codes = a.map((o) => ('error' in o ? [o.error.status, o.error.businessCode] : 'ok'));
+    expect(codes[0]).toEqual([401, undefined]);
+    expect(codes[1]).toEqual([401, undefined]);
+    expect(codes.slice(2, 6)).toEqual(['ok', 'ok', 'ok', 'ok']);
+    expect(codes[6]).toEqual([404, 'PRODUCT_NOT_FOUND']);
+    expect(codes[8]).toEqual([400, undefined]);
+    expect(codes.slice(9, 11)).toEqual(['ok', 'ok']);
+    expect(codes[11]).toEqual([422, 'FAVORITES_LIMIT_REACHED']);
+    expect(codes[12]).toEqual([503, 'FAVORITES_BUSY']);
+    expect(codes[13]).toEqual('ok');
+    expect(codes[14]).toEqual([503, 'CATALOG_UNAVAILABLE']);
+    expect(a[15]).toMatchObject({ ok: { catalogStatus: 'UNAVAILABLE', limit: 200 } });
   });
 
   it('backoffice: panel, transición, despacho, logística, catálogo y reportes', async () => {

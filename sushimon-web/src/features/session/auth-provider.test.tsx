@@ -57,8 +57,10 @@ function Probe() {
   );
 }
 
+let currentQc = new QueryClient();
+
 function wrap(children: ReactNode, cfg: Parameters<typeof AuthProvider>[0]['config']) {
-  const qc = new QueryClient();
+  const qc = (currentQc = new QueryClient());
   return (
     <QueryClientProvider client={qc}>
       <AuthProvider config={cfg}>{children}</AuthProvider>
@@ -74,6 +76,25 @@ describe('AuthProvider', () => {
     fake.state.signOut.mockClear();
   });
   afterEach(() => vi.clearAllMocks());
+
+  it('cerrar sesión limpia explícitamente la caché del cliente (`customer`), la de cuenta y la de auth', async () => {
+    fake.state.session = { access_token: 'tok' };
+    render(wrap(<Probe />, config));
+    await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('authenticated'));
+    for (const key of [
+      ['customer', 'uid-1', 'favorites', 'ids'],
+      ['account', 'me'],
+      ['auth', 'me'],
+      ['store', 'config'],
+    ]) {
+      currentQc.setQueryData(key, { x: 1 });
+    }
+    await act(async () => screen.getByText('logout').click());
+    expect(currentQc.getQueryData(['customer', 'uid-1', 'favorites', 'ids'])).toBeUndefined();
+    expect(currentQc.getQueryData(['account', 'me'])).toBeUndefined();
+    expect(currentQc.getQueryData(['auth', 'me'])).toBeUndefined();
+    expect(currentQc.getQueryData(['store', 'config'])).toEqual({ x: 1 }); // lo público no se toca
+  });
 
   it('auth mock: inerte, sin tocar Supabase', () => {
     render(wrap(<Probe />, { kind: 'mock' }));

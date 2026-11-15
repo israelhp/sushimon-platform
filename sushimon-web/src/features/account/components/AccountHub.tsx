@@ -26,7 +26,8 @@ import { STORE_ROUTES } from '@/features/store-shell/nav';
 import { useAuthModal } from '@/features/store-shell/store-shell-context';
 import { addressTitle } from '../address-format';
 import { useAddressLabels } from '../use-address-labels';
-import { useAddresses, useFavorites, useMe, useMyOrders } from '../hooks';
+import { useFavoriteIds } from '@/features/favorites/hooks';
+import { useAddresses, useMe, useMyOrders } from '../hooks';
 import { HubCard } from './HubCard';
 
 function Heading() {
@@ -166,11 +167,11 @@ function SignedInHub({ name, email }: { name: string; email: string }) {
   const { notify } = useToast();
   const me = useMe();
   const addresses = useAddresses();
-  const favorites = useFavorites();
+  const favorites = useFavoriteIds();
   const orders = useMyOrders();
 
   const profile = me.data;
-  const ready = !!profile && !!addresses.data && !!favorites.data;
+  const ready = !!profile && !!addresses.data && favorites.isLoaded;
   const labels = useAddressLabels();
   const defaultAddress = addresses.data?.find((a) => a.id === profile?.defaultAddressId);
   const orderCount = orders.data?.length ?? 0;
@@ -225,7 +226,7 @@ function SignedInHub({ name, email }: { name: string; email: string }) {
           onRetry={() => {
             void me.refetch();
             void addresses.refetch();
-            void favorites.refetch();
+            favorites.refetch();
             void orders.refetch();
           }}
         />
@@ -248,7 +249,7 @@ function SignedInHub({ name, email }: { name: string; email: string }) {
           href="/cuenta/favoritos"
           icon={icon(Heart)}
           title={tHub('favorites')}
-          sub={ready ? tHub('favoritesSub', { a: favorites.data.length }) : tHub('loading')}
+          sub={ready ? tHub('favoritesSub', { a: favorites.total }) : tHub('loading')}
         />
         <HubCard
           href="/cuenta/pedidos"

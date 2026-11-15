@@ -4,14 +4,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AddressInput } from '@/lib/data-access/models';
 import { useDataClient } from '@/lib/data-access/provider';
 import {
-  addFavorite,
   createAddress,
   deleteAddress,
   getMe,
   listAddresses,
-  listFavorites,
   listMyOrders,
-  removeFavorite,
   setDefaultAddress,
   updateAddress,
   updateMe,
@@ -84,40 +81,6 @@ export function useDeleteAddress() {
 export function useSetDefaultAddress() {
   const client = useDataClient();
   return useAddressMutation((id: string | null) => setDefaultAddress(client, id));
-}
-
-export function useFavorites() {
-  const client = useDataClient();
-  const enabled = useSignedIn();
-  return useQuery({
-    queryKey: queryKeys.account.favorites,
-    queryFn: () => listFavorites(client),
-    enabled,
-  });
-}
-
-/** Marca/desmarca favorito con actualización optimista. */
-export function useToggleFavorite() {
-  const client = useDataClient();
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ productId, favorite }: { productId: string; favorite: boolean }) =>
-      favorite ? addFavorite(client, productId) : removeFavorite(client, productId),
-    onMutate: async ({ productId, favorite }) => {
-      await qc.cancelQueries({ queryKey: queryKeys.account.favorites });
-      const previous = qc.getQueryData<string[]>(queryKeys.account.favorites);
-      qc.setQueryData<string[]>(queryKeys.account.favorites, (list = []) =>
-        favorite
-          ? [productId, ...list.filter((x) => x !== productId)]
-          : list.filter((x) => x !== productId),
-      );
-      return { previous };
-    },
-    onError: (_error, _vars, context) => {
-      qc.setQueryData(queryKeys.account.favorites, context?.previous);
-    },
-    onSuccess: (list) => qc.setQueryData(queryKeys.account.favorites, list),
-  });
 }
 
 /** Pedidos del cliente con sesión. */
