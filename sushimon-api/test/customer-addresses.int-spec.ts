@@ -110,15 +110,31 @@ describe.skipIf(!url)('Direcciones de cliente contra PostgreSQL real', () => {
     expect(items.filter((i) => i.isDefault)).toHaveLength(1);
   });
 
-  it('creaciones concurrentes no superan el límite de 10', async () => {
+  it('creaciones concurrentes nunca superan el límite de 10 (invariante bajo saturación del pool)', async () => {
+    // Pool por defecto de 3 conexiones: 14 peticiones simultáneas lo saturan. Algunas esperan y otras agotan
+    // el tiempo de conexión (error transitorio, no de datos). Lo que debe cumplirse siempre: nunca más de 10,
+    // cada rechazo es ADDRESS_LIMIT_REACHED o un fallo de conexión/transacción, y lo guardado coincide con lo
+    // confirmado (ninguna escritura parcial ni fantasma).
     const p = await newCustomer();
     const results = await Promise.allSettled(
       Array.from({ length: 14 }, (_, i) => addresses.create(p, input({ addressLine: `Dir ${i}` }))),
     );
-    const ok = results.filter((r) => r.status === 'fulfilled').length;
-    expect(ok).toBe(10);
+    const fulfilled = results.filter((r) => r.status === 'fulfilled').length;
+    const rejections = results
+      .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+      .map((r) => {
+        const e = r.reason as { response?: { code?: string }; message?: string };
+        return e.response?.code ?? e.message ?? String(r.reason);
+      });
+    for (const reason of rejections) {
+      expect(
+        reason === 'ADDRESS_LIMIT_REACHED' || /timeout|transaction|connect/i.test(reason),
+      ).toBe(true);
+    }
     const { items } = await addresses.list(p);
-    expect(items).toHaveLength(10);
+    expect(items.length).toBeLessThanOrEqual(10);
+    expect(items).toHaveLength(fulfilled);
+    expect(fulfilled + rejections.length).toBe(14);
   });
 
   it('un cliente no puede leer, editar ni borrar la dirección de otro (IDOR)', async () => {

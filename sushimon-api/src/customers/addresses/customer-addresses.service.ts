@@ -22,6 +22,10 @@ import type {
 
 const ENTITY = 'customer_address';
 
+/** Espera máxima para obtener una conexión/transacción y tiempo máximo de la transacción (ms). */
+const TX_MAX_WAIT_MS = 10_000;
+const TX_TIMEOUT_MS = 15_000;
+
 /** Forma que el servicio lee de Prisma: sin columnas innecesarias y con departamento en una sola consulta. */
 const ADDRESS_SELECT = {
   id: true,
@@ -96,7 +100,7 @@ export class CustomerAddressesService {
     });
     const complete = requireComplete(fields);
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.transactional(async (tx) => {
       await lockCustomer(tx, customerId);
 
       const existing = await tx.customerAddress.findMany({
@@ -162,7 +166,7 @@ export class CustomerAddressesService {
     const touched = changedKeys(input);
     if (touched.length === 0) return this.get(principal, id);
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.transactional(async (tx) => {
       await lockCustomer(tx, customerId);
       const current = await tx.customerAddress.findFirst({
         where: { id, customerId },
@@ -227,7 +231,7 @@ export class CustomerAddressesService {
   /** Marca la predeterminada. Idempotente: si ya lo es, no escribe. */
   async setDefault(principal: Principal, id: string): Promise<CustomerAddressDto> {
     const customerId = await this.ownerId(principal);
-    return this.prisma.$transaction(async (tx) => {
+    return this.transactional(async (tx) => {
       await lockCustomer(tx, customerId);
       const target = await tx.customerAddress.findFirst({
         where: { id, customerId },
@@ -262,7 +266,7 @@ export class CustomerAddressesService {
    */
   async remove(principal: Principal, id: string): Promise<void> {
     const customerId = await this.ownerId(principal);
-    await this.prisma.$transaction(async (tx) => {
+    await this.transactional(async (tx) => {
       await lockCustomer(tx, customerId);
       const target = await tx.customerAddress.findFirst({
         where: { id, customerId },
@@ -296,6 +300,15 @@ export class CustomerAddressesService {
   private async ownerId(principal: Principal): Promise<string> {
     const customer = await this.identity.ensureCustomer(principal);
     return customer.id;
+  }
+
+  /**
+   * Transacción de direcciones con espera explícita. Las mutaciones de un mismo cliente se serializan con
+   * `FOR UPDATE`: las peticiones concurrentes esperan su turno (maxWait) en lugar de fallar con
+   * «Unable to start a transaction» (error interno) cuando el pool se llena.
+   */
+  private transactional<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    return this.prisma.$transaction(fn, { maxWait: TX_MAX_WAIT_MS, timeout: TX_TIMEOUT_MS });
   }
 }
 
