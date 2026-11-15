@@ -18,12 +18,23 @@ describe('paths', () => {
     expect(paths.adminBranches()).toBe('/v1/admin/branches');
     expect(paths.adminBranch('b1')).toBe('/v1/admin/branches/b1');
     expect(paths.adminBranchStatus('b1')).toBe('/v1/admin/branches/b1/status');
-    // La operación (horario, cobertura, abierta ahora) es F08/F09: solo existe en el mock, bajo /v1/demo.
+    // La operación simulada de la sucursal (zona/área) es F33: solo existe en el mock, bajo /v1/demo.
     expect(paths.demoBranchOperations()).toBe('/v1/demo/branches/operations');
-    expect(paths.demoBranchOperation('b1')).toBe('/v1/demo/branches/b1/operations');
     expect(Object.values(paths).map((f) => (f as (id: string) => string)('X'))).not.toContain(
       '/v1/backoffice/branches',
     );
+  });
+
+  it('F09: rutas de catálogos, zonas, configuración de entrega y cobertura', () => {
+    expect(paths.locationDepartments()).toBe('/v1/locations/departments');
+    expect(paths.locationMunicipalities()).toBe('/v1/locations/municipalities');
+    expect(paths.adminDeliveryZones()).toBe('/v1/admin/delivery-zones');
+    expect(paths.adminDeliveryZone('z 1')).toBe('/v1/admin/delivery-zones/z%201');
+    expect(paths.adminDeliveryZoneStatus('z1')).toBe('/v1/admin/delivery-zones/z1/status');
+    expect(paths.adminBranchDeliverySettings('b1')).toBe('/v1/admin/branches/b1/delivery-settings');
+    expect(paths.deliveryCoverageCheck()).toBe('/v1/delivery-coverage/check');
+    // La cotización por «niveles» (tiers/ETA del mock) se retiró: la tarifa propia viene de `checkDeliveryCoverage`.
+    expect(Object.keys(paths)).not.toContain('deliveryQuote');
   });
 
   it('F03: rutas de empleados, roles y permisos del contrato (sin /v1/backoffice/users)', () => {
@@ -59,7 +70,12 @@ describe('paths', () => {
       'utf8',
     );
     // Rutas del documento que el contrato real (F07) reemplazó: ahora son `/v1/admin/branches[...]`.
-    const superseded = new Set(['/v1/backoffice/branches', '/v1/backoffice/users']);
+    // `/v1/delivery/quote` (tiers y ETA inventados) lo sustituye `POST /v1/delivery-coverage/check` (F09); F19 lo redefine.
+    const superseded = new Set([
+      '/v1/backoffice/branches',
+      '/v1/backoffice/users',
+      '/v1/delivery/quote',
+    ]);
     const documented = [...doc.matchAll(/`(\/v1\/[^`?\s[]+)/g)]
       .map((m) => (m[1] ?? '').replace(/\{(\w+)\}/g, 'X'))
       .filter((path) => !superseded.has(path));

@@ -19,7 +19,7 @@ describe('selección de sucursal', () => {
     await invalidateBranchScopedQueries(queryClient);
     expect(spy.mock.calls.map(([f]) => f?.queryKey)).toEqual([
       queryKeys.catalog.all,
-      queryKeys.store.deliveryQuotes,
+      queryKeys.deliveryCoverage.all,
     ]);
   });
 });

@@ -3,9 +3,9 @@ import {
   DEFAULT_DELIVERY_DRAFT,
   checkZone,
   hasErrors,
-  municipalitiesOf,
   requiresZone,
   validateDraft,
+  zoneChoices,
 } from './draft';
 
 const NONEXISTENT = [20, 22, 23];
@@ -64,9 +64,10 @@ describe('borrador del modo de pedido', () => {
     ).toBe(false);
   });
 
-  it('lista los municipios de un departamento', () => {
-    const departments = [{ department: 'A', municipalities: [{ name: 'x', zones: 0 }] }];
-    expect(municipalitiesOf(departments, 'A')).toEqual([{ name: 'x', zones: 0 }]);
-    expect(municipalitiesOf(departments, 'B')).toEqual([]);
+  it('las zonas elegibles son 1–25 sin las inexistentes (la tienda envía «Zona N», igual que el backoffice)', () => {
+    const zones = zoneChoices(NONEXISTENT);
+    expect(zones).toHaveLength(25 - NONEXISTENT.length);
+    expect(zones).not.toContain(22);
+    expect(zones[0]).toBe(1);
   });
 });

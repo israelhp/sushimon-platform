@@ -28,6 +28,20 @@ const ianaTimeZone = z.string().refine((tz) => {
   }
 }, 'debe ser una zona horaria IANA válida (p. ej. America/Guatemala)');
 
+/** Escenarios del adaptador simulado de PedidosYa (F09 D17). */
+export const PEDIDOSYA_MOCK_SCENARIOS = [
+  'available',
+  'unavailable',
+  'unknown',
+  'timeout',
+  'provider_error',
+  'invalid_request',
+] as const;
+export type PedidosYaMockScenario = (typeof PEDIDOSYA_MOCK_SCENARIOS)[number];
+
+const blankToUndefined = (v: unknown): unknown =>
+  typeof v === 'string' && v.trim() === '' ? undefined : v;
+
 /**
  * Esquema de variables de entorno. Falla al arrancar si la configuración es inválida.
  * Los secretos (DATABASE_URL, DIRECT_URL, HEALTH_READY_TOKEN) solo viven en el entorno.
@@ -75,10 +89,40 @@ export const envSchema = z
       ianaTimeZone.default('America/Guatemala'),
     ),
 
+    /**
+     * Adaptador de cobertura de PedidosYa (F09). `unavailable` (defecto, único válido en producción): sin red,
+     * responde UNKNOWN / BLOCKED_EXTERNAL. `mock`: simulación determinista SOLO para desarrollo y pruebas.
+     */
+    PEDIDOSYA_COVERAGE_ADAPTER: z.preprocess(
+      blankToUndefined,
+      z.enum(['unavailable', 'mock']).default('unavailable'),
+    ),
+    /** Escenario del mock (solo con `PEDIDOSYA_COVERAGE_ADAPTER=mock`; por defecto `unknown`). */
+    PEDIDOSYA_MOCK_SCENARIO: optional(z.enum(PEDIDOSYA_MOCK_SCENARIOS)),
+    /** Tope técnico (ms) del orquestador al consultar el adaptador de PedidosYa; no es un SLA del proveedor. */
+    PEDIDOSYA_COVERAGE_TIMEOUT_MS: z.preprocess(
+      blankToUndefined,
+      z.coerce.number().int().min(100).max(10_000).default(3_000),
+    ),
+
     /** Token de `GET /v1/health/ready` (cabecera `x-health-token`). Obligatorio en producción. */
     HEALTH_READY_TOKEN: optional(z.string().min(16, 'mínimo 16 caracteres')),
   })
   .superRefine((env, ctx) => {
+    if (env.PEDIDOSYA_MOCK_SCENARIO && env.PEDIDOSYA_COVERAGE_ADAPTER !== 'mock') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['PEDIDOSYA_MOCK_SCENARIO'],
+        message: 'solo es válido con PEDIDOSYA_COVERAGE_ADAPTER=mock',
+      });
+    }
+    if (env.NODE_ENV === 'production' && env.PEDIDOSYA_COVERAGE_ADAPTER === 'mock') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['PEDIDOSYA_COVERAGE_ADAPTER'],
+        message: 'el adaptador simulado no se permite en producción',
+      });
+    }
     if (env.NODE_ENV !== 'production') return;
     if (!env.DATABASE_URL) {
       ctx.addIssue({
@@ -119,5 +163,17 @@ export function validateEnv(raw: Record<string, unknown>): Env {
     const detail = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
     throw new Error(`Configuración de entorno inválida: ${detail}`);
   }
+  // El mock exige NODE_ENV EXPLÍCITO en development|test: un NODE_ENV ausente (que aquí se resuelve a `development`
+  // por defecto), vacío o desconocido no basta. No cambia el default de NODE_ENV para el resto de la app.
+  if (parsed.data.PEDIDOSYA_COVERAGE_ADAPTER === 'mock' && !isMockAllowedNodeEnv(raw['NODE_ENV'])) {
+    throw new Error(
+      'Configuración de entorno inválida: PEDIDOSYA_COVERAGE_ADAPTER: el adaptador simulado solo se permite con NODE_ENV=development o test explícito',
+    );
+  }
   return parsed.data;
+}
+
+/** `NODE_ENV` explícito y permitido para el adaptador simulado de PedidosYa. */
+export function isMockAllowedNodeEnv(value: unknown): boolean {
+  return value === 'development' || value === 'test';
 }

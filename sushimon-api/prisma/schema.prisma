@@ -17,22 +17,83 @@ datasource db {
 // ---------------------------------------------------------------------------------------------
 
 model Branch {
-  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code        String            @unique
-  name        String
-  phone       String?
+  id               String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code             String                  @unique
+  name             String
+  phone            String?
   /// F07 (migración 0003). Obligatoria y no vacía (CHECK NOT VALID por filas previas a F07).
-  address     String
-  latitude    Decimal?          @db.Decimal(10, 7)
-  longitude   Decimal?          @db.Decimal(10, 7)
-  active      Boolean           @default(true)
-  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  assignments StaffAssignment[]
-  auditEvents AuditEvent[]
-  hours       BranchHour[]
-  closures    BranchClosure[]
+  address          String
+  latitude         Decimal?                @db.Decimal(10, 7)
+  longitude        Decimal?                @db.Decimal(10, 7)
+  active           Boolean                 @default(true)
+  createdAt        DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  assignments      StaffAssignment[]
+  auditEvents      AuditEvent[]
+  hours            BranchHour[]
+  closures         BranchClosure[]
+  deliveryZones    DeliveryZone[]
+  deliverySettings BranchDeliverySettings?
 
   @@map("branches")
+  @@schema("app")
+}
+
+/// F09 (migración 0007). Catálogo geográfico; solo lectura por API (cambia por migración).
+model Department {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name           String         @unique(map: "departments_name_key")
+  municipalities Municipality[]
+
+  @@map("departments")
+  @@schema("app")
+}
+
+/// F09 (migración 0007). El UNIQUE (department_id, name) sirve la consulta por departamento y la FK.
+model Municipality {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  departmentId  String         @map("department_id") @db.Uuid
+  name          String
+  department    Department     @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  deliveryZones DeliveryZone[]
+
+  @@unique([departmentId, name], map: "municipalities_department_id_name_key")
+  @@map("municipalities")
+  @@schema("app")
+}
+
+/// F09 (migración 0007). Zona propia por sucursal. `zoneKey` la calcula la API (D6); `baseFee` es dinero exacto:
+/// leer/escribir con `Prisma.Decimal` o `::text`, nunca `number`. CHECK (tarifa, coherencia label/key) solo en SQL.
+model DeliveryZone {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  branchId       String       @map("branch_id") @db.Uuid
+  municipalityId String       @map("municipality_id") @db.Uuid
+  zoneLabel      String?      @map("zone_label")
+  zoneKey        String       @default("") @map("zone_key")
+  baseFee        Decimal      @default(0) @map("base_fee") @db.Decimal(12, 2)
+  active         Boolean      @default(true)
+  version        Int          @default(1)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @default(now()) @map("updated_at") @db.Timestamptz(6)
+  branch         Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  municipality   Municipality @relation(fields: [municipalityId], references: [id], onDelete: Restrict)
+
+  @@unique([branchId, municipalityId, zoneKey], map: "delivery_zones_branch_municipality_zone_key")
+  @@index([municipalityId], map: "delivery_zones_municipality_idx")
+  @@map("delivery_zones")
+  @@schema("app")
+}
+
+/// F09 (migración 0007). 1:1 con Branch; fila ausente = defaults (constante en la API, sin backfill).
+/// `updatedAt` lo fija la API en el UPDATE (sin @updatedAt para mantener una sola fuente: SQL explícito).
+model BranchDeliverySettings {
+  branchId                String   @id @map("branch_id") @db.Uuid
+  ownDeliveryZonesEnabled Boolean  @default(false) @map("own_delivery_zones_enabled")
+  pedidosyaEnabled        Boolean  @default(true) @map("pedidosya_enabled")
+  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  branch                  Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  @@map("branch_delivery_settings")
   @@schema("app")
 }
 

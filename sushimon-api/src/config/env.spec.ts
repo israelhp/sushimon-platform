@@ -67,4 +67,94 @@ describe('validateEnv', () => {
       expect((e as Error).message).not.toContain('clave-secreta');
     }
   });
+
+  describe('cobertura de PedidosYa (F09 D17)', () => {
+    it('defaults: adaptador unavailable, sin escenario, timeout 3000; vacío = default', () => {
+      const env = validateEnv({});
+      expect(env.PEDIDOSYA_COVERAGE_ADAPTER).toBe('unavailable');
+      expect(env.PEDIDOSYA_MOCK_SCENARIO).toBeUndefined();
+      expect(env.PEDIDOSYA_COVERAGE_TIMEOUT_MS).toBe(3000);
+      const blank = validateEnv({
+        PEDIDOSYA_COVERAGE_ADAPTER: '',
+        PEDIDOSYA_MOCK_SCENARIO: '',
+        PEDIDOSYA_COVERAGE_TIMEOUT_MS: '',
+      });
+      expect(blank.PEDIDOSYA_COVERAGE_ADAPTER).toBe('unavailable');
+      expect(blank.PEDIDOSYA_COVERAGE_TIMEOUT_MS).toBe(3000);
+    });
+
+    it('mock en desarrollo con cada escenario válido; sin escenario es válido', () => {
+      expect(
+        validateEnv({ NODE_ENV: 'development', PEDIDOSYA_COVERAGE_ADAPTER: 'mock' })
+          .PEDIDOSYA_COVERAGE_ADAPTER,
+      ).toBe('mock');
+      for (const s of [
+        'available',
+        'unavailable',
+        'unknown',
+        'timeout',
+        'provider_error',
+        'invalid_request',
+      ]) {
+        expect(
+          validateEnv({
+            NODE_ENV: 'test',
+            PEDIDOSYA_COVERAGE_ADAPTER: 'mock',
+            PEDIDOSYA_MOCK_SCENARIO: s,
+          }).PEDIDOSYA_MOCK_SCENARIO,
+        ).toBe(s);
+      }
+    });
+
+    it('escenario inválido, escenario sin mock o adaptador desconocido => error de arranque', () => {
+      expect(() =>
+        validateEnv({
+          NODE_ENV: 'development',
+          PEDIDOSYA_COVERAGE_ADAPTER: 'mock',
+          PEDIDOSYA_MOCK_SCENARIO: 'raro',
+        }),
+      ).toThrow(/PEDIDOSYA_MOCK_SCENARIO/);
+      expect(() => validateEnv({ PEDIDOSYA_MOCK_SCENARIO: 'available' })).toThrow(
+        /PEDIDOSYA_MOCK_SCENARIO/,
+      );
+      expect(() => validateEnv({ PEDIDOSYA_COVERAGE_ADAPTER: 'live' })).toThrow(
+        /PEDIDOSYA_COVERAGE_ADAPTER/,
+      );
+    });
+
+    it('mock con NODE_ENV=production => la API no arranca, sin eco de valores', () => {
+      let message = '';
+      try {
+        validateEnv({ ...prod, PEDIDOSYA_COVERAGE_ADAPTER: 'mock' });
+      } catch (e) {
+        message = (e as Error).message;
+      }
+      expect(message).toMatch(/PEDIDOSYA_COVERAGE_ADAPTER/);
+      expect(message).not.toContain('postgresql://');
+      expect(validateEnv({ ...prod, PEDIDOSYA_COVERAGE_ADAPTER: 'unavailable' })).toBeTruthy();
+      expect(validateEnv(prod).PEDIDOSYA_COVERAGE_ADAPTER).toBe('unavailable');
+    });
+
+    it('mock exige NODE_ENV explícito development|test: ausente, vacío, staging o desconocido => no arranca', () => {
+      const mock = { PEDIDOSYA_COVERAGE_ADAPTER: 'mock' };
+      expect(() => validateEnv(mock)).toThrow(/PEDIDOSYA_COVERAGE_ADAPTER/);
+      expect(() => validateEnv({ ...mock, NODE_ENV: '' })).toThrow();
+      expect(() => validateEnv({ ...mock, NODE_ENV: 'staging' })).toThrow();
+      expect(() => validateEnv({ ...mock, NODE_ENV: 'Production' })).toThrow();
+      expect(validateEnv({ ...mock, NODE_ENV: 'test' }).PEDIDOSYA_COVERAGE_ADAPTER).toBe('mock');
+      // sin mock, NODE_ENV ausente conserva su default (development): no cambia el resto de la app
+      expect(validateEnv({}).NODE_ENV).toBe('development');
+    });
+
+    it('timeout: entero entre 100 y 10000', () => {
+      expect(
+        validateEnv({ PEDIDOSYA_COVERAGE_TIMEOUT_MS: '100' }).PEDIDOSYA_COVERAGE_TIMEOUT_MS,
+      ).toBe(100);
+      expect(() => validateEnv({ PEDIDOSYA_COVERAGE_TIMEOUT_MS: '99' })).toThrow(
+        /PEDIDOSYA_COVERAGE_TIMEOUT_MS/,
+      );
+      expect(() => validateEnv({ PEDIDOSYA_COVERAGE_TIMEOUT_MS: '10001' })).toThrow();
+      expect(() => validateEnv({ PEDIDOSYA_COVERAGE_TIMEOUT_MS: '1.5' })).toThrow();
+    });
+  });
 });

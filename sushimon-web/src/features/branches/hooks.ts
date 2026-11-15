@@ -69,7 +69,7 @@ export function useAdminBranch(id: string | null) {
  * Claves a invalidar tras una mutación (sin invalidar toda la app):
  * - crear: lista admin + lista pública + operación simulada (aparece la nueva fila);
  * - actualizar: detalle admin + listas admin + públicas (nombre/dirección/teléfono) + operación;
- * - estado: lo mismo y, además, las cotizaciones de envío (el conjunto de sucursales activas cambió).
+ * - estado: lo mismo y, además, la cobertura de entrega (el conjunto de sucursales activas cambió).
  */
 export function branchInvalidationKeys(
   kind: 'create' | 'update' | 'status',
@@ -81,7 +81,7 @@ export function branchInvalidationKeys(
     queryKeys.store.branchOperations,
   ];
   if (kind !== 'create' && id) keys.push(queryKeys.backoffice.adminBranch(id));
-  if (kind === 'status') keys.push(queryKeys.store.deliveryQuotes);
+  if (kind === 'status') keys.push(queryKeys.deliveryCoverage.all);
   return keys;
 }
 

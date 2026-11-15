@@ -43,7 +43,26 @@ export type CreateBranchRequest = S['CreateBranchRequest'];
 export type UpdateBranchRequest = S['UpdateBranchRequest'];
 export type UpdateBranchStatusRequest = S['UpdateBranchStatusRequest'];
 export type CoverageRule = S['CoverageRule'];
+/** Borrador de `StoreConfig.departments` (MOCK_ONLY). Ya no alimenta formularios: usa `Department`/`Municipality` (F09). */
+export type DraftDepartment = S['DraftDepartment'];
+/** F09: catálogos geográficos públicos (`GET /v1/locations/*`). */
 export type Department = S['Department'];
+export type Municipality = S['Municipality'];
+/** F09: zonas propias de entrega, configuración por sucursal y cobertura por proveedor. */
+export type AdminDeliveryZone = S['AdminDeliveryZone'];
+export type AdminDeliveryZonePage = S['AdminDeliveryZonePage'];
+export type CreateDeliveryZoneRequest = S['CreateDeliveryZoneRequest'];
+export type UpdateDeliveryZoneRequest = S['UpdateDeliveryZoneRequest'];
+export type UpdateDeliveryZoneStatusRequest = S['UpdateDeliveryZoneStatusRequest'];
+export type BranchDeliverySettings = S['BranchDeliverySettings'];
+export type UpdateBranchDeliverySettingsRequest = S['UpdateBranchDeliverySettingsRequest'];
+export type DeliveryCoverageCheckRequest = S['DeliveryCoverageCheckRequest'];
+export type DeliveryCoverageCheckResponse = S['DeliveryCoverageCheckResponse'];
+export type DeliveryEligibility = S['DeliveryEligibility'];
+export type OwnCoverage = S['OwnCoverage'];
+export type PedidosYaCoverage = S['PedidosYaCoverage'];
+export type ProviderIntegrationStatus = S['ProviderIntegrationStatus'];
+export type CoverageReason = S['CoverageReason'];
 export type DeliveryTierId = S['DeliveryTierId'];
 export type DeliveryTier = S['DeliveryTier'];
 export type DeliveryQuote = S['DeliveryQuote'];

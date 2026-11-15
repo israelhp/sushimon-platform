@@ -1,6 +1,11 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerStorage, type ThrottlerModuleOptions } from '@nestjs/throttler';
+import { codedException } from '../errors/coded-exception.js';
+
+/** Límites por ruta de los endpoints públicos que tocan BD (F09). Por IP y por instancia (ver `TRUST_PROXY_HOPS`). */
+export const COVERAGE_CHECK_THROTTLE = { default: { limit: 30, ttl: 60_000 } };
+export const LOCATIONS_THROTTLE = { default: { limit: 60, ttl: 60_000 } };
 
 /** Mismo token que usa @nestjs/throttler internamente para las opciones del módulo. */
 const THROTTLER_OPTIONS = 'THROTTLER:MODULE_OPTIONS';
@@ -17,5 +22,14 @@ export class AppThrottlerGuard extends ThrottlerGuard {
     @Inject(Reflector) reflector: Reflector,
   ) {
     super(options, storageService, reflector);
+  }
+
+  /** 429 con `code` estable (`RATE_LIMITED`); `Retry-After` ya lo fija el guard y el filtro añade `no-store`. */
+  protected override throwThrottlingException(): Promise<void> {
+    throw codedException(
+      HttpStatus.TOO_MANY_REQUESTS,
+      'RATE_LIMITED',
+      'Demasiadas solicitudes; reintenta más tarde',
+    );
   }
 }

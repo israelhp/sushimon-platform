@@ -1,15 +1,8 @@
-import type {
-  DraftBranchHours,
-  Category,
-  Department,
-  DeliveryTier,
-  StoreConfig,
-} from '@/lib/data-access/models';
+import type { DraftBranchHours, Category, StoreConfig } from '@/lib/data-access/models';
 
 /**
- * Configuración de la tienda, categorías, niveles de envío y divisiones territoriales.
- * Valores extraídos de la tienda pública (docs/ui/extracted/store/bundle.pretty.js): objeto de
- * configuración, lista de categorías, tarifas/ETAs por nivel y lista departamento → municipio.
+ * Configuración de la tienda y categorías. Valores extraídos de la tienda pública
+ * (docs/ui/extracted/store/bundle.pretty.js). Los niveles de envío y la lista departamento → municipio se retiraron (F09).
  */
 
 const day = (d: number, open: string, close: string): DraftBranchHours => ({
@@ -31,37 +24,6 @@ export const STORE_WEEKLY_HOURS: DraftBranchHours[] = [
   day(4, '12:00', '20:00'),
   day(5, '12:00', '22:00'),
   day(6, '12:00', '22:00'),
-];
-
-export const DELIVERY_TIER_SEEDS: DeliveryTier[] = [
-  { id: 'near', fee: 15, etaMinMinutes: 30, etaMaxMinutes: 40 },
-  { id: 'mid', fee: 20, etaMinMinutes: 35, etaMaxMinutes: 50 },
-  { id: 'extended', fee: 25, etaMinMinutes: 45, etaMaxMinutes: 60 },
-  { id: 'far', fee: 30, etaMinMinutes: 55, etaMaxMinutes: 75 },
-];
-
-export const DEPARTMENTS: Department[] = [
-  {
-    department: 'Guatemala',
-    municipalities: [
-      { name: 'Guatemala', zones: 25 },
-      { name: 'Mixco', zones: 0 },
-      { name: 'Villa Nueva', zones: 0 },
-      { name: 'Santa Catarina Pinula', zones: 0 },
-      { name: 'San Miguel Petapa', zones: 0 },
-      { name: 'Fraijanes', zones: 0 },
-      { name: 'Chinautla', zones: 0 },
-      { name: 'San José Pinula', zones: 0 },
-    ],
-  },
-  {
-    department: 'Sacatepéquez',
-    municipalities: [
-      { name: 'Antigua Guatemala', zones: 0 },
-      { name: 'Jocotenango', zones: 0 },
-    ],
-  },
-  { department: 'Escuintla', municipalities: [{ name: 'Escuintla', zones: 0 }] },
 ];
 
 export const NONEXISTENT_ZONES = [20, 22, 23];
@@ -88,8 +50,10 @@ export const STORE_CONFIG_SEED: Omit<StoreConfig, 'serverTime'> = {
   ],
   weeklyHours: STORE_WEEKLY_HOURS,
   schedule: { stepMinutes: 30, lastOrderBeforeClose: 30, minLeadMinutes: 45, days: 7 },
-  deliveryTiers: DELIVERY_TIER_SEEDS,
-  departments: DEPARTMENTS,
+  // F09: tiers/ETA y la lista de departamentos del borrador se RETIRAN (ADR-0013). El contrato `StoreConfig` aún los exige:
+  // se emiten vacíos. Departamentos y municipios: `GET /v1/locations/*`; tarifa y cobertura: `POST /v1/delivery-coverage/check`.
+  deliveryTiers: [],
+  departments: [],
   nonexistentZones: NONEXISTENT_ZONES,
 };
 

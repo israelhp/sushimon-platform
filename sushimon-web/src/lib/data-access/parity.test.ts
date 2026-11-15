@@ -4,6 +4,9 @@ import { createHarness, type TestHarness } from '@/mocks/testing';
 import * as account from '@/services/account';
 import * as admin from '@/services/backoffice-admin';
 import * as bo from '@/services/backoffice-orders';
+import * as coverage from '@/services/delivery-coverage';
+import * as zones from '@/services/delivery-zones';
+import * as locations from '@/services/locations';
 import * as orders from '@/services/orders';
 import * as staff from '@/services/staff';
 import * as store from '@/services/store';
@@ -33,7 +36,14 @@ function httpBackedBy(backend: TestHarness): DataClient {
       if (!(e instanceof ApiError)) throw e;
       if (e.status === 0) throw new TypeError('fetch failed');
       return Response.json(
-        { statusCode: e.status, error: codeForStatus(e.status), message: e.message },
+        {
+          statusCode: e.status,
+          error: codeForStatus(e.status),
+          message: e.message,
+          details: e.details,
+          code: e.businessCode,
+          violations: e.violations,
+        },
         { status: e.status },
       );
     }
@@ -41,7 +51,17 @@ function httpBackedBy(backend: TestHarness): DataClient {
   return createHttpClient('http://api.test', fakeFetch);
 }
 
-type Outcome = { ok: unknown } | { error: { status: number; code: string; message: string } };
+type Outcome =
+  | { ok: unknown }
+  | {
+      error: {
+        status: number;
+        code: string;
+        message: string;
+        businessCode?: string;
+        violations?: unknown;
+      };
+    };
 
 async function run(steps: ((c: DataClient) => Promise<unknown>)[], client: DataClient) {
   const out: Outcome[] = [];
@@ -51,7 +71,15 @@ async function run(steps: ((c: DataClient) => Promise<unknown>)[], client: DataC
       out.push({ ok: JSON.parse(JSON.stringify((await step(client)) ?? null)) });
     } catch (e) {
       if (!(e instanceof ApiError)) throw e;
-      out.push({ error: { status: e.status, code: e.code, message: e.message } });
+      out.push({
+        error: {
+          status: e.status,
+          code: e.code,
+          message: e.message,
+          businessCode: e.businessCode,
+          violations: e.violations,
+        },
+      });
     }
   }
   return out;
@@ -96,8 +124,23 @@ const storeSteps: ((c: DataClient) => Promise<unknown>)[] = [
   (c) => store.listCategories(c),
   (c) => store.listProducts(c, { branchId: 'sucursal-3', categoryId: 'rolls' }),
   (c) => store.listPromotions(c),
-  (c) => store.quoteDelivery(c, { department: 'Guatemala', municipality: 'Guatemala', zone: '7' }),
-  (c) => store.quoteDelivery(c, { department: 'Guatemala', municipality: 'Guatemala' }),
+  (c) =>
+    coverage.checkDeliveryCoverage(c, {
+      branchId: 'sucursal-3',
+      municipalityId: 'mun-guatemala-guatemala',
+      zone: 'Zona 7',
+    }),
+  (c) =>
+    coverage.checkDeliveryCoverage(c, {
+      branchId: 'sucursal-3',
+      municipalityId: 'mun-guatemala-guatemala',
+    }),
+  // sucursal inactiva => 422 BRANCH_NOT_AVAILABLE
+  (c) =>
+    coverage.checkDeliveryCoverage(c, {
+      branchId: 'sucursal-4',
+      municipalityId: 'mun-guatemala-guatemala',
+    }),
   (c) => orders.createOrder(c, newOrder),
   (c) => orders.createOrder(c, { ...newOrder, lines: [] }),
   (c) =>
@@ -139,6 +182,61 @@ describe('paridad mock ↔ http', () => {
     // Sanidad: hubo éxitos y errores de verdad.
     expect(a.filter((x) => 'error' in x).length).toBeGreaterThanOrEqual(3);
     expect(a.filter((x) => 'ok' in x).length).toBeGreaterThanOrEqual(10);
+  });
+
+  it('F09: catálogos, zonas, configuración y cobertura producen los mismos resultados y errores', async () => {
+    const p = pair();
+    p.asStaff('admin');
+    const mixco = 'mun-guatemala-mixco';
+    const steps: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => locations.listDepartments(c),
+      (c) => locations.listMunicipalities(c, 'dep-guatemala'),
+      (c) => locations.listMunicipalities(c, 'dep-escuintla'), // []
+      (c) => locations.listMunicipalities(c, 'dep-inexistente'), // 404 DEPARTMENT_NOT_FOUND
+      (c) => zones.listAdminDeliveryZones(c, { branchId: 'sucursal-1', pageSize: 5, q: 'zona 1' }),
+      (c) =>
+        zones.createAdminDeliveryZone(c, {
+          branchId: 'sucursal-2',
+          municipalityId: mixco,
+          zoneLabel: '  Colonia   El Álamo ',
+          baseFee: '12.5',
+          active: true,
+        }),
+      (c) =>
+        zones.createAdminDeliveryZone(c, {
+          branchId: 'sucursal-2',
+          municipalityId: mixco,
+          zoneLabel: 'colonia el alamo',
+          baseFee: '10',
+          active: true,
+        }), // 409 duplicado
+      (c) =>
+        zones.createAdminDeliveryZone(c, {
+          branchId: 'sucursal-2',
+          municipalityId: 'mun-inexistente',
+          baseFee: '10',
+          active: true,
+        }), // 422
+      (c) => zones.updateAdminDeliveryZone(c, 'zona-0066', { expectedVersion: 1, baseFee: '13' }),
+      (c) => zones.updateAdminDeliveryZone(c, 'zona-0066', { expectedVersion: 1, baseFee: '14' }), // 409 versión
+      (c) => zones.updateAdminDeliveryZoneStatus(c, 'zona-0066', { active: false }),
+      (c) => zones.getAdminBranchDeliverySettings(c, 'sucursal-4'),
+      (c) =>
+        zones.updateAdminBranchDeliverySettings(c, 'sucursal-4', { ownDeliveryZonesEnabled: true }),
+      (c) => coverage.checkDeliveryCoverage(c, { branchId: 'sucursal-4', municipalityId: mixco }), // 422 inactiva
+      (c) => coverage.checkDeliveryCoverage(c, { branchId: 'sucursal-1', municipalityId: mixco }),
+    ];
+    const a = await run(steps, p.mock.client);
+    expect(await run(steps, p.http)).toEqual(a);
+    expect(
+      a.filter((x) => 'error' in x).map((x) => ('error' in x ? x.error.businessCode : '')),
+    ).toEqual([
+      'DEPARTMENT_NOT_FOUND',
+      'DELIVERY_ZONE_DUPLICATE',
+      'MUNICIPALITY_NOT_FOUND',
+      'DELIVERY_ZONE_VERSION_CONFLICT',
+      'BRANCH_NOT_AVAILABLE',
+    ]);
   });
 
   it('cuenta del cliente: sin sesión (401) y con sesión, incluido DELETE 204', async () => {

@@ -48,7 +48,9 @@ describe('datos públicos', () => {
       minLeadMinutes: 45,
       days: 7,
     });
-    expect(config.deliveryTiers.map((t) => t.fee)).toEqual([15, 20, 25, 30]);
+    // F09: los niveles/ETA del borrador se retiraron; tarifa y cobertura salen de las zonas propias (checkDeliveryCoverage).
+    expect(config.deliveryTiers).toEqual([]);
+    expect(config.departments).toEqual([]);
   });
 
   it('sucursales: 3 activas abiertas ahora y 2 próximamente', async () => {
@@ -60,25 +62,6 @@ describe('datos públicos', () => {
     }
     expect(open).toEqual(['sucursal-1', 'sucursal-2', 'sucursal-3']);
     expect(branches.filter((b) => b.status === 'coming_soon')).toHaveLength(2);
-  });
-
-  it('cotiza por zona con el mejor nivel y respeta la sucursal elegida', async () => {
-    const { client } = createHarness();
-    const q = (zone: string, branchId?: string, municipality = 'Guatemala') =>
-      store.quoteDelivery(client, { department: 'Guatemala', municipality, zone, branchId });
-    expect(await q('10')).toMatchObject({ covered: true, tier: 'near', fee: 15 });
-    expect(await q('10', 'sucursal-3')).toMatchObject({ tier: 'extended', fee: 25 });
-    expect(await q('19', 'sucursal-1')).toMatchObject({ tier: 'far', fee: 30, etaMinMinutes: 55 });
-    expect(await q('', undefined, 'Mixco')).toMatchObject({ branchId: 'sucursal-3', tier: 'near' });
-    expect(await q('', 'sucursal-2', 'Mixco')).toMatchObject({
-      covered: false,
-      reason: 'branch_not_covered',
-    });
-    expect(
-      await store.quoteDelivery(client, { department: 'Escuintla', municipality: 'Escuintla' }),
-    ).toMatchObject({ covered: false, reason: 'not_covered' });
-    expect((await apiError(q(''))).status).toBe(400);
-    expect((await apiError(q('22'))).status).toBe(400);
   });
 
   it('catálogo: filtra por categoría y resuelve disponibilidad por sucursal', async () => {

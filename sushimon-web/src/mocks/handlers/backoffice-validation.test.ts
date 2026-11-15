@@ -68,14 +68,4 @@ describe('validación de handlers de escritura del backoffice', () => {
     ).toBe(400);
     expect(await status(admin.createPromotion(h.client, { ...fixed, value: 99 }))).toBe(200);
   });
-
-  it('operación simulada de sucursal: coverage con null responden 400, no 500', async () => {
-    const h = createHarness();
-    h.asStaff('admin');
-    expect(
-      await status(
-        admin.updateBranchOperations(h.client, 'sucursal-2', { coverage: [null] as never }),
-      ),
-    ).toBe(400);
-  });
 });

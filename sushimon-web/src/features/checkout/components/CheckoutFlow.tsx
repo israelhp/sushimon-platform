@@ -321,7 +321,10 @@ export function CheckoutFlow() {
   }
 
   const quoteLoading =
-    step === 3 && data.type === 'delivery' && data.quoteRequested && data.quoteQuery.isPending;
+    step === 3 &&
+    data.type === 'delivery' &&
+    data.selectionComplete &&
+    data.coverage.state === 'loading';
   const action: SummaryAction = {
     label: busy
       ? t('checkout.registering')

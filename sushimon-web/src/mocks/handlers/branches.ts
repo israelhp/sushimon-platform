@@ -2,9 +2,9 @@ import type { Branch } from '@/lib/data-access/models';
 import type { components } from '@sushimon/contracts';
 import { ApiError } from '@/lib/data-access/errors';
 import { emptyWeek } from '@/lib/branch-hours';
-import { branchView, fail, round2 } from '../domain';
+import { branchView, fail } from '../domain';
 import type { BranchSeed } from '../fixtures/branches';
-import { body, now, oneOf, requireStaff, type Handler, type Req, type StaffActor } from './shared';
+import { body, now, requireStaff, type Handler, type Req, type StaffActor } from './shared';
 
 /**
  * F07 — Gestión de sucursales (contrato: `/v1/branches`, `/v1/admin/branches`). El mock aplica las mismas reglas que
@@ -245,13 +245,10 @@ export const createAdminBranch: Handler = (req): AdminBranch => {
     longitude: longitude ?? null,
     active,
     createdAt: now(req).toISOString(),
-    // SIMULADO (F09): una sucursal nueva nace sin cobertura. F08: sin horario configurado (no se asume abierta).
+    // F09: una sucursal nueva nace sin zonas ni fila de configuración (= valores por defecto: sin entrega propia). F08: sin horario configurado (no se asume abierta).
     area: { es: address, en: address },
     zoneLabel: '',
-    radiusKm: 0,
     status: active ? 'active' : 'coming_soon',
-    coverage: [],
-    coverageLabels: [],
   };
   req.store.branches.push(seed);
   req.store.branchHours[seed.id] = emptyWeek();
@@ -315,39 +312,6 @@ export const updateAdminBranchStatus: Handler = (req): AdminBranch => {
 
 // ── 🎭 Operación simulada (F08/F09/F33): solo existe en el mock ──────────────────────────────
 
-/** GET /v1/demo/branches/operations — vista operativa SIMULADA (cobertura, radio, zona) de TODAS las sucursales. */
+/** GET /v1/demo/branches/operations — vista operativa SIMULADA (zona/área) de TODAS las sucursales. */
 export const listBranchOperations: Handler = (req): Branch[] =>
   req.store.branches.map((b) => branchView(b));
-
-/** PATCH /v1/demo/branches/:id/operations — zona, radio y cobertura SIMULADOS (el horario es F08: `PUT /v1/admin/branches/:id/hours`). */
-export const updateBranchOperations: Handler = (req): Branch => {
-  requireStaff(req, 'branches.update');
-  const b = body<Branch>(req);
-  const current = req.store.branches.find((x) => x.id === req.params.id);
-  if (!current) fail(404, 'Sucursal no encontrada');
-  const next = { ...current };
-  if (b.zoneLabel !== undefined) {
-    next.zoneLabel = typeof b.zoneLabel === 'string' ? b.zoneLabel.trim() : '';
-  }
-  if (b.radiusKm !== undefined) {
-    if (!(typeof b.radiusKm === 'number' && b.radiusKm >= 0)) fail(400, 'Radio inválido');
-    next.radiusKm = round2(b.radiusKm);
-  }
-  if (b.coverage !== undefined) {
-    if (!Array.isArray(b.coverage) || b.coverage.some((r) => !r || typeof r !== 'object')) {
-      fail(400, 'Cobertura inválida');
-    }
-    next.coverage = b.coverage.map((r) => ({
-      department: String(r.department ?? ''),
-      municipality: String(r.municipality ?? ''),
-      zone: r.zone === null ? null : String(r.zone ?? ''),
-      tier: oneOf(r.tier, ['near', 'mid', 'extended', 'far'] as const, 'tier'),
-    }));
-  }
-  if (b.coverageLabels !== undefined) {
-    if (!Array.isArray(b.coverageLabels)) fail(400, 'Cobertura inválida');
-    next.coverageLabels = b.coverageLabels.map(String);
-  }
-  Object.assign(current, next);
-  return branchView(current);
-};

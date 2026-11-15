@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockScenario } from '@/mocks/scenarios';
+import type { MockStore } from '@/mocks/store';
 import { renderStore } from '@/test/store-providers';
 import { CheckoutPage } from './CheckoutPage';
 
@@ -23,14 +24,16 @@ interface OpenOptions {
   lines?: [string, number][];
   type?: 'pickup' | 'delivery';
   scenario?: MockScenario;
+  prepareStore?: (store: MockStore) => void;
 }
 
 async function openCheckout({
   lines = [['dumplings', 1]],
   type = 'pickup',
   scenario,
+  prepareStore,
 }: OpenOptions = {}) {
-  const view = await renderStore(<CheckoutPage />, { scenario });
+  const view = await renderStore(<CheckoutPage />, { scenario, prepareStore });
   await act(async () => {
     for (const [id, qty] of lines) view.api().cart.add(id, qty);
     view.api().mode.setMode({ type, when: { kind: 'now' }, branchId: null, address: null });
@@ -245,38 +248,92 @@ describe('checkout · sucursal que no recibe pedidos (F08, solo UI)', () => {
 });
 
 describe('checkout · envío y cobertura', () => {
-  it('muestra la tarifa por zona y el tiempo estimado (simulado)', async () => {
+  it('muestra la tarifa propia que devuelve el servidor para la zona (sin niveles ni tiempos inventados)', async () => {
     const user = userEvent.setup();
     await openCheckout({ type: 'delivery' });
     await toStep(user, 'Envío');
     expect(await screen.findByTestId('shipping-fee')).toHaveTextContent('Q15.00');
-    expect(screen.getByText(/Zona cercana · Sucursal 1/)).toBeInTheDocument();
-    expect(screen.getByText('Tiempo estimado de entrega: 30–40 min')).toBeInTheDocument();
-    expect(screen.getAllByText('Simulación').length).toBeGreaterThan(0);
+    expect(screen.getByText('Entregamos en esta dirección desde Sucursal 1.')).toBeInTheDocument();
+    expect(screen.queryByText(/Tiempo estimado de entrega/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Zona cercana/)).not.toBeInTheDocument();
+    // PedidosYa se rotula como integración pendiente (nunca «conectado»); el mock lo marca como simulación.
+    expect(screen.getByText(/PedidosYa: integración pendiente/)).toBeInTheDocument();
     // Resumen: Q53 + Q15 de envío.
     expect(screen.getAllByTestId('summary-total')[0]).toHaveTextContent('Q68.00');
   });
 
-  it('sin cobertura no se puede continuar y se ofrece recoger en sucursal', async () => {
+  it('PedidosYa no verificable y sin zona propia: «no podemos confirmar»; no continúa y recoger sigue disponible', async () => {
     const user = userEvent.setup();
     const view = await openCheckout({ type: 'delivery' });
     await toStep(user, 'Entrega');
     await user.click(screen.getAllByRole('button', { name: 'Cambiar' })[1]!);
-    await user.selectOptions(await screen.findByLabelText('Departamento'), 'Escuintla');
+    await user.selectOptions(
+      await screen.findByLabelText('Municipio'),
+      await screen.findByRole('option', { name: 'Palencia' }),
+    );
     await next(user, /Continuar a envío/i);
     expect(
-      await screen.findByText(/Por el momento no contamos con una estimación/),
+      await screen.findByText(/No podemos confirmar el envío a domicilio/),
     ).toBeInTheDocument();
-    expect(screen.getByText('Sin cobertura de envío por ahora')).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Por ahora no tenemos cobertura a domicilio/),
+    ).not.toBeInTheDocument();
 
     await next(user, /Continuar a pago/i);
     expect(heading()).toHaveTextContent('Envío');
 
-    await user.click(screen.getByRole('button', { name: 'Recoger en sucursal' }));
+    await user.click(screen.getAllByRole('button', { name: 'Recoger en sucursal' })[0]!);
     expect(view.api().mode.mode.type).toBe('pickup');
     expect(await screen.findByText('¿En qué sucursal lo recogés?')).toBeInTheDocument();
     await next(user, /Continuar a pago/i);
     expect(await screen.findByRole('heading', { level: 1, name: 'Pago' })).toBeInTheDocument();
+  });
+
+  it('sin cobertura propia y PedidosYa deshabilitado: «sin cobertura a domicilio» y se ofrece recoger', async () => {
+    const user = userEvent.setup();
+    await openCheckout({
+      type: 'delivery',
+      prepareStore: (store) => {
+        for (const id of ['sucursal-1', 'sucursal-2', 'sucursal-3']) {
+          store.deliverySettings[id] = {
+            ownDeliveryZonesEnabled: true,
+            pedidosyaEnabled: false,
+            updatedAt: '2026-02-01T15:00:00.000Z',
+          };
+        }
+      },
+    });
+    await toStep(user, 'Entrega');
+    await user.click(screen.getAllByRole('button', { name: 'Cambiar' })[1]!);
+    await user.selectOptions(
+      await screen.findByLabelText('Municipio'),
+      await screen.findByRole('option', { name: 'Palencia' }),
+    );
+    await next(user, /Continuar a envío/i);
+    expect(
+      await screen.findByText(/Por ahora no tenemos cobertura a domicilio para esta dirección/),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Sin cobertura de envío por ahora')).toBeInTheDocument();
+    await next(user, /Continuar a pago/i);
+    expect(heading()).toHaveTextContent('Envío');
+  });
+
+  it('un departamento sin municipios cargados avisa y exige elegir un municipio válido', async () => {
+    const user = userEvent.setup();
+    await openCheckout({ type: 'delivery' });
+    await toStep(user, 'Entrega');
+    await user.click(screen.getAllByRole('button', { name: 'Cambiar' })[1]!);
+    await user.selectOptions(await screen.findByLabelText('Departamento'), 'Escuintla');
+    expect(
+      (
+        await screen.findAllByText(
+          /solo ofrecemos entrega a domicilio en el departamento de Guatemala/,
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+    await next(user, /Continuar a envío/i);
+    expect(screen.getByText('Indicá el municipio.')).toBeInTheDocument();
+    expect(heading()).toHaveTextContent('Entrega');
   });
 
   it('con la sucursal cerrada solo se puede programar', async () => {

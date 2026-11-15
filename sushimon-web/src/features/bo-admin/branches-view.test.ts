@@ -11,7 +11,6 @@ import {
   hasActiveFilters,
   normalizeBranchCode,
   pageCount,
-  radiusLabel,
   toAdminFilters,
   toCreateRequest,
   toUpdateRequest,
@@ -169,10 +168,8 @@ describe('filtros', () => {
   });
 });
 
-describe('operación simulada', () => {
-  it('radio y estadísticas', () => {
-    expect(radiusLabel({ radiusKm: 4 })).toBe('Radio 4 km');
-    expect(radiusLabel({ radiusKm: 0 })).toBe('—');
+describe('estadísticas simuladas', () => {
+  it('estadísticas de hoy por sucursal (el radio se retiró: la cobertura son zonas, F09)', () => {
     expect(branchStats('1', [{ branchId: '1', orders: 3, sales: 90 }], undefined)).toEqual({
       orders: 3,
       sales: 90,

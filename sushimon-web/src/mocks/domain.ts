@@ -1,7 +1,6 @@
 import { ApiError, codeForStatus } from '@/lib/data-access/errors';
 import type {
   Branch,
-  DeliveryTierId,
   Order,
   OrderAddress,
   OrderLine,
@@ -51,7 +50,7 @@ export function normalizeOrderNumber(value: string): string {
 
 export function branchView(seed: BranchSeed): Branch {
   // Se omiten los campos de identidad F07 (`code`, coordenadas, `active`, `createdAt`): esta es la vista OPERATIVA
-  // simulada (cobertura: F09/F33); la identidad y el estado administrativo se leen de `/v1/branches` y
+  // simulada (zona/área: F33); la identidad y el estado administrativo se leen de `/v1/branches` y
   // `/v1/admin/branches`, y el horario/disponibilidad (F08) de `/v1/branches/:id/hours|availability`.
   const {
     legacyBackofficeId: _legacy,
@@ -63,38 +62,9 @@ export function branchView(seed: BranchSeed): Branch {
     ...rest
   } = seed;
   void [_legacy, code, latitude, longitude, active, createdAt];
-  return rest;
-}
-
-const TIER_RANK: DeliveryTierId[] = ['near', 'mid', 'extended', 'far'];
-
-export function tierFor(
-  branch: BranchSeed,
-  municipality: string,
-  zone: string,
-): DeliveryTierId | null {
-  if (branch.status !== 'active') return null;
-  const z = zone.trim() ? String(Number(zone)) : '';
-  const rules = branch.coverage.filter((r) => r.municipality === municipality);
-  const exact = rules.find((r) => r.zone !== null && r.zone === z);
-  if (exact) return exact.tier;
-  const whole = rules.find((r) => r.zone === null);
-  return whole ? whole.tier : null;
-}
-
-/** Sucursal activa con el mejor nivel (más cercano) para la dirección. */
-export function bestBranchFor(
-  branches: BranchSeed[],
-  municipality: string,
-  zone: string,
-): { branch: BranchSeed; tier: DeliveryTierId } | null {
-  let best: { branch: BranchSeed; tier: DeliveryTierId } | null = null;
-  for (const branch of branches) {
-    const tier = tierFor(branch, municipality, zone);
-    if (!tier) continue;
-    if (!best || TIER_RANK.indexOf(tier) < TIER_RANK.indexOf(best.tier)) best = { branch, tier };
-  }
-  return best;
+  // F09 (ADR-0013): `radiusKm`, `coverage` y `coverageLabels` quedaron RETIRADOS como fuente de cobertura. El contrato
+  // (borrador `Branch`) aún los exige; se emiten vacíos y NADIE los lee. La cobertura real es `checkDeliveryCoverage`.
+  return { ...rest, radiusKm: 0, coverage: [], coverageLabels: [] };
 }
 
 export function requiresZone(address: Pick<OrderAddress, 'department' | 'municipality'>): boolean {
@@ -120,12 +90,6 @@ export function assertAddress(store: MockStore, address: Partial<OrderAddress> |
     line: line.trim(),
     references: (address.references ?? '').trim(),
   } satisfies OrderAddress;
-}
-
-export function feeFor(store: MockStore, tier: DeliveryTierId) {
-  const t = store.config.deliveryTiers.find((x) => x.id === tier);
-  if (!t) fail(500, `Nivel sin tarifa: ${tier}`);
-  return t;
 }
 
 // ── Catálogo ──────────────────────────────────────────────────────────────────────────────
@@ -199,4 +163,29 @@ export function isAwaitingPayment(order: Order): boolean {
 
 export function touch(order: Order, now: Date) {
   order.updatedAt = now.toISOString();
+}
+
+// ── Errores de negocio con `code` y `violations` (como `ErrorResponse` del contrato) ──────────
+
+/** 409/422… con `ErrorResponse.code` y `violations` opcionales (el cliente ramifica por `businessCode`, no por el texto). */
+export function failCode(
+  status: number,
+  code: string,
+  message: string,
+  violations: { path: string; code: string; message: string }[] = [],
+): never {
+  throw new ApiError(
+    status,
+    codeForStatus(status),
+    message,
+    undefined,
+    undefined,
+    code,
+    violations.length ? violations : undefined,
+  );
+}
+
+/** 400 de forma con `details` (`ErrorResponse.details`). */
+export function badRequest(details: string[]): never {
+  throw new ApiError(400, 'bad_request', 'Datos inválidos', undefined, details);
 }

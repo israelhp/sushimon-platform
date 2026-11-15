@@ -34,7 +34,7 @@ describe('sucursales', () => {
   const card = (name: string) =>
     screen.getByText(name, { selector: '.cname' }).closest('.bcard') as HTMLElement;
 
-  it('lista las sucursales con su estado administrativo, sin cupo y con la operación rotulada como simulación', async () => {
+  it('lista las sucursales con su estado administrativo, sin cupo, con la entrega por proveedor y las estadísticas rotuladas como simulación', async () => {
     await renderScreen('sucursales');
     expect(await screen.findByText('5 sucursales')).toBeVisible();
     expect(screen.getAllByRole('switch', { name: /Sucursal activa/ })).toHaveLength(5);
@@ -42,9 +42,17 @@ describe('sucursales', () => {
     expect(within(card('Sucursal 4')).getByText('Inactiva')).toBeVisible();
     expect(within(card('Sucursal 1')).getByText('sucursal-1')).toBeVisible();
     expect(within(card('Sucursal 1')).getByText('Sin coordenadas')).toBeVisible();
-    // horario/cobertura/estadísticas: simulados
+    // estadísticas: simuladas. El radio y la cobertura por niveles se retiraron (F09): la entrega son proveedores y zonas.
     expect(within(card('Sucursal 1')).getByText('Simulación')).toBeVisible();
-    expect(screen.getAllByText('Radio 5 km').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Radio \d/)).toBeNull();
+    expect(await within(card('Sucursal 1')).findByText('Entrega propia: Activa')).toBeVisible();
+    expect(
+      within(card('Sucursal 1')).getByText('PedidosYa: Habilitado · integración pendiente'),
+    ).toBeVisible();
+    // sucursal sin fila de configuración = valores por defecto de la API (entrega propia desactivada)
+    expect(
+      await within(card('Sucursal 4')).findByText('Entrega propia: Desactivada'),
+    ).toBeVisible();
     // sin tope de 5 ni cupos
     expect(screen.queryByText(/Espacio \d de/)).toBeNull();
     expect(screen.queryByText(/Límite de/)).toBeNull();
@@ -334,7 +342,9 @@ describe('reportes', () => {
     await screen.findByRole('img', { name: /Pedidos por día/ });
     const from = screen.getByLabelText('Desde');
     fireEvent.change(from, { target: { value: '2025-01-01' } });
-    expect(await screen.findByText(/Los datos disponibles van del/)).toBeVisible();
+    expect(
+      await screen.findByText(/Los datos disponibles van del/, undefined, { timeout: 5000 }),
+    ).toBeVisible();
   });
 
   it(

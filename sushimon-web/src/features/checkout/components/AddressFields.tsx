@@ -1,7 +1,8 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { municipalitiesOf, requiresZone, MAX_ZONE } from '@/features/order-mode/draft';
+import { useLocationOptions } from '@/features/delivery-coverage/hooks';
+import { requiresZone, zoneChoices } from '@/features/order-mode/draft';
 import type { StoreConfig } from '@/lib/data-access/models';
 import type { AddressErrors, AddressForm } from '../checkout-model';
 import { Field } from './parts';
@@ -24,11 +25,9 @@ export function AddressFields({
   config: StoreConfig | undefined;
 }) {
   const t = useTranslations();
-  const departments = config?.departments ?? [];
-  const municipalities = municipalitiesOf(departments, value.department);
-  const zones = Array.from({ length: MAX_ZONE }, (_, i) => i + 1).filter(
-    (z) => !(config?.nonexistentZones ?? []).includes(z),
-  );
+  // F09: departamentos y municipios vienen de `locations` (catálogo público); el borrador conserva los NOMBRES.
+  const locations = useLocationOptions(value.department);
+  const zones = zoneChoices(config?.nonexistentZones ?? []);
   const zoned = requiresZone(value.department, value.municipality);
   const err = (key?: Parameters<typeof t>[0]) => (key ? t(key) : undefined);
 
@@ -40,16 +39,12 @@ export function AddressFields({
             {...p}
             autoComplete="address-level1"
             value={value.department}
-            onChange={(e) => {
-              const department = e.target.value;
-              const first = municipalitiesOf(departments, department)[0];
-              onChange({ department, municipality: first?.name ?? '', zone: '' });
-            }}
+            onChange={(e) => onChange({ department: e.target.value, municipality: '', zone: '' })}
           >
             <option value="">{t('checkout.select')}</option>
-            {departments.map((d) => (
-              <option key={d.department} value={d.department}>
-                {d.department}
+            {locations.departments.map((d) => (
+              <option key={d.id} value={d.name}>
+                {d.name}
               </option>
             ))}
           </select>
@@ -68,14 +63,27 @@ export function AddressFields({
             onChange={(e) => onChange({ municipality: e.target.value, zone: '' })}
           >
             <option value="">{t('checkout.select')}</option>
-            {municipalities.map((m) => (
-              <option key={m.name} value={m.name}>
+            {locations.municipalities.map((m) => (
+              <option key={m.id} value={m.name}>
                 {m.name}
               </option>
             ))}
           </select>
         )}
       </Field>
+      {locations.isError ? (
+        <p className="notice notice-warn sm:col-span-2" role="alert">
+          {t('coverage.locationsError')}{' '}
+          <button type="button" className="link-btn" onClick={locations.refetch}>
+            {t('ui.retry')}
+          </button>
+        </p>
+      ) : null}
+      {locations.municipalitiesEmpty ? (
+        <p className="notice notice-info sm:col-span-2" role="status">
+          {t('coverage.onlyGuatemala')}
+        </p>
+      ) : null}
       {zoned ? (
         <Field id={`${idPrefix}-zone`} label={t('checkout.zone')} error={err(errors.zone)}>
           {(p) => (

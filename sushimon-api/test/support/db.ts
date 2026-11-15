@@ -70,6 +70,14 @@ export async function cleanupTestData(
         branchIds,
       ]);
       await c.query('DELETE FROM app.branch_hours WHERE branch_id = ANY($1::uuid[])', [branchIds]);
+      // F09: zonas propias y configuración logística de las sucursales de la prueba (FK RESTRICT hacia branches).
+      // Los catálogos departments/municipalities son seed permanente de la migración 0007: NO se borran.
+      await c.query('DELETE FROM app.delivery_zones WHERE branch_id = ANY($1::uuid[])', [
+        branchIds,
+      ]);
+      await c.query('DELETE FROM app.branch_delivery_settings WHERE branch_id = ANY($1::uuid[])', [
+        branchIds,
+      ]);
       // La auditoría referencia la sucursal (FK RESTRICT): solo se borra la de las sucursales de la prueba.
       await c.query('DELETE FROM app.audit_events WHERE branch_id = ANY($1::uuid[])', [branchIds]);
       await c.query('DELETE FROM app.branches WHERE id = ANY($1::uuid[])', [branchIds]);

@@ -3,8 +3,8 @@ import { addDaysISO, dayOfWeekOf, fromLocal, minutesToHM } from '@/lib/time';
 import { BRANCH_SEEDS } from '../fixtures/branches';
 import { PRODUCT_SEEDS } from '../fixtures/products';
 import { COURIER_RIDER_NAMES, REJECTION_REASONS, RIDER_SEEDS } from '../fixtures/staff';
-import { DELIVERY_TIER_SEEDS } from '../fixtures/store';
-import { event, round2, tierFor, totals } from '../domain';
+import { seedDeliveryFee } from '../fixtures/delivery';
+import { event, round2, totals } from '../domain';
 import { intBetween, pick, rngFor, weighted, type Rng } from './random';
 
 /**
@@ -236,8 +236,7 @@ export function generateDayOrders(dateISO: string, today: string): Order[] {
       const name = `${pick(rng, FIRST)} ${pick(rng, LAST)}`;
       const phone = `+502 ${intBetween(rng, 3, 5)}${intBetween(rng, 100, 999)}-${intBetween(rng, 1000, 9999)}`;
       const address = delivery ? pick(rng, ADDRESSES[branchId] ?? []) : null;
-      const tier = address ? tierFor(branch, address.municipality, address.zone) : null;
-      const fee = tier ? (DELIVERY_TIER_SEEDS.find((t) => t.id === tier)?.fee ?? 0) : 0;
+      const fee = address ? (seedDeliveryFee(branch.id, address) ?? 0) : 0;
       const reason = cancelled ? pick(rng, REJECTION_REASONS) : null;
       const note = rng() < 0.1 ? 'Por favor llamar al llegar.' : '';
       const payCard = rng() < 0.5;
@@ -304,7 +303,7 @@ export function generateDayOrders(dateISO: string, today: string): Order[] {
             ...t,
             currency: 'GTQ',
             note,
-            deliveryTier: tier,
+            deliveryTier: null,
             status: cancelled ? 'rejected' : 'delivered',
             rejectionReason: reason,
             payment: {

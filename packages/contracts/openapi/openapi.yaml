@@ -1,6 +1,6 @@
 # Contrato HTTP canónico de Sushi Mon (Contract First).
 # Se diseña ANTES de implementar cada slice y se verifica contra NestJS con `pnpm contracts:check`.
-# Estado: F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
+# Estado: F09 (geografía, cobertura y zonas propias: /v1/locations/*, /v1/admin/delivery-zones, /v1/admin/branches/{id}/delivery-settings, /v1/delivery-coverage/check) + F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
 # Seguridad por defecto: Bearer JWT de Supabase Auth en todo salvo operaciones con `security: []` (health).
 # Transversal a TODAS las respuestas: cabecera `X-Request-Id`; errores con `ErrorResponse`; 429 cuando
 # se excede el rate limit global (no se repite por operación).
@@ -1422,6 +1422,515 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /v1/locations/departments:
+    get:
+      operationId: listLocationDepartments
+      summary: Departamentos de Guatemala (catálogo público)
+      description: |
+        F09. Sin autenticación. Los 22 departamentos, ordenados alfabéticamente en español (comparación sin distinguir
+        acentos ni mayúsculas; desempate por `id`). Solo `id` y `name`. Catálogo de solo lectura (cambia por migración):
+        caché pública larga. Los `id` son específicos de cada entorno: los clientes NO deben codificarlos.
+      tags: [locations]
+      security: []
+      responses:
+        '200':
+          description: Lista completa de departamentos
+          headers:
+            Cache-Control:
+              description: public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepartmentListResponse'
+  /v1/locations/municipalities:
+    get:
+      operationId: listLocationMunicipalities
+      summary: Municipios de un departamento (catálogo público)
+      description: |
+        F09. Sin autenticación. `departmentId` es obligatorio (no hay listado global). Orden alfabético en español (sin
+        distinguir acentos; desempate por `id`). Un departamento existente sin municipios cargados devuelve 200 con
+        `items: []` (la carga de municipios fuera del departamento de Guatemala está PENDIENTE de fuente oficial, ver
+        specs/008-delivery-zones-coverage D9). `departmentId` con formato inválido o ausente => 400; UUID válido que no existe
+        => 404 `DEPARTMENT_NOT_FOUND`. Caché pública larga solo en 2xx; los errores llevan `no-store`.
+      tags: [locations]
+      security: []
+      parameters:
+        - name: departmentId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Municipios del departamento
+          headers:
+            Cache-Control:
+              description: public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MunicipalityListResponse'
+        '400':
+          description: '`departmentId` ausente o no es un UUID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`DEPARTMENT_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/delivery-zones:
+    get:
+      operationId: listAdminDeliveryZones
+      summary: Zonas de entrega propias (backoffice, paginado)
+      description: |
+        F09. Exige JWT -> personal activo con `branches.read` -> `aal2`. Solo devuelve zonas de sucursales dentro del
+        alcance de `branches.read`. `branchId` fuera de alcance o inexistente => 404 (no se distingue). Incluye zonas
+        inactivas salvo que se filtre `active`. Orden por defecto: departamento, municipio, zona general (sin etiqueta)
+        primero y luego etiqueta; desempate por `id`. `q` busca por etiqueta (contiene; sin distinguir mayúsculas ni
+        acentos). Respuesta `Cache-Control: no-store`.
+      tags: [delivery-zones]
+      security:
+        - bearer: []
+      parameters:
+        - name: branchId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: departmentId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: municipalityId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: active
+          in: query
+          description: Sin valor = todas.
+          schema: { type: boolean }
+        - name: q
+          in: query
+          description: Busca en la etiqueta de zona. Máx. 60 caracteres.
+          schema: { type: string, maxLength: 60 }
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [municipality, baseFee, createdAt]
+            default: municipality
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 10000, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Página de zonas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDeliveryZonePage'
+        '400':
+          description: Parámetros de consulta inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: No es personal activo, falta `branches.read` o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`branchId` inexistente o fuera de alcance'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      operationId: createAdminDeliveryZone
+      summary: Crea una zona de entrega propia
+      description: |
+        F09. Exige `branches.manage_delivery_zones` en `branchId` (inexistente o fuera de alcance => 404; una sucursal
+        inactiva SÍ admite zonas). `zoneLabel` se normaliza (NFC, recorte, colapso de espacios); `null` o en blanco = cobertura
+        GENERAL del municipio. Unicidad lógica `(branchId, municipalityId, clave normalizada de zoneLabel)` incluyendo
+        zonas inactivas: duplicado => 409 `DELIVERY_ZONE_DUPLICATE` (también ante creaciones concurrentes) con
+        `violations[0].path = deliveryZones/<id existente>`. `baseFee` es un string decimal GTQ con 0 a 2 decimales
+        (`"15"` o `"15.00"`; un número JSON => 400) y se devuelve siempre con 2 decimales. Municipio inexistente => 422
+        `MUNICIPALITY_NOT_FOUND`. Se audita en la misma transacción (`delivery_zone.created`). Respuesta `no-store`.
+      tags: [delivery-zones]
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDeliveryZoneRequest'
+      responses:
+        '201':
+          description: Zona creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDeliveryZone'
+        '400':
+          description: Forma inválida (UUID, `baseFee` no decimal/negativo/fuera de rango, `zoneLabel` demasiado larga o con caracteres de control)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Falta `branches.manage_delivery_zones` o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Sucursal inexistente o fuera de alcance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`DELIVERY_ZONE_DUPLICATE`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`MUNICIPALITY_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/delivery-zones/{id}:
+    get:
+      operationId: getAdminDeliveryZone
+      summary: Detalle de una zona de entrega propia
+      description: |
+        F09. Exige `branches.read` en la sucursal de la zona. 404 si no existe o está fuera de alcance (no se distingue).
+        Una zona inactiva SÍ se puede consultar. Respuesta `no-store`.
+      tags: [delivery-zones]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/DeliveryZoneId'
+      responses:
+        '200':
+          description: Zona
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDeliveryZone'
+        '400':
+          description: El identificador no es un UUID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: No es personal activo, falta `branches.read` o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o fuera de alcance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      operationId: updateAdminDeliveryZone
+      summary: Edita etiqueta y/o tarifa de una zona
+      description: |
+        F09. Exige `branches.manage_delivery_zones` en la sucursal de la zona (404 fuera de alcance). Solo `zoneLabel`
+        (`null` = pasa a cobertura general del municipio) y `baseFee`; sucursal, municipio y `active` NO se aceptan (400;
+        el estado se cambia con `PATCH .../status`). Concurrencia optimista: `expectedVersion` debe coincidir con `version`
+        vigente, si no 409 `DELIVERY_ZONE_VERSION_CONFLICT` sin guardar. Si ningún valor cambia responde 200 sin escribir,
+        sin subir `version` y sin auditar. Cambiar la etiqueta a una ya existente => 409 `DELIVERY_ZONE_DUPLICATE`. Se audita
+        `delivery_zone.updated` (old/new solo de los campos cambiados). Respuesta `no-store`.
+      tags: [delivery-zones]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/DeliveryZoneId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDeliveryZoneRequest'
+      responses:
+        '200':
+          description: Zona actualizada (o sin cambios)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDeliveryZone'
+        '400':
+          description: Forma inválida o campos no permitidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Falta `branches.manage_delivery_zones` o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o fuera de alcance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`DELIVERY_ZONE_VERSION_CONFLICT` o `DELIVERY_ZONE_DUPLICATE`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/delivery-zones/{id}/status:
+    patch:
+      operationId: updateAdminDeliveryZoneStatus
+      summary: Activa o desactiva una zona (no hay borrado físico)
+      description: |
+        F09. Exige `branches.manage_delivery_zones` en la sucursal de la zona (404 fuera de alcance). Establece `active`
+        con valor explícito (idempotente: si ya tiene ese valor responde 200 sin escribir ni auditar; no usa
+        `expectedVersion`, el último valor gana). Un cambio real sube `version` y audita `delivery_zone.status_changed`.
+        Desactivar NO borra la zona ni afecta pedidos ya creados; solo deja de contar para nuevas comprobaciones. `reason`
+        opcional (máx. 200; sin PII). Respuesta `no-store`.
+      tags: [delivery-zones]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/DeliveryZoneId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDeliveryZoneStatusRequest'
+      responses:
+        '200':
+          description: Zona con su estado actual
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDeliveryZone'
+        '400':
+          description: Forma inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Falta `branches.manage_delivery_zones` o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o fuera de alcance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/branches/{id}/delivery-settings:
+    get:
+      operationId: getAdminBranchDeliverySettings
+      summary: Configuración logística de una sucursal
+      description: |
+        F09. Exige `branches.read` en esa sucursal (404 si no existe o fuera de alcance; una inactiva SÍ se consulta). Si la
+        sucursal aún no tiene fila, devuelve los valores por defecto (`ownDeliveryZonesEnabled=false`,
+        `pedidosyaEnabled=true`) con `isDefault=true` y `updatedAt=null`. `pedidosyaIntegrationStatus` refleja el
+        adaptador activo en el servidor (`BLOCKED_EXTERNAL` mientras no exista integración verificable): NO es un
+        indicador de conexión. Respuesta `no-store`.
+      tags: [delivery-zones]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+      responses:
+        '200':
+          description: Configuración vigente o por defecto
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BranchDeliverySettings'
+        '400':
+          description: El identificador no es un UUID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: No es personal activo, falta `branches.read` o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o fuera de alcance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      operationId: updateAdminBranchDeliverySettings
+      summary: Actualiza los indicadores logísticos de una sucursal
+      description: |
+        F09. Exige `branches.manage_delivery_zones` en esa sucursal (404 fuera de alcance). Campos omitidos no se tocan;
+        valores explícitos (idempotente, el último gana; sin `expectedVersion`). Crea la fila si no existía (upsert).
+        `pedidosyaEnabled` es un indicador ADMINISTRATIVO: no activa operaciones reales ni equivale a integración
+        operativa. Desactivar zonas propias NO borra zonas, motoristas, entregas en curso ni pedidos; solo impide nuevas
+        elegibilidades. Un PATCH sin cambios reales no escribe ni audita. Se audita `branch_delivery_settings.updated`
+        (old/new solo de los flags cambiados). Respuesta `no-store`.
+      tags: [delivery-zones]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBranchDeliverySettingsRequest'
+      responses:
+        '200':
+          description: Configuración resultante
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BranchDeliverySettings'
+        '400':
+          description: Forma inválida, sin campos o campos no permitidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Falta `branches.manage_delivery_zones` o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o fuera de alcance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/delivery-coverage/check:
+    post:
+      operationId: checkDeliveryCoverage
+      summary: Comprueba cobertura de entrega a domicilio por proveedor (público, informativo)
+      description: |
+        F09. Sin autenticación. NO crea pedidos, NO solicita motorista ni cotiza, y NO recibe costos del cliente (cuerpo
+        con propiedades desconocidas => 400). La tarifa de `OWN.baseFee` es la del servidor; el pedido (F19/F20)
+        la recalcula. Se evalúa cada proveedor por separado; NO existe un booleano `covered`.
+        `providers.PEDIDOSYA.coverageStatus = UNKNOWN` mientras no haya integración verificable (`integrationStatus =
+        BLOCKED_EXTERNAL`): NO equivale a UNAVAILABLE ni a AVAILABLE. Si `integrationStatus = MOCK` la respuesta es
+        una simulación (`eligibility.simulated = true`) y jamás autoriza operaciones reales; el mock no puede activarse
+        en producción. Un proveedor deshabilitado se indica con `enabled=false` (su `coverageStatus` no es significativo).
+        Timeout o error del proveedor => `UNKNOWN` con `reason`, nunca UNAVAILABLE ni 5xx. NO considera horarios ni cierres
+        (F08 se combina en checkout). La recogida en sucursal no depende de cobertura. Prioridad de zona propia: zona
+        específica > cobertura general del municipio > sin cobertura. `branchId` inexistente o inactiva => 422
+        `BRANCH_NOT_AVAILABLE` (no se distingue); `municipalityId` inexistente => 422 `MUNICIPALITY_NOT_FOUND`.
+        Respuesta `Cache-Control: no-store`.
+      tags: [delivery-coverage]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliveryCoverageCheckRequest'
+      responses:
+        '200':
+          description: Cobertura por proveedor y resumen de elegibilidad
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryCoverageCheckResponse'
+        '400':
+          description: Forma inválida (UUID, `zone` demasiado larga, propiedades desconocidas como `fee`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`BRANCH_NOT_AVAILABLE` o `MUNICIPALITY_NOT_FOUND` (ver `code` y `violations`)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: '`RATE_LIMITED`: límite por IP (30 por minuto en esta ruta). `Cache-Control: no-store` y `Retry-After`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   parameters:
     StaffId:
@@ -1447,6 +1956,12 @@ components:
       in: path
       required: true
       description: UUID del cierre extraordinario (`branch_closures.id`).
+      schema: { type: string, format: uuid }
+    DeliveryZoneId:
+      name: id
+      in: path
+      required: true
+      description: UUID de la zona de entrega (`delivery_zones.id`).
       schema: { type: string, format: uuid }
   schemas:
     PublicBranch:
@@ -1957,10 +2472,10 @@ components:
           type: string
           description: |
             Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`). Los clientes deben ramificar por `code`, nunca por `message`.
+            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`). Los clientes deben ramificar por `code`, nunca por `message`.
         violations:
           type: array
-          description: Violaciones estructuradas de reglas de negocio (422/409 de F08).
+          description: Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09).
           items: { $ref: '#/components/schemas/ErrorViolation' }
     ErrorViolation:
       type: object
@@ -2197,14 +2712,14 @@ components:
         municipality: { type: string }
         zone: { type: string, nullable: true }
         tier: { $ref: '#/components/schemas/DeliveryTierId' }
-    Municipality:
+    DraftMunicipality:
       x-status: draft
       type: object
       required: [name, zones]
       properties:
         name: { type: string }
         zones: { type: integer, description: Número de zonas (0 = el municipio no usa zonas). }
-    Department:
+    DraftDepartment:
       x-status: draft
       type: object
       required: [department, municipalities]
@@ -2212,7 +2727,7 @@ components:
         department: { type: string }
         municipalities:
           type: array
-          items: { $ref: '#/components/schemas/Municipality' }
+          items: { $ref: '#/components/schemas/DraftMunicipality' }
     StoreConfig:
       x-status: draft
       type: object
@@ -2278,7 +2793,7 @@ components:
           items: { $ref: '#/components/schemas/DeliveryTier' }
         departments:
           type: array
-          items: { $ref: '#/components/schemas/Department' }
+          items: { $ref: '#/components/schemas/DraftDepartment' }
         nonexistentZones:
           type: array
           description: Zonas de la Ciudad de Guatemala que no existen (20, 22, 23).
@@ -3019,6 +3534,275 @@ components:
         sales: { type: number }
         averageTicket: { type: number }
         deliveryOrders: { type: integer }
+    Department:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: Guatemala }
+    DepartmentListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Department' }
+    Municipality:
+      type: object
+      required: [id, departmentId, name]
+      properties:
+        id: { type: string, format: uuid }
+        departmentId: { type: string, format: uuid }
+        name: { type: string, example: Mixco }
+    MunicipalityListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Municipality' }
+    CurrencyGtq:
+      type: string
+      enum: [GTQ]
+    MoneyGtq:
+      type: string
+      description: |
+        Monto GTQ como string decimal EXACTO con 2 decimales (nunca número flotante). Rango 0.00..99999.99
+        (tope técnico anti-error de captura; CHECK en BD).
+      pattern: '^(0|[1-9][0-9]{0,4})\.[0-9]{2}$'
+      example: '15.00'
+    MoneyGtqInput:
+      type: string
+      description: 'Monto GTQ de entrada, string decimal con 0 a 2 decimales ("15", "15.5", "15.00"). No se acepta número JSON, signo ni notación científica.'
+      pattern: '^(0|[1-9][0-9]{0,4})(\.[0-9]{1,2})?$'
+      example: '15.00'
+    AdminDeliveryZone:
+      type: object
+      required:
+        [
+          id,
+          branchId,
+          municipalityId,
+          municipalityName,
+          departmentId,
+          departmentName,
+          zoneLabel,
+          baseFee,
+          currency,
+          active,
+          version,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        branchId: { type: string, format: uuid }
+        municipalityId: { type: string, format: uuid }
+        municipalityName: { type: string }
+        departmentId: { type: string, format: uuid }
+        departmentName: { type: string }
+        zoneLabel:
+          type: string
+          nullable: true
+          description: Etiqueta legible normalizada (NFC, recortada, espacios colapsados). `null` = cobertura GENERAL del municipio.
+        baseFee: { $ref: '#/components/schemas/MoneyGtq' }
+        currency: { $ref: '#/components/schemas/CurrencyGtq' }
+        active: { type: boolean }
+        version:
+          type: integer
+          minimum: 1
+          description: Contador de concurrencia optimista; se reenvía como `expectedVersion` en PATCH.
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AdminDeliveryZonePage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminDeliveryZone' }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total:
+          { type: integer, description: 'Total de zonas que cumplen los filtros y el alcance.' }
+    CreateDeliveryZoneRequest:
+      type: object
+      required: [branchId, municipalityId, baseFee]
+      additionalProperties: false
+      properties:
+        branchId: { type: string, format: uuid }
+        municipalityId: { type: string, format: uuid }
+        zoneLabel:
+          type: string
+          nullable: true
+          maxLength: 60
+          description: 'Opcional. Máx. 60 caracteres tras normalizar; sin caracteres de control. `null`, ausente o en blanco = cobertura general del municipio.'
+        baseFee: { $ref: '#/components/schemas/MoneyGtqInput' }
+        active:
+          type: boolean
+          default: true
+    UpdateDeliveryZoneRequest:
+      type: object
+      required: [expectedVersion]
+      additionalProperties: false
+      description: Además de `expectedVersion` debe venir al menos `zoneLabel` o `baseFee` (si no, 400).
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        zoneLabel:
+          type: string
+          nullable: true
+          maxLength: 60
+        baseFee: { $ref: '#/components/schemas/MoneyGtqInput' }
+    UpdateDeliveryZoneStatusRequest:
+      type: object
+      required: [active]
+      additionalProperties: false
+      properties:
+        active: { type: boolean }
+        reason:
+          type: string
+          maxLength: 200
+          description: Texto libre de operador; se guarda en auditoría. NO debe contener datos personales.
+    CourierProvider:
+      type: string
+      enum: [PEDIDOSYA, OWN]
+    ProviderIntegrationStatus:
+      type: string
+      description: |
+        Estado de la integración del proveedor en este servidor. `BLOCKED_EXTERNAL`: sin documentación/credenciales
+        (valor por defecto y el único posible en producción hoy). `MOCK`: adaptador simulado (solo desarrollo/pruebas).
+        `LIVE`: reservado para F29; F09 nunca lo produce. Los clientes deben tolerar valores futuros.
+      enum: [BLOCKED_EXTERNAL, MOCK, LIVE]
+    CoverageReason:
+      type: string
+      description: Motivo estable de un estado no determinante. Los clientes deben tolerar valores futuros.
+      enum:
+        - PROVIDER_DISABLED
+        - INTEGRATION_NOT_CONFIGURED
+        - PROVIDER_TIMEOUT
+        - PROVIDER_ERROR
+        - INVALID_REQUEST
+        - PROVIDER_UNDETERMINED
+        - NO_ZONE_COVERAGE
+    BranchDeliverySettings:
+      type: object
+      required:
+        [
+          branchId,
+          ownDeliveryZonesEnabled,
+          pedidosyaEnabled,
+          pedidosyaIntegrationStatus,
+          isDefault,
+          updatedAt,
+        ]
+      properties:
+        branchId: { type: string, format: uuid }
+        ownDeliveryZonesEnabled:
+          type: boolean
+          description: Entrega con repartidores propios y zonas del restaurante. Por defecto false.
+        pedidosyaEnabled:
+          type: boolean
+          description: Indicador ADMINISTRATIVO. No equivale a integración operativa ni habilita llamadas reales. Por defecto true.
+        pedidosyaIntegrationStatus: { $ref: '#/components/schemas/ProviderIntegrationStatus' }
+        isDefault:
+          type: boolean
+          description: true si la sucursal aún no tiene fila (valores por defecto).
+        updatedAt: { type: string, format: date-time, nullable: true }
+    UpdateBranchDeliverySettingsRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        ownDeliveryZonesEnabled: { type: boolean }
+        pedidosyaEnabled: { type: boolean }
+    DeliveryCoverageCheckRequest:
+      type: object
+      required: [branchId, municipalityId]
+      additionalProperties: false
+      properties:
+        branchId: { type: string, format: uuid }
+        municipalityId: { type: string, format: uuid }
+        zone:
+          type: string
+          nullable: true
+          maxLength: 60
+          description: Zona opcional (texto libre; se normaliza igual que `zoneLabel`). Sin zona solo puede aplicar la cobertura general del municipio.
+    PedidosYaCoverage:
+      type: object
+      required: [enabled, coverageStatus, integrationStatus, quoteStatus]
+      properties:
+        enabled: { type: boolean }
+        coverageStatus:
+          type: string
+          enum: [AVAILABLE, UNAVAILABLE, UNKNOWN]
+          description: Solo significativo si `enabled=true`. UNKNOWN = no verificable (no es UNAVAILABLE).
+        integrationStatus: { $ref: '#/components/schemas/ProviderIntegrationStatus' }
+        quoteStatus:
+          type: string
+          enum: [NOT_AVAILABLE]
+          description: F09 no cotiza (la cobertura y la cotización son conceptos separados). Puede ampliarse en F29.
+        reason: { $ref: '#/components/schemas/CoverageReason' }
+    OwnCoverage:
+      type: object
+      required: [enabled, coverageStatus, deliveryZoneId, baseFee, currency, matchedBy]
+      properties:
+        enabled: { type: boolean }
+        coverageStatus:
+          type: string
+          enum: [AVAILABLE, UNAVAILABLE]
+          description: Solo significativo si `enabled=true` (deshabilitado => UNAVAILABLE sin evaluar zonas).
+        deliveryZoneId: { type: string, format: uuid, nullable: true }
+        baseFee:
+          allOf:
+            - $ref: '#/components/schemas/MoneyGtq'
+          nullable: true
+        currency: { $ref: '#/components/schemas/CurrencyGtq' }
+        matchedBy:
+          type: string
+          nullable: true
+          enum: [ZONE, MUNICIPALITY]
+          description: ZONE = zona específica; MUNICIPALITY = cobertura general; null = sin cobertura.
+        reason: { $ref: '#/components/schemas/CoverageReason' }
+    DeliveryEligibility:
+      type: object
+      description: |
+        Resumen derivado en servidor. `confirmedProviders`: proveedores habilitados con cobertura AVAILABLE.
+        `pendingProviders`: habilitados con UNKNOWN (no confirmado). `status`: CONFIRMED si hay algún confirmado; PENDING
+        si no hay confirmados pero sí pendientes; NONE si no hay ninguno. `simulated=true` si algún dato proviene del
+        mock: nunca autoriza operaciones reales.
+      required: [status, confirmedProviders, pendingProviders, simulated]
+      properties:
+        status:
+          type: string
+          enum: [CONFIRMED, PENDING, NONE]
+        confirmedProviders:
+          type: array
+          items: { $ref: '#/components/schemas/CourierProvider' }
+        pendingProviders:
+          type: array
+          items: { $ref: '#/components/schemas/CourierProvider' }
+        simulated: { type: boolean }
+    DeliveryCoverageCheckResponse:
+      type: object
+      required: [branchId, municipalityId, zone, checkedAt, providers, eligibility]
+      properties:
+        branchId: { type: string, format: uuid }
+        municipalityId: { type: string, format: uuid }
+        zone:
+          type: string
+          nullable: true
+          description: Zona normalizada (o null).
+        checkedAt:
+          type: string
+          format: date-time
+          description: Reloj del servidor, ISO 8601 UTC con milisegundos.
+        providers:
+          type: object
+          required: [PEDIDOSYA, OWN]
+          properties:
+            PEDIDOSYA: { $ref: '#/components/schemas/PedidosYaCoverage' }
+            OWN: { $ref: '#/components/schemas/OwnCoverage' }
+        eligibility: { $ref: '#/components/schemas/DeliveryEligibility' }
   securitySchemes:
     bearer:
       type: http

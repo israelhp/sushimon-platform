@@ -16,8 +16,6 @@ import {
   validateContact,
   zoneForOrder,
 } from './checkout-model';
-import { coveringBranch } from './coverage';
-import type { Branch } from '@/lib/data-access/models';
 
 describe('validación de contacto', () => {
   it('acepta teléfonos de 8 dígitos con o sin +502', () => {
@@ -125,33 +123,5 @@ describe('persistencia no sensible', () => {
       expect(json).not.toContain(forbidden);
     }
     expect(CHECKOUT_STORAGE_KEY).toBe('monsushi-checkout-v1');
-  });
-});
-
-describe('cobertura orientativa de direcciones guardadas', () => {
-  const branch = (id: string, tier: 'near' | 'far', zone: string | null): Branch =>
-    ({
-      id,
-      name: id,
-      status: 'active',
-      coverage: [{ department: 'Guatemala', municipality: 'Guatemala', zone, tier }],
-    }) as unknown as Branch;
-
-  it('elige la sucursal con el nivel más cercano', () => {
-    const branches = [branch('b1', 'far', '10'), branch('b2', 'near', '10')];
-    expect(
-      coveringBranch(branches, { department: 'Guatemala', municipality: 'Guatemala', zone: '10' })
-        ?.id,
-    ).toBe('b2');
-  });
-
-  it('sin regla para la zona no hay cobertura', () => {
-    expect(
-      coveringBranch([branch('b1', 'near', '4')], {
-        department: 'Guatemala',
-        municipality: 'Guatemala',
-        zone: '10',
-      }),
-    ).toBeNull();
   });
 });

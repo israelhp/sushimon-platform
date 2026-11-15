@@ -1230,6 +1230,15 @@
       minmax(190px, 1.2fr) minmax(190px, 1.1fr) minmax(210px, 1.4fr)
       170px 250px;
   }
+  /* F09: zonas propias de entrega (con y sin columna «Sucursal»). */
+  [data-zone='bo'] .cols-zones {
+    grid-template-columns:
+      minmax(120px, 0.9fr) minmax(160px, 1.2fr) minmax(120px, 1fr)
+      110px 110px 230px;
+  }
+  [data-zone='bo'] .cols-zones.one {
+    grid-template-columns: minmax(160px, 1.2fr) minmax(120px, 1fr) 110px 110px 230px;
+  }
   [data-zone='bo'] .edit-btn {
     gap: 6px;
     padding: 0 14px;
@@ -1268,6 +1277,9 @@
   }
   [data-zone='bo'] .min-users {
     min-width: 1060px;
+  }
+  [data-zone='bo'] .min-zones {
+    min-width: 860px;
   }
   [data-zone='bo'] .min-prod {
     min-width: 780px;
@@ -3274,8 +3286,13 @@
     [data-zone='bo'] .min-recent,
     [data-zone='bo'] .min-del,
     [data-zone='bo'] .min-users,
+    [data-zone='bo'] .min-zones,
     [data-zone='bo'] .min-prod {
       min-width: 0;
+    }
+    [data-zone='bo'] .cols-zones .z-act {
+      grid-column: 1/-1;
+      justify-content: flex-start;
     }
     [data-zone='bo'] .cols-users .u-act {
       grid-column: 1/-1;

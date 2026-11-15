@@ -5,7 +5,6 @@ import type {
   Branch,
   BranchHoursDay,
   PublicClosureWindow,
-  DeliveryQuote,
   OrderSchedule,
   Product,
   StoreConfig,
@@ -18,7 +17,8 @@ import { useProducts } from '@/features/catalog/hooks';
 import { checkZone, requiresZone } from '@/features/order-mode/draft';
 import { useOrderMode } from '@/features/order-mode/order-mode-context';
 import { useBranchesAvailability, usePublicBranchHours } from '@/features/branch-schedule/hooks';
-import { useBranches, useDeliveryQuote, useStoreConfig } from '@/features/store/hooks';
+import { useAddressCoverage } from '@/features/delivery-coverage/hooks';
+import { useBranches, useStoreConfig } from '@/features/store/hooks';
 import {
   hasAnyError,
   validateAddress,
@@ -71,22 +71,31 @@ export function useCheckoutData() {
   const contactErrors: ContactErrors = validateContact(draft.contact);
   const addressErrors: AddressErrors =
     type === 'delivery' ? validateAddress(draft.address, nonexistentZones) : {};
-  const addressReady =
+  // F09: la cobertura y la tarifa PROPIA las devuelve el servidor (`checkDeliveryCoverage`, una consulta por sucursal activa).
+  // Se comprueba al COMPLETAR la selección departamento → municipio → zona (selects: nunca por pulsación), no al abrir.
+  const selectionComplete =
     type === 'delivery' &&
-    !hasAnyError(addressErrors) &&
+    !!draft.address.department &&
+    !!draft.address.municipality &&
     (!needsZone || checkZone(draft.address.zone, nonexistentZones) === 'ok');
-  const quoteArgs =
-    addressReady && draft.quoteWanted
-      ? {
-          department: draft.address.department,
-          municipality: draft.address.municipality,
-          zone: needsZone ? String(Number(draft.address.zone.trim())) : undefined,
-          branchId: draft.deliveryBranchId ?? undefined,
-        }
-      : null;
-  const quoteQuery = useDeliveryQuote(quoteArgs);
-  const quote: DeliveryQuote | null = quoteArgs ? (quoteQuery.data ?? null) : null;
-  const covered = !!quote?.covered && quote.fee !== null;
+  const coverage = useAddressCoverage(
+    {
+      department: draft.address.department,
+      municipality: draft.address.municipality,
+      zone: needsZone ? draft.address.zone : '',
+    },
+    activeBranches.map((b) => b.id),
+    selectionComplete,
+  );
+  // Resultado de la sucursal ELEGIDA a mano (si la hay) o el mejor entre todas.
+  const outcome =
+    (draft.deliveryBranchId ? coverage.byBranch[draft.deliveryBranchId] : undefined) ??
+    coverage.best;
+  // Solo la cobertura PROPIA confirmada trae tarifa: PedidosYa no es verificable (UNKNOWN) y no cotiza en F09.
+  const covered =
+    outcome?.kind === 'confirmed' && outcome.provider === 'OWN' && outcome.fee !== null;
+  const coveredFee = covered ? outcome.fee : null;
+  const coveredBranchId = covered ? outcome.branchId : null;
 
   // ── Sucursal ────────────────────────────────────────────────────────────────────────────
   const pickupBranchId =
@@ -97,9 +106,7 @@ export function useCheckoutData() {
     null;
   const branchId =
     type === 'delivery'
-      ? covered
-        ? quote.branchId
-        : (draft.deliveryBranchId ?? null)
+      ? (coveredBranchId ?? draft.deliveryBranchId ?? null)
       : type === 'pickup'
         ? pickupBranchId
         : null;
@@ -146,7 +153,8 @@ export function useCheckoutData() {
     prices,
   );
   const units = rows.reduce((n, r) => n + r.line.quantity, 0);
-  const shipping = type === 'delivery' ? (covered ? (quote.fee ?? 0) : null) : 0;
+  // Solo para MOSTRAR (el servidor recalcula y congela el `baseFee` al crear el pedido): string decimal → número de pantalla.
+  const shipping = type === 'delivery' ? (coveredFee !== null ? Number(coveredFee) : null) : 0;
   const total = subtotal + (shipping ?? 0);
 
   const addresses = addressesQuery.data ?? [];
@@ -193,10 +201,11 @@ export function useCheckoutData() {
     units,
     shipping,
     total,
-    quote,
-    quoteQuery,
-    quoteRequested: !!quoteArgs,
+    coverage,
+    outcome,
+    selectionComplete,
     covered,
+    coveredFee,
     contactErrors,
     addressErrors,
     needsZone,

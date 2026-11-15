@@ -31,11 +31,12 @@ src/mocks/
   clock.ts             reloj inyectable (fecha base fija) — único lugar que lee la hora real
   factories/random.ts  mulberry32 + hash de semilla
   factories/history.ts historial determinista de 60 días (genDay del backoffice)
-  fixtures/            store · branches · products (29) · promotions · staff · orders
+  fixtures/            store · branches · products (29) · promotions · staff · orders · geography · delivery (F09)
   seed.ts              createSeedStore(scenario)
   store.ts             tipo MockStore + persistencia en sessionStorage (clave sushimon-mock-store-v1:<escenario>)
-  domain.ts            reglas puras (cobertura, totales, validaciones, fail())
-  handlers/            public · orders · account · backoffice · backoffice-admin · logistics · index (mockRoutes)
+  domain.ts            reglas puras (totales, validaciones, fail(), failCode()/badRequest() con `code`/`violations`)
+  coverage.ts          motor de cobertura F09 (OWN, PedidosYa simulado, elegibilidad A–G): réplica de la API
+  handlers/            public · orders · account · backoffice · backoffice-admin · logistics · schedule · delivery (F09) · index (mockRoutes)
   index.ts             createMockDataClient({ scenario, latencyMs?, store?, clock?, session?, persist? })
   testing.ts           createHarness() para pruebas
 src/services/          store · orders · account · backoffice-orders · backoffice-admin
@@ -64,11 +65,13 @@ src/features/          query-keys · <dominio>/hooks.ts · cart/ · order-mode/ 
   p15 licuado-sandia · p16 gaseosas · p17 helados-asiaticos · p18 licuado-melon. Disponibilidad: joselito-roll sin
   stock en sucursal-3 y gaseosas en sucursal-2 (p10/p16 del prototipo).
 - **Sucursales**: `sucursal-1..3` (ids y cobertura de la tienda) = `s1..s3` del backoffice (zona, dirección,
-  teléfono y radio). Horarios F08 en `fixtures/schedule.ts` (ISO 1–7, varios intervalos): sucursal-1 todos los días
+  teléfono). Horarios F08 en `fixtures/schedule.ts` (ISO 1–7, varios intervalos): sucursal-1 todos los días
   12:00–22:00; sucursal-2 con viernes hasta 24:00 y madrugada sáb/dom 00:00–01:00; sucursal-3 cierra los lunes;
   sucursal-4/5 sin horario configurado. Cierres sembrados: `cierre-1` (futuro, sucursal-1), `cierre-2` (terminado),
-  `cierre-3` (futuro, sucursal-2). `sucursal-4/5` = `coming_soon`. Precio de envío siempre por cobertura (near 15 · mid 20 ·
-  extended 25 · far 30). Direcciones sembradas de sucursal-3 fuera de su cobertura canónica se reubicaron.
+  `cierre-3` (futuro, sucursal-2). `sucursal-4/5` = `coming_soon`. F09: el envío ya NO usa «niveles» (near/mid/extended/far)
+  ni ETA ni radio: la tarifa es el `baseFee` de la zona propia sembrada (`fixtures/delivery.ts`, 65 zonas de las
+  sucursales 1–3 con tarifas Q15/Q20/Q25/Q30 como datos de demostración). Direcciones sembradas de sucursal-3 fuera de su
+  cobertura canónica se reubicaron.
 - **Pedidos**: 15 del backoffice (SM-7044…7058 → MON-307044…307058, 13:10–14:22) + 3 de la tienda (MON-490217,
   MON-482193, MON-479850). Historial generado MON-3xxxxx (hoy hasta MON-307043); nuevos desde MON-307059.
   Envíos y totales se recalculan con el catálogo canónico (p. ej., MON-490217 = Q173 + Q15 = Q188).
@@ -155,3 +158,39 @@ Convenciones: `weekday` ISO 1–7 (nunca `getDay`; el único punto de conversió
 `lib/time.ts#browserDateIsoWeekday`), horas locales de America/Guatemala, instantes ISO UTC con `Z`; los formularios de
 cierres usan `datetime-local` en hora de Guatemala y envían UTC. Refetch de la disponibilidad en `nextTransitionAt`
 (tope 10 min) y al enfocar la ventana; sin polling por segundo.
+
+## F09 — Geografía, zonas propias y cobertura (spec 008, ADR-0013)
+
+Estado: **web conectada al contrato; API implementada y commiteada, integración http real NO verificada** (en la web el
+flujo es `MOCK_ONLY` mientras `NEXT_PUBLIC_DATA_SOURCE=mock`). Las 10 operaciones (`listLocationDepartments`,
+`listLocationMunicipalities`, `listAdminDeliveryZones`, `createAdminDeliveryZone`, `getAdminDeliveryZone`,
+`updateAdminDeliveryZone`, `updateAdminDeliveryZoneStatus`, `getAdminBranchDeliverySettings`,
+`updateAdminBranchDeliverySettings`, `checkDeliveryCoverage`) tienen servicio (`services/locations.ts`,
+`services/delivery-zones.ts`, `services/delivery-coverage.ts`), hooks (`features/delivery-coverage/hooks.ts`), rutas en
+`lib/data-access/paths.ts` y handlers mock (`mocks/handlers/delivery.ts` + `mocks/coverage.ts`).
+
+| Pieza                                                                                                                         | Estado                                                                                                                                        |
+| ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backoffice: proveedores por sucursal (interruptores con confirmación) y zonas propias (CRUD sin borrado, filtros, paginación) | implementado (contra el mock)                                                                                                                 |
+| Tienda: departamento → municipio → «Zona N», comprobación al completar la selección, mensajes CONFIRMED/PENDING/NONE          | implementado (contra el mock)                                                                                                                 |
+| Catálogos: 22 departamentos y SOLO los 17 municipios de Guatemala (igual que la migración 0007)                               | simulado coherente con el seed real; resto pendiente de fuente oficial                                                                        |
+| Normalización D6, unicidad con `zone_key`, prioridad específica > general, `baseFee` string, 409/422/400, `version`           | simulado (emula al servidor)                                                                                                                  |
+| Elegibilidad `CONFIRMED/PENDING/NONE` (escenarios A–G)                                                                        | simulado: la deriva el «servidor»; el cliente no la recalcula                                                                                 |
+| PedidosYa                                                                                                                     | `UNKNOWN` + `BLOCKED_EXTERNAL` por defecto; solo el selector de demostración (mock) devuelve `AVAILABLE`/`UNAVAILABLE` con `MOCK`/`simulated` |
+| Auditoría, `Cache-Control`, UUID, alcance real por JWT/aal2                                                                   | no simulado (lo hace la API)                                                                                                                  |
+| Checkout/pedidos reales con cobertura y tarifa congelada                                                                      | pendiente (F19/F20); el mock de `POST /v1/orders` usa la tarifa de la zona                                                                    |
+| PedidosYa real (cobertura, cotización, ETA)                                                                                   | `BLOCKED_EXTERNAL` (F29)                                                                                                                      |
+
+Retirado: `GET /v1/delivery/quote` y `useDeliveryQuote` (tiers 15/20/25/30 y ETA inventados), `radiusKm`/`coverage`/
+`coverageLabels` como fuente de cobertura (se emiten vacíos solo porque el borrador `Branch` del contrato aún los exige),
+`StoreConfig.departments`/`deliveryTiers` (se emiten vacíos por el mismo motivo), `PATCH /v1/demo/branches/:id/operations` y
+`coveringBranch`. `Order.deliveryTier` queda `null` en el mock. Las instantáneas de pedidos sembrados usan el `baseFee` de la zona.
+
+Seed del mock: sucursales 1–3 con `ownDeliveryZonesEnabled=true` y `pedidosyaEnabled=true`; sucursales 4–5 sin fila (= defaults
+de la API: propia apagada, PedidosYa habilitado, `isDefault=true`). Con PedidosYa habilitado y sin zona propia, un domicilio
+queda `PENDING` («no podemos confirmar»), nunca «sin cobertura»; `NONE` solo aparece con PedidosYa deshabilitado.
+
+Claves TanStack: `locations.departments()` / `.municipalities(id)` (≥ 1 h, nunca se invalidan), `deliveryZones.admin(filters)` /
+`.detail(id)`, `deliverySettings.branch(id)`, `deliveryCoverage.check(branch, municipio, zona)` (30 s, sin refetch por foco).
+Tras guardar una zona se invalidan las listas, su detalle y la cobertura de ESA sucursal; tras cambiar la configuración, la de
+la sucursal y su cobertura. La etiqueta de zona de la tienda (`Zona 10`) es la misma que escribe el backoffice (`lib/delivery-zone.ts`).

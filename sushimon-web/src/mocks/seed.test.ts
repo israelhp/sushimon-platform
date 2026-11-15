@@ -71,12 +71,13 @@ describe('createSeedStore', () => {
       expect(o.subtotal).toBeCloseTo(sub, 2);
       expect(o.total).toBeCloseTo(o.subtotal + o.deliveryFee, 2);
       expect(o.payment.amount).toBe(o.total);
-      if (o.fulfillment === 'delivery') expect(o.deliveryTier).not.toBeNull();
+      // F09: sin niveles; el envío es el `baseFee` de la zona propia sembrada (instantánea del pedido).
+      if (o.fulfillment === 'delivery') expect(o.deliveryFee).toBeGreaterThan(0);
       else expect(o.deliveryFee).toBe(0);
       if (o.id !== 'MON-479850') for (const l of o.lines) expect(ids.has(l.productId)).toBe(true);
     }
     const demo = s.orders.find((o) => o.id === 'MON-490217');
-    // 67 + 62 + 2×22 = 173; zona 10 desde sucursal-1 = near (Q15)
+    // 67 + 62 + 2×22 = 173; zona 10 desde sucursal-1 = Q15.00 (baseFee de la zona)
     expect(demo?.subtotal).toBe(173);
     expect(demo?.deliveryFee).toBe(15);
     expect(demo?.total).toBe(188);
@@ -147,7 +148,7 @@ describe('historial generado', () => {
         seen.add(o.id);
         expect(o.total).toBeCloseTo(o.subtotal + o.deliveryFee, 2);
         if (o.fulfillment === 'delivery') {
-          expect(o.deliveryTier).not.toBeNull();
+          expect(o.deliveryFee).toBeGreaterThan(0);
           expect(BRANCH_SEEDS.some((b) => b.id === o.branchId)).toBe(true);
         }
       }

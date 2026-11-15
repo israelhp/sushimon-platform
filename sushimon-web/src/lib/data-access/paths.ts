@@ -14,7 +14,10 @@ export const paths = {
   /** F08 (contrato): horario semanal público y disponibilidad (calculada por el servidor). */
   branchHours: (id: string) => `/v1/branches/${seg(id)}/hours`,
   branchAvailability: (id: string) => `/v1/branches/${seg(id)}/availability`,
-  deliveryQuote: () => '/v1/delivery/quote',
+  /** F09 (contrato): catálogos geográficos públicos y comprobación de cobertura por proveedor. */
+  locationDepartments: () => '/v1/locations/departments',
+  locationMunicipalities: () => '/v1/locations/municipalities',
+  deliveryCoverageCheck: () => '/v1/delivery-coverage/check',
   categories: () => '/v1/catalog/categories',
   products: () => '/v1/catalog/products',
   promotions: () => '/v1/promotions',
@@ -61,6 +64,11 @@ export const paths = {
   adminBranchClosures: (id: string) => `/v1/admin/branches/${seg(id)}/closures`,
   adminBranchClosure: (id: string, closureId: string) =>
     `/v1/admin/branches/${seg(id)}/closures/${seg(closureId)}`,
+  /** F09 (contrato): zonas propias y configuración de entrega por sucursal (`branches.read` / `branches.manage_delivery_zones` + aal2). */
+  adminDeliveryZones: () => '/v1/admin/delivery-zones',
+  adminDeliveryZone: (id: string) => `/v1/admin/delivery-zones/${seg(id)}`,
+  adminDeliveryZoneStatus: (id: string) => `/v1/admin/delivery-zones/${seg(id)}/status`,
+  adminBranchDeliverySettings: (id: string) => `/v1/admin/branches/${seg(id)}/delivery-settings`,
   /** F03 (contrato): empleados, asignaciones, roles y permisos granulares (JWT + `staff.*`/`roles.*` + aal2). */
   adminContext: () => '/v1/admin/me/context',
   adminStaff: () => '/v1/admin/staff',
@@ -79,11 +87,12 @@ export const paths = {
    * La UI solo las ofrece cuando `client.kind === 'mock'`.
    */
   /**
-   * Operación SIMULADA de las sucursales (cobertura, radio, zona: F09/F33), sin contrato todavía. El horario y la
+   * Operación SIMULADA de las sucursales (zona/área: F33), sin contrato todavía; la cobertura ya es contrato (F09). El horario y la
    * disponibilidad ya son contrato (F08: `branchHours`, `branchAvailability`). La identidad y el estado administrativo (F07) viven en `branches`/`adminBranches`.
    */
   demoBranchOperations: () => '/v1/demo/branches/operations',
-  demoBranchOperation: (id: string) => `/v1/demo/branches/${seg(id)}/operations`,
+  /** Escenario SIMULADO de PedidosYa para la cobertura (solo mock; nunca existe en la API real). */
+  demoPedidosyaCoverage: () => '/v1/demo/delivery/pedidosya-coverage',
   /** 🎭 F05 simulado: dirección predeterminada (no está en la API todavía). */
   demoDefaultAddress: () => '/v1/demo/me/default-address',
   demoAdvanceOrder: (id: string) => `/v1/demo/orders/${seg(id)}/advance`,
