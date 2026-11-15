@@ -1,4 +1,4 @@
-import { isFavoritable, resolveFavorite } from './favorites.policy.js';
+import { isFavoritable, MAX_IMAGE_URL_LENGTH, resolveFavorite } from './favorites.policy.js';
 import { product } from '../../test/support/favorites-harness.js';
 import { CatalogUnavailableError } from './catalog-products.port.js';
 import { UnavailableCatalogAdapter } from './unavailable-catalog.adapter.js';
@@ -38,6 +38,31 @@ describe('favorites.policy', () => {
         categoryId: null,
       },
     });
+  });
+});
+
+describe('imageUrl (solo https)', () => {
+  const url = (imageUrl: string) =>
+    resolveFavorite(product(P, { imageUrl })).product?.imageUrl ?? null;
+
+  it('acepta https absoluta', () => {
+    expect(url('https://cdn.example/a.jpg')).toBe('https://cdn.example/a.jpg');
+  });
+
+  it.each([
+    ['http', 'http://cdn.example/a.jpg'],
+    ['javascript', 'javascript:alert(1)'],
+    ['data', 'data:image/png;base64,AAAA'],
+    ['relativa', '/img/a.jpg'],
+    ['sin esquema', '//cdn.example/a.jpg'],
+    ['no URL', 'no es una url'],
+    ['muy larga', `https://cdn.example/${'a'.repeat(MAX_IMAGE_URL_LENGTH)}`],
+  ])('rechaza %s', (_n, value) => {
+    expect(url(value)).toBeNull();
+  });
+
+  it('no string => null', () => {
+    expect(resolveFavorite(product(P, { imageUrl: 42 as never })).product?.imageUrl).toBeNull();
   });
 });
 

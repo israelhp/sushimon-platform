@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service.js';
 
+/** Espera máxima por el candado del cliente (como branch-schedule) y límites de la transacción de alta. */
+const LOCK_TIMEOUT = '2s';
+const WRITE_TX_OPTIONS = { maxWait: 2_000, timeout: 5_000 };
+
 export type AddOutcome = 'CREATED' | 'EXISTS' | 'LIMIT';
 
 export interface FavoriteRow {
@@ -37,10 +41,6 @@ export class FavoritesRepository {
     return rows.map((r) => r.productId);
   }
 
-  count(customerId: string): Promise<number> {
-    return this.prisma.customerFavorite.count({ where: { customerId } });
-  }
-
   /** Idempotente: borra solo si el par pertenece al cliente. */
   async remove(customerId: string, productId: string): Promise<void> {
     await this.prisma.customerFavorite.deleteMany({ where: { customerId, productId } });
@@ -53,6 +53,8 @@ export class FavoritesRepository {
    */
   add(customerId: string, productId: string, limit: number): Promise<AddOutcome> {
     return this.prisma.$transaction(async (tx) => {
+      // Espera de candado corta: una ráfaga del mismo cliente no debe agotar el pool (55P03 => 503 FAVORITES_BUSY).
+      await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = '${LOCK_TIMEOUT}'`);
       const locked = await tx.$queryRaw<{ one: number }[]>`
         SELECT 1 AS one FROM app.customers WHERE id = ${customerId}::uuid FOR NO KEY UPDATE`;
       if (locked.length === 0) throw new Error('Fila de cliente inexistente al marcar favorito');
@@ -70,6 +72,6 @@ export class FavoritesRepository {
         select: { productId: true },
       });
       return existing ? 'EXISTS' : 'LIMIT';
-    });
+    }, WRITE_TX_OPTIONS);
   }
 }

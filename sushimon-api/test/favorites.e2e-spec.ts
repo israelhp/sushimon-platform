@@ -267,13 +267,35 @@ describe('F06 · favoritos del cliente (e2e)', () => {
       expect(catalog.calls).toHaveLength(callsBefore);
     });
 
-    it('cliente nuevo: el primer GET crea el perfil (ensureCustomer) y devuelve vacío', async () => {
-      const res = await http()
-        .get(COLLECTION)
-        .set('Authorization', await as(USER_B))
-        .expect(200);
-      expect(res.body).toMatchObject({ items: [], total: 0, favoriteProductIds: [] });
+    it('cliente nuevo: GET y DELETE NO crean el perfil; solo PUT lo crea', async () => {
+      const auth = await as(USER_B);
+      const res = await http().get(COLLECTION).set('Authorization', auth).expect(200);
+      expect(res.body).toMatchObject({
+        items: [],
+        total: 0,
+        favoriteProductIds: [],
+        catalogStatus: 'AVAILABLE',
+      });
+      await http().delete(`${COLLECTION}/${P1}`).set('Authorization', auth).expect(204);
+      expect(db.customer.create).not.toHaveBeenCalled();
+      expect(db.customers.size).toBe(0);
+      expect(catalog.calls).toHaveLength(0);
+
+      await http().put(`${COLLECTION}/${P1}`).set('Authorization', auth).expect(204);
       expect(db.customer.create).toHaveBeenCalledTimes(1);
+      expect(db.customers.size).toBe(1);
+    });
+
+    it('PUT con candado agotado => 503 FAVORITES_BUSY con code y sin mensaje interno', async () => {
+      vi.spyOn(repo, 'add').mockRejectedValueOnce(
+        Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' }),
+      );
+      const res = await http()
+        .put(`${COLLECTION}/${P1}`)
+        .set('Authorization', await as(USER_ID))
+        .expect(503);
+      expect(res.body).toMatchObject({ statusCode: 503, code: 'FAVORITES_BUSY' });
+      expect(JSON.stringify(res.body)).not.toContain('lock timeout');
     });
   });
 

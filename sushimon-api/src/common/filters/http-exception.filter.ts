@@ -26,7 +26,7 @@ export interface ErrorBody {
  * Únicos `code` que se exponen en respuestas 5xx (F06 D9). El resto de 5xx nunca lleva `code` ni `violations`.
  * Añadir uno exige justificarlo en la spec: es un contrato público.
  */
-const PUBLIC_5XX_CODES: ReadonlySet<string> = new Set(['CATALOG_UNAVAILABLE']);
+const PUBLIC_5XX_CODES: ReadonlySet<string> = new Set(['CATALOG_UNAVAILABLE', 'FAVORITES_BUSY']);
 
 /** Solo propaga violaciones bien formadas; descarta cualquier otro campo (nunca filtra datos internos). */
 function pickViolations(value: unknown): ErrorBody['violations'] {
@@ -66,12 +66,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
         Array.isArray(payload['message']) && payload['message'].every((m) => typeof m === 'string')
           ? payload['message']
           : undefined;
-      const message = details
-        ? 'Solicitud inválida'
-        : typeof payload['message'] === 'string'
-          ? payload['message']
-          : exception.message;
       const code = typeof payload['code'] === 'string' ? payload['code'] : undefined;
+      // 5xx con `code` fuera de la lista blanca: mensaje fijo genérico (nunca texto interno de una causa codificada).
+      // Un 5xx sin `code` conserva su mensaje deliberado (p. ej. el 503 de `/v1/health/ready`, F00).
+      const publicFailure = status >= 500 && code !== undefined && PUBLIC_5XX_CODES.has(code);
+      const message =
+        status >= 500 && code !== undefined && !publicFailure
+          ? 'Error interno del servidor'
+          : details
+            ? 'Solicitud inválida'
+            : typeof payload['message'] === 'string'
+              ? payload['message']
+              : exception.message;
       const violations = pickViolations(payload['violations']);
       const body: ErrorBody = {
         statusCode: status,

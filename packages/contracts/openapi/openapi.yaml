@@ -201,8 +201,8 @@ paths:
       summary: Favoritos del cliente autenticado (lista paginada + ids completos para los corazones)
       description: |
         F06. El propietario sale SIEMPRE del JWT (no existe `customerId` en la ruta, la consulta ni el cuerpo). Solo requiere
-        sesión de cliente: ni rol de personal ni MFA (un empleado usa SUS favoritos como cliente). Crea el perfil de cliente
-        de forma idempotente si todavía no existe (misma regla que `getMe`).
+        sesión de cliente: ni rol de personal ni MFA (un empleado usa SUS favoritos como cliente). Sin fila de cliente, la lista
+        es vacía y NO se crea el perfil (solo `addMyFavorite` lo crea, idempotente).
 
         Una sola respuesta sirve a la lista y al estado `isFavorite` de todas las tarjetas: `favoriteProductIds` trae TODOS los
         ids del cliente (acotado por `limit`, 200), más recientes primero, y `items` la página pedida. Con `pageSize=0` no se
@@ -269,7 +269,8 @@ paths:
         despublicado o retirado => `404 PRODUCT_NOT_FOUND` (no se distingue). Catálogo no disponible (hoy y hasta F11, o
         fallo/timeout) => `503 CATALOG_UNAVAILABLE`, sin escribir. Tope de favoritos por cliente (`limit` = 200): al
         alcanzarlo, un producto NUEVO => `422 FAVORITES_LIMIT_REACHED` (ya favorito => 204). El tope es exacto bajo
-        concurrencia (se serializa por cliente). Sin auditoría por clic. `Cache-Control: private, no-store`.
+        concurrencia (se serializa por cliente; si el candado o el tiempo se agotan => `503 FAVORITES_BUSY`, reintentable). Crea el
+        perfil de cliente si no existe (idempotente). Sin auditoría por clic. `Cache-Control: private, no-store`.
       tags: [me]
       security:
         - bearer: []
@@ -315,7 +316,8 @@ paths:
         '503':
           description: |
             `CATALOG_UNAVAILABLE`: no se puede validar el producto (catálogo sin implementar, caído o con timeout).
-            No se guardó nada; reintentar más tarde. Es el único 5xx que expone `code`.
+            No se guardó nada; reintentar más tarde. También `FAVORITES_BUSY` (candado o tiempo de la transacción agotados;
+            reintentable). Son los únicos 5xx que exponen `code`.
           content:
             application/json:
               schema:
@@ -326,7 +328,7 @@ paths:
       description: |
         F06. Sin cuerpo; el propietario sale del JWT, así que solo se puede borrar un favorito propio. Idempotente: si el
         producto no era favorito (o ya no existe en el catálogo) también es éxito `204`. No consulta el catálogo: funciona
-        aunque no esté disponible. Sin auditoría por clic. `Cache-Control: private, no-store`.
+        aunque no esté disponible. No crea el perfil de cliente (sin fila => 204). Sin auditoría por clic. `Cache-Control: private, no-store`.
       tags: [me]
       security:
         - bearer: []
@@ -2691,7 +2693,7 @@ components:
           type: string
           description: |
             Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F06: `PRODUCT_NOT_FOUND`, `FAVORITES_LIMIT_REACHED`, `CATALOG_UNAVAILABLE` —el único 5xx con `code`—, `RATE_LIMITED`). Los clientes deben ramificar por `code`, nunca por `message`.
+            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F06: `PRODUCT_NOT_FOUND`, `FAVORITES_LIMIT_REACHED`, `CATALOG_UNAVAILABLE` y `FAVORITES_BUSY` —los únicos 5xx con `code`—, `RATE_LIMITED`). Los clientes deben ramificar por `code`, nunca por `message`.
         violations:
           type: array
           description: Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09).

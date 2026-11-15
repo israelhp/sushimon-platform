@@ -62,11 +62,11 @@ export class FakeCatalog implements CatalogProductsPort {
  */
 export class FakeFavoritesRepo implements Pick<
   FavoritesRepository,
-  'list' | 'listProductIds' | 'count' | 'remove' | 'add'
+  'list' | 'listProductIds' | 'remove' | 'add'
 > {
   rows: { customerId: string; productId: string; createdAt: Date }[] = [];
   private tick = 0;
-  queries = { list: 0, count: 0, add: 0, remove: 0 };
+  queries = { list: 0, add: 0, remove: 0 };
 
   seed(customerId: string, productId: string, createdAt?: Date): void {
     this.rows.push({
@@ -97,11 +97,6 @@ export class FakeFavoritesRepo implements Pick<
         .slice(0, limit)
         .map((r) => r.productId),
     );
-  }
-
-  count(customerId: string): Promise<number> {
-    this.queries.count++;
-    return Promise.resolve(this.rows.filter((r) => r.customerId === customerId).length);
   }
 
   remove(customerId: string, productId: string): Promise<void> {

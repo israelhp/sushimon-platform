@@ -56,9 +56,10 @@ sucursal (F13), modificadores, carrito (F18), checkout, pedidos, reordenar (F23)
   desconocido ⇒ 400 (ValidationPipe global). Solo JWT de cliente (Google OAuth, F01): **sin `@RequireStaff` ni MFA**; un empleado usa SUS
   favoritos como cliente y no se mezclan permisos (el personal no interviene). Sin IDOR posible: el id de producto es el único parámetro y el
   alcance siempre es `customer_id = <cliente del JWT>`.
-- **D2 Cliente sin perfil**: se aplica exactamente la regla de F04: `IdentityService.ensureCustomer(principal)` (crea de forma idempotente) en los tres
-  verbos, por uniformidad (un solo patrón y mismo costo en el camino normal: una lectura por `auth_user_id`). Optimización posible, no necesaria:
-  GET/DELETE sin crear (devolverían vacío/204).
+- **D2 Cliente sin perfil** (revisada tras revisión de seguridad M1): solo **PUT** usa `IdentityService.ensureCustomer(principal)` (crea de forma
+  idempotente, regla de F04). **GET y DELETE NO crean filas en `app.customers`**: usan `IdentityService.findCustomer(principal)` (lectura por `auth_user_id`, sin
+  efectos; adición mínima que no cambia la semántica de F04). Sin fila de cliente: GET responde 200 vacío (`favoriteProductIds=[]`, `total=0`, `items=[]`,
+  `catalogStatus=AVAILABLE`, sin consultar el catálogo) y DELETE 204. Evita que un token válido cualquiera cree perfiles con solo leer o borrar.
 - **D3 Modelo sin FK a productos** (migración `0009_customer_favorites`, propuesta): ver "Modelo de datos". `product_id` no tiene FK porque
   `products` no existe; el id solo se persiste tras validarse con el puerto de catálogo (D6), por lo que, mientras `CATALOG_UNAVAILABLE`, **la tabla
   permanece vacía en entornos reales** y la FK de F11 es trivialmente segura (F11 igualmente debe verificar huérfanos antes de validar la FK).
@@ -80,7 +81,7 @@ favoriteProductIds, limit, catalogStatus }`. `favoriteProductIds` = TODOS los id
   catálogo no puede responder lanza `CatalogUnavailableError`. El servicio envuelve la llamada con un plazo técnico de 3 s (constante, sin env nueva) y
   trata timeout o cualquier excepción como no disponible. **Defecto y único adaptador mientras no exista F11: `UnavailableCatalogAdapter`** (siempre
   `CatalogUnavailableError`, sin red). Los tests usan un fake del puerto. El API proyecta el resumen y descarta cualquier campo extra (lista blanca).
-- **D7 PUT** (`addMyFavorite`): orden de operaciones: (1) UUID válido (400) → (2) `ensureCustomer` → (3) puerto de catálogo FUERA de la transacción: no
+- **D7 PUT** (`addMyFavorite`): orden de operaciones: (1) UUID válido (400) → (2) `ensureCustomer` (solo PUT) → (3) puerto de catálogo FUERA de la transacción: no
   disponible ⇒ **503 `CATALOG_UNAVAILABLE`** (sin escribir; nunca se guarda un id no validado); ausente o `status ∉ {ACTIVE, UNAVAILABLE}` ⇒ **404
   `PRODUCT_NOT_FOUND`** (despublicado/retirado no se distingue de inexistente: no se revela catálogo no publicado) → (4) transacción de inserción (D10)
   → **204** (recién creado o ya existente; sin 409 por doble clic; sin 201). Si el producto ya era favorito y el catálogo está caído también responde
@@ -89,8 +90,8 @@ favoriteProductIds, limit, catalogStatus }`. `favoriteProductIds` = TODOS los id
   existe en el catálogo). No consulta el catálogo: funciona sin él. Productos retirados o despublicados **no se borran automáticamente** de los
   favoritos: se listan con `status` `INACTIVE|REMOVED` y `product = null` para que el cliente los quite.
 - **D9 Errores con `code`** (ver "Errores") y 503: el filtro central hoy descarta `code` en 5xx. Cambio mínimo y acotado (api-engineer + prueba en
-  `http-exception.filter.spec.ts`): una **lista blanca** `PUBLIC_5XX_CODES = {'CATALOG_UNAVAILABLE'}` cuyo `code` sí se propaga (nunca `violations`
-  ni mensajes de causa). El resto de 5xx sigue sin `code`. El detalle (qué falló en el catálogo) solo en el log técnico con `requestId`.
+  `http-exception.filter.spec.ts`): una **lista blanca** `PUBLIC_5XX_CODES = {'CATALOG_UNAVAILABLE', 'FAVORITES_BUSY'}` cuyo `code` sí se propaga (nunca `violations`
+  ni mensajes de causa). El resto de 5xx sigue sin `code` y con mensaje fijo `Error interno del servidor` (también las `HttpException` 5xx). El detalle (qué falló en el catálogo) solo en el log técnico con `requestId`.
 - **D10 Concurrencia y tope**. Tope **`MAX_FAVORITES_PER_CUSTOMER = 200`** (constante de código, no env; cambiarlo requiere ADR). Justificación: el menú
   actual tiene ~30 productos y crecerá con 5 sucursales; 200 cubre un catálogo holgado, acota `favoriteProductIds` (≈ 8 KB), el costo del lote al
   catálogo y el abuso de escritura. Es un tope técnico revisable (no una regla de negocio de Sushi Mon). Inserción **exacta** bajo concurrencia, en UNA
@@ -99,7 +100,7 @@ favoriteProductIds, limit, catalogStatus }`. `favoriteProductIds` = TODOS los id
   `INSERT … ON CONFLICT (customer_id, product_id) DO NOTHING` (equivalente: `createMany({ skipDuplicates: true })`); (d) si no se insertó fila: si el
   par ya existe ⇒ 204 (idempotente, aunque esté al tope); si no existe y `count >= 200` ⇒ **422 `FAVORITES_LIMIT_REACHED`**. Dos PUT simultáneos del
   MISMO producto ⇒ uno inserta, el otro `DO NOTHING`, ambos 204. N PUT simultáneos de productos distintos al borde ⇒ exactamente `200` filas. Sin
-  advisory locks ni índices extra. Si se baja el tope en el futuro, las filas ya existentes no se borran (la lectura devuelve todas con `LIMIT` defensivo
+  advisory locks ni índices extra. La transacción fija `SET LOCAL lock_timeout = '2s'` (como `branch-schedule`) con `maxWait` 2 s y `timeout` 5 s; si el candado o el tiempo se agotan (`55P03`/`P2028`) responde **503 `FAVORITES_BUSY`** (reintentable, sin escribir). El `GET` NO cuenta: `total` = filas leídas (≤ 200, tope impuesto en PUT); si el tope se bajara habría que reintroducir el conteo. Si se baja el tope en el futuro, las filas ya existentes no se borran (la lectura devuelve todas con `LIMIT` defensivo
   = tope y `total` real). El lote del catálogo (D6) se resuelve **antes** de la transacción para no retener el candado durante una llamada externa.
 - **D11 F17 y `favoritesCount`**: se exporta `CustomerFavoritesReader` (token `CUSTOMER_FAVORITES_READER`) con
   `getFavoriteProductIds(customerId: string): Promise<string[]>` (≤ 200, recientes primero; recibe el id de `customers`, no el de Auth; sin catálogo,
@@ -114,7 +115,7 @@ favoriteProductIds, limit, catalogStatus }`. `favoriteProductIds` = TODOS los id
 - **D13 Throttle por ruta** (`src/common/throttle/app-throttler.guard.ts`, mismo patrón que F09; por IP; requiere `TRUST_PROXY_HOPS >= 1` tras un
   proxy): `listMyFavorites` **120/min**, `addMyFavorite` **60/min**, `removeMyFavorite` **60/min** (cada handler su propio contador). Márgenes amplios: la
   web cachea `favoriteProductIds` (D15) y un humano no alcanza 60 clics por minuto; el IP compartido (NAT móvil) no debe bloquear a clientes reales.
-  Limitación conocida: por IP, no por usuario (el guard global corre antes de poblar el `Principal`); un límite por cliente es posterior y no se inventa aquí.
+  Limitación conocida (M3, **pendiente**, no se implementa en F06): por IP, no por usuario (el guard global corre antes de poblar el `Principal`); un límite por cliente es posterior y no se inventa aquí.
   429 con `code RATE_LIMITED`, `Retry-After`, `no-store`.
 - **D14 Web — visitante**: el corazón sin sesión **no crea nada**: abre el login existente (`useAuthModal`; en modo real Google + PKCE, destino de retorno =
   ruta actual con `safeNextPath`). No se recuerda una "intención pendiente": tras volver, el cliente vuelve a tocar el corazón (sin escrituras ocultas).
@@ -190,7 +191,7 @@ Sin sesión válida: 401 en las tres. `productId` no UUID: 400 en PUT/DELETE (an
 
 ## Errores
 
-Cuerpo base `ErrorResponse` + `code`. Los 5xx no llevan `code` salvo `CATALOG_UNAVAILABLE` (D9).
+Cuerpo base `ErrorResponse` + `code`. Los 5xx no llevan `code` salvo `CATALOG_UNAVAILABLE` y `FAVORITES_BUSY` (D9).
 
 | HTTP | `code`                    | Operación       | Cuándo                                                               |
 | ---- | ------------------------- | --------------- | -------------------------------------------------------------------- |
@@ -200,6 +201,7 @@ Cuerpo base `ErrorResponse` + `code`. Los 5xx no llevan `code` salvo `CATALOG_UN
 | 422  | `FAVORITES_LIMIT_REACHED` | `addMyFavorite` | 200 favoritos y el producto es nuevo                                 |
 | 429  | `RATE_LIMITED`            | todas           | Límite de D13 (`Retry-After`, `no-store`)                            |
 | 503  | `CATALOG_UNAVAILABLE`     | `addMyFavorite` | El catálogo no puede validar el producto (nada se guarda)            |
+| 503  | `FAVORITES_BUSY`          | `addMyFavorite` | Candado/tiempo de la transacción agotado (reintentable)              |
 
 ## Contrato (resumen)
 
@@ -225,7 +227,7 @@ rojo** (solo estas 3 operaciones sin implementar) hasta que la API exista; `pnpm
 - **API unitarias** (servicio con fake del puerto y repositorio/PGlite): PUT feliz ⇒ 204 y fila; PUT repetido ⇒ 204 sin duplicar ni cambiar `created_at`; producto ausente /
   `INACTIVE` / `REMOVED` ⇒ 404; puerto con `CatalogUnavailableError`, excepción y timeout ⇒ 503 sin escribir (`UnavailableCatalogAdapter` incluido); tope: 200 ⇒ nuevo 422, ya favorito 204,
   404 antes que 422; `pageSize=0` no llama al puerto; GET con catálogo caído ⇒ 200 `UNKNOWN`, `product=null`; lista blanca del resumen (campos extra del puerto no salen); DELETE inexistente ⇒ 204 y sin
-  llamar al puerto; `ensureCustomer` se invoca (cliente nuevo); orden (`created_at DESC`, desempate) y paginación; `CustomerFavoritesReader`.
+  llamar al puerto; GET/DELETE de un principal sin cliente no crean fila y PUT sí (`ensureCustomer`); `imageUrl` solo https (≤ 2048); orden (`created_at DESC`, desempate) y paginación; `CustomerFavoritesReader`.
 - **API e2e** (supertest, sin red): sin token 401 en las tres; UUID inválido 400; propiedades/params desconocidos 400; `Cache-Control: private, no-store` en 200/204 y `no-store` en errores; **no hay
   IDOR** (dos usuarios: el B no ve ni borra lo del A); un empleado (staff, aal1) usa favoritos como cliente; 429 con `code RATE_LIMITED`; el 503 expone `code` y un 500 genérico no; sin `customerId` aceptado.
 - **Integración con BD** (`test/migration-0009.int-spec.ts`, PostgreSQL desechable vía `DATABASE_URL_TEST`; PGlite para estructura): PK, `ON CONFLICT DO NOTHING`, cascada al borrar el cliente, índice presente, RLS/REVOKE;

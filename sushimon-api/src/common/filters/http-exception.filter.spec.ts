@@ -1,4 +1,4 @@
-import { BadRequestException, Logger, type ArgumentsHost } from '@nestjs/common';
+import { BadRequestException, HttpException, Logger, type ArgumentsHost } from '@nestjs/common';
 import { codedException } from '../errors/coded-exception.js';
 import { AllExceptionsFilter } from './http-exception.filter.js';
 
@@ -141,5 +141,39 @@ describe('AllExceptionsFilter', () => {
       new AllExceptionsFilter().catch(codedException(status, code, 'm'), hostWith(other));
       expect(other.json.mock.calls[0]?.[0]).not.toHaveProperty('code');
     }
+  });
+
+  it('5xx: FAVORITES_BUSY es público; un 503 fuera de la lista no expone code ni mensaje interno', () => {
+    vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const busy = fakeRes();
+    new AllExceptionsFilter().catch(
+      codedException(503, 'FAVORITES_BUSY', 'ocupado'),
+      hostWith(busy),
+    );
+    expect(busy.json.mock.calls[0]?.[0]).toMatchObject({
+      code: 'FAVORITES_BUSY',
+      message: 'ocupado',
+    });
+
+    for (const status of [500, 502, 503] as const) {
+      const res = fakeRes();
+      new AllExceptionsFilter().catch(
+        codedException(status, 'INTERNAL_DETAIL', 'host db-prod:5432 password=x'),
+        hostWith(res, 'req-5'),
+      );
+      const body = res.json.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(body).not.toHaveProperty('code');
+      expect(body['message']).toBe('Error interno del servidor');
+      expect(JSON.stringify(body)).not.toContain('password');
+    }
+    // Sin `code` se conserva el mensaje deliberado del 5xx (p. ej. el 503 de /v1/health/ready, F00).
+    const plain = fakeRes();
+    new AllExceptionsFilter().catch(
+      new HttpException('Dependencias no disponibles', 503),
+      hostWith(plain),
+    );
+    const plainBody = plain.json.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(plainBody['message']).toBe('Dependencias no disponibles');
+    expect(plainBody).not.toHaveProperty('code');
   });
 });

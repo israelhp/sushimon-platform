@@ -21,7 +21,10 @@ const OTHER = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 function harness(items = [product(P1), product(P2), product(P3)]) {
   const repo = new FakeFavoritesRepo();
   const catalog = new FakeCatalog(items);
-  const identity = { ensureCustomer: vi.fn().mockResolvedValue(CUSTOMER) };
+  const identity = {
+    ensureCustomer: vi.fn().mockResolvedValue(CUSTOMER),
+    findCustomer: vi.fn().mockResolvedValue(CUSTOMER),
+  };
   const service = new FavoritesService(
     repo as unknown as FavoritesRepository,
     identity as unknown as IdentityService,
@@ -126,6 +129,31 @@ describe('FavoritesService', () => {
       expect(h.repo.rows).toHaveLength(0);
     });
 
+    it.each([
+      ['55P03', { code: '55P03' }],
+      ['P2028', { code: 'P2028' }],
+      ['55P03 en cause', { cause: { originalCode: '55P03' } }],
+    ])(
+      'candado/tiempo agotado (%s) => 503 FAVORITES_BUSY sin filtrar la causa',
+      async (_n, err) => {
+        const h = harness();
+        vi.spyOn(h.repo, 'add').mockRejectedValueOnce(
+          Object.assign(new Error('lock secreto interno'), err),
+        );
+        const e = await failure(h.service.add(principal(), P1));
+        expect(e.getStatus()).toBe(503);
+        expect(code(e)).toBe('FAVORITES_BUSY');
+        expect(JSON.stringify(e.getResponse())).not.toContain('secreto');
+      },
+    );
+
+    it('otro error de BD se relanza sin traducir (500 genérico)', async () => {
+      const h = harness();
+      const boom = new Error('otro');
+      vi.spyOn(h.repo, 'add').mockRejectedValueOnce(boom);
+      await expect(h.service.add(principal(), P1)).rejects.toBe(boom);
+    });
+
     describe('tope', () => {
       const fill = (h: ReturnType<typeof harness>) => {
         for (let i = 0; i < MAX_FAVORITES_PER_CUSTOMER; i++)
@@ -194,14 +222,32 @@ describe('FavoritesService', () => {
       expect(h.repo.rows).toHaveLength(1);
     });
 
-    it('invoca ensureCustomer (regla de F04)', async () => {
+    it('principal sin fila de cliente: 204 sin crear el perfil ni tocar el repositorio', async () => {
       const h = harness();
-      await h.service.remove(principal(), P1);
-      expect(h.identity.ensureCustomer).toHaveBeenCalledTimes(1);
+      h.identity.findCustomer.mockResolvedValue(null);
+      await expect(h.service.remove(principal(), P1)).resolves.toBeUndefined();
+      expect(h.identity.ensureCustomer).not.toHaveBeenCalled();
+      expect(h.repo.queries.remove).toBe(0);
     });
   });
 
   describe('GET (list)', () => {
+    it('principal sin fila de cliente: lista vacía, sin crear el perfil y sin consultar el catálogo', async () => {
+      const h = harness();
+      h.identity.findCustomer.mockResolvedValue(null);
+      const r = await h.service.list(principal(), { page: 1, pageSize: 20 });
+      expect(r).toMatchObject({
+        items: [],
+        total: 0,
+        favoriteProductIds: [],
+        catalogStatus: 'AVAILABLE',
+        limit: MAX_FAVORITES_PER_CUSTOMER,
+      });
+      expect(h.identity.ensureCustomer).not.toHaveBeenCalled();
+      expect(h.repo.queries.list).toBe(0);
+      expect(h.catalog.calls).toHaveLength(0);
+    });
+
     it('pageSize=0: ids y total reales, sin items y SIN consultar el catálogo', async () => {
       const h = harness();
       h.repo.seed(CUSTOMER.id, P1);
@@ -336,13 +382,15 @@ describe('FavoritesService', () => {
       expect(r.items[0]?.product?.imageUrl).toBeNull();
     });
 
-    it('presupuesto de consultas: 1 listado + 1 conteo + 1 lote al catálogo', async () => {
+    it('presupuesto de consultas: findCustomer + 1 listado + 1 lote; total = filas leídas (sin conteo)', async () => {
       const h = harness();
       h.repo.seed(CUSTOMER.id, P1);
       h.repo.seed(CUSTOMER.id, P2);
-      await h.service.list(principal(), { page: 1, pageSize: 20 });
-      expect(h.repo.queries).toMatchObject({ list: 1, count: 1 });
+      const r = await h.service.list(principal(), { page: 1, pageSize: 20 });
+      expect(h.identity.findCustomer).toHaveBeenCalledTimes(1);
+      expect(h.repo.queries.list).toBe(1);
       expect(h.catalog.calls).toHaveLength(1);
+      expect(r.total).toBe(2);
     });
 
     it('aislamiento: no lista favoritos de otro cliente', async () => {

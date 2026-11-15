@@ -28,7 +28,7 @@ inventar un catálogo ni guardar ids no validados, y un contrato que sirva a la 
    la FK de otros inserts); el catálogo se consulta antes, fuera de la transacción. Sin advisory locks ni triggers. Se descartó un `CHECK`/trigger de conteo (no
    es exacto sin bloqueo y complica la BD).
 6. **Seguridad**: propietario siempre del JWT (sin `customerId` en ruta/cuerpo); solo cliente (sin `@RequireStaff` ni MFA; un empleado usa sus favoritos como
-   cliente); perfil creado perezosamente con la regla de F04 (`IdentityService.ensureCustomer`); sin otro servicio de clientes. Respuestas
+   cliente); solo PUT crea el perfil con la regla de F04 (`IdentityService.ensureCustomer`); GET y DELETE solo leen (`findCustomer`) y no crean filas; sin otro servicio de clientes. Respuestas
    `Cache-Control: private, no-store`; sin auditoría por clic; logs sin PII; throttle por ruta (120/60/60 por minuto por IP; por IP, no por usuario: limitación conocida).
 7. **F17**: se exporta `CustomerFavoritesReader.getFavoriteProductIds(customerId)`; el contexto de F04 **no** cambia en F06 (`favoritesCount` y retirar
    `favorites` de `pendingSections` lo hace F17).

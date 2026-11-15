@@ -1,6 +1,7 @@
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import type { Principal } from '../auth/auth.types.js';
 import { codedException } from '../common/errors/coded-exception.js';
+import { dbErrorCodes } from '../common/db/db-error-codes.js';
 import { IdentityService } from '../identity/identity.service.js';
 import {
   CATALOG_PRODUCTS_PORT,
@@ -32,8 +33,7 @@ export interface CustomerFavoritesView {
 class CatalogDown extends Error {}
 
 /**
- * Favoritos del cliente autenticado (F06). El propietario es SIEMPRE el cliente del JWT (`ensureCustomer`, regla de
- * F04); ningún método recibe un `customerId` externo. El catálogo se consulta en lote y fuera de la transacción.
+ * Favoritos del cliente autenticado (F06). El propietario es SIEMPRE el cliente del JWT (regla de F04: `ensureCustomer` solo en PUT; GET y DELETE no crean filas); ningún método recibe un `customerId` externo. El catálogo se consulta en lote y fuera de la transacción.
  * Logs técnicos mínimos: sin ids de cliente ni de producto.
  */
 @Injectable()
@@ -51,11 +51,12 @@ export class FavoritesService {
     principal: Principal,
     query: { page: number; pageSize: number },
   ): Promise<CustomerFavoritesView> {
-    const customer = await this.identity.ensureCustomer(principal);
-    const [rows, total] = await Promise.all([
-      this.repo.list(customer.id, MAX_FAVORITES_PER_CUSTOMER),
-      this.repo.count(customer.id),
-    ]);
+    // Lectura sin creación: un principal sin fila de cliente recibe la lista vacía y no se escribe nada.
+    const customer = await this.identity.findCustomer(principal);
+    // Una sola consulta: el tope (200) se impone en el PUT, así que las filas leídas son el total real. Si el tope
+    // se bajara, habría que reintroducir el conteo (ver spec F06 D10).
+    const rows = customer ? await this.repo.list(customer.id, MAX_FAVORITES_PER_CUSTOMER) : [];
+    const total = rows.length;
     const favoriteProductIds = rows.map((r) => r.productId);
     const base = {
       page: query.page,
@@ -121,7 +122,22 @@ export class FavoritesService {
       throw codedException(HttpStatus.NOT_FOUND, 'PRODUCT_NOT_FOUND', 'Producto no encontrado');
     }
 
-    const outcome = await this.repo.add(customer.id, productId, MAX_FAVORITES_PER_CUSTOMER);
+    let outcome: Awaited<ReturnType<FavoritesRepository['add']>>;
+    try {
+      outcome = await this.repo.add(customer.id, productId, MAX_FAVORITES_PER_CUSTOMER);
+    } catch (error) {
+      // Espera de candado agotada (55P03) o transacción sin conexión/tiempo (P2028): reintentable, sin detalle.
+      const codes = dbErrorCodes(error);
+      if (codes.includes('55P03') || codes.includes('P2028')) {
+        this.logger.warn('Alta de favorito ocupada (candado/tiempo agotado)');
+        throw codedException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          'FAVORITES_BUSY',
+          'Favoritos está ocupado; reintenta en unos segundos',
+        );
+      }
+      throw error;
+    }
     if (outcome === 'LIMIT') {
       this.logger.warn('Tope de favoritos alcanzado');
       throw codedException(
@@ -134,8 +150,9 @@ export class FavoritesService {
 
   /** Quita un favorito PROPIO (idempotente: 204 exista o no). No consulta el catálogo. */
   async remove(principal: Principal, productId: string): Promise<void> {
-    const customer = await this.identity.ensureCustomer(principal);
-    await this.repo.remove(customer.id, productId);
+    // Sin fila de cliente no hay nada que borrar: 204 sin crear el perfil.
+    const customer = await this.identity.findCustomer(principal);
+    if (customer) await this.repo.remove(customer.id, productId);
   }
 
   /** Una llamada por lote al catálogo con plazo técnico; todo fallo (también el timeout) es `CatalogDown`. */

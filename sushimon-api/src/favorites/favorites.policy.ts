@@ -19,12 +19,14 @@ export function isFavoritable(summary: CatalogProductSummary | undefined): boole
   return summary !== undefined && VISIBLE.has(summary.status);
 }
 
-/** Solo http(s): el cliente nunca recibe `javascript:`/`data:` aunque el catálogo lo devolviera. */
+/** Longitud máxima aceptada de una URL de imagen. */
+export const MAX_IMAGE_URL_LENGTH = 2048;
+
+/** Solo https absoluta y acotada: nunca `http:`, `javascript:`, `data:` ni rutas relativas aunque el catálogo las devolviera. */
 function safeImageUrl(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
+  if (typeof value !== 'string' || value.length > MAX_IMAGE_URL_LENGTH) return null;
   try {
-    const { protocol } = new URL(value);
-    return protocol === 'https:' || protocol === 'http:' ? value : null;
+    return new URL(value).protocol === 'https:' ? value : null;
   } catch {
     return null;
   }
