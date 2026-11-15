@@ -209,7 +209,18 @@ describe.skipIf(!url)('Migración 0009: customer_favorites (base desechable)', (
           throw e;
         }
       });
-    const results = await Promise.all(Array.from({ length: N }, () => add(randomUUID())));
+    // 20 conexiones simultáneas (no N): una conexión por alta superaba el `max_connections` del PostgreSQL de CI
+    // («too many clients already»). La carrera sigue siendo real: 20 transacciones compiten por el candado del cliente.
+    const results: string[] = [];
+    let next = 0;
+    await Promise.all(
+      Array.from({ length: 20 }, async () => {
+        while (next < N) {
+          const i = next++;
+          results[i] = await add(randomUUID());
+        }
+      }),
+    );
     expect(results.filter((r) => r === 'OK')).toHaveLength(LIMIT);
     expect(results.filter((r) => r === 'LIMIT')).toHaveLength(N - LIMIT);
     expect(await count(cust)).toBe(LIMIT);
