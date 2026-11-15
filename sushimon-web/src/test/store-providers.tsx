@@ -10,6 +10,8 @@ import {
   useOrderMode,
   type OrderModeApi,
 } from '@/features/order-mode/order-mode-context';
+import { FavoritesProvider } from '@/features/favorites/favorites-provider';
+import { CustomerCacheGuard } from '@/features/session/customer-scope';
 import {
   DemoSessionProvider,
   useDemoSession,
@@ -23,6 +25,7 @@ import {
 import en from '@/i18n/messages/en.json';
 import es from '@/i18n/messages/es.json';
 import { DataProvider } from '@/lib/data-access/provider';
+import type { DataClient } from '@/lib/data-access/types';
 import { createFixedClock } from '@/mocks/clock';
 import { createMockDataClient } from '@/mocks/index';
 import type { MockScenario } from '@/mocks/scenarios';
@@ -42,6 +45,8 @@ export interface RenderStoreOptions {
   locale?: 'es' | 'en';
   /** Ajusta el store mock antes de montar (p. ej., desactivar sucursales). */
   prepareStore?: (store: MockStore) => void;
+  /** Envuelve el DataClient (p. ej., para contar solicitudes o retener respuestas). */
+  wrapClient?: (client: DataClient) => DataClient;
 }
 
 /**
@@ -51,8 +56,8 @@ export interface RenderStoreOptions {
  */
 export async function renderStore(
   ui: ReactElement,
-  { scenario = 'default', locale = 'es', prepareStore }: RenderStoreOptions = {},
-): Promise<RenderResult & { api: () => StoreTestApi }> {
+  { scenario = 'default', locale = 'es', prepareStore, wrapClient }: RenderStoreOptions = {},
+): Promise<RenderResult & { api: () => StoreTestApi; queryClient: QueryClient }> {
   let current: StoreTestApi | null = null;
   function Probe() {
     current = {
@@ -66,13 +71,14 @@ export async function renderStore(
 
   const seeded = createSeedStore(scenario);
   prepareStore?.(seeded);
-  const client = createMockDataClient({
+  const mockClient = createMockDataClient({
     scenario,
     latencyMs: 0,
     persist: false,
     store: seeded,
     clock: createFixedClock(),
   });
+  const client = wrapClient ? wrapClient(mockClient) : mockClient;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <NextIntlClientProvider
@@ -82,13 +88,16 @@ export async function renderStore(
     >
       <DataProvider client={client} queryClient={queryClient}>
         <DemoSessionProvider>
+          <CustomerCacheGuard />
           <CartProvider>
             <OrderModeProvider>
               <ToastProvider zone="store">
                 <StoreShellProvider>
                   <ProductSheetProvider>
-                    <Probe />
-                    {children}
+                    <FavoritesProvider>
+                      <Probe />
+                      {children}
+                    </FavoritesProvider>
                   </ProductSheetProvider>
                 </StoreShellProvider>
               </ToastProvider>
@@ -110,5 +119,5 @@ export async function renderStore(
     api().mode.reset();
     api().session.signOutCustomer();
   });
-  return Object.assign(result, { api });
+  return Object.assign(result, { api, queryClient });
 }

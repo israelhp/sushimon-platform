@@ -67,6 +67,11 @@ export async function cleanupTestData(
            (SELECT id FROM app.staff_users WHERE email LIKE '%@sushimon.test')`,
       );
       await c.query(`DELETE FROM app.staff_users WHERE email LIKE '%@sushimon.test'`);
+      // F06: favoritos del cliente (la FK es CASCADE, pero se borra explícito antes que los clientes).
+      await c.query(
+        'DELETE FROM app.customer_favorites WHERE customer_id IN (SELECT id FROM app.customers WHERE auth_user_id = ANY($1::uuid[]))',
+        [authIds],
+      );
       await c.query('DELETE FROM app.customers WHERE auth_user_id = ANY($1::uuid[])', [authIds]);
       // F08: horarios y cierres de las sucursales de la prueba (FK RESTRICT hacia branches).
       await c.query('DELETE FROM app.branch_closures WHERE branch_id = ANY($1::uuid[])', [

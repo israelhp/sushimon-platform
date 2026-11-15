@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { DataProvider } from '@/lib/data-access/provider';
 import { AuthProvider } from '@/features/session/auth-provider';
+import { CustomerCacheGuard } from '@/features/session/customer-scope';
 import { DemoSessionProvider } from '@/features/session/demo-session';
 import { StaffSessionBridge } from '@/features/session/staff-session-bridge';
 
@@ -19,6 +20,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
       <AuthProvider>
         <DemoSessionProvider>
           <StaffSessionBridge />
+          <CustomerCacheGuard />
           {children}
         </DemoSessionProvider>
       </AuthProvider>

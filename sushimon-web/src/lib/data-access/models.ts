@@ -203,3 +203,9 @@ export const STAFF_ROLES = [
   'kitchen',
   'staff',
 ] as const satisfies readonly StaffRole[];
+
+/** F06: favoritos del cliente (`GET /v1/me/favorites`). Sin precios: el precio lo resuelve el catálogo de la sucursal. */
+export type CustomerFavorites = S['CustomerFavorites'];
+export type FavoriteItem = S['FavoriteItem'];
+export type FavoriteProductSummary = S['FavoriteProductSummary'];
+export type FavoriteProductStatus = S['FavoriteProductStatus'];

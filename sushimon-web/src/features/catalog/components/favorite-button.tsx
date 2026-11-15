@@ -2,19 +2,26 @@
 
 import { Heart } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
-import { useToast } from '@/components/ui/Toast';
+import { memo, useState } from 'react';
 import { cn } from '@/lib/cn';
-import { useFavorites, useToggleFavorite } from '@/features/account/hooks';
-import { useDemoSession } from '@/features/session/demo-session';
-import { useAuthModal } from '@/features/store-shell/store-shell-context';
+import {
+  useFavoritesApi,
+  useIsFavorite,
+  useIsFavoritePending,
+} from '@/features/favorites/favorites-provider';
 
 /**
- * Corazón de favorito. Los favoritos pertenecen a la cuenta: sin sesión de demostración abre el
- * inicio de sesión simulado; con sesión alterna (optimista) y avisa con un toast.
+ * Corazón de favorito (F06, spec 010 D17). Los favoritos pertenecen a la CUENTA del cliente y viven en el servidor:
+ *  - visitante: no crea nada; abre el inicio de sesión (Google en producción, simulado en la demo) y, tras entrar, el
+ *    cliente vuelve a tocar el corazón (sin escrituras ocultas ni favoritos locales de invitado);
+ *  - cliente: alterna con actualización optimista y avisa con un toast; el estado de TODOS los corazones sale de UNA sola
+ *    consulta compartida (`useFavoriteIds`), nunca una petición por tarjeta;
+ *  - mientras se conoce el estado o hay una alta/baja de ese producto en vuelo queda `aria-busy` y no admite otro envío
+ *    (`aria-disabled`, no `disabled`: conserva el foco).
+ * Foco visible: `:focus-visible` global de la tienda (`styles/store.css`). Solo icono: el nombre accesible es la etiqueta "Agregar/Quitar {nombre} de favoritos".
  * `onTile`: sobre la ilustración (círculo blanco, como el prototipo).
  */
-export function FavoriteButton({
+export const FavoriteButton = memo(function FavoriteButton({
   productId,
   name,
   onTile = false,
@@ -28,13 +35,11 @@ export function FavoriteButton({
   className?: string;
 }) {
   const t = useTranslations('fav');
-  const { customer } = useDemoSession();
-  const favorites = useFavorites();
-  const toggle = useToggleFavorite();
-  const auth = useAuthModal();
-  const { notify } = useToast();
+  const api = useFavoritesApi();
+  const active = useIsFavorite(productId);
+  const pending = useIsFavoritePending(productId);
   const [beat, setBeat] = useState(0);
-  const active = !!customer && (favorites.data ?? []).includes(productId);
+  const busy = api.isPending || pending;
   const label = active ? t('remove', { a: name }) : t('add', { a: name });
 
   return (
@@ -43,20 +48,21 @@ export function FavoriteButton({
       aria-pressed={active}
       aria-label={label}
       title={label}
+      aria-busy={busy || undefined}
+      aria-disabled={busy || undefined}
       onClick={(event) => {
         event.stopPropagation();
-        if (!customer) {
-          auth.open();
+        if (api.state === 'guest') {
+          api.openLogin();
           return;
         }
-        setBeat((n) => n + 1);
-        toggle.mutate(
-          { productId, favorite: !active },
-          {
-            onSuccess: () => notify(!active ? t('added', { a: name }) : t('removed', { a: name })),
-            onError: () => notify(t('error')),
-          },
-        );
+        if (busy) return;
+        if (api.isError) {
+          // No se conoce el estado real: reintentar la lectura en vez de adivinar la acción.
+          api.refetch();
+          return;
+        }
+        if (api.toggle({ productId, favorite: !active, name })) setBeat((n) => n + 1);
       }}
       className={cn(
         'inline-flex flex-none items-center justify-center rounded-full transition-colors',
@@ -65,6 +71,7 @@ export function FavoriteButton({
           ? 'bg-white/95 text-neutral-900 shadow-card hover:bg-white'
           : 'text-muted hover:bg-subtle hover:text-primary',
         active && '!text-primary',
+        busy && 'cursor-progress opacity-60',
         className,
       )}
     >
@@ -80,4 +87,4 @@ export function FavoriteButton({
       />
     </button>
   );
-}
+});

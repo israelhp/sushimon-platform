@@ -234,7 +234,10 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
     addresses: empty
       ? []
       : DEMO_ACCOUNT.addresses.map(({ daysAgo: n, ...a }) => ({ ...a, createdAt: daysAgo(n) })),
-    favorites: empty ? [] : [...DEMO_ACCOUNT.favorites],
+    // Más reciente primero (como `created_at DESC`): el primero se marcó hace 1 día, el siguiente hace 2, etc.
+    favorites: empty
+      ? []
+      : DEMO_ACCOUNT.favorites.map((productId, i) => ({ productId, addedAt: daysAgo(i + 1) })),
   };
 
   return {
@@ -250,6 +253,7 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
     deliveryZones: structuredClone(DELIVERY_ZONE_SEEDS),
     deliverySettings: structuredClone(DELIVERY_SETTINGS_SEEDS),
     pedidosyaCoverage: 'unknown',
+    favoritesCatalog: 'available',
     categories: empty ? [] : structuredClone(CATEGORY_SEEDS),
     products: buildProducts(scenario),
     promotions,

@@ -32,6 +32,11 @@ export class IdentityService {
     return (await this.prisma.customer.count({ where: { authUserId } })) > 0;
   }
 
+  /** Lectura SIN creación (F06: GET/DELETE de favoritos no deben crear filas en `customers`). */
+  findCustomer(principal: Principal): Promise<CustomerRecord | null> {
+    return this.prisma.customer.findUnique({ where: { authUserId: principal.authUserId } });
+  }
+
   /** Devuelve el perfil de cliente de la identidad; lo crea (idempotente) si aún no existe. */
   async ensureCustomer(principal: Principal): Promise<CustomerRecord> {
     const existing = await this.prisma.customer.findUnique({

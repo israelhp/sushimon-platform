@@ -14,6 +14,7 @@ import { LocationsModule } from './locations/locations.module.js';
 import { BranchesModule } from './branches/branches.module.js';
 import { StaffModule } from './staff/staff.module.js';
 import { CustomersModule } from './customers/customers.module.js';
+import { FavoritesModule } from './favorites/favorites.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthController } from './health/health.controller.js';
 import { HealthTokenGuard } from './health/health-token.guard.js';
@@ -44,6 +45,7 @@ import { HealthTokenGuard } from './health/health-token.guard.js';
     DeliveryCoverageModule,
     StaffModule,
     CustomersModule,
+    FavoritesModule,
   ],
   controllers: [HealthController],
   providers: [HealthTokenGuard, { provide: APP_GUARD, useClass: AppThrottlerGuard }],

@@ -125,12 +125,4 @@ export const deleteAddress = (client: DataClient, id: string) =>
 export const setDefaultAddress = async (client: DataClient, id: string): Promise<Address> =>
   toAddress(await client.patch<CustomerAddressResponse>(paths.myAddressDefault(id)));
 
-export const listFavorites = (client: DataClient) => client.get<string[]>(paths.myFavorites());
-
-export const addFavorite = (client: DataClient, productId: string) =>
-  client.put<string[]>(paths.myFavorite(productId));
-
-export const removeFavorite = (client: DataClient, productId: string) =>
-  client.delete<string[]>(paths.myFavorite(productId));
-
 export const listMyOrders = (client: DataClient) => client.get<Order[]>(paths.myOrders());

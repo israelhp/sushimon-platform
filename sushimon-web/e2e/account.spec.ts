@@ -71,6 +71,7 @@ test.describe('cuenta (Google simulado)', () => {
       .getByRole('button', { name: /Agregar Dumplings a favoritos/ })
       .first()
       .click();
+    await expect(page.getByText('Dumplings está en tus favoritos')).toBeVisible();
     await page.goto('/cuenta/favoritos');
     await expect(page.getByRole('heading', { name: 'Mis favoritos' })).toBeVisible({
       timeout: 60_000,

@@ -9,7 +9,9 @@ export function safeNextPath(raw: string | null | undefined, fallback = '/'): st
   try {
     const url = new URL(raw, 'http://internal.invalid');
     if (url.origin !== 'http://internal.invalid') return fallback;
-    return `${url.pathname}${url.search}${url.hash}`;
+    // La normalización puede producir `//host` (p. ej. `/..//evil`): se vuelve a validar el resultado.
+    const out = `${url.pathname}${url.search}${url.hash}`;
+    return out.startsWith('//') || out.startsWith('/\\') ? fallback : out;
   } catch {
     return fallback;
   }

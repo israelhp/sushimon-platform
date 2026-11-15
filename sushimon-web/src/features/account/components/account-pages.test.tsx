@@ -215,7 +215,9 @@ describe('favoritos', () => {
     const user = userEvent.setup();
     const view = await renderStore(<FavoritesPage />);
     expect(screen.getByText('Todavía no tenés favoritos')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: /Tus favoritos se guardan/ }));
+    await user.click(
+      screen.getByRole('button', { name: /Iniciá sesión con Google para guardar tus favoritos/ }),
+    );
     expect(view.api().shell.authOpen).toBe(true);
   });
 

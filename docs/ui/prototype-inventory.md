@@ -59,6 +59,7 @@ Es/en, claro/oscuro (preferencia en `localStorage`: aceptable solo como preferen
 6. **Login con contraseña** en backoffice (UI) vs. requisito Google OAuth.
 7. **Pedidos “en este dispositivo”** (UI invitado) vs. sin vínculo de dispositivo en BD → la búsqueda real es número+teléfono; el listado local es solo conveniencia ❓.
 8. **Impuestos/propina** no visibles ni modelados ❓.
+9. **Favoritos “en este dispositivo”** (UI invitado: «Tus favoritos se guardan en este dispositivo…») vs. `customer_favorites` por cliente: **resuelto en F06 (ADR-0015)**: los favoritos son de la cuenta (Google); el corazón del visitante abre el inicio de sesión y no guarda nada, y el texto se reescribió (`fav.guestNote`). Los favoritos del cliente (corazón en tarjetas, ficha y «Mis favoritos») ya están conectados al contrato (mock); la validación y el resumen REALES del producto dependen del catálogo de F11. «Los favoritos de los MONcheros» del Inicio es una selección editorial (`featured`), no los favoritos del cliente.
 
 ## C2. Hallazgos de la Etapa 1 (extracción estática, 2026-11-11)
 

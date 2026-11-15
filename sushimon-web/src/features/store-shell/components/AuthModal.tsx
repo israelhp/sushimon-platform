@@ -153,7 +153,8 @@ function GoogleAuthDialog({ onClose }: { onClose: () => void }) {
     setPending(true);
     setFailed(false);
     try {
-      await auth.signInWithGoogle(window.location.pathname);
+      // Vuelve a la misma pantalla (ruta + consulta); `signInWithGoogle` lo valida con `safeNextPath`.
+      await auth.signInWithGoogle(`${window.location.pathname}${window.location.search}`);
     } catch {
       setPending(false);
       setFailed(true);

@@ -129,15 +129,29 @@ model BranchClosure {
 }
 
 model Customer {
-  id         String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  authUserId String?           @unique @map("auth_user_id") @db.Uuid
-  fullName   String            @map("full_name")
+  id         String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  authUserId String?            @unique @map("auth_user_id") @db.Uuid
+  fullName   String             @map("full_name")
   email      String?
   phone      String?
-  createdAt  DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdAt  DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   addresses  CustomerAddress[]
+  favorites  CustomerFavorite[]
 
   @@map("customers")
+  @@schema("app")
+}
+
+/// F06 (0009). SIN relación a Product: products no existe aún; F11 añade la FK (NOT VALID + VALIDATE).
+model CustomerFavorite {
+  customerId String   @map("customer_id") @db.Uuid
+  productId  String   @map("product_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@id([customerId, productId], map: "customer_favorites_pkey")
+  @@index([customerId, createdAt(sort: Desc), productId], map: "customer_favorites_customer_created_idx")
+  @@map("customer_favorites")
   @@schema("app")
 }
 
