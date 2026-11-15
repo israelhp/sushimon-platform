@@ -127,8 +127,36 @@ export type MeResponse = S['MeResponse'];
 export type CustomerProfile = S['CustomerProfile'];
 export type CustomerStorefrontContext = S['CustomerStorefrontContext'];
 export type UpdateCustomerProfileRequest = S['UpdateCustomerProfileRequest'];
-export type Address = S['Address'];
-export type AddressInput = S['AddressInput'];
+/**
+ * F05: dirección tal como la devuelve la API real (`GET /v1/me/addresses`, contrato `CustomerAddress`).
+ * La web todavía NO la consume: su UI usa la forma simulada de abajo (Etapa 1, `MOCK_ONLY`).
+ */
+export type CustomerAddressResponse = S['CustomerAddress'];
+export type CreateCustomerAddressRequest = S['CreateCustomerAddressRequest'];
+export type UpdateCustomerAddressRequest = S['UpdateCustomerAddressRequest'];
+
+/** 🎭 F05 simulado: forma de UI del prototipo (etiqueta enum + texto libre). Pendiente de migrar a `CustomerAddressResponse`. */
+export type Address = {
+  id: string;
+  label: 'home' | 'work' | 'other';
+  customLabel: string;
+  department: string;
+  municipality: string;
+  zone: string;
+  line: string;
+  references: string;
+  createdAt: string;
+};
+/** 🎭 F05 simulado: entrada de la UI del prototipo. Pendiente de migrar a `CreateCustomerAddressRequest`. */
+export type AddressInput = {
+  label: 'home' | 'work' | 'other';
+  customLabel?: string;
+  department: string;
+  municipality: string;
+  zone: string;
+  line: string;
+  references?: string;
+};
 export type Incident = S['Incident'];
 export type CreateIncidentRequest = S['CreateIncidentRequest'];
 export type JobApplication = S['JobApplication'];

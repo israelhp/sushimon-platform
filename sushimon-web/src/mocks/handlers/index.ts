@@ -44,6 +44,7 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'POST /v1/me/addresses': account.createAddress,
   'PATCH /v1/me/addresses/:id': account.updateAddress,
   'DELETE /v1/me/addresses/:id': account.deleteAddress,
+  'PATCH /v1/me/addresses/:id/default': account.setMyDefaultAddress,
   'GET /v1/me/favorites': account.listFavorites,
   'PUT /v1/me/favorites/:productId': account.addFavorite,
   'DELETE /v1/me/favorites/:productId': account.removeFavorite,

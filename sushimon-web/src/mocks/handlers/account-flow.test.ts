@@ -125,7 +125,7 @@ describe('cuenta del cliente (/v1/me)', () => {
       customer: { fullName: string };
       avatarUrl: string | null;
     }>('/v1/me/storefront');
-    expect(ctx.pendingSections).toEqual(['addresses', 'favorites', 'orders']);
+    expect(ctx.pendingSections).toEqual(['favorites', 'orders']);
     expect(ctx.customer.fullName).toBe('Cliente Demo');
     expect(ctx.avatarUrl).toBeNull();
   });

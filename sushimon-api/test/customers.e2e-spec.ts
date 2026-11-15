@@ -220,7 +220,7 @@ describe('F04 · perfil de cliente (e2e)', () => {
         authUserId: USER_ID,
         email: 'cliente@example.com',
         isStaff: false,
-        pendingSections: ['addresses', 'favorites', 'orders'],
+        pendingSections: ['favorites', 'orders'],
         customer: { fullName: 'Ana López' },
       });
       expect(res.body).not.toHaveProperty('addresses');

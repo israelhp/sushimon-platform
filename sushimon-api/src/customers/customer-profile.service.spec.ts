@@ -116,7 +116,7 @@ describe('CustomerProfileService.getStorefront', () => {
 
     const ctx = await service.getStorefront(ME);
 
-    expect(ctx.pendingSections).toEqual(['addresses', 'favorites', 'orders']);
+    expect(ctx.pendingSections).toEqual(['favorites', 'orders']);
     expect(ctx.avatarUrl).toBe('https://lh3.googleusercontent.com/a/x=s96');
     expect(ctx.customer).toEqual({
       id: 'c1',

@@ -9,8 +9,8 @@ import type {
   CustomerStorefrontContextDto,
 } from './dto/customer-profile.dto.js';
 
-/** Secciones de Mi cuenta que todavía no tienen contrato (F05, F06, F23). Sin contadores. */
-export const PENDING_SECTIONS = ['addresses', 'favorites', 'orders'] as const;
+/** Secciones de Mi cuenta que todavía no tienen contrato (F06, F23). Sin contadores. */
+export const PENDING_SECTIONS = ['favorites', 'orders'] as const;
 
 export interface CustomerProfileView {
   authUserId: string;

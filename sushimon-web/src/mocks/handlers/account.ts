@@ -116,7 +116,7 @@ export const getStorefront: Handler = (req) => {
     avatarUrl: null,
     customer: meResponse(profile).customer,
     isStaff: false,
-    pendingSections: ['addresses', 'favorites', 'orders'],
+    pendingSections: ['favorites', 'orders'],
   };
 };
 
@@ -198,6 +198,15 @@ export const deleteAddress: Handler = (req) => {
   account.addresses = account.addresses.filter((a) => a.id !== req.params.id);
   if (account.profile.defaultAddressId === req.params.id) account.profile.defaultAddressId = null;
   return undefined;
+};
+
+/** PATCH /v1/me/addresses/:id/default — predeterminada explícita (contrato F05 `setDefaultMyAddress`). */
+export const setMyDefaultAddress: Handler = (req): Address => {
+  const account = requireCustomer(req);
+  const address = account.addresses.find((a) => a.id === req.params.id);
+  if (!address) fail(404, 'Dirección no encontrada');
+  account.profile = { ...account.profile, defaultAddressId: address.id };
+  return address;
 };
 
 /** GET /v1/me/favorites → productId[] (más reciente primero) */
