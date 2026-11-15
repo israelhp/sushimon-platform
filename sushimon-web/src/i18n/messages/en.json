@@ -518,6 +518,8 @@
     "email": "Enter a valid email to receive your receipt.",
     "address": "Enter the exact delivery address.",
     "zone": "Enter the zone.",
+    "zoneInvalid": "Choose a zone from the list: Zone 1 to Zone 25.",
+    "zoneTooLong": "The zone can be up to 60 characters.",
     "municipality": "Enter the municipality.",
     "department": "Enter the department.",
     "type": "Choose pickup or delivery to continue.",
@@ -892,7 +894,9 @@
     "error": "We couldn’t save your changes. Please try again.",
     "covered": "Delivery from {a}",
     "notCovered": "No delivery coverage yet",
-    "pending": "Delivery to be confirmed"
+    "pending": "Delivery to be confirmed",
+    "zoneMissing": "This address was saved without a zone. Choose the zone (Zone 1 to Zone 25) to save your changes.",
+    "zoneFreePh": "E.g. neighborhood or sector"
   },
   "personal": {
     "title": "My personal details",
@@ -1936,6 +1940,19 @@
       "activate": "Activar",
       "deactivateLabel": "Desactivar a {name}",
       "activateLabel": "Activar a {name}",
+      "mfa": "Restablecer MFA",
+      "mfaLabel": "Restablecer MFA de {name}",
+      "mfaReset": {
+        "title": "Restablecer MFA",
+        "text": "Se eliminará el segundo factor (autenticador) de {name}. En su próximo acceso al backoffice tendrá que volver a enrolar su autenticador antes de entrar. Su estado, su vinculación con Google y sus asignaciones no cambian.",
+        "lastAdmin": "Si la persona es el único administrador general y perdió su autenticador, no puede restablecerse desde aquí: usa el procedimiento manual en el panel de Supabase (guía de MFA de seguridad).",
+        "simulationNote": "Con datos simulados no se contacta a ningún proveedor de identidad: no cambia ningún factor real.",
+        "confirm": "Restablecer MFA",
+        "cancel": "Cancelar",
+        "pending": "Restableciendo…",
+        "toast": "MFA de {name} restablecido · deberá enrolar su autenticador al volver a entrar",
+        "toastDemo": "MFA de {name} restablecido (simulación) · deberá enrolar su autenticador al volver a entrar"
+      },
       "outOfScope": "Fuera de tu alcance de gestión: solo lectura",
       "selfLocked": "Tu propia cuenta: solo puedes cambiar tu nombre",
       "pagerLabel": "Paginación de usuarios",

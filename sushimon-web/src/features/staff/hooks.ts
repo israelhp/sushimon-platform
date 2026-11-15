@@ -19,6 +19,7 @@ import {
   listAdminStaff,
   replaceAdminRolePermissions,
   replaceAdminStaffAssignments,
+  resetAdminStaffMfa,
   setAdminStaffStatus,
   updateAdminStaff,
   type AdminStaffFilters,
@@ -184,6 +185,15 @@ export function useReplaceStaffAssignments() {
       replaceAdminStaffAssignments(client, id, input),
     (args) => staffInvalidationKeys('assignments', args.id, selfId),
   );
+}
+
+/**
+ * F02: restablece el MFA de un empleado. NO invalida ninguna consulta: la API no expone el estado de MFA por persona y
+ * el restablecimiento no cambia estado, identidad, asignaciones ni conteos (solo el siguiente acceso del empleado).
+ */
+export function useResetStaffMfa() {
+  const client = useDataClient();
+  return useMutation({ mutationFn: (id: string) => resetAdminStaffMfa(client, id) });
 }
 
 export function useReplaceRolePermissions() {

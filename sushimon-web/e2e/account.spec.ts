@@ -48,6 +48,10 @@ test.describe('cuenta (Google simulado)', () => {
     await dialog.getByRole('button', { name: 'Guardar dirección' }).click();
     // Errores accesibles: el foco va al primer campo inválido (zona).
     await expect(dialog.getByLabel('Zona')).toBeFocused();
+    await expect(dialog.getByText('Indicá la zona.')).toBeVisible();
+    // La zona de la ciudad de Guatemala se elige entre «Zona 1» y «Zona 25» (la API no excluye ninguna).
+    await expect(dialog.getByLabel('Zona').getByRole('option')).toHaveCount(26);
+    await expect(dialog.getByLabel('Zona').getByRole('option', { name: 'Zona 25' })).toHaveCount(1);
     await dialog.getByLabel('Zona').selectOption('15');
     await dialog.getByLabel('Dirección exacta').fill('2a calle 23-80, Vista Hermosa');
     await dialog.getByRole('radio', { name: 'Otra' }).click();

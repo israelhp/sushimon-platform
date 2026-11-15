@@ -42,6 +42,7 @@ describe('paths', () => {
     expect(paths.adminStaffMember('u 1')).toBe('/v1/admin/staff/u%201');
     expect(paths.adminStaffStatus('u1')).toBe('/v1/admin/staff/u1/status');
     expect(paths.adminStaffAssignments('u1')).toBe('/v1/admin/staff/u1/assignments');
+    expect(paths.adminStaffMfaReset('u1')).toBe('/v1/admin/staff/u1/mfa-reset');
     expect(paths.adminRoles()).toBe('/v1/admin/roles');
     expect(paths.adminRole('r1')).toBe('/v1/admin/roles/r1');
     expect(paths.adminRolePermissions('r1')).toBe('/v1/admin/roles/r1/permissions');

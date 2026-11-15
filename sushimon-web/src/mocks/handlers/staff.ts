@@ -10,7 +10,7 @@ import type {
   StaffAssignmentInput,
 } from '@/lib/data-access/models';
 import { can, permissionModule } from '@/lib/permissions';
-import { fail, isValidEmail } from '../domain';
+import { fail, failCode, isValidEmail } from '../domain';
 import { PERMISSION_CATALOG } from '../fixtures/rbac';
 import { contextBranches } from '../rbac';
 import type { RoleRecord, StaffRecord } from '../store';
@@ -465,6 +465,35 @@ export const replaceAdminStaffAssignments: Handler = (req): AdminStaff => {
   }
   target.assignments = next;
   return staffView(req, actor, target);
+};
+
+/**
+ * POST /v1/admin/staff/:id/mfa-reset → 204 (F02, ADR de MFA). SIMULADO: no hay proveedor de identidad; solo reproduce las
+ * reglas del servidor. Exige `staff.update` con alcance GLOBAL (administrador): 403 genérico si no; nunca sobre uno mismo
+ * (403); 404 `STAFF_NOT_FOUND` si no existe o está fuera del alcance de lectura; 409 `STAFF_NOT_LINKED` si aún no vinculó
+ * su cuenta (no hay factores); 503 `MFA_RESET_UNAVAILABLE` con `store.mfaResetUnavailable`. Idempotente: repetirlo
+ * vuelve a responder 204. Sin cuerpo; no cambia ningún dato visible (el MFA por persona no se expone). La auditoría
+ * (`staff.mfa_reset`) no se simula. El 429 (5/min) y el 502 `MFA_RESET_FAILED` no se simulan (la UI los maneja).
+ */
+export const resetAdminStaffMfa: Handler = (req) => {
+  const actor = requireStaff(req, 'staff.update');
+  if (!actor.grants['staff.update']?.allBranches) fail(403, 'Acceso denegado');
+  if (req.params.id === actor.id) fail(403, 'Acceso denegado');
+  const found = req.store.staff.find((u) => u.id === req.params.id);
+  if (!found || !visibleTo(actor, found)) {
+    failCode(404, 'STAFF_NOT_FOUND', 'Empleado no encontrado');
+  }
+  if (!found.linked) {
+    failCode(409, 'STAFF_NOT_LINKED', 'El empleado aún no vinculó su cuenta de acceso');
+  }
+  if (req.store.mfaResetUnavailable) {
+    failCode(
+      503,
+      'MFA_RESET_UNAVAILABLE',
+      'El restablecimiento de MFA no está disponible por configuración',
+    );
+  }
+  return undefined;
 };
 
 // ── Roles y permisos ──────────────────────────────────────────────────────────────────────

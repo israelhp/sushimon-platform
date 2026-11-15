@@ -577,3 +577,56 @@ describe('F03 · roles y permisos', () => {
     ).toBe(403);
   });
 });
+
+describe('F02 · POST /v1/admin/staff/:id/mfa-reset (simulado)', () => {
+  const code = async (p: Promise<unknown>) => (await error(p)).businessCode;
+
+  it('administrador global: 204 idempotente sobre un empleado vinculado y no cambia datos visibles', async () => {
+    const h = createHarness();
+    h.asStaff('admin');
+    const before = await staff.getAdminStaff(h.client, 'u5');
+    expect(await staff.resetAdminStaffMfa(h.client, 'u5')).toBeUndefined();
+    expect(await staff.resetAdminStaffMfa(h.client, 'u5')).toBeUndefined();
+    expect(await staff.getAdminStaff(h.client, 'u5')).toEqual(before);
+  });
+
+  it('401 sin sesión; 403 genérico sin alcance global, sin staff.update o sobre uno mismo', async () => {
+    const anon = createHarness();
+    expect(await status(staff.resetAdminStaffMfa(anon.client, 'u5'))).toBe(401);
+    // Encargado: tiene staff.update pero solo en su sucursal.
+    const manager = createHarness();
+    manager.asStaff('manager');
+    const denied = await error(staff.resetAdminStaffMfa(manager.client, 'u5'));
+    expect(denied.status).toBe(403);
+    expect(denied.message).toBe('Acceso denegado');
+    // Cocina: sin staff.update.
+    const kitchen = createHarness();
+    kitchen.asStaff('kitchen');
+    expect(await status(staff.resetAdminStaffMfa(kitchen.client, 'u5'))).toBe(403);
+    // Nunca sobre uno mismo.
+    const admin = createHarness();
+    admin.asStaff('admin');
+    expect(await status(staff.resetAdminStaffMfa(admin.client, 'u1'))).toBe(403);
+  });
+
+  it('404 STAFF_NOT_FOUND si no existe; 409 STAFF_NOT_LINKED si está pendiente de vincular', async () => {
+    const h = createHarness();
+    h.asStaff('admin');
+    const missing = await error(staff.resetAdminStaffMfa(h.client, 'nada'));
+    expect(missing.status).toBe(404);
+    expect(missing.businessCode).toBe('STAFF_NOT_FOUND');
+    expect(await code(staff.resetAdminStaffMfa(h.client, 'u10'))).toBe('STAFF_NOT_LINKED');
+    expect(await status(staff.resetAdminStaffMfa(h.client, 'u10'))).toBe(409);
+  });
+
+  it('503 MFA_RESET_UNAVAILABLE cuando el servicio no está disponible (y se recupera)', async () => {
+    const h = createHarness();
+    h.asStaff('admin');
+    h.store.mfaResetUnavailable = true;
+    const down = await error(staff.resetAdminStaffMfa(h.client, 'u5'));
+    expect(down.status).toBe(503);
+    expect(down.businessCode).toBe('MFA_RESET_UNAVAILABLE');
+    h.store.mfaResetUnavailable = false;
+    expect(await staff.resetAdminStaffMfa(h.client, 'u5')).toBeUndefined();
+  });
+});

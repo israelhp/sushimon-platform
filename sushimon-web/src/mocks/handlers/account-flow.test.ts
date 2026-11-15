@@ -159,3 +159,131 @@ describe('cuenta del cliente (/v1/me)', () => {
     expect(ctx.avatarUrl).toBeNull();
   });
 });
+
+describe('F05 · zona de la dirección (ADR-0014 §13, decisión C2)', () => {
+  /** Cuerpo del contrato (`CreateCustomerAddressRequest`) sin pasar por el mapeo del servicio. */
+  const raw = (zone: string | null | undefined, over: Record<string, unknown> = {}) => ({
+    label: 'Casa',
+    municipalityId: GUATEMALA_ID,
+    addressLine: '2a calle 23-80, Vista Hermosa',
+    ...(zone === undefined ? {} : { zone }),
+    ...over,
+  });
+  const post = (h: ReturnType<typeof createHarness>, body: unknown) =>
+    h.client.post<{ id: string; zone: string | null }>('/v1/me/addresses', body);
+  const failure = async (p: Promise<unknown>) => {
+    try {
+      await p;
+    } catch (e) {
+      if (e instanceof ApiError) return e;
+      throw e;
+    }
+    throw new Error('se esperaba un error');
+  };
+  const mixcoId = municipalityByName('Guatemala', 'Mixco')!.id;
+
+  it('ciudad de Guatemala: la zona es obligatoria (ZONE_REQUIRED) con violations[0].path = zone', async () => {
+    const h = createHarness();
+    h.asCustomer();
+    for (const zone of [undefined, null, '', '   ']) {
+      const err = await failure(post(h, raw(zone)));
+      expect(err.status).toBe(400);
+      expect(err.businessCode).toBe('ZONE_REQUIRED');
+      expect(err.violations?.[0]).toMatchObject({ path: 'zone', code: 'ZONE_REQUIRED' });
+    }
+  });
+
+  it('formato o rango inválidos: ZONE_INVALID (incluye «10» sin la palabra Zona)', async () => {
+    const h = createHarness();
+    h.asCustomer();
+    for (const zone of ['10', 'Zona 0', 'Zona 26', 'Zona 1.5', 'Zona', 'Zona diez', 'zona -3']) {
+      const err = await failure(post(h, raw(zone)));
+      expect(err.businessCode, zone).toBe('ZONE_INVALID');
+      expect(err.violations?.[0]?.path).toBe('zone');
+    }
+  });
+
+  it('normaliza «zona 05» → «Zona 5», « Zona  10 » → «Zona 10» y acepta 20, 22 y 23', async () => {
+    const h = createHarness();
+    h.asCustomer();
+    expect((await post(h, raw('zona 05'))).zone).toBe('Zona 5');
+    expect((await post(h, raw(' Zona  10 ', { addressLine: 'Otra calle 1-23' }))).zone).toBe(
+      'Zona 10',
+    );
+    expect((await post(h, raw('ZONA 20', { addressLine: 'Calle veinte 20-20' }))).zone).toBe(
+      'Zona 20',
+    );
+  });
+
+  it('otros municipios: opcional y texto libre ≤ 60 (se recorta y colapsa espacios)', async () => {
+    const h = createHarness();
+    h.asCustomer();
+    const base = { municipalityId: mixcoId };
+    expect((await post(h, raw(undefined, base))).zone).toBeNull();
+    expect((await post(h, raw('', { ...base, addressLine: 'Calle 2 2-22' }))).zone).toBeNull();
+    expect(
+      (await post(h, raw('  Colonia   Lomas  ', { ...base, addressLine: 'Calle 3 3-33' }))).zone,
+    ).toBe('Colonia Lomas');
+    expect(
+      (await post(h, raw('x'.repeat(60), { ...base, addressLine: 'Calle 4 4-44' }))).zone,
+    ).toHaveLength(60);
+    const long = await failure(post(h, raw('x'.repeat(61), { ...base, addressLine: 'Calle 5' })));
+    expect(long).toMatchObject({ status: 400, businessCode: 'ADDRESS_INVALID' });
+    expect(long.violations?.[0]?.path).toBe('zone');
+  });
+
+  it('el servicio traduce «N» de la UI a «Zona N» y de vuelta (round trip)', async () => {
+    const h = createHarness();
+    h.asCustomer();
+    const saved = await account.createAddress(h.client, address);
+    expect(saved.zone).toBe('15');
+    expect(
+      (await h.client.get<{ items: { zone: string | null }[] }>('/v1/me/addresses')).items.map(
+        (a) => a.zone,
+      ),
+    ).toContain('Zona 15');
+    // Las direcciones sembradas (zona «10»/«4») también salen como «Zona N» en la API.
+    const items = (
+      await h.client.get<{ items: { id: string; zone: string | null }[] }>('/v1/me/addresses')
+    ).items;
+    expect(items.find((a) => a.id === 'demo-trabajo')?.zone).toBe('Zona 4');
+  });
+
+  it('PATCH evalúa la regla sobre el resultado fusionado: una dirección antigua sin zona debe traerla', async () => {
+    const h = createHarness();
+    h.asCustomer();
+    // Dirección antigua de la ciudad guardada antes de la regla (no se migra).
+    h.store.accounts['cliente@ejemplo.com']!.addresses.find((a) => a.id === 'demo-trabajo')!.zone =
+      '';
+    const listed = await h.client.get<{ items: { id: string; zone: string | null }[] }>(
+      '/v1/me/addresses',
+    );
+    expect(listed.items.find((a) => a.id === 'demo-trabajo')?.zone).toBeNull();
+    // Editar solo la referencia sigue sin zona ⇒ ZONE_REQUIRED.
+    const err = await failure(
+      h.client.patch('/v1/me/addresses/demo-trabajo', { referenceNote: 'Nueva nota' }),
+    );
+    expect(err.businessCode).toBe('ZONE_REQUIRED');
+    // Con zona (formato API) se guarda.
+    const ok = await h.client.patch<{ zone: string | null }>('/v1/me/addresses/demo-trabajo', {
+      zone: 'zona 04',
+    });
+    expect(ok.zone).toBe('Zona 4');
+    // Sin zona tampoco hace falta repetirla en ediciones posteriores.
+    expect(
+      (
+        await h.client.patch<{ zone: string | null }>('/v1/me/addresses/demo-trabajo', {
+          referenceNote: 'Otra',
+        })
+      ).zone,
+    ).toBe('Zona 4');
+    // Pasar de la ciudad a otro municipio conserva la zona como texto libre.
+    const moved = await h.client.patch<{ zone: string | null }>('/v1/me/addresses/demo-trabajo', {
+      municipalityId: mixcoId,
+    });
+    expect(moved.zone).toBe('Zona 4');
+    expect(
+      await status(h.client.patch('/v1/me/addresses/demo-trabajo', { zone: 'x'.repeat(61) })),
+    ).toBe(400);
+  });
+});

@@ -79,6 +79,14 @@ export const replaceAdminStaffAssignments = (
   input: ReplaceStaffAssignmentsRequest,
 ) => client.put<AdminStaff>(paths.adminStaffAssignments(id), input);
 
+/**
+ * F02: restablece el MFA de un empleado (elimina sus factores en el proveedor de identidad; deberá enrolar de nuevo en su
+ * siguiente acceso). 204 sin cuerpo e idempotente. Solo administrador global y nunca sobre uno mismo (403); 404
+ * `STAFF_NOT_FOUND`; 409 `STAFF_NOT_LINKED`; 429; 502 `MFA_RESET_FAILED`; 503 `MFA_RESET_UNAVAILABLE`.
+ */
+export const resetAdminStaffMfa = (client: DataClient, id: string) =>
+  client.post<void>(paths.adminStaffMfaReset(id));
+
 export const listAdminRoles = async (client: DataClient): Promise<AdminRole[]> =>
   (await client.get<AdminRoleList>(paths.adminRoles())).items;
 

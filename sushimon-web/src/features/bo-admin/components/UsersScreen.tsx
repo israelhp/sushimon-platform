@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
-import { IconPencil, IconPlus } from '@/components/icons/bo';
+import { IconLock, IconPencil, IconPlus } from '@/components/icons/bo';
 import { Banner } from '@/components/ui/Banner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Pill } from '@/components/ui/Pill';
@@ -20,6 +20,7 @@ import {
   ROLE_ORDER,
   ROLE_PILL_TONE,
   STAFF_PAGE_SIZE,
+  canResetStaffMfa,
   hasStaffFilters,
   staffPageCount,
   toStaffFilters,
@@ -29,6 +30,7 @@ import {
   type StaffStatusFilter,
 } from '../users-view';
 import { StaffAssignmentsModal } from './StaffAssignmentsModal';
+import { StaffMfaResetModal } from './StaffMfaResetModal';
 import { StaffStatusModal } from './StaffStatusModal';
 import { UserModal } from './UserModal';
 
@@ -38,7 +40,8 @@ type Modal =
   | { kind: 'create' }
   | { kind: 'edit'; staff: AdminStaff }
   | { kind: 'assign'; staff: AdminStaff }
-  | { kind: 'status'; staff: AdminStaff };
+  | { kind: 'status'; staff: AdminStaff }
+  | { kind: 'mfa'; staff: AdminStaff };
 
 const primaryRole = (staff: AdminStaff): StaffRole => {
   const codes = staff.assignments.map((a) => a.role.code);
@@ -55,7 +58,7 @@ export function UsersScreen() {
   const t = useTranslations('backoffice.users');
   const tu = useTranslations('ui');
   const tr = useTranslations('backoffice.roles');
-  const { can, branches } = useShell();
+  const { can, grants, branches } = useShell();
   const { staff: session } = useDemoSession();
   const [list, setList] = useState<StaffListState>(DEFAULT_STAFF_LIST);
   const [search, setSearch] = useState('');
@@ -93,6 +96,17 @@ export function UsersScreen() {
     setSearch('');
     setList(DEFAULT_STAFF_LIST);
   };
+  const mfaButton = (person: AdminStaff) => (
+    <button
+      type="button"
+      className="btn sm"
+      aria-label={t('mfaLabel', { name: person.fullName })}
+      onClick={() => setModal({ kind: 'mfa', staff: person })}
+    >
+      <IconLock size="sm" />
+      {t('mfa')}
+    </button>
+  );
   const canCreate = can('staff.create') && can('staff.assign_roles');
   const orderText = list.order === 'asc' ? t('orderAsc') : t('orderDesc');
   const sortLabels: Record<StaffSortKey, string> = {
@@ -267,6 +281,7 @@ export function UsersScreen() {
               : items.map((person) => {
                   const isSelf = person.id === session?.userId;
                   const canAct = person.manageable && !isSelf;
+                  const mfaVisible = canResetStaffMfa(grants, person, session?.userId);
                   return (
                     <div key={person.id} className="trow cols-users" role="row">
                       <div className="row gap10" role="cell">
@@ -363,6 +378,7 @@ export function UsersScreen() {
                                 {t(person.active ? 'deactivate' : 'activate')}
                               </button>
                             ) : null}
+                            {mfaVisible ? mfaButton(person) : null}
                           </>
                         ) : isSelf && can('staff.update') ? (
                           <button
@@ -452,6 +468,9 @@ export function UsersScreen() {
       ) : null}
       {modal?.kind === 'status' ? (
         <StaffStatusModal staff={modal.staff} onClose={() => setModal(null)} />
+      ) : null}
+      {modal?.kind === 'mfa' ? (
+        <StaffMfaResetModal staff={modal.staff} onClose={() => setModal(null)} />
       ) : null}
     </div>
   );

@@ -41,27 +41,37 @@ describe('validateAddress', () => {
     zone: '10',
   };
 
-  it('exige zona solo en la Ciudad de Guatemala y la valida contra las inexistentes', () => {
-    expect(validateAddress(base, [])).toEqual({});
-    expect(validateAddress({ ...base, zone: '' }, [])).toEqual({ zone: 'validation.zone' });
-    expect(validateAddress({ ...base, zone: '20' }, [20])).toEqual({
-      zone: 'mode.errZoneInvalid',
+  it('exige zona «N» de 1 a 25 en la Ciudad de Guatemala (sin excluir 20, 22 ni 23)', () => {
+    expect(validateAddress(base)).toEqual({});
+    expect(validateAddress({ ...base, zone: '1' })).toEqual({});
+    expect(validateAddress({ ...base, zone: '25' })).toEqual({});
+    expect(validateAddress({ ...base, zone: '20' })).toEqual({});
+    expect(validateAddress({ ...base, zone: '' })).toEqual({ zone: 'validation.zone' });
+    expect(validateAddress({ ...base, zone: '  ' })).toEqual({ zone: 'validation.zone' });
+    for (const zone of ['0', '26', '1.5', 'abc', 'Zona 10', '-3']) {
+      expect(validateAddress({ ...base, zone })).toEqual({ zone: 'validation.zoneInvalid' });
+    }
+  });
+
+  it('fuera de la ciudad la zona es opcional y de texto libre (≤ 60)', () => {
+    const mixco = { ...base, municipality: 'Mixco', municipalityId: 'mun-mixco' };
+    expect(validateAddress({ ...mixco, zone: '' })).toEqual({});
+    expect(validateAddress({ ...mixco, zone: 'Colonia Lomas del Norte' })).toEqual({});
+    expect(validateAddress({ ...mixco, zone: 'x'.repeat(60) })).toEqual({});
+    expect(validateAddress({ ...mixco, zone: 'x'.repeat(61) })).toEqual({
+      zone: 'validation.zoneTooLong',
     });
+    // Otro departamento con municipio «Guatemala» no es la ciudad.
     expect(
-      validateAddress(
-        { ...base, municipality: 'Mixco', municipalityId: 'mun-mixco', zone: '' },
-        [],
-      ),
+      validateAddress({ ...base, department: 'Escuintla', municipality: 'Guatemala', zone: '' }),
     ).toEqual({});
   });
 
   it('exige departamento, municipio y una dirección exacta de 5 caracteres', () => {
-    expect(validateAddress({ ...base, department: '', municipality: '', line: 'abc' }, [])).toEqual(
-      {
-        department: 'validation.department',
-        municipality: 'validation.municipality',
-        line: 'validation.address',
-      },
-    );
+    expect(validateAddress({ ...base, department: '', municipality: '', line: 'abc' })).toEqual({
+      department: 'validation.department',
+      municipality: 'validation.municipality',
+      line: 'validation.address',
+    });
   });
 });

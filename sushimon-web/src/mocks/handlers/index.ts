@@ -102,6 +102,7 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'PATCH /v1/admin/staff/:id': staff.updateAdminStaff,
   'PATCH /v1/admin/staff/:id/status': staff.updateAdminStaffStatus,
   'PUT /v1/admin/staff/:id/assignments': staff.replaceAdminStaffAssignments,
+  'POST /v1/admin/staff/:id/mfa-reset': staff.resetAdminStaffMfa,
   'GET /v1/admin/roles': staff.listAdminRoles,
   'GET /v1/admin/roles/:id': staff.getAdminRole,
   'PUT /v1/admin/roles/:id/permissions': staff.replaceAdminRolePermissions,

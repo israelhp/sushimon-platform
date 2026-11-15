@@ -280,6 +280,62 @@ describe('paridad mock ↔ http', () => {
     expect(a[4]).toEqual({ ok: null });
   });
 
+  it('direcciones (F05): zona obligatoria en la ciudad y libre en otros municipios, mismos 400 con `code`', async () => {
+    const p = pair();
+    p.asCustomer();
+    const city = municipalityByName('Guatemala', 'Guatemala')!.id;
+    const input = (zone: string, line: string) => ({
+      label: 'home' as const,
+      municipalityId: city,
+      department: 'Guatemala',
+      municipality: 'Guatemala',
+      zone,
+      line,
+    });
+    const steps: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => account.createAddress(c, input('', 'Calle sin zona 1-23')), // 400 ZONE_REQUIRED
+      (c) => account.createAddress(c, input('abc', 'Calle zona rara 1-23')), // 400 ZONE_INVALID
+      (c) => account.createAddress(c, input('26', 'Calle zona 26 1-23')), // 400 ZONE_INVALID
+      (c) => account.createAddress(c, input('05', 'Calle cinco 5-55')), // «zona 05» → 5
+      (c) => account.createAddress(c, input('20', 'Calle veinte 20-20')), // la API no excluye la 20
+      (c) =>
+        account.createAddress(c, {
+          ...input('  Colonia   Lomas ', 'Calle Mixco 1-1'),
+          municipalityId: municipalityByName('Guatemala', 'Mixco')!.id,
+          municipality: 'Mixco',
+        }),
+      (c) =>
+        account.createAddress(c, {
+          ...input('x'.repeat(61), 'Calle Mixco 2-2'),
+          municipalityId: municipalityByName('Guatemala', 'Mixco')!.id,
+          municipality: 'Mixco',
+        }), // 400 ADDRESS_INVALID
+      (c) => account.updateAddress(c, 'demo-trabajo', { zone: '' }), // 400 ZONE_REQUIRED
+      (c) => account.listAddresses(c),
+    ];
+    const a: Outcome[] = [];
+    const b: Outcome[] = [];
+    for (const step of steps) {
+      a.push(...(await run([step], p.mock.client)));
+      b.push(...(await run([step], p.http)));
+    }
+    expect(b).toEqual(a);
+    expect(a.map((o) => ('error' in o ? [o.error.status, o.error.businessCode] : 'ok'))).toEqual([
+      [400, 'ZONE_REQUIRED'],
+      [400, 'ZONE_INVALID'],
+      [400, 'ZONE_INVALID'],
+      'ok',
+      'ok',
+      'ok',
+      [400, 'ADDRESS_INVALID'],
+      [400, 'ZONE_REQUIRED'],
+      'ok',
+    ]);
+    const saved = (a[3] as { ok: { zone: string } }).ok;
+    expect(saved.zone).toBe('5');
+    expect((a[5] as { ok: { zone: string } }).ok.zone).toBe('Colonia Lomas');
+  });
+
   it('favoritos (F06): idempotencia 204, 404/422/503 con `code`, aislamiento y degradación del catálogo', async () => {
     const p = pair();
     const steps: ((c: DataClient) => Promise<unknown>)[] = [
@@ -413,6 +469,43 @@ describe('paridad mock ↔ http', () => {
     expect(await run(steps, p.http)).toEqual(a);
     expect(a.filter((x) => 'error' in x).map((x) => ('error' in x ? x.error.status : 0))).toEqual([
       404, 409, 403, 403, 400, 403, 403,
+    ]);
+  });
+
+  it('F02: restablecer MFA produce los mismos resultados y errores (204, 403, 404, 409, 503)', async () => {
+    const p = pair();
+    p.asStaff('admin');
+    const steps: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => staff.resetAdminStaffMfa(c, 'u5'), // 204
+      (c) => staff.resetAdminStaffMfa(c, 'u5'), // idempotente
+      (c) => staff.resetAdminStaffMfa(c, 'u1'), // 403: uno mismo
+      (c) => staff.resetAdminStaffMfa(c, 'nada'), // 404 STAFF_NOT_FOUND
+      (c) => staff.resetAdminStaffMfa(c, 'u10'), // 409 STAFF_NOT_LINKED
+      async (c) => {
+        p.mock.store.mfaResetUnavailable = true;
+        p.backend.store.mfaResetUnavailable = true;
+        return staff.resetAdminStaffMfa(c, 'u5'); // 503 MFA_RESET_UNAVAILABLE
+      },
+      async (c) => {
+        p.asStaff('manager');
+        return staff.resetAdminStaffMfa(c, 'u5'); // 403: sin alcance global
+      },
+    ];
+    const a: Outcome[] = [];
+    const b: Outcome[] = [];
+    for (const step of steps) {
+      a.push(...(await run([step], p.mock.client)));
+      b.push(...(await run([step], p.http)));
+    }
+    expect(b).toEqual(a);
+    expect(a.map((o) => ('error' in o ? [o.error.status, o.error.businessCode] : 'ok'))).toEqual([
+      'ok',
+      'ok',
+      [403, undefined],
+      [404, 'STAFF_NOT_FOUND'],
+      [409, 'STAFF_NOT_LINKED'],
+      [503, 'MFA_RESET_UNAVAILABLE'],
+      [403, undefined],
     ]);
   });
 
