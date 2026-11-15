@@ -9,7 +9,7 @@ import { useCustomerScope } from '../session/customer-scope';
 import { queryKeys } from '../query-keys';
 
 /**
- * F06 — Favoritos del cliente (spec 009 D15–D16). UNA sola fuente remota (`GET /v1/me/favorites`) con dos consultas
+ * F06 — Favoritos del cliente (spec 010 D15–D16). UNA sola fuente remota (`GET /v1/me/favorites`) con dos consultas
  * aisladas por identidad: `ids` (`pageSize=0`, compartida por TODAS las tarjetas: nunca una petición por tarjeta) y
  * `list(page)` (Mis favoritos). Solo corren con sesión de cliente; sin ella la API respondería 401.
  */

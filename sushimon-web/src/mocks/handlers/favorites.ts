@@ -9,7 +9,7 @@ import type { FavoriteRecord, MockStore, ProductRecord } from '../store';
 import { now, requireCustomer, type Handler, type Req } from './shared';
 
 /**
- * F06 — Favoritos del cliente (spec 009). El mock EMULA al servidor:
+ * F06 — Favoritos del cliente (spec 010). El mock EMULA al servidor:
  *  - propietario = la cuenta de la sesión (aislamiento por correo: el store guarda un registro por cuenta);
  *  - `GET` devuelve `favoriteProductIds` COMPLETOS + una página de `items` (`pageSize=0` ⇒ sin items y sin consultar el
  *    catálogo); 400 con página/tamaño fuera de rango o parámetros desconocidos;

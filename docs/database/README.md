@@ -119,7 +119,7 @@ authenticated`, porque en Supabase los privilegios por defecto sobre tablas nuev
     aplicando 0001..0007 en PGlite 0.4.3 en memoria.
   - **Fuente de verdad**: `docs/references/monsushi_dbdiagram.dbml` NO se edita; la evolución del modelo (columnas y tabla nuevas, `UNIQUE`
     sobre `zone_key`, CHECK) vive en la migración + ADR-0013.
-- `0009_customer_favorites` (F06, `specs/009-customer-favorites`, ADR-0014; **migración existente, sin aplicar a bases reales; requiere aprobación humana**): incremental y no
+- `0009_customer_favorites` (F06, `specs/010-customer-favorites`, ADR-0015; **migración aplicada por el usuario en su Supabase de pruebas; otros entornos requieren aprobación humana**): incremental y no
   destructiva (solo `CREATE`). `app.customer_favorites (customer_id, product_id, created_at)`: PK `(customer_id, product_id)` (como el DBML), FK a `customers`
   `ON DELETE CASCADE`, **sin FK a `products`** (la tabla no existe en 0001–0007 ni en Prisma; F10/F11 pendientes) y `created_at timestamptz DEFAULT now()` (nuevo respecto al DBML).
   Índice `customer_favorites_customer_created_idx (customer_id, created_at DESC, product_id)` para el listado paginado. RLS habilitado sin políticas + `REVOKE ALL FROM PUBLIC`

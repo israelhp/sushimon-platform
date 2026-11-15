@@ -52,6 +52,7 @@ export type AddressFormValues = Required<AddressInput>;
 export const EMPTY_ADDRESS: AddressFormValues = {
   label: 'home',
   customLabel: '',
+  municipalityId: '',
   department: 'Guatemala',
   municipality: 'Guatemala',
   zone: '',
@@ -65,7 +66,8 @@ export function validateAddress(
 ): AddressErrors {
   const errors: AddressErrors = {};
   if (!values.department) errors.department = 'validation.department';
-  if (!values.municipality) errors.municipality = 'validation.municipality';
+  if (!values.municipality || !values.municipalityId)
+    errors.municipality = 'validation.municipality';
   if (requiresZone(values.department, values.municipality)) {
     const zone = checkZone(values.zone, nonexistentZones);
     if (zone === 'required') errors.zone = 'validation.zone';

@@ -169,7 +169,7 @@ INDEX customer_favorites_customer_created_idx ON app.customer_favorites (custome
   conexión privilegiada; el cliente nunca consulta la tabla directamente.
 - No hay CHECK adicional (el tope vive en la transacción, D10). No toca `customers`, RBAC ni `audit_events`. Incremental y no destructiva (solo `CREATE`).
   Reversión manual: `DROP TABLE app.customer_favorites` (sin dependientes). Evolución del DBML (columna `created_at`, FK a productos diferida, índice) justificada aquí y en
-  ADR-0014; el DBML de `docs/references` **no se edita**.
+  ADR-0015; el DBML de `docs/references` **no se edita**.
 - Prisma: modelo `CustomerFavorite` (`@@id([customerId, productId])`, `@@index([customerId, createdAt(sort: Desc), productId])`, relación `onDelete: Cascade`) y
   `favorites CustomerFavorite[]` en `Customer`. Sin relación a `Product`.
 - **F11 (futuro)**: `ADD CONSTRAINT customer_favorites_product_id_fkey FOREIGN KEY (product_id) REFERENCES app.products(id) ON DELETE CASCADE NOT VALID`, luego `VALIDATE CONSTRAINT`

@@ -42,8 +42,8 @@ export class CustomerStorefrontContextDto {
 
   @ApiProperty({
     type: [String],
-    enum: ['addresses', 'favorites', 'orders'],
-    description: 'Secciones sin contrato todavía (F05, F06, F23). No llevan contadores.',
+    enum: ['favorites', 'orders'],
+    description: 'Secciones sin contrato todavía (F06, F23). No llevan contadores.',
   })
-  pendingSections!: Array<'addresses' | 'favorites' | 'orders'>;
+  pendingSections!: Array<'favorites' | 'orders'>;
 }

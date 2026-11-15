@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
 import type { Address } from '@/lib/data-access/models';
-import { addressLine, addressTitle } from '../address-format';
+import { addressLine, addressTitle, defaultAddressIdOf } from '../address-format';
 import { useAddressLabels } from '../use-address-labels';
 import { useAddresses, useDeleteAddress, useMe, useSetDefaultAddress } from '../hooks';
 import { MAX_ADDRESSES } from '../validation';
@@ -29,7 +29,7 @@ export function AddressesPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const list = addresses.data ?? [];
-  const defaultId = me.data?.defaultAddressId ?? null;
+  const defaultId = defaultAddressIdOf(addresses.data);
   const labels = useAddressLabels();
   const full = list.length >= MAX_ADDRESSES;
   const query = {

@@ -1,6 +1,6 @@
-# ADR-0014 Favoritos de clientes: tabla sin FK a productos, puerto de catálogo y contrato único de lectura
+# ADR-0015 Favoritos de clientes: tabla sin FK a productos, puerto de catálogo y contrato único de lectura
 
-**Estado**: **propuesta** (2026-11-14, F06). Se acepta al fusionar `specs/009-customer-favorites`.
+**Estado**: **propuesta** (2026-11-14, F06). Se acepta al fusionar `specs/010-customer-favorites`.
 
 **Contexto**: el DBML define `app.customer_favorites (customer_id, product_id)` con FK a `customers` (cascada) y a `products`. En el repo no existen
 `products`/`categories` (ni migraciones ni Prisma; F10/F11 no existen en ninguna rama), y la web guarda hoy los favoritos como `string[]` bajo una clave

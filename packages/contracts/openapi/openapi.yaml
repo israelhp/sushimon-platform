@@ -1,6 +1,6 @@
 # Contrato HTTP canónico de Sushi Mon (Contract First).
 # Se diseña ANTES de implementar cada slice y se verifica contra NestJS con `pnpm contracts:check`.
-# Estado: F06 (favoritos de clientes: /v1/me/favorites, /v1/me/favorites/{productId}; catálogo real pendiente de F11) + F09 (geografía, cobertura y zonas propias: /v1/locations/*, /v1/admin/delivery-zones, /v1/admin/branches/{id}/delivery-settings, /v1/delivery-coverage/check) + F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
+# Estado: F09 (geografía, cobertura y zonas propias: /v1/locations/*, /v1/admin/delivery-zones, /v1/admin/branches/{id}/delivery-settings, /v1/delivery-coverage/check) + F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
 # Seguridad por defecto: Bearer JWT de Supabase Auth en todo salvo operaciones con `security: []` (health).
 # Transversal a TODAS las respuestas: cabecera `X-Request-Id`; errores con `ErrorResponse`; 429 cuando
 # se excede el rate limit global (no se repite por operación).
@@ -355,6 +355,225 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '429':
           description: '`RATE_LIMITED`: 60 por minuto por IP en esta ruta. `Cache-Control: no-store` y `Retry-After`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/me/addresses:
+    get:
+      operationId: listMyAddresses
+      summary: Lista las direcciones del cliente autenticado
+      description: |
+        Solo las direcciones del cliente del JWT. Orden estable: predeterminada primero, luego por fecha de
+        creación ascendente. Sin direcciones devuelve `items: []` (nunca una dirección de ejemplo).
+      tags: [me]
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Direcciones del cliente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAddressList'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      operationId: createMyAddress
+      summary: Crea una dirección del cliente autenticado
+      description: |
+        Valida el municipio contra el catálogo de F09 y normaliza los textos. Límite: 10 direcciones por
+        cliente (409 `ADDRESS_LIMIT_REACHED`). Duplicado = misma línea normalizada, municipio y zona (409
+        `ADDRESS_DUPLICATE`); la referencia no interviene. Guardar una dirección NO valida cobertura ni tarifa.
+      tags: [me]
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCustomerAddressRequest'
+      responses:
+        '201':
+          description: Dirección creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAddress'
+        '400':
+          description: Datos inválidos o municipio inexistente (violations[].code = MUNICIPALITY_NOT_FOUND)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Límite de direcciones alcanzado (ADDRESS_LIMIT_REACHED) o duplicado (ADDRESS_DUPLICATE)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/me/addresses/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getMyAddress
+      summary: Detalle de una dirección del cliente autenticado
+      description: Solo si la dirección pertenece al cliente del JWT. Ajena o inexistente = 404 (sin enumeración).
+      tags: [me]
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Dirección
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAddress'
+        '400':
+          description: Identificador inválido (no es UUID)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o no pertenece al cliente (ADDRESS_NOT_FOUND)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      operationId: updateMyAddress
+      summary: Edita una dirección del cliente autenticado
+      description: |
+        Actualización parcial con las mismas reglas de creación (duplicado excluyendo esta dirección).
+        No cambia el propietario ni la predeterminada. No modifica pedidos históricos (F20 guarda su snapshot).
+      tags: [me]
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCustomerAddressRequest'
+      responses:
+        '200':
+          description: Dirección actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAddress'
+        '400':
+          description: Datos inválidos, campo no permitido o municipio inexistente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o no pertenece al cliente (ADDRESS_NOT_FOUND)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Duplicado (ADDRESS_DUPLICATE)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      operationId: deleteMyAddress
+      summary: Elimina una dirección del cliente autenticado
+      description: |
+        Borrado físico de la dirección guardada. Si era la predeterminada, la reasigna de forma determinista
+        (la más antigua restante, por `createdAt` e `id`); si no quedan, no hay predeterminada. Los pedidos
+        confirmados conservan su snapshot (F20).
+      tags: [me]
+      security:
+        - bearer: []
+      responses:
+        '204':
+          description: Dirección eliminada
+        '400':
+          description: Identificador inválido (no es UUID)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o no pertenece al cliente (ADDRESS_NOT_FOUND)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/me/addresses/{id}/default:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: setDefaultMyAddress
+      summary: Marca una dirección como predeterminada
+      description: |
+        Operación explícita y transaccional: quita la predeterminada anterior y marca esta. Idempotente. Un
+        índice único parcial en PostgreSQL impide dos predeterminadas aunque haya solicitudes concurrentes.
+      tags: [me]
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Dirección predeterminada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAddress'
+        '400':
+          description: Identificador inválido (no es UUID)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No existe o no pertenece al cliente (ADDRESS_NOT_FOUND)
           content:
             application/json:
               schema:
@@ -2121,17 +2340,17 @@ components:
       required: true
       description: UUID del cierre extraordinario (`branch_closures.id`).
       schema: { type: string, format: uuid }
-    FavoriteProductId:
-      name: productId
-      in: path
-      required: true
-      description: UUID del producto (`products.id`, catálogo F11).
-      schema: { type: string, format: uuid }
     DeliveryZoneId:
       name: id
       in: path
       required: true
       description: UUID de la zona de entrega (`delivery_zones.id`).
+      schema: { type: string, format: uuid }
+    FavoriteProductId:
+      name: productId
+      in: path
+      required: true
+      description: UUID del producto (`products.id`, catálogo F11).
       schema: { type: string, format: uuid }
   schemas:
     PublicBranch:
@@ -2599,7 +2818,7 @@ components:
           description: Secciones de Mi cuenta sin contrato implementado todavía. No tienen contadores.
           items:
             type: string
-            enum: [addresses, favorites, orders]
+            enum: [favorites, orders]
     FavoriteProductStatus:
       type: string
       description: |
@@ -2693,7 +2912,7 @@ components:
           type: string
           description: |
             Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F06: `PRODUCT_NOT_FOUND`, `FAVORITES_LIMIT_REACHED`, `CATALOG_UNAVAILABLE` y `FAVORITES_BUSY` —los únicos 5xx con `code`—, `RATE_LIMITED`). Los clientes deben ramificar por `code`, nunca por `message`.
+            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`). Los clientes deben ramificar por `code`, nunca por `message`.
         violations:
           type: array
           description: Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09).
@@ -3561,33 +3780,81 @@ components:
         fullName: { type: string }
         phone: { type: string }
         defaultAddressId: { type: string, nullable: true }
-    Address:
-      x-status: draft
+    CustomerAddress:
       type: object
+      description: Dirección guardada del cliente autenticado (F05). Nunca indica cobertura ni tarifa.
       required:
-        [id, label, customLabel, department, municipality, zone, line, references, createdAt]
+        [
+          id,
+          label,
+          department,
+          municipality,
+          zone,
+          addressLine,
+          referenceNote,
+          latitude,
+          longitude,
+          isDefault,
+          createdAt,
+        ]
       properties:
-        id: { type: string }
-        label: { type: string, enum: [home, work, other] }
-        customLabel: { type: string }
-        department: { type: string }
-        municipality: { type: string }
-        zone: { type: string }
-        line: { type: string }
-        references: { type: string }
+        id: { type: string, format: uuid }
+        label: { type: string, minLength: 1, maxLength: 40, example: Casa }
+        department:
+          type: object
+          required: [id, name]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+        municipality:
+          type: object
+          required: [id, name]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+        zone: { type: string, nullable: true, maxLength: 60 }
+        addressLine: { type: string, minLength: 1, maxLength: 200 }
+        referenceNote: { type: string, nullable: true, maxLength: 200 }
+        latitude: { type: number, nullable: true, minimum: -90, maximum: 90 }
+        longitude: { type: number, nullable: true, minimum: -180, maximum: 180 }
+        isDefault: { type: boolean }
         createdAt: { type: string, format: date-time }
-    AddressInput:
-      x-status: draft
+    CustomerAddressList:
       type: object
-      required: [label, department, municipality, zone, line]
+      description: 'Direcciones del cliente. Sin paginación: el límite por cliente es 10. Primero la predeterminada.'
+      required: [items]
       properties:
-        label: { type: string, enum: [home, work, other] }
-        customLabel: { type: string }
-        department: { type: string }
-        municipality: { type: string }
-        zone: { type: string }
-        line: { type: string }
-        references: { type: string }
+        items:
+          type: array
+          maxItems: 10
+          items: { $ref: '#/components/schemas/CustomerAddress' }
+    CreateCustomerAddressRequest:
+      type: object
+      required: [label, municipalityId, addressLine]
+      additionalProperties: false
+      properties:
+        label: { type: string, minLength: 1, maxLength: 40 }
+        municipalityId: { type: string, format: uuid }
+        zone: { type: string, nullable: true, maxLength: 60 }
+        addressLine: { type: string, minLength: 1, maxLength: 200 }
+        referenceNote: { type: string, nullable: true, maxLength: 200 }
+        latitude: { type: number, nullable: true, minimum: -90, maximum: 90 }
+        longitude: { type: number, nullable: true, minimum: -180, maximum: 180 }
+        isDefault:
+          type: boolean
+          description: Si el cliente ya tiene una predeterminada, true la reemplaza. La primera dirección siempre queda predeterminada.
+    UpdateCustomerAddressRequest:
+      type: object
+      description: Actualización parcial. No incluye `isDefault` (usar PATCH /v1/me/addresses/{id}/default).
+      additionalProperties: false
+      properties:
+        label: { type: string, minLength: 1, maxLength: 40 }
+        municipalityId: { type: string, format: uuid }
+        zone: { type: string, nullable: true, maxLength: 60 }
+        addressLine: { type: string, minLength: 1, maxLength: 200 }
+        referenceNote: { type: string, nullable: true, maxLength: 200 }
+        latitude: { type: number, nullable: true, minimum: -90, maximum: 90 }
+        longitude: { type: number, nullable: true, minimum: -180, maximum: 180 }
     Incident:
       x-status: draft
       type: object

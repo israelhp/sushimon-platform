@@ -195,7 +195,7 @@ Claves TanStack: `locations.departments()` / `.municipalities(id)` (≥ 1 h, nun
 Tras guardar una zona se invalidan las listas, su detalle y la cobertura de ESA sucursal; tras cambiar la configuración, la de
 la sucursal y su cobertura. La etiqueta de zona de la tienda (`Zona 10`) es la misma que escribe el backoffice (`lib/delivery-zone.ts`).
 
-## F06 — Favoritos del cliente (spec 009, ADR-0014)
+## F06 — Favoritos del cliente (spec 010, ADR-0015)
 
 Estado: **web `MOCK_ONLY`, alineada al contrato; API implementada y commiteada (catálogo `BLOCKED` por F11, dependencia interna)**. El
 flujo real de extremo a extremo NO existe hasta F11: sin catálogo la API responde `503 CATALOG_UNAVAILABLE` al marcar y `UNKNOWN` al

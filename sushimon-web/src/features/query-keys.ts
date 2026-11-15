@@ -81,7 +81,7 @@ export const queryKeys = {
     addresses: ['account', 'addresses'] as const,
   },
   /**
-   * F06 (spec 009 D15): datos del CLIENTE con la IDENTIDAD en la raíz (`scope` = id de Supabase Auth, o `demo:<correo>` en el
+   * F06 (spec 010 D15): datos del CLIENTE con la IDENTIDAD en la raíz (`scope` = id de Supabase Auth, o `demo:<correo>` en el
    * mock; nunca vacío: sin sesión las consultas no se habilitan). Otra cuenta jamás puede leer la caché ajena porque su
    * clave difiere; al cerrar sesión o cambiar de cuenta `useCustomerCacheGuard` descarta las claves del `scope` anterior.
    */

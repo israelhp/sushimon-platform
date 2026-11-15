@@ -3,7 +3,7 @@ import { paths } from '@/lib/data-access/paths';
 import type { DataClient } from '@/lib/data-access/types';
 
 /**
- * F06 — Favoritos del cliente autenticado (spec 009). El propietario sale SIEMPRE de la sesión (JWT en http): ningún
+ * F06 — Favoritos del cliente autenticado (spec 010). El propietario sale SIEMPRE de la sesión (JWT en http): ningún
  * método recibe ni envía un `customerId`. PUT/DELETE no llevan cuerpo y son idempotentes (204).
  *
  * Errores por `code` (nunca por `message`): 404 `PRODUCT_NOT_FOUND`, 422 `FAVORITES_LIMIT_REACHED`,

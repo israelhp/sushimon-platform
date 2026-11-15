@@ -11,7 +11,7 @@ import {
 } from '@/features/favorites/favorites-provider';
 
 /**
- * Corazón de favorito (F06, spec 009 D17). Los favoritos pertenecen a la CUENTA del cliente y viven en el servidor:
+ * Corazón de favorito (F06, spec 010 D17). Los favoritos pertenecen a la CUENTA del cliente y viven en el servidor:
  *  - visitante: no crea nada; abre el inicio de sesión (Google en producción, simulado en la demo) y, tras entrar, el
  *    cliente vuelve a tocar el corazón (sin escrituras ocultas ni favoritos locales de invitado);
  *  - cliente: alterna con actualización optimista y avisa con un toast; el estado de TODOS los corazones sale de UNA sola

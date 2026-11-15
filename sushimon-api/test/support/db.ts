@@ -11,9 +11,12 @@ export function withDatabase(url: string, database: string): string {
 
 /** Aplica las migraciones versionadas con el CLI de Prisma (conexión directa). */
 export function migrate(url: string): void {
-  execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], {
+  // En Windows pnpm es un shim `pnpm.cmd`: execFileSync no lo ejecuta sin shell (ENOENT).
+  const isWindows = process.platform === 'win32';
+  execFileSync(isWindows ? 'pnpm.cmd' : 'pnpm', ['exec', 'prisma', 'migrate', 'deploy'], {
     stdio: 'pipe',
     env: { ...process.env, DIRECT_URL: url },
+    shell: isWindows,
   });
 }
 

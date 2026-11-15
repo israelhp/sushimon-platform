@@ -1,8 +1,16 @@
 import type { AuthContext as AuthContextResponse } from '@/services/auth';
-import type { Address, AddressInput, Customer, MeResponse } from '@/lib/data-access/models';
-import { assertAddress, fail } from '../domain';
+import type {
+  CreateCustomerAddressRequest,
+  Customer,
+  CustomerAddressResponse,
+  MeResponse,
+  StoredAddress,
+  UpdateCustomerAddressRequest,
+} from '@/lib/data-access/models';
+import { DEPARTMENT_SEEDS, MUNICIPALITY_SEEDS, municipalityByName } from '../fixtures/geography';
+import { assertAddress, fail, failCode } from '../domain';
 import { settleReviews } from './orders';
-import { body, now, oneOf, requireCustomer, str, type Handler, type Req } from './shared';
+import { body, now, requireCustomer, str, type Handler, type Req } from './shared';
 import { authStaffContext } from './staff';
 
 /** Identidad simulada (UUID fijo y determinista, como en /v1/auth/context). */
@@ -14,7 +22,7 @@ const AUTH_USER_ID = '00000000-0000-4000-8000-00000000d3a0';
  */
 const MAX_ADDRESSES = 10;
 
-const addressKey = (a: Pick<Address, 'line' | 'municipality' | 'zone'>) =>
+const addressKey = (a: Pick<StoredAddress, 'line' | 'municipality' | 'zone'>) =>
   `${a.line.trim().replace(/\s+/g, ' ').toLowerCase()}|${a.municipality}|${a.zone}`;
 
 /**
@@ -47,7 +55,7 @@ const CUSTOMER_ID = '00000000-0000-4000-8000-00000000c001';
 const CUSTOMER_CREATED_AT = '2026-01-15T12:00:00.000Z';
 
 /** Forma del perfil de cliente que devuelve la API real (F04 · contrato MeResponse). */
-function meResponse(profile: Customer): MeResponse & { defaultAddressId: string | null } {
+function meResponse(profile: Customer): MeResponse {
   return {
     authUserId: AUTH_USER_ID,
     email: profile.email || null,
@@ -59,8 +67,6 @@ function meResponse(profile: Customer): MeResponse & { defaultAddressId: string 
       createdAt: CUSTOMER_CREATED_AT,
     },
     isStaff: false,
-    // Extensión de SIMULACIÓN: la dirección predeterminada es de F05 y aún no está en el contrato de F04.
-    defaultAddressId: profile.defaultAddressId,
   };
 }
 
@@ -116,88 +122,184 @@ export const getStorefront: Handler = (req) => {
     avatarUrl: null,
     customer: meResponse(profile).customer,
     isStaff: false,
-    pendingSections: ['addresses', 'favorites', 'orders'],
+    pendingSections: ['favorites', 'orders'],
   };
 };
 
-/**
- * PUT /v1/demo/me/default-address — SIMULACIÓN de F05 (no existe en la API real todavía).
- * Se mantiene fuera de PATCH /v1/me para que F04 no acepte campos de direcciones.
- */
-export const setDemoDefaultAddress: Handler = (req) => {
-  const account = requireCustomer(req);
-  const b = body<{ addressId: string | null }>(req);
-  if (b.addressId !== null && !account.addresses.some((a) => a.id === b.addressId)) {
-    fail(404, 'Dirección no encontrada');
-  }
-  account.profile = { ...account.profile, defaultAddressId: b.addressId ?? null };
-  return { defaultAddressId: account.profile.defaultAddressId };
+/** Etiqueta de texto de la API ↔ enum de UI (mismo criterio que `services/account.ts`). */
+const PRESET_TEXT: Record<string, StoredAddress['label']> = { Casa: 'home', Trabajo: 'work' };
+const TEXT_OF: Record<StoredAddress['label'], string> = {
+  home: 'Casa',
+  work: 'Trabajo',
+  other: '',
 };
 
-function parseAddress(req: Req, input: Partial<AddressInput>) {
-  const label = oneOf(input.label, ['home', 'work', 'other'] as const, 'label');
-  const a = assertAddress(req.store, input);
+function labelFromText(text: string): Pick<StoredAddress, 'label' | 'customLabel'> {
+  const preset = PRESET_TEXT[text];
+  return preset ? { label: preset, customLabel: '' } : { label: 'other', customLabel: text };
+}
+
+function labelToText(a: Pick<StoredAddress, 'label' | 'customLabel'>): string {
+  return a.label === 'other' ? a.customLabel : TEXT_OF[a.label];
+}
+
+/** Municipio y departamento del catálogo mock a partir del id (como `GET /v1/locations/*`). */
+function placeOf(municipalityId: string) {
+  const municipality = MUNICIPALITY_SEEDS.find((m) => m.id === municipalityId);
+  const department = municipality
+    ? DEPARTMENT_SEEDS.find((d) => d.id === municipality.departmentId)
+    : undefined;
+  return municipality && department ? { municipality, department } : null;
+}
+
+/** Forma de la API (`CustomerAddress`) a partir de la dirección interna del mock. */
+function toAddressResponse(a: StoredAddress, defaultId: string | null): CustomerAddressResponse {
+  const municipality = municipalityByName(a.department, a.municipality);
+  const department = DEPARTMENT_SEEDS.find((d) => d.name === a.department);
   return {
-    label,
-    customLabel: label === 'other' ? str(input.customLabel).trim().slice(0, 40) : '',
-    ...a,
-    line: a.line.slice(0, 200),
-    references: a.references.slice(0, 200),
+    id: a.id,
+    label: labelToText(a),
+    department: { id: department?.id ?? '', name: a.department },
+    municipality: { id: municipality?.id ?? '', name: a.municipality },
+    zone: a.zone || null,
+    addressLine: a.line,
+    referenceNote: a.references || null,
+    latitude: null,
+    longitude: null,
+    isDefault: a.id === defaultId,
+    createdAt: a.createdAt,
   };
 }
 
-/** GET /v1/me/addresses — predeterminada primero, luego por antigüedad. */
-export const listAddresses: Handler = (req): Address[] => {
-  const { addresses, profile } = requireCustomer(req);
-  return [...addresses].sort((a, b) =>
+/** Valida y normaliza con las mismas reglas de checkout; el municipio se resuelve por id. */
+function resolveFields(
+  req: Req,
+  b: {
+    municipalityId?: string;
+    zone?: string | null;
+    addressLine?: string;
+    referenceNote?: string | null;
+  },
+  current?: StoredAddress,
+) {
+  const place = b.municipalityId !== undefined ? placeOf(b.municipalityId) : null;
+  if (b.municipalityId !== undefined && !place) {
+    failCode(400, 'MUNICIPALITY_NOT_FOUND', 'Municipio inexistente', [
+      { path: 'municipalityId', code: 'MUNICIPALITY_NOT_FOUND', message: 'Municipio inexistente' },
+    ]);
+  }
+  const data = assertAddress(req.store, {
+    department: place ? place.department.name : (current?.department ?? ''),
+    municipality: place ? place.municipality.name : (current?.municipality ?? ''),
+    zone: b.zone !== undefined ? (b.zone ?? '') : (current?.zone ?? ''),
+    line: b.addressLine !== undefined ? b.addressLine : (current?.line ?? ''),
+    references:
+      b.referenceNote !== undefined ? (b.referenceNote ?? '') : (current?.references ?? ''),
+  });
+  return data;
+}
+
+const ownAddresses = (req: Req) => requireCustomer(req);
+
+/** GET /v1/me/addresses → `{ items }`, predeterminada primero y luego por antigüedad. */
+export const listAddresses: Handler = (req): { items: CustomerAddressResponse[] } => {
+  const { addresses, profile } = ownAddresses(req);
+  const sorted = [...addresses].sort((a, b) =>
     a.id === profile.defaultAddressId
       ? -1
       : b.id === profile.defaultAddressId
         ? 1
         : a.createdAt.localeCompare(b.createdAt),
   );
+  return { items: sorted.map((a) => toAddressResponse(a, profile.defaultAddressId)) };
 };
 
-/** POST /v1/me/addresses */
-export const createAddress: Handler = (req): Address => {
-  const account = requireCustomer(req);
-  const data = parseAddress(req, body<AddressInput>(req));
-  if (account.addresses.length >= MAX_ADDRESSES) fail(409, 'Máximo 10 direcciones');
-  if (account.addresses.some((a) => addressKey(a) === addressKey(data))) {
-    fail(409, 'Ya tienes esa dirección guardada');
+/** GET /v1/me/addresses/:id — ajena o inexistente = 404 (sin enumeración). */
+export const getAddress: Handler = (req): CustomerAddressResponse => {
+  const { addresses, profile } = ownAddresses(req);
+  const found = addresses.find((a) => a.id === req.params.id);
+  if (!found) failCode(404, 'ADDRESS_NOT_FOUND', 'Dirección no encontrada');
+  return toAddressResponse(found, profile.defaultAddressId);
+};
+
+/** POST /v1/me/addresses — límite de 10 y duplicado (línea + municipio + zona). */
+export const createAddress: Handler = (req): CustomerAddressResponse => {
+  const account = ownAddresses(req);
+  const b = body<CreateCustomerAddressRequest>(req);
+  if (typeof b.label !== 'string' || !b.label.trim())
+    failCode(400, 'ADDRESS_INVALID', 'Etiqueta obligatoria');
+  const data = resolveFields(req, b);
+  const label = labelFromText(b.label.trim().slice(0, 40));
+  if (account.addresses.length >= MAX_ADDRESSES) {
+    failCode(409, 'ADDRESS_LIMIT_REACHED', `Podés guardar hasta ${MAX_ADDRESSES} direcciones.`);
   }
-  const address: Address = {
+  const stored: StoredAddress = {
+    ...label,
     ...data,
+    line: data.line.slice(0, 200),
+    references: data.references.slice(0, 200),
     id: `addr-${req.store.sequences.address++}`,
     createdAt: now(req).toISOString(),
   };
-  account.addresses.push(address);
-  if (!account.profile.defaultAddressId) account.profile.defaultAddressId = address.id;
-  return address;
+  if (account.addresses.some((a) => addressKey(a) === addressKey(stored))) {
+    failCode(409, 'ADDRESS_DUPLICATE', 'Ya tenés esta dirección guardada.');
+  }
+  account.addresses.push(stored);
+  if (!account.profile.defaultAddressId || b.isDefault === true) {
+    account.profile = { ...account.profile, defaultAddressId: stored.id };
+  }
+  return toAddressResponse(stored, account.profile.defaultAddressId);
 };
 
-/** PATCH /v1/me/addresses/:id */
-export const updateAddress: Handler = (req): Address => {
-  const account = requireCustomer(req);
+/** PATCH /v1/me/addresses/:id — parcial; no cambia propietario ni predeterminada. */
+export const updateAddress: Handler = (req): CustomerAddressResponse => {
+  const account = ownAddresses(req);
   const index = account.addresses.findIndex((a) => a.id === req.params.id);
   const current = account.addresses[index];
-  if (!current) fail(404, 'Dirección no encontrada');
-  const data = parseAddress(req, { ...current, ...body<AddressInput>(req) });
-  if (account.addresses.some((a) => a.id !== current.id && addressKey(a) === addressKey(data))) {
-    fail(409, 'Ya tienes esa dirección guardada');
+  if (!current) failCode(404, 'ADDRESS_NOT_FOUND', 'Dirección no encontrada');
+  const b = body<UpdateCustomerAddressRequest>(req);
+  const data = resolveFields(req, b, current);
+  const label =
+    b.label !== undefined
+      ? labelFromText(b.label.trim().slice(0, 40))
+      : {
+          label: current.label,
+          customLabel: current.customLabel,
+        };
+  const updated: StoredAddress = {
+    ...current,
+    ...label,
+    ...data,
+    line: data.line.slice(0, 200),
+    references: data.references.slice(0, 200),
+  };
+  if (account.addresses.some((a) => a.id !== current.id && addressKey(a) === addressKey(updated))) {
+    failCode(409, 'ADDRESS_DUPLICATE', 'Ya tenés esta dirección guardada.');
   }
-  const updated = { ...current, ...data };
   account.addresses[index] = updated;
-  return updated;
+  return toAddressResponse(updated, account.profile.defaultAddressId);
 };
 
-/** DELETE /v1/me/addresses/:id → 204 */
+/** DELETE /v1/me/addresses/:id → 204. Si era la predeterminada, reasigna la más antigua restante. */
 export const deleteAddress: Handler = (req) => {
-  const account = requireCustomer(req);
-  if (!account.addresses.some((a) => a.id === req.params.id)) fail(404, 'Dirección no encontrada');
+  const account = ownAddresses(req);
+  const target = account.addresses.find((a) => a.id === req.params.id);
+  if (!target) failCode(404, 'ADDRESS_NOT_FOUND', 'Dirección no encontrada');
   account.addresses = account.addresses.filter((a) => a.id !== req.params.id);
-  if (account.profile.defaultAddressId === req.params.id) account.profile.defaultAddressId = null;
+  if (account.profile.defaultAddressId === req.params.id) {
+    const next = [...account.addresses].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+    account.profile = { ...account.profile, defaultAddressId: next?.id ?? null };
+  }
   return undefined;
+};
+
+/** PATCH /v1/me/addresses/:id/default — transaccional e idempotente. */
+export const setMyDefaultAddress: Handler = (req): CustomerAddressResponse => {
+  const account = ownAddresses(req);
+  const address = account.addresses.find((a) => a.id === req.params.id);
+  if (!address) failCode(404, 'ADDRESS_NOT_FOUND', 'Dirección no encontrada');
+  account.profile = { ...account.profile, defaultAddressId: address.id };
+  return toAddressResponse(address, address.id);
 };
 
 /** GET /v1/me/orders — pedidos del cliente (por correo), más recientes primero. */

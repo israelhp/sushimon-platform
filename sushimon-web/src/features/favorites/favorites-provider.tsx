@@ -31,7 +31,7 @@ import { favoriteErrorKind } from './errors';
 import { DEFAULT_LIMIT, IDS_STALE_MS, NO_SCOPE } from './hooks';
 
 /**
- * F06 — Estado de los corazones (spec 009 D15–D17). UN proveedor por tienda con UN observer de `ids`, UNA mutación y UN
+ * F06 — Estado de los corazones (spec 010 D15–D17). UN proveedor por tienda con UN observer de `ids`, UNA mutación y UN
  * lector de la identidad, en lugar de un `useQuery` + `useMutation` + `useMutationState` por tarjeta. Cada corazón se
  * suscribe solo a SU producto (`useIsFavorite`, `useIsFavoritePending`): al marcar A no se re-renderiza B.
  */

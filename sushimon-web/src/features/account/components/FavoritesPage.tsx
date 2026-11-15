@@ -20,7 +20,7 @@ import { AccountSection } from './AccountSection';
 import { SectionEmpty } from './HubCard';
 
 /**
- * Mis favoritos (F06, spec 009 D18). Los datos son los de la API (orden por `addedAt`, estado de cada producto); para
+ * Mis favoritos (F06, spec 010 D18). Los datos son los de la API (orden por `addedAt`, estado de cada producto); para
  * PINTAR la tarjeta se busca el `Product` completo (precio y disponibilidad) en el catálogo existente por `productId`:
  * la relación nunca copia el catálogo ni el precio. Si el producto no está en el catálogo, ya no se puede pedir, o la API
  * no pudo consultarlo (`UNKNOWN`), la fila es discreta y segura (sin precio ni ids internos) y permite quitarlo.

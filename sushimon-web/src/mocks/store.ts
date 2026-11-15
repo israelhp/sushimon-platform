@@ -1,6 +1,6 @@
 import type {
   AdminDeliveryZone,
-  Address,
+  StoredAddress,
   Category,
   Customer,
   JobApplication,
@@ -37,7 +37,7 @@ export interface FavoriteRecord {
 
 export interface CustomerAccount {
   profile: Customer;
-  addresses: Address[];
+  addresses: StoredAddress[];
   /** Favoritos de ESTA cuenta (el store está aislado por correo: una cuenta nunca ve los de otra). */
   favorites: FavoriteRecord[];
 }

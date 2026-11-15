@@ -205,6 +205,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/addresses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lista las direcciones del cliente autenticado
+         * @description Solo las direcciones del cliente del JWT. Orden estable: predeterminada primero, luego por fecha de
+         *     creación ascendente. Sin direcciones devuelve `items: []` (nunca una dirección de ejemplo).
+         */
+        get: operations["listMyAddresses"];
+        put?: never;
+        /**
+         * Crea una dirección del cliente autenticado
+         * @description Valida el municipio contra el catálogo de F09 y normaliza los textos. Límite: 10 direcciones por
+         *     cliente (409 `ADDRESS_LIMIT_REACHED`). Duplicado = misma línea normalizada, municipio y zona (409
+         *     `ADDRESS_DUPLICATE`); la referencia no interviene. Guardar una dirección NO valida cobertura ni tarifa.
+         */
+        post: operations["createMyAddress"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/addresses/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Detalle de una dirección del cliente autenticado
+         * @description Solo si la dirección pertenece al cliente del JWT. Ajena o inexistente = 404 (sin enumeración).
+         */
+        get: operations["getMyAddress"];
+        put?: never;
+        post?: never;
+        /**
+         * Elimina una dirección del cliente autenticado
+         * @description Borrado físico de la dirección guardada. Si era la predeterminada, la reasigna de forma determinista
+         *     (la más antigua restante, por `createdAt` e `id`); si no quedan, no hay predeterminada. Los pedidos
+         *     confirmados conservan su snapshot (F20).
+         */
+        delete: operations["deleteMyAddress"];
+        options?: never;
+        head?: never;
+        /**
+         * Edita una dirección del cliente autenticado
+         * @description Actualización parcial con las mismas reglas de creación (duplicado excluyendo esta dirección).
+         *     No cambia el propietario ni la predeterminada. No modifica pedidos históricos (F20 guarda su snapshot).
+         */
+        patch: operations["updateMyAddress"];
+        trace?: never;
+    };
+    "/v1/me/addresses/{id}/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Marca una dirección como predeterminada
+         * @description Operación explícita y transaccional: quita la predeterminada anterior y marca esta. Idempotente. Un
+         *     índice único parcial en PostgreSQL impide dos predeterminadas aunque haya solicitudes concurrentes.
+         */
+        patch: operations["setDefaultMyAddress"];
+        trace?: never;
+    };
     "/v1/branches": {
         parameters: {
             query?: never;
@@ -1181,7 +1264,7 @@ export interface components {
             customer: components["schemas"]["CustomerProfile"];
             isStaff: boolean;
             /** @description Secciones de Mi cuenta sin contrato implementado todavía. No tienen contadores. */
-            pendingSections: ("addresses" | "favorites" | "orders")[];
+            pendingSections: ("favorites" | "orders")[];
         };
         /**
          * @description Estado del producto favorito según el catálogo (enum abierto: tolerar valores futuros). `ACTIVE` = publicado y
@@ -1254,7 +1337,7 @@ export interface components {
             details?: string[];
             /**
              * @description Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F06: `PRODUCT_NOT_FOUND`, `FAVORITES_LIMIT_REACHED`, `CATALOG_UNAVAILABLE` y `FAVORITES_BUSY` —los únicos 5xx con `code`—, `RATE_LIMITED`). Los clientes deben ramificar por `code`, nunca por `message`.
+             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`). Los clientes deben ramificar por `code`, nunca por `message`.
              */
             code?: string;
             /** @description Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09). */
@@ -1835,28 +1918,57 @@ export interface components {
             phone: string;
             defaultAddressId: string | null;
         };
-        Address: {
+        /** @description Dirección guardada del cliente autenticado (F05). Nunca indica cobertura ni tarifa. */
+        CustomerAddress: {
+            /** Format: uuid */
             id: string;
-            /** @enum {string} */
-            label: "home" | "work" | "other";
-            customLabel: string;
-            department: string;
-            municipality: string;
-            zone: string;
-            line: string;
-            references: string;
+            /** @example Casa */
+            label: string;
+            department: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+            };
+            municipality: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+            };
+            zone: string | null;
+            addressLine: string;
+            referenceNote: string | null;
+            latitude: number | null;
+            longitude: number | null;
+            isDefault: boolean;
             /** Format: date-time */
             createdAt: string;
         };
-        AddressInput: {
-            /** @enum {string} */
-            label: "home" | "work" | "other";
-            customLabel?: string;
-            department: string;
-            municipality: string;
-            zone: string;
-            line: string;
-            references?: string;
+        /** @description Direcciones del cliente. Sin paginación: el límite por cliente es 10. Primero la predeterminada. */
+        CustomerAddressList: {
+            items: components["schemas"]["CustomerAddress"][];
+        };
+        CreateCustomerAddressRequest: {
+            label: string;
+            /** Format: uuid */
+            municipalityId: string;
+            zone?: string | null;
+            addressLine: string;
+            referenceNote?: string | null;
+            latitude?: number | null;
+            longitude?: number | null;
+            /** @description Si el cliente ya tiene una predeterminada, true la reemplaza. La primera dirección siempre queda predeterminada. */
+            isDefault?: boolean;
+        };
+        /** @description Actualización parcial. No incluye `isDefault` (usar PATCH /v1/me/addresses/{id}/default). */
+        UpdateCustomerAddressRequest: {
+            label?: string;
+            /** Format: uuid */
+            municipalityId?: string;
+            zone?: string | null;
+            addressLine?: string;
+            referenceNote?: string | null;
+            latitude?: number | null;
+            longitude?: number | null;
         };
         Incident: {
             /** @example INC-1042 */
@@ -2176,10 +2288,10 @@ export interface components {
         BranchId: string;
         /** @description UUID del cierre extraordinario (`branch_closures.id`). */
         ClosureId: string;
-        /** @description UUID del producto (`products.id`, catálogo F11). */
-        FavoriteProductId: string;
         /** @description UUID de la zona de entrega (`delivery_zones.id`). */
         DeliveryZoneId: string;
+        /** @description UUID del producto (`products.id`, catálogo F11). */
+        FavoriteProductId: string;
     };
     requestBodies: never;
     headers: never;
@@ -2587,6 +2699,293 @@ export interface operations {
             };
             /** @description `RATE_LIMITED`: 60 por minuto por IP en esta ruta. `Cache-Control: no-store` y `Retry-After`. */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listMyAddresses: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Direcciones del cliente */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerAddressList"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createMyAddress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCustomerAddressRequest"];
+            };
+        };
+        responses: {
+            /** @description Dirección creada */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerAddress"];
+                };
+            };
+            /** @description Datos inválidos o municipio inexistente (violations[].code = MUNICIPALITY_NOT_FOUND) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Límite de direcciones alcanzado (ADDRESS_LIMIT_REACHED) o duplicado (ADDRESS_DUPLICATE) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getMyAddress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Dirección */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerAddress"];
+                };
+            };
+            /** @description Identificador inválido (no es UUID) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o no pertenece al cliente (ADDRESS_NOT_FOUND) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteMyAddress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Dirección eliminada */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Identificador inválido (no es UUID) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o no pertenece al cliente (ADDRESS_NOT_FOUND) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateMyAddress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCustomerAddressRequest"];
+            };
+        };
+        responses: {
+            /** @description Dirección actualizada */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerAddress"];
+                };
+            };
+            /** @description Datos inválidos, campo no permitido o municipio inexistente */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o no pertenece al cliente (ADDRESS_NOT_FOUND) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Duplicado (ADDRESS_DUPLICATE) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setDefaultMyAddress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Dirección predeterminada */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerAddress"];
+                };
+            };
+            /** @description Identificador inválido (no es UUID) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o no pertenece al cliente (ADDRESS_NOT_FOUND) */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
