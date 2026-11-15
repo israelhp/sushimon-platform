@@ -3,7 +3,7 @@
 **Rama**: `feature/F06-customer-favorites` (desde `develop` con F00–F09 y F04)
 **Prioridad**: P1 · **Dependencias**: F01 (JWT Supabase), F04 (perfil de cliente) · **Bloqueada parcialmente por**: F11 (catálogo real; no existe en ninguna rama)
 **Relacionadas (solo contratos reutilizables)**: F11 (catálogo), F13 (precio/disponibilidad por sucursal), F17 (`GET /v1/me/storefront`), F18 (carrito), F23 (reordenar)
-**Estado global**: `CONTRACT_DEFINED` (contrato + spec + ADR-0014; sin API, web ni migración). Objetivo de F06: `API_IMPLEMENTED` con el
+**Estado global**: `API_IMPLEMENTED` (API, migración `0009` y web implementadas; web `MOCK_ONLY`; migración sin aplicar a bases reales ni integración con BD verificada) con el
 catálogo `BLOCKED` por F11 (dependencia interna, no proveedor externo). **El flujo real de extremo a extremo NO existe hasta F11**: sin catálogo
 no se puede marcar un favorito (503), y la web solo funciona en modo mock (`MOCK_ONLY`).
 

@@ -226,6 +226,23 @@ describe('F06 · favoritos del cliente (e2e)', () => {
       expect(typeof (body.items[0] as unknown as { addedAt: string }).addedAt).toBe('string');
     });
 
+    it('el favorito no guarda precio ni sucursal: solo productId, addedAt, status y el resumen mínimo', async () => {
+      const auth = await as(USER_ID);
+      await http().put(`${COLLECTION}/${P1}`).set('Authorization', auth).expect(204);
+      const body = (await http().get(COLLECTION).set('Authorization', auth).expect(200))
+        .body as FavoritesBody;
+      const item = body.items[0] as unknown as Record<string, unknown>;
+      expect(Object.keys(item).sort()).toEqual(['addedAt', 'product', 'productId', 'status']);
+      const product = item['product'] as Record<string, unknown>;
+      for (const forbidden of ['price', 'basePrice', 'branchId', 'currency', 'quantity']) {
+        expect(product).not.toHaveProperty(forbidden);
+      }
+      // Cambiar de sucursal no existe en F06: la colección es la misma (una fila por producto y cliente).
+      const again = (await http().get(COLLECTION).set('Authorization', auth).expect(200))
+        .body as FavoritesBody;
+      expect(again.favoriteProductIds).toEqual(body.favoriteProductIds);
+    });
+
     it('DELETE 204 con private, no-store; los errores salen no-store', async () => {
       const auth = await as(USER_ID);
       await http().put(`${COLLECTION}/${P1}`).set('Authorization', auth).expect(204);
