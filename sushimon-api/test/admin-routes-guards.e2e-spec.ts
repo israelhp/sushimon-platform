@@ -84,11 +84,11 @@ async function loadApp() {
 }
 
 describe('Arquitectura: toda ruta /v1/admin exige StaffGuard y MfaGuard', () => {
-  it('las rutas admin reales los tienen (RequireStaff) y no hay menos de 29', async () => {
+  it('las rutas admin reales los tienen (RequireStaff) y no hay menos de 30', async () => {
     const { moduleRef, controllers, StaffGuard, MfaGuard } = await loadApp();
     try {
       const routes = adminRoutes(controllers);
-      expect(routes.length).toBeGreaterThanOrEqual(29);
+      expect(routes.length).toBeGreaterThanOrEqual(30);
       expect(violations(routes, StaffGuard, MfaGuard)).toEqual([]);
     } finally {
       await moduleRef.close();

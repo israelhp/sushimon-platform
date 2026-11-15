@@ -80,6 +80,17 @@ export const envSchema = z
     SUPABASE_JWKS_URL: optional(z.url()),
     /** Secreto HS256 heredado (proyectos sin claves asimétricas). Solo servidor; si se omite, HS256 se rechaza. */
     SUPABASE_JWT_SECRET: optional(z.string().min(32, 'mínimo 32 caracteres')),
+    /**
+     * Clave de servicio (service role) de Supabase. OPCIONAL y SOLO servidor: habilita únicamente el reinicio de MFA por
+     * un administrador (`POST /v1/admin/staff/{id}/mfa-reset`, F02). Sin ella el endpoint responde 503
+     * `MFA_RESET_UNAVAILABLE`. Nunca en el cliente (jamás `NEXT_PUBLIC_`), en logs, errores ni auditoría.
+     */
+    SUPABASE_SERVICE_ROLE_KEY: optional(z.string().min(20, 'mínimo 20 caracteres')),
+    /** Tiempo máximo (ms) de cada llamada a la Admin API de Supabase Auth. */
+    SUPABASE_ADMIN_TIMEOUT_MS: z.preprocess(
+      blankToUndefined,
+      z.coerce.number().int().min(500).max(30_000).default(8_000),
+    ),
     /** Tolerancia de reloj al validar exp/nbf (segundos). */
     AUTH_CLOCK_TOLERANCE_S: z.coerce.number().int().min(0).max(60).default(5),
 

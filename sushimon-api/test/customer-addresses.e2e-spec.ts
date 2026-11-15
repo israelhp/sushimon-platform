@@ -2,7 +2,7 @@ import { Logger } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { fakeAddressesDb, MUNI, type AddressesDb } from './support/addresses-harness.js';
+import { CITY, fakeAddressesDb, MUNI, type AddressesDb } from './support/addresses-harness.js';
 import { createTestKeys, USER_ID, type TestKeys } from './support/tokens.js';
 
 /**
@@ -276,6 +276,102 @@ describe('F05 · direcciones del cliente (e2e)', () => {
         .set('Authorization', auth)
         .expect(200);
       expect(got.body).toMatchObject({ isDefault: true });
+    });
+  });
+
+  describe('zona de la ciudad de Guatemala (ADR-0014, regla b)', () => {
+    const city = (over: Record<string, unknown> = {}) =>
+      input(1, { municipalityId: CITY, ...over });
+
+    it.each([
+      ['sin zona', { zone: undefined }],
+      ['zona nula', { zone: null }],
+      ['zona en blanco', { zone: '   ' }],
+    ])('POST %s => 400 ZONE_REQUIRED y no escribe', async (_n, over) => {
+      const res = await create(USER_ID, city(over));
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({
+        code: 'ZONE_REQUIRED',
+        violations: [{ path: 'zone', code: 'ZONE_REQUIRED' }],
+      });
+      expect(db.rows).toHaveLength(0);
+    });
+
+    it.each([
+      'Zona 0',
+      'Zona 26',
+      'Zona 100',
+      'Zona',
+      '10',
+      'Colonia Centro',
+      'Zona -3',
+      'Zona 1.5',
+    ])('POST zona %j => 400 ZONE_INVALID', async (zone) => {
+      const res = await create(USER_ID, city({ zone }));
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({
+        code: 'ZONE_INVALID',
+        violations: [{ path: 'zone', code: 'ZONE_INVALID' }],
+      });
+      expect(db.rows).toHaveLength(0);
+    });
+
+    it.each([
+      ['zona 10', 'Zona 10'],
+      [' Zona  10 ', 'Zona 10'],
+      ['ZONA 1', 'Zona 1'],
+      ['zona25', 'Zona 25'],
+      ['Zona 05', 'Zona 5'],
+    ])('POST zona %j se guarda canónica como %j', async (zone, expected) => {
+      const res = await create(USER_ID, city({ zone }));
+      expect(res.status).toBe(201);
+      expect(res.body).toMatchObject({ zone: expected, municipality: { name: 'Guatemala' } });
+    });
+
+    it('otros municipios: zona opcional y texto libre', async () => {
+      const sin = await create(USER_ID, input(1, { zone: undefined }));
+      expect(sin.status).toBe(201);
+      expect(sin.body).toMatchObject({ zone: null });
+      const libre = await create(USER_ID, input(2, { zone: 'Colonia Los Pinos' }));
+      expect(libre.status).toBe(201);
+      expect(libre.body).toMatchObject({ zone: 'Colonia Los Pinos' });
+    });
+
+    it('PATCH: al pasar a la ciudad exige zona; editar una dirección antigua sin zona también', async () => {
+      const auth = await as(USER_ID);
+      const mixco = await create(USER_ID, input(1, { zone: undefined }));
+      const url = `${COLLECTION}/${idOf(mixco)}`;
+      const sinZona = await http()
+        .patch(url)
+        .set('Authorization', auth)
+        .send({ municipalityId: CITY });
+      expect(sinZona.status).toBe(400);
+      expect(sinZona.body).toMatchObject({ code: 'ZONE_REQUIRED' });
+      const mala = await http()
+        .patch(url)
+        .set('Authorization', auth)
+        .send({ municipalityId: CITY, zone: 'Zona 99' });
+      expect(mala.body).toMatchObject({ code: 'ZONE_INVALID' });
+      const ok = await http()
+        .patch(url)
+        .set('Authorization', auth)
+        .send({ municipalityId: CITY, zone: 'zona 7' })
+        .expect(200);
+      expect(ok.body).toMatchObject({ zone: 'Zona 7' });
+
+      // Legado: una dirección ya guardada en la ciudad sin zona no se migra; editar otro campo exige la zona.
+      db.rows[0]!.zone = null;
+      const legacy = await http().patch(url).set('Authorization', auth).send({ label: 'Nueva' });
+      expect(legacy.status).toBe(400);
+      expect(legacy.body).toMatchObject({ code: 'ZONE_REQUIRED' });
+      await http()
+        .patch(url)
+        .set('Authorization', auth)
+        .send({ label: 'Nueva', zone: 'Zona 3' })
+        .expect(200);
+      // Borrar la zona con null en la ciudad también se rechaza.
+      const borrar = await http().patch(url).set('Authorization', auth).send({ zone: null });
+      expect(borrar.body).toMatchObject({ code: 'ZONE_REQUIRED' });
     });
   });
 

@@ -6,7 +6,10 @@ import type { Mock } from 'vitest';
  * `FOR UPDATE` y el índice único parcial se prueban contra PostgreSQL en `customer-addresses.int-spec.ts`.
  */
 export const MUNI = '11111111-1111-4111-8111-111111111111';
+/** Ciudad de Guatemala (municipio «Guatemala» del departamento «Guatemala»): la zona es obligatoria (ADR-0014). */
+export const CITY = '44444444-4444-4444-8444-444444444444';
 const DEPT = { id: 'd0000000-0000-4000-8000-000000000001', name: 'Guatemala' };
+const MUNICIPALITIES: Record<string, string> = { [MUNI]: 'Mixco', [CITY]: 'Guatemala' };
 
 export interface AddressRow {
   id: string;
@@ -50,7 +53,11 @@ export function fakeAddressesDb(): AddressesDb {
 
   const withMunicipality = (r: AddressRow) => ({
     ...r,
-    municipality: { id: r.municipalityId, name: 'Mixco', department: DEPT },
+    municipality: {
+      id: r.municipalityId,
+      name: MUNICIPALITIES[r.municipalityId] ?? 'Mixco',
+      department: DEPT,
+    },
   });
   const matches = (r: AddressRow, where: Where = {}): boolean =>
     Object.entries(where).every(([k, v]) =>
@@ -130,7 +137,11 @@ export function fakeAddressesDb(): AddressesDb {
     $queryRaw: vi.fn(() => Promise.resolve([])),
     municipality: {
       findUnique: vi.fn(({ where }: { where: { id: string } }) =>
-        Promise.resolve(where.id === MUNI ? { id: MUNI } : null),
+        Promise.resolve(
+          MUNICIPALITIES[where.id]
+            ? { id: where.id, name: MUNICIPALITIES[where.id], department: { name: DEPT.name } }
+            : null,
+        ),
       ),
     },
     customerAddress,

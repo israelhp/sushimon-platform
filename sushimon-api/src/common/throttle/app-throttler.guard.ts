@@ -12,6 +12,9 @@ export const FAVORITES_LIST_THROTTLE = { default: { limit: 120, ttl: 60_000 } };
 export const FAVORITES_ADD_THROTTLE = { default: { limit: 60, ttl: 60_000 } };
 export const FAVORITES_REMOVE_THROTTLE = { default: { limit: 60, ttl: 60_000 } };
 
+/** Reinicio de MFA de un empleado (F02): operación de alto impacto; 5 por minuto por IP. */
+export const MFA_RESET_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
+
 /** Mismo token que usa @nestjs/throttler internamente para las opciones del módulo. */
 const THROTTLER_OPTIONS = 'THROTTLER:MODULE_OPTIONS';
 

@@ -224,6 +224,12 @@ export interface paths {
          * @description Valida el municipio contra el catálogo de F09 y normaliza los textos. Límite: 10 direcciones por
          *     cliente (409 `ADDRESS_LIMIT_REACHED`). Duplicado = misma línea normalizada, municipio y zona (409
          *     `ADDRESS_DUPLICATE`); la referencia no interviene. Guardar una dirección NO valida cobertura ni tarifa.
+         *
+         *     Zona (ADR-0014): en la ciudad de Guatemala (municipio «Guatemala» del departamento «Guatemala», comparados por nombre
+         *     sin tildes ni mayúsculas) la zona es OBLIGATORIA con formato «Zona N», N entero de 1 a 25; se normaliza (`zona 10`,
+         *     ` Zona  10 ` -> `Zona 10`) y es la misma etiqueta que usa la cobertura (F09 `zoneLabel`). Faltante o vacía => 400
+         *     `ZONE_REQUIRED`; fuera de formato o de rango => 400 `ZONE_INVALID` (ambos con `violations[0].path = zone`). En los
+         *     demás municipios la zona es opcional y de texto libre (máx. 60).
          */
         post: operations["createMyAddress"];
         delete?: never;
@@ -261,6 +267,8 @@ export interface paths {
          * Edita una dirección del cliente autenticado
          * @description Actualización parcial con las mismas reglas de creación (duplicado excluyendo esta dirección).
          *     No cambia el propietario ni la predeterminada. No modifica pedidos históricos (F20 guarda su snapshot).
+         *     La regla de zona (`ZONE_REQUIRED`/`ZONE_INVALID`) se evalúa sobre el resultado fusionado: una dirección antigua de la
+         *     ciudad de Guatemala sin zona (guardada antes de la regla; no se migra) debe incluir `zone` al editarse.
          */
         patch: operations["updateMyAddress"];
         trace?: never;
@@ -487,6 +495,43 @@ export interface paths {
          *     Idempotente: sin cambio no escribe ni audita. Auditoría `staff.deactivated` / `staff.activated`.
          */
         patch: operations["updateAdminStaffStatus"];
+        trace?: never;
+    };
+    "/v1/admin/staff/{id}/mfa-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reinicia el MFA TOTP de un empleado (recuperación por otro administrador)
+         * @description F02 (recuperación de MFA). Elimina TODOS los factores MFA del empleado en Supabase Auth (Admin API, solo servidor
+         *     con `SUPABASE_SERVICE_ROLE_KEY`) para que en su próximo inicio de sesión el flujo F02 existente le exija enrolar
+         *     de nuevo (`MFA_REQUIRED` -> `/backoffice/mfa/setup`). No devuelve cuerpo ni datos del proveedor.
+         *
+         *     Autorización (permiso reutilizado: `staff.update`; sin permiso ni migración nuevos): JWT + personal activo + `aal2` +
+         *     `staff.update` + **alcance GLOBAL** (solo el administrador global; un permiso en una sola sucursal NO basta -> 403).
+         *     Nadie reinicia su propio MFA (403; el único administrador que pierde su factor usa el procedimiento manual del
+         *     panel de Supabase, `docs/security/mfa.md`). El objetivo debe existir y estar visible en el alcance del actor
+         *     (si no, 404 `STAFF_NOT_FOUND` sin distinguir). Debe estar vinculado (`linked`); si no, 409 `STAFF_NOT_LINKED`.
+         *     Las denegaciones por regla (no global, a uno mismo) responden 403 genérico y se auditan como `staff.denied_escalation`.
+         *
+         *     Idempotente: sin factores devuelve 204 igualmente. Throttle propio: 5 solicitudes por minuto por IP (429 `RATE_LIMITED`).
+         *     Auditoría `staff.mfa_reset` (actor, objetivo y `factorsRemoved`; SIN PII ni secretos) y, si el proveedor falla,
+         *     `staff.mfa_reset_failed` (solo `factorsRemoved` parcial y una categoría fija de error). Respuesta `no-store`.
+         *
+         *     Sin `SUPABASE_SERVICE_ROLE_KEY` configurada: 503 `MFA_RESET_UNAVAILABLE`. Fallo del proveedor: 502 `MFA_RESET_FAILED`
+         *     (mensaje fijo; nunca se filtra el detalle del proveedor). Ambos `code` son públicos en 5xx. Reintentar es seguro.
+         *     Un token `aal2` ya emitido al empleado puede seguir vigente hasta su `exp` (ver `docs/security/mfa.md`).
+         */
+        post: operations["resetAdminStaffMfa"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/admin/staff/{id}/assignments": {
@@ -1951,6 +1996,7 @@ export interface components {
             label: string;
             /** Format: uuid */
             municipalityId: string;
+            /** @description Obligatoria en la ciudad de Guatemala con formato «Zona N» (N 1..25); en otros municipios, texto libre opcional. */
             zone?: string | null;
             addressLine: string;
             referenceNote?: string | null;
@@ -1964,6 +2010,7 @@ export interface components {
             label?: string;
             /** Format: uuid */
             municipalityId?: string;
+            /** @description Obligatoria en la ciudad de Guatemala con formato «Zona N» (N 1..25); en otros municipios, texto libre opcional. */
             zone?: string | null;
             addressLine?: string;
             referenceNote?: string | null;
@@ -2759,7 +2806,7 @@ export interface operations {
                     "application/json": components["schemas"]["CustomerAddress"];
                 };
             };
-            /** @description Datos inválidos o municipio inexistente (violations[].code = MUNICIPALITY_NOT_FOUND) */
+            /** @description Datos inválidos (`ADDRESS_INVALID`), municipio inexistente (`MUNICIPALITY_NOT_FOUND`) o zona de la ciudad de Guatemala ausente (`ZONE_REQUIRED`) o inválida (`ZONE_INVALID`) */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2908,7 +2955,7 @@ export interface operations {
                     "application/json": components["schemas"]["CustomerAddress"];
                 };
             };
-            /** @description Datos inválidos, campo no permitido o municipio inexistente */
+            /** @description Datos inválidos, campo no permitido, municipio inexistente o zona de la ciudad de Guatemala ausente (`ZONE_REQUIRED`) o inválida (`ZONE_INVALID`) */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3681,6 +3728,102 @@ export interface operations {
             };
             /** @description Dejaría al sistema sin administrador activo y vinculado */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resetAdminStaffMfa: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del empleado (`staff_users.id`). */
+                id: components["parameters"]["StaffId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description MFA reiniciado (o el empleado no tenía factores). Sin cuerpo. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Identificador inválido (no es UUID) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /**
+             * @description No es personal activo, falta `staff.update`, sesión no `aal2` (`MFA_REQUIRED`), el actor no tiene alcance global
+             *     o el objetivo es el propio actor (mensaje genérico `Acceso denegado`; el motivo queda en auditoría)
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description El empleado no existe o está fuera del alcance del actor (`STAFF_NOT_FOUND`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description El empleado aún no vinculó su cuenta de Auth (`STAFF_NOT_LINKED`); no hay factores que reiniciar */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Demasiadas solicitudes (`RATE_LIMITED`, 5 por minuto) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description El proveedor de identidad falló al listar o eliminar factores (`MFA_RESET_FAILED`, mensaje fijo) */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Reinicio no disponible por configuración (`MFA_RESET_UNAVAILABLE`, falta la clave de servicio en el servidor) */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

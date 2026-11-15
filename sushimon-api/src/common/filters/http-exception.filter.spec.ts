@@ -1,4 +1,10 @@
-import { BadRequestException, HttpException, Logger, type ArgumentsHost } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  Logger,
+  type ArgumentsHost,
+} from '@nestjs/common';
 import { codedException } from '../errors/coded-exception.js';
 import { AllExceptionsFilter } from './http-exception.filter.js';
 
@@ -175,5 +181,27 @@ describe('AllExceptionsFilter', () => {
     const plainBody = plain.json.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(plainBody['message']).toBe('Dependencias no disponibles');
     expect(plainBody).not.toHaveProperty('code');
+  });
+  it('5xx: MFA_RESET_UNAVAILABLE (503) y MFA_RESET_FAILED (502) son públicos y descartan violations', () => {
+    vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    for (const [status, code] of [
+      [503, 'MFA_RESET_UNAVAILABLE'],
+      [502, 'MFA_RESET_FAILED'],
+    ] as const) {
+      const res = fakeRes();
+      new AllExceptionsFilter().catch(
+        codedException(status, code, 'mensaje fijo', [
+          { path: 'x', code: 'Y', message: 'interno' },
+        ]),
+        hostWith(res, 'req-7'),
+      );
+      expect(res.json).toHaveBeenCalledWith({
+        statusCode: status,
+        error: HttpStatus[status],
+        code,
+        message: 'mensaje fijo',
+        requestId: 'req-7',
+      });
+    }
   });
 });

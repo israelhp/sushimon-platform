@@ -14,6 +14,12 @@ const CUSTOMER = 'c0000000-0000-4000-8000-00000000000a';
 const OTHER = 'c0000000-0000-4000-8000-00000000000b';
 const MUNI = '11111111-1111-4111-8111-111111111111';
 const MUNI_2 = '22222222-2222-4222-8222-222222222222';
+const CITY = '44444444-4444-4444-8444-444444444444';
+const MUNI_NAMES: Record<string, string> = {
+  [MUNI]: 'Mixco',
+  [MUNI_2]: 'Mixco',
+  [CITY]: 'Guatemala',
+};
 const DEPT = { id: 'd0000000-0000-4000-8000-000000000001', name: 'Guatemala' };
 
 const principal = (customerId: string): Principal => ({
@@ -45,7 +51,11 @@ function fakeDb(initial: Row[] = []) {
   const rows: Row[] = [...initial];
   const withMunicipality = (r: Row) => ({
     ...r,
-    municipality: { id: r.municipalityId, name: 'Mixco', department: DEPT },
+    municipality: {
+      id: r.municipalityId,
+      name: MUNI_NAMES[r.municipalityId] ?? 'Mixco',
+      department: DEPT,
+    },
   });
   const matches = (r: Row, where: Record<string, unknown> = {}): boolean =>
     Object.entries(where).every(([k, v]) => {
@@ -75,7 +85,11 @@ function fakeDb(initial: Row[] = []) {
     $queryRaw: vi.fn(() => Promise.resolve([])),
     municipality: {
       findUnique: vi.fn(({ where }: { where: { id: string } }) =>
-        Promise.resolve(where.id === MUNI || where.id === MUNI_2 ? { id: where.id } : null),
+        Promise.resolve(
+          MUNI_NAMES[where.id]
+            ? { id: where.id, name: MUNI_NAMES[where.id], department: { name: DEPT.name } }
+            : null,
+        ),
       ),
     },
     customerAddress: {
@@ -448,5 +462,66 @@ describe('CustomerAddressesService: sin fila de cliente (lecturas no la crean)',
     const { service, identity } = setup();
     await service.create(ghost, baseInput).catch(() => undefined);
     expect(identity.ensureCustomer).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('CustomerAddressesService: zona de la ciudad de Guatemala (ADR-0014)', () => {
+  const city = { ...baseInput, municipalityId: CITY };
+
+  it('create: exige zona y la guarda canónica', async () => {
+    const { service, db } = setup();
+    await expect(
+      service.create(principal(CUSTOMER), { ...city, zone: undefined }),
+    ).rejects.toMatchObject({ status: 400, response: { code: 'ZONE_REQUIRED' } });
+    await expect(
+      service.create(principal(CUSTOMER), { ...city, zone: 'Zona 26' }),
+    ).rejects.toMatchObject({ status: 400, response: { code: 'ZONE_INVALID' } });
+    expect(db.rows).toHaveLength(0);
+    const ok = await service.create(principal(CUSTOMER), { ...city, zone: ' zona  10 ' });
+    expect(ok.zone).toBe('Zona 10');
+  });
+
+  it('create: fuera de la ciudad la zona sigue siendo opcional y libre', async () => {
+    const { service } = setup();
+    const a = await service.create(principal(CUSTOMER), { ...baseInput, zone: undefined });
+    expect(a.zone).toBeNull();
+    const b = await service.create(principal(CUSTOMER), {
+      ...baseInput,
+      addressLine: 'Otra 2',
+      zone: 'Sector Norte',
+    });
+    expect(b.zone).toBe('Sector Norte');
+  });
+
+  it('update: una dirección antigua de la ciudad sin zona no se migra, pero editarla exige la zona', async () => {
+    const legacy = stored({ municipalityId: CITY, zone: null, isDefault: true });
+    const { service, db } = setup([legacy]);
+    await expect(
+      service.update(principal(CUSTOMER), legacy.id, { label: 'Nueva' }),
+    ).rejects.toMatchObject({ status: 400, response: { code: 'ZONE_REQUIRED' } });
+    expect(db.rows[0]!.zone).toBeNull();
+    const ok = await service.update(principal(CUSTOMER), legacy.id, {
+      label: 'Nueva',
+      zone: 'zona 4',
+    });
+    expect(ok.zone).toBe('Zona 4');
+  });
+
+  it('update: mover a la ciudad exige zona; salir de la ciudad la hace opcional', async () => {
+    const mixco = stored({ zone: null, isDefault: true });
+    const { service } = setup([mixco]);
+    await expect(
+      service.update(principal(CUSTOMER), mixco.id, { municipalityId: CITY }),
+    ).rejects.toMatchObject({ response: { code: 'ZONE_REQUIRED' } });
+    const inCity = await service.update(principal(CUSTOMER), mixco.id, {
+      municipalityId: CITY,
+      zone: 'Zona 1',
+    });
+    expect(inCity.zone).toBe('Zona 1');
+    const out = await service.update(principal(CUSTOMER), mixco.id, {
+      municipalityId: MUNI,
+      zone: null,
+    });
+    expect(out.zone).toBeNull();
   });
 });

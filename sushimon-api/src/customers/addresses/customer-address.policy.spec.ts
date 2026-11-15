@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   ADDRESS_LIMIT,
+  applyZoneRule,
   canAddAddress,
   duplicateKey,
+  isGuatemalaCity,
   normalizeAddressFields,
   normalizeText,
   roundCoordinate,
@@ -97,5 +99,59 @@ describe('canAddAddress', () => {
   it(`permite crear hasta ${ADDRESS_LIMIT} direcciones y no una más`, () => {
     expect(canAddAddress(ADDRESS_LIMIT - 1)).toBe(true);
     expect(canAddAddress(ADDRESS_LIMIT)).toBe(false);
+  });
+});
+
+describe('isGuatemalaCity', () => {
+  it('identifica municipio y departamento «Guatemala» sin tildes, mayúsculas ni espacios extra', () => {
+    expect(isGuatemalaCity('Guatemala', 'Guatemala')).toBe(true);
+    expect(isGuatemalaCity('  GUATEMALA ', 'guatemala')).toBe(true);
+    expect(isGuatemalaCity('Guatémala', 'Guatemala')).toBe(true);
+  });
+
+  it('otros municipios u otro departamento no cuentan', () => {
+    expect(isGuatemalaCity('Mixco', 'Guatemala')).toBe(false);
+    expect(isGuatemalaCity('Guatemala', 'Escuintla')).toBe(false);
+    expect(isGuatemalaCity('Santa Catarina Pinula', 'Guatemala')).toBe(false);
+  });
+});
+
+describe('applyZoneRule', () => {
+  it('fuera de la ciudad no cambia la zona (ni siquiera con formato libre o vacía)', () => {
+    expect(applyZoneRule(null, false)).toEqual({ ok: true, value: null });
+    expect(applyZoneRule('Sector Norte', false)).toEqual({ ok: true, value: 'Sector Norte' });
+    expect(applyZoneRule('Zona 99', false)).toEqual({ ok: true, value: 'Zona 99' });
+  });
+
+  it('en la ciudad es obligatoria: vacía => ZONE_REQUIRED con path zone', () => {
+    const r = applyZoneRule(null, true);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.violations).toMatchObject([{ path: 'zone', code: 'ZONE_REQUIRED' }]);
+  });
+
+  it.each([
+    ['Zona 1', 'Zona 1'],
+    ['Zona 25', 'Zona 25'],
+    ['zona 10', 'Zona 10'],
+    ['ZONA10', 'Zona 10'],
+    ['Zona 05', 'Zona 5'],
+  ])('en la ciudad %j => %j', (input, expected) => {
+    expect(applyZoneRule(input, true)).toEqual({ ok: true, value: expected });
+  });
+
+  it.each([
+    'Zona 0',
+    'Zona 26',
+    'Zona 100',
+    'Zona',
+    '10',
+    'Zona diez',
+    'Zona 10 A',
+    'Zona -1',
+    'Zona 1.5',
+  ])('en la ciudad %j => ZONE_INVALID', (input) => {
+    const r = applyZoneRule(input, true);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.violations[0]?.code).toBe('ZONE_INVALID');
   });
 });

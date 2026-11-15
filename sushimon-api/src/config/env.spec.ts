@@ -19,6 +19,35 @@ describe('validateEnv', () => {
     expect(validateEnv({ DATABASE_URL: '', HEALTH_READY_TOKEN: '' }).DATABASE_URL).toBeUndefined();
   });
 
+  it('SUPABASE_SERVICE_ROLE_KEY es opcional: ausente o vacía = no definida; muy corta falla sin revelar el valor', () => {
+    expect(validateEnv({}).SUPABASE_SERVICE_ROLE_KEY).toBeUndefined();
+    expect(
+      validateEnv({ SUPABASE_SERVICE_ROLE_KEY: '' }).SUPABASE_SERVICE_ROLE_KEY,
+    ).toBeUndefined();
+    expect(
+      validateEnv({ ...prod, SUPABASE_SERVICE_ROLE_KEY: '' }).SUPABASE_SERVICE_ROLE_KEY,
+    ).toBeUndefined();
+    expect(
+      validateEnv({ SUPABASE_SERVICE_ROLE_KEY: 'k'.repeat(40) }).SUPABASE_SERVICE_ROLE_KEY,
+    ).toBe('k'.repeat(40));
+    expect(() => validateEnv({ SUPABASE_SERVICE_ROLE_KEY: 'corta-secreta' })).toThrow(
+      /SUPABASE_SERVICE_ROLE_KEY/,
+    );
+    try {
+      validateEnv({ SUPABASE_SERVICE_ROLE_KEY: 'corta-secreta' });
+    } catch (e) {
+      expect(String((e as Error).message)).not.toContain('corta-secreta');
+    }
+  });
+
+  it('SUPABASE_ADMIN_TIMEOUT_MS: default 8000, vacío = default, fuera de rango falla', () => {
+    expect(validateEnv({}).SUPABASE_ADMIN_TIMEOUT_MS).toBe(8000);
+    expect(validateEnv({ SUPABASE_ADMIN_TIMEOUT_MS: '' }).SUPABASE_ADMIN_TIMEOUT_MS).toBe(8000);
+    expect(() => validateEnv({ SUPABASE_ADMIN_TIMEOUT_MS: '10' })).toThrow(
+      /SUPABASE_ADMIN_TIMEOUT_MS/,
+    );
+  });
+
   it('BUSINESS_TIMEZONE: default Guatemala, vacío = default, IANA inválida falla', () => {
     expect(validateEnv({}).BUSINESS_TIMEZONE).toBe('America/Guatemala');
     expect(validateEnv({ BUSINESS_TIMEZONE: '' }).BUSINESS_TIMEZONE).toBe('America/Guatemala');
