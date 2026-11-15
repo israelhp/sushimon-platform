@@ -2,7 +2,12 @@ import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
-import { AppThrottlerGuard } from './common/throttle/app-throttler.guard.js';
+import {
+  ACTOR_THROTTLER,
+  actorTracker,
+  AppThrottlerGuard,
+  skipUnlessActorLimited,
+} from './common/throttle/app-throttler.guard.js';
 import { noStoreMiddleware } from './common/http/cache-control.js';
 import { rejectProtoKeysMiddleware } from './common/http/reject-proto-keys.middleware.js';
 import { requestIdMiddleware } from './common/request-id/request-id.middleware.js';
@@ -34,6 +39,14 @@ import { HealthTokenGuard } from './health/health-token.guard.js';
         {
           ttl: config.get('RATE_LIMIT_TTL_MS', { infer: true }),
           limit: config.get('RATE_LIMIT_MAX', { infer: true }),
+        },
+        // Límite POR ACTOR autenticado (solo rutas que lo declaran con `@Throttle({ actor: … })`; ver `ACTOR_THROTTLER`).
+        {
+          name: ACTOR_THROTTLER,
+          ttl: config.get('RATE_LIMIT_TTL_MS', { infer: true }),
+          limit: config.get('RATE_LIMIT_MAX', { infer: true }),
+          getTracker: actorTracker,
+          skipIf: skipUnlessActorLimited,
         },
       ],
     }),

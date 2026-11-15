@@ -48,6 +48,29 @@ describe('validateEnv', () => {
     );
   });
 
+  it('SUPABASE_URL en producción: solo https sin credenciales, query ni fragmento; http en desarrollo/test', () => {
+    expect(validateEnv(prod).SUPABASE_URL).toBe('https://abcdefgh.supabase.co');
+    for (const bad of [
+      'http://abcdefgh.supabase.co',
+      'https://user:pw@abcdefgh.supabase.co',
+      'https://abcdefgh.supabase.co?x=1',
+      'https://abcdefgh.supabase.co#frag',
+    ]) {
+      expect(() => validateEnv({ ...prod, SUPABASE_URL: bad }), bad).toThrow(/SUPABASE_URL/);
+    }
+    try {
+      validateEnv({ ...prod, SUPABASE_URL: 'https://user:secreto@abcdefgh.supabase.co' });
+    } catch (e) {
+      expect(String((e as Error).message)).not.toContain('secreto');
+    }
+    expect(
+      validateEnv({ NODE_ENV: 'development', SUPABASE_URL: 'http://127.0.0.1:54341' }).SUPABASE_URL,
+    ).toBe('http://127.0.0.1:54341');
+    expect(
+      validateEnv({ NODE_ENV: 'test', SUPABASE_URL: 'http://127.0.0.1:54341' }).SUPABASE_URL,
+    ).toBe('http://127.0.0.1:54341');
+  });
+
   it('BUSINESS_TIMEZONE: default Guatemala, vacío = default, IANA inválida falla', () => {
     expect(validateEnv({}).BUSINESS_TIMEZONE).toBe('America/Guatemala');
     expect(validateEnv({ BUSINESS_TIMEZONE: '' }).BUSINESS_TIMEZONE).toBe('America/Guatemala');

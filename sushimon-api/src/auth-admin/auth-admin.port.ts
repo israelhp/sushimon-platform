@@ -24,7 +24,8 @@ export class AuthAdminUnavailableError extends Error {
   }
 }
 
-export type AuthAdminFailureKind = 'timeout' | 'network' | 'http_status' | 'bad_response';
+export type AuthAdminFailureKind =
+  'timeout' | 'network' | 'http_status' | 'bad_response' | 'too_many_factors';
 
 /** Fallo del proveedor. Solo una categoría fija y, si aplica, el status HTTP: nada del cuerpo ni de la URL. */
 export class AuthAdminProviderError extends Error {

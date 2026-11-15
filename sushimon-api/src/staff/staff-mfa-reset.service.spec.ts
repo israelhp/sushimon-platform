@@ -48,8 +48,8 @@ describe('StaffMfaResetService.reset', () => {
     authAdmin.seed(authUserId, F1, F2);
     await expect(mfaReset.reset(adminActor(), T1)).resolves.toBeUndefined();
     expect(authAdmin.factors.get(authUserId)).toEqual([]);
-    expect(actions(repo)).toEqual(['staff.mfa_reset']);
-    expect(repo.audit[0]).toMatchObject({
+    expect(actions(repo)).toEqual(['staff.mfa_reset_requested', 'staff.mfa_reset']);
+    expect(repo.audit[1]).toMatchObject({
       actorId: ADMIN_ID,
       entityType: 'staff_user',
       entityId: T1,
@@ -64,7 +64,7 @@ describe('StaffMfaResetService.reset', () => {
     const { mfaReset, repo, authAdmin } = setup();
     await mfaReset.reset(adminActor(), T1);
     expect(authAdmin.calls.filter((c) => c.startsWith('delete'))).toEqual([]);
-    expect(repo.audit[0]).toMatchObject({
+    expect(repo.audit[1]).toMatchObject({
       action: 'staff.mfa_reset',
       newValues: { factorsRemoved: 0 },
     });
@@ -132,6 +132,7 @@ describe('StaffMfaResetService.reset', () => {
       response: { code: 'MFA_RESET_UNAVAILABLE' },
     });
     expect(repo.audit).toMatchObject([
+      { action: 'staff.mfa_reset_requested' },
       {
         action: 'staff.mfa_reset_failed',
         reason: 'unavailable',
@@ -147,6 +148,7 @@ describe('StaffMfaResetService.reset', () => {
     expect(error).toMatchObject({ status: 502, response: { code: 'MFA_RESET_FAILED' } });
     expect(JSON.stringify((error as { response: unknown }).response)).not.toContain('500');
     expect(repo.audit).toMatchObject([
+      { action: 'staff.mfa_reset_requested' },
       {
         action: 'staff.mfa_reset_failed',
         reason: 'http_status_500',
@@ -162,12 +164,18 @@ describe('StaffMfaResetService.reset', () => {
     authAdmin.failDelete = { error: new AuthAdminProviderError('timeout'), afterDeletes: 1 };
     await expect(mfaReset.reset(adminActor(), T1)).rejects.toMatchObject({ status: 502 });
     expect(repo.audit).toMatchObject([
+      { action: 'staff.mfa_reset_requested' },
       { action: 'staff.mfa_reset_failed', reason: 'timeout', newValues: { factorsRemoved: 1 } },
     ]);
     authAdmin.failDelete = undefined;
     await mfaReset.reset(adminActor(), T1);
     expect(authAdmin.factors.get(authUserId)).toEqual([]);
-    expect(actions(repo)).toEqual(['staff.mfa_reset_failed', 'staff.mfa_reset']);
+    expect(actions(repo)).toEqual([
+      'staff.mfa_reset_requested',
+      'staff.mfa_reset_failed',
+      'staff.mfa_reset_requested',
+      'staff.mfa_reset',
+    ]);
   });
 
   it('un error inesperado del proveedor también responde 502 y se audita como unexpected', async () => {
@@ -176,13 +184,83 @@ describe('StaffMfaResetService.reset', () => {
     const error = await mfaReset.reset(adminActor(), T1).catch((e: unknown) => e);
     expect(error).toMatchObject({ status: 502 });
     expect(JSON.stringify(repo.audit)).not.toContain('abc123');
-    expect(repo.audit[0]).toMatchObject({ reason: 'unexpected' });
+    expect(repo.audit.at(-1)).toMatchObject({ reason: 'unexpected' });
   });
 
   it('si la auditoría del fallo no se puede escribir, el cliente igual recibe el error del proveedor', async () => {
     const { mfaReset, repo, authAdmin } = setup();
-    authAdmin.failList = new AuthAdminProviderError('network');
-    repo.failNext.set('audit', new Error('db caída'));
+    // La auditoría de intención (antes de la fase 2) funciona; la del fallo no.
+    authAdmin.listMfaFactors = () => {
+      repo.failNext.set('audit', new Error('db caída'));
+      return Promise.reject(new AuthAdminProviderError('network'));
+    };
     await expect(mfaReset.reset(adminActor(), T1)).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('audita la intención staff.mfa_reset_requested ANTES de llamar al proveedor (sin PII)', async () => {
+    const { mfaReset, repo, authAdmin } = setup();
+    authAdmin.listMfaFactors = () => {
+      expect(actions(repo)).toEqual(['staff.mfa_reset_requested']);
+      return Promise.reject(new AuthAdminProviderError('network'));
+    };
+    await mfaReset.reset(adminActor(), T1).catch(() => undefined);
+    expect(repo.audit[0]).toMatchObject({ actorId: ADMIN_ID, entityId: T1 });
+    expect(JSON.stringify(repo.audit[0])).not.toMatch(/@|aaaaaaaa-1111/);
+  });
+
+  it('actor desactivado ENTRE fases => 403 genérico, auditado y sin llamar al proveedor', async () => {
+    const { mfaReset, repo, authAdmin, revoked } = setup();
+    const original = repo.findAuthUserId.bind(repo);
+    // La fase 1 termina al leer el auth_user_id: tras esa lectura el actor pierde acceso.
+    repo.findAuthUserId = async (...args) => {
+      const result = await original(...args);
+      revoked.add(ADMIN_ID);
+      return result;
+    };
+    await expect(mfaReset.reset(adminActor(), T1)).rejects.toMatchObject({
+      status: 403,
+      message: 'Acceso denegado',
+    });
+    expect(authAdmin.calls).toEqual([]);
+    expect(repo.audit).toMatchObject([
+      { action: 'staff.denied_escalation', reason: 'actor_no_longer_authorized' },
+    ]);
+  });
+
+  it('plazo total agotado (proveedor lento) => 502 MFA_RESET_FAILED, auditoría timeout y no sigue borrando', async () => {
+    const { mfaReset, repo, authAdmin } = setup();
+    const authUserId = repo.authUserIdOf(T1) as string;
+    authAdmin.seed(authUserId, F1, F2);
+    authAdmin.delayMs = 40;
+    mfaReset.deadlineMs = 60; // lista (40) + 1.er borrado (80) excede el plazo
+    await expect(mfaReset.reset(adminActor(), T1)).rejects.toMatchObject({
+      status: 502,
+      response: { code: 'MFA_RESET_FAILED' },
+    });
+    expect(repo.audit.at(-1)).toMatchObject({
+      action: 'staff.mfa_reset_failed',
+      reason: 'timeout',
+      newValues: { factorsRemoved: 0 },
+    });
+    await new Promise((r) => setTimeout(r, 150));
+    // Cancelado: no se emite el segundo borrado tras vencer el plazo.
+    expect(authAdmin.calls.filter((c) => c.startsWith('delete'))).toHaveLength(1);
+  });
+
+  it('tope de 20 factores: procesa 20, responde 502 y audita too_many_factors', async () => {
+    const { mfaReset, repo, authAdmin } = setup();
+    const authUserId = repo.authUserIdOf(T1) as string;
+    const ids = Array.from(
+      { length: 25 },
+      (_, i) => `f0000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+    );
+    authAdmin.seed(authUserId, ...ids);
+    await expect(mfaReset.reset(adminActor(), T1)).rejects.toMatchObject({ status: 502 });
+    expect(authAdmin.calls.filter((c) => c.startsWith('delete'))).toHaveLength(20);
+    expect(repo.audit.at(-1)).toMatchObject({
+      action: 'staff.mfa_reset_failed',
+      reason: 'too_many_factors',
+      newValues: { factorsRemoved: 20 },
+    });
   });
 });

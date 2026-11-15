@@ -519,9 +519,13 @@ export interface paths {
          *     (si no, 404 `STAFF_NOT_FOUND` sin distinguir). Debe estar vinculado (`linked`); si no, 409 `STAFF_NOT_LINKED`.
          *     Las denegaciones por regla (no global, a uno mismo) responden 403 genérico y se auditan como `staff.denied_escalation`.
          *
-         *     Idempotente: sin factores devuelve 204 igualmente. Throttle propio: 5 solicitudes por minuto por IP (429 `RATE_LIMITED`).
-         *     Auditoría `staff.mfa_reset` (actor, objetivo y `factorsRemoved`; SIN PII ni secretos) y, si el proveedor falla,
-         *     `staff.mfa_reset_failed` (solo `factorsRemoved` parcial y una categoría fija de error). Respuesta `no-store`.
+         *     Idempotente: sin factores devuelve 204 igualmente. Un empleado INACTIVO también es un objetivo válido (sirve para el
+         *     procedimiento de robo de dispositivo: desactivar, reiniciar, reactivar). Throttle propio: 5 solicitudes por minuto por
+         *     ACTOR autenticado y 20 por minuto por IP (429 `RATE_LIMITED`). Antes de llamar al proveedor se reevalúa al actor y se
+         *     audita la intención `staff.mfa_reset_requested`. Se eliminan como máximo 20 factores por solicitud (si hay más: 502).
+         *     El proveedor tiene un plazo total de 15 s (si se agota: 502). Auditoría `staff.mfa_reset` (actor, objetivo y
+         *     `factorsRemoved`; SIN PII ni secretos) y, si el proveedor falla, `staff.mfa_reset_failed` (solo `factorsRemoved` parcial y
+         *     una categoría fija de error). Respuesta `no-store`.
          *
          *     Sin `SUPABASE_SERVICE_ROLE_KEY` configurada: 503 `MFA_RESET_UNAVAILABLE`. Fallo del proveedor: 502 `MFA_RESET_FAILED`
          *     (mensaje fijo; nunca se filtra el detalle del proveedor). Ambos `code` son públicos en 5xx. Reintentar es seguro.
@@ -3804,7 +3808,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Demasiadas solicitudes (`RATE_LIMITED`, 5 por minuto) */
+            /** @description Demasiadas solicitudes (`RATE_LIMITED`, 5 por minuto por actor o 20 por minuto por IP) */
             429: {
                 headers: {
                     [name: string]: unknown;

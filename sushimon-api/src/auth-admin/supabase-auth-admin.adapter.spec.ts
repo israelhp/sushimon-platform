@@ -77,6 +77,18 @@ describe('SupabaseAuthAdminAdapter (sin red: fetch simulado)', () => {
     );
   });
 
+  it('un TimeoutError al leer el cuerpo se clasifica timeout, no bad_response', async () => {
+    const timeout = Object.assign(new Error('x'), { name: 'TimeoutError' });
+    const res = {
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(timeout),
+    } as unknown as Response;
+    await expect(adapter(() => Promise.resolve(res)).listMfaFactors(USER)).rejects.toMatchObject({
+      kind: 'timeout',
+    });
+  });
+
   it('rechaza ids que no son UUID sin hacer la llamada (sin inyección en la ruta)', async () => {
     const fetchFn = vi.fn<FetchLike>(() => json([]));
     await expect(adapter(fetchFn).listMfaFactors('../admin/users')).rejects.toBeInstanceOf(

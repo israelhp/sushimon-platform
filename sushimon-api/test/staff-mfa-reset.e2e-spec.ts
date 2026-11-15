@@ -233,8 +233,11 @@ describe('POST /v1/admin/staff/{id}/mfa-reset (e2e)', () => {
     expect(res.text).toBe('');
     expect(res.headers['cache-control']).toBe('no-store');
     expect(authAdmin.factors.get(authUserId)).toEqual([]);
-    expect(repo.audit).toHaveLength(1);
-    expect(repo.audit[0]).toMatchObject({
+    expect(repo.audit.map((e) => e.action)).toEqual([
+      'staff.mfa_reset_requested',
+      'staff.mfa_reset',
+    ]);
+    expect(repo.audit[1]).toMatchObject({
       actorId: ACTOR,
       entityId: T1,
       action: 'staff.mfa_reset',
@@ -250,7 +253,12 @@ describe('POST /v1/admin/staff/{id}/mfa-reset (e2e)', () => {
     const auth = await as('admin');
     await http().post(url(T_ADMIN2)).set('Authorization', auth).expect(204);
     await http().post(url(T_ADMIN2)).set('Authorization', auth).expect(204);
-    expect(repo.audit.map((e) => e.action)).toEqual(['staff.mfa_reset', 'staff.mfa_reset']);
+    expect(repo.audit.map((e) => e.action)).toEqual([
+      'staff.mfa_reset_requested',
+      'staff.mfa_reset',
+      'staff.mfa_reset_requested',
+      'staff.mfa_reset',
+    ]);
   });
 
   it('fallo del proveedor => 502 MFA_RESET_FAILED sin detalle y se audita mfa_reset_failed', async () => {
@@ -264,6 +272,7 @@ describe('POST /v1/admin/staff/{id}/mfa-reset (e2e)', () => {
     expect(res.headers['cache-control']).toBe('no-store');
     expect(JSON.stringify(res.body)).not.toMatch(/500|http_status|supabase/i);
     expect(repo.audit).toMatchObject([
+      { action: 'staff.mfa_reset_requested' },
       { action: 'staff.mfa_reset_failed', reason: 'http_status_500' },
     ]);
   });
@@ -293,12 +302,39 @@ describe('POST /v1/admin/staff/{id}/mfa-reset (e2e)', () => {
     fetchSpy.mockRestore();
   });
 
-  it('throttle por ruta: la 6.ª solicitud en un minuto => 429 RATE_LIMITED', async () => {
+  it('throttle por ACTOR: la 6.ª solicitud del mismo actor => 429; otro actor desde la misma IP no se ve afectado', async () => {
     const auth = await as('admin');
     for (let i = 0; i < 5; i++) {
       await http().post(url(T1)).set('Authorization', auth).expect(204);
     }
     const res = await http().post(url(T1)).set('Authorization', auth).expect(429);
     expect(res.body).toMatchObject({ code: 'RATE_LIMITED' });
+    // Otro actor (otro authUserId, misma IP): su cupo es propio (el límite por IP es mayor).
+    const other = `Bearer ${await keys.sign({ ...AAL2, sub: '8c1e2d3f-4a5b-4c6d-8e7f-901234567890' })}`;
+    await http().post(url(T1)).set('Authorization', other).expect(204);
+  });
+
+  it('orden de guards (JWT antes que el throttler): las solicitudes anónimas NO consumen el cupo del actor', async () => {
+    for (let i = 0; i < 10; i++) {
+      await http().post(url(T1)).expect(401);
+    }
+    const auth = await as('admin');
+    for (let i = 0; i < 5; i++) {
+      await http().post(url(T1)).set('Authorization', auth).expect(204);
+    }
+    await http().post(url(T1)).set('Authorization', auth).expect(429);
+  });
+
+  it('el límite por IP (20/min) también aplica aunque cambie el actor', async () => {
+    for (let i = 0; i < 20; i++) {
+      await http()
+        .post(url(T1))
+        .set('Authorization', `Bearer ${await keys.sign({ ...AAL2, sub: crypto.randomUUID() })}`)
+        .expect(403); // personal inexistente: igualmente cuenta contra la IP
+    }
+    await http()
+      .post(url(T1))
+      .set('Authorization', `Bearer ${await keys.sign({ ...AAL2, sub: crypto.randomUUID() })}`)
+      .expect(429);
   });
 });

@@ -15,16 +15,24 @@ import { StaffRepository } from './staff.repository.js';
 
 const ENTITY = 'staff_user';
 
+/** Tope de factores eliminados por solicitud: un proveedor que devuelva más se procesa hasta el tope y se reporta. */
+export const MFA_RESET_MAX_FACTORS = 20;
+/** Plazo TOTAL de la fase 2 (lista + borrados), además del timeout por llamada. */
+export const MFA_RESET_DEADLINE_MS = 15_000;
+
 export const MFA_RESET_UNAVAILABLE = 'MFA_RESET_UNAVAILABLE';
 export const MFA_RESET_FAILED = 'MFA_RESET_FAILED';
 const UNAVAILABLE_MESSAGE = 'El reinicio de MFA no está disponible en este entorno';
 const FAILED_MESSAGE = 'No se pudo reiniciar el MFA; reintenta más tarde';
 
 /**
- * Reinicio de MFA por otro administrador global (F02). Tres fases, sin mantener una transacción abierta durante la
- * llamada de red:
+ * Reinicio de MFA por otro administrador global (F02). Fases, sin mantener una transacción abierta durante la red:
  *  1. Transacción corta: permisos VIGENTES del actor, reglas (global, no a uno mismo), objetivo visible y vinculado.
- *  2. Supabase Auth Admin (puerto `AUTH_ADMIN_PORT`): lista y elimina los factores. Idempotente.
+ *  1b. Justo antes de la primera llamada externa: el actor se reevalúa (pudo desactivarse o perder alcance entre fases;
+ *     403 genérico + `staff.denied_escalation`) y se audita la INTENCIÓN `staff.mfa_reset_requested` en su propia
+ *     transacción, de modo que cualquier fallo posterior deje rastro.
+ *  2. Supabase Auth Admin (puerto `AUTH_ADMIN_PORT`): lista y elimina los factores, con tope de factores y plazo total
+ *     (además del timeout por llamada del adaptador). Idempotente.
  *  3. Transacción de auditoría: `staff.mfa_reset` (o `staff.mfa_reset_failed` si el proveedor falla). Solo ids y
  *     contadores: sin PII, sin `auth_user_id`, sin secretos ni detalle del proveedor.
  * Si la auditoría de éxito falla tras eliminar los factores, la solicitud falla (500) y el reintento es seguro
@@ -33,6 +41,8 @@ const FAILED_MESSAGE = 'No se pudo reiniciar el MFA; reintenta más tarde';
 @Injectable()
 export class StaffMfaResetService {
   private readonly logger = new Logger(StaffMfaResetService.name);
+  /** Plazo total de la fase 2 (ms). Ajustable solo en pruebas. */
+  deadlineMs = MFA_RESET_DEADLINE_MS;
 
   constructor(
     @Inject(StaffRepository) private readonly repo: StaffRepository,
@@ -65,16 +75,27 @@ export class StaffMfaResetService {
       }),
     );
 
-    let removed = 0;
+    // Fase 1b: reevaluar al actor y dejar constancia de la intención ANTES de tocar al proveedor.
+    await this.guard.run(caller, { entityType: ENTITY, entityId: id }, () =>
+      this.repo.transaction(async (tx) => {
+        const actor = await this.authorization.refreshInTx(tx, caller);
+        if (!actor) throw new EscalationDenied('actor_no_longer_authorized');
+        assertCanResetMfa(actor.grants, actor.staffId, id);
+        await this.audit.record(tx, {
+          actorId: actor.staffId,
+          entityType: ENTITY,
+          entityId: id,
+          action: 'staff.mfa_reset_requested',
+        });
+      }),
+    );
+
+    const progress: Progress = { removed: 0, cancelled: false };
     try {
-      const factors = await this.authAdmin.listMfaFactors(prepared.authUserId);
-      for (const factor of factors) {
-        await this.authAdmin.deleteMfaFactor(prepared.authUserId, factor.id);
-        removed += 1;
-      }
+      await this.withDeadline(this.removeFactors(prepared.authUserId, progress), progress);
     } catch (error) {
       const category = failureCategory(error);
-      await this.recordFailure(prepared.actorId, id, removed, category);
+      await this.recordFailure(prepared.actorId, id, progress.removed, category);
       this.logger.warn(
         `Reinicio de MFA fallido (id=${id}, staff=${prepared.actorId}, ${category})`,
       );
@@ -87,6 +108,7 @@ export class StaffMfaResetService {
       }
       throw codedException(HttpStatus.BAD_GATEWAY, MFA_RESET_FAILED, FAILED_MESSAGE);
     }
+    const removed = progress.removed;
 
     await this.repo.transaction((tx) =>
       this.audit.record(tx, {
@@ -98,6 +120,38 @@ export class StaffMfaResetService {
       }),
     );
     this.logger.log(`MFA reiniciado (id=${id}, staff=${prepared.actorId}, factores=${removed})`);
+  }
+
+  /** Lista y elimina hasta el tope; si el proveedor devuelve más, procesa el tope y falla (`too_many_factors`). */
+  private async removeFactors(authUserId: string, progress: Progress): Promise<void> {
+    const factors = await this.authAdmin.listMfaFactors(authUserId);
+    for (const factor of factors.slice(0, MFA_RESET_MAX_FACTORS)) {
+      if (progress.cancelled) return;
+      await this.authAdmin.deleteMfaFactor(authUserId, factor.id);
+      progress.removed += 1;
+    }
+    if (factors.length > MFA_RESET_MAX_FACTORS)
+      throw new AuthAdminProviderError('too_many_factors');
+  }
+
+  /** Plazo total: al agotarse cancela los borrados pendientes y falla como `timeout` (la llamada en vuelo se ignora). */
+  private withDeadline(work: Promise<void>, progress: Progress): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        progress.cancelled = true;
+        reject(new AuthAdminProviderError('timeout'));
+      }, this.deadlineMs);
+      work.then(
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        (error: unknown) => {
+          clearTimeout(timer);
+          reject(error instanceof Error ? error : new AuthAdminProviderError('bad_response'));
+        },
+      );
+    });
   }
 
   /** La auditoría del fallo nunca enmascara el error al cliente: si no se pudo escribir, solo se registra en el log. */
@@ -122,6 +176,11 @@ export class StaffMfaResetService {
       this.logger.error(`No se pudo registrar staff.mfa_reset_failed (actor=${actorId})`);
     }
   }
+}
+
+interface Progress {
+  removed: number;
+  cancelled: boolean;
 }
 
 /** Categoría fija y sin datos del proveedor (apta para auditoría y logs). */

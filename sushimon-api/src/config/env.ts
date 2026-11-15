@@ -135,6 +135,12 @@ export const envSchema = z
       });
     }
     if (env.NODE_ENV !== 'production') return;
+    if (env.SUPABASE_URL) {
+      const problem = supabaseUrlProblem(env.SUPABASE_URL);
+      if (problem) {
+        ctx.addIssue({ code: 'custom', path: ['SUPABASE_URL'], message: problem });
+      }
+    }
     if (!env.DATABASE_URL) {
       ctx.addIssue({
         code: 'custom',
@@ -164,6 +170,20 @@ export const envSchema = z
       });
     }
   });
+
+/** En producción SUPABASE_URL debe ser https, sin credenciales, sin query ni fragmento (nunca se imprime el valor). */
+function supabaseUrlProblem(raw: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return 'URL inválida';
+  }
+  if (url.protocol !== 'https:') return 'en producción debe usar https';
+  if (url.username || url.password) return 'no debe incluir credenciales';
+  if (url.search || url.hash) return 'no debe incluir query ni fragmento';
+  return null;
+}
 
 export type Env = z.infer<typeof envSchema>;
 

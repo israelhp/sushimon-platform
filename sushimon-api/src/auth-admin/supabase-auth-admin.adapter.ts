@@ -42,8 +42,9 @@ export class SupabaseAuthAdminAdapter implements AuthAdminPort {
     let body: unknown;
     try {
       body = await res.json();
-    } catch {
-      throw new AuthAdminProviderError('bad_response');
+    } catch (error) {
+      // El plazo también corre mientras se lee el cuerpo: un timeout ahí es `timeout`, no una respuesta mal formada.
+      throw new AuthAdminProviderError(isTimeout(error) ? 'timeout' : 'bad_response');
     }
     if (!Array.isArray(body)) throw new AuthAdminProviderError('bad_response');
     return body.map((f: unknown) => {
@@ -79,10 +80,12 @@ export class SupabaseAuthAdminAdapter implements AuthAdminPort {
         signal: AbortSignal.timeout(this.options.timeoutMs),
       });
     } catch (error) {
-      const name = error instanceof Error ? error.name : '';
-      throw new AuthAdminProviderError(
-        name === 'TimeoutError' || name === 'AbortError' ? 'timeout' : 'network',
-      );
+      throw new AuthAdminProviderError(isTimeout(error) ? 'timeout' : 'network');
     }
   }
+}
+
+function isTimeout(error: unknown): boolean {
+  const name = error instanceof Error ? error.name : '';
+  return name === 'TimeoutError' || name === 'AbortError';
 }

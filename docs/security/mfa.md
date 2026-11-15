@@ -87,9 +87,9 @@ No hay códigos de recuperación propios ni desactivación libre. Un empleado qu
 | Autenticación | JWT + personal activo + **`aal2`** (`@RequireStaff('staff.update')`; reutiliza `staff.update`, sin permiso ni migración nuevos)                                                                                                                                                                                                                                                 |
 | Quién         | Solo **alcance global** de `staff.update` (el administrador global). Un encargado de sucursal recibe 403 aunque tenga `staff.update` acotado                                                                                                                                                                                                                                    |
 | A quién       | Nunca a uno mismo (403). El objetivo debe existir y ser visible en el alcance del actor (404 `STAFF_NOT_FOUND`) y estar vinculado (409 `STAFF_NOT_LINKED`)                                                                                                                                                                                                                      |
-| Idempotencia  | Sin factores → `204` igualmente. Reintentar tras un fallo parcial es seguro                                                                                                                                                                                                                                                                                                     |
+| Idempotencia  | Sin factores → `204` igualmente. Un empleado **inactivo** es un objetivo válido (necesario para el procedimiento de robo de dispositivo). Reintentar tras un fallo parcial es seguro                                                                                                                                                                                            |
 | Respuesta     | `204` sin cuerpo, `Cache-Control: no-store`                                                                                                                                                                                                                                                                                                                                     |
-| Throttle      | 5 por minuto por IP en esta ruta (`429 RATE_LIMITED`)                                                                                                                                                                                                                                                                                                                           |
+| Throttle      | 5 por minuto por **actor** autenticado (`authUserId` del JWT verificado) y 20 por minuto por IP (`429 RATE_LIMITED`). Un guard dedicado corre DESPUÉS de `JwtAuthGuard`: las solicitudes anónimas (401) no consumen el cupo del actor; lo demuestra `test/staff-mfa-reset.e2e-spec.ts`                                                                                          |
 | Errores 5xx   | `503 MFA_RESET_UNAVAILABLE` (sin `SUPABASE_SERVICE_ROLE_KEY`/`SUPABASE_URL`), `502 MFA_RESET_FAILED` (el proveedor falló). Mensajes fijos; nunca se filtra el detalle                                                                                                                                                                                                           |
 | Auditoría     | `staff.mfa_reset` (actor, objetivo, `factorsRemoved`) y `staff.mfa_reset_failed` (+ categoría fija en `reason`: `unavailable`, `timeout`, `network`, `http_status_NNN`, `bad_response`, `unexpected`). Sin PII, sin `auth_user_id`, sin secretos. Las denegaciones por regla se auditan como `staff.denied_escalation` (`mfa_reset_requires_global_scope`, `self_modification`) |
 
@@ -105,9 +105,34 @@ transacción. Si la auditoría de éxito fallara tras eliminar los factores, la 
 - `SUPABASE_ADMIN_TIMEOUT_MS` (opcional, 500–30000, defecto 8000): tope de cada llamada a la Admin API.
 - Las pruebas usan un doble del puerto `AuthAdminPort`; no hay llamadas reales a Supabase.
 
+### Salvaguardas de la fase externa
+
+- **Intención auditada primero**: `staff.mfa_reset_requested` (sin PII) se escribe en su propia transacción ANTES de llamar a Supabase,
+  así un fallo posterior deja rastro. Justo antes, el actor se reevalúa (permisos y alcance vigentes): si se desactivó entre fases, 403 genérico.
+- **Plazo total** de 15 s para listar y borrar (además de `SUPABASE_ADMIN_TIMEOUT_MS` por llamada): si se agota, `502 MFA_RESET_FAILED`
+  y `staff.mfa_reset_failed` (`reason: timeout`); los borrados pendientes se cancelan.
+- **Tope de 20 factores** por solicitud: si el proveedor devuelve más, se procesan 20 y responde 502 (`reason: too_many_factors`).
+- Un `TimeoutError` al leer el cuerpo de la respuesta se clasifica como `timeout` (no `bad_response`).
+- En producción `SUPABASE_URL` debe ser `https:`, sin credenciales, query ni fragmento (si no, la API no arranca).
+
+### Procedimiento operativo: robo o pérdida de dispositivo
+
+Cuando hay sospecha de que un tercero tiene el dispositivo (y por tanto la sesión) del empleado:
+
+1. **Desactivar al empleado primero** (`PATCH /v1/admin/staff/{id}/status`, con motivo): corta el acceso al instante porque la API consulta la BD en cada petición, aunque exista un token `aal2` vigente.
+2. **Reiniciar su MFA** (`POST …/mfa-reset`; válido con el empleado inactivo).
+3. **Reactivar** al empleado cuando se confirme su identidad fuera de banda. En su siguiente login enrolará un factor nuevo.
+
+### Verificación manual PENDIENTE contra el proyecto de pruebas de Supabase
+
+No verificado (hallazgo A2 de la revisión de seguridad): tras borrar el factor, ¿el **refresh token** de la sesión existente sigue emitiendo
+tokens `aal2`? Pasos: sesión `aal2` del empleado de pruebas → reiniciar su MFA → refrescar la sesión → inspeccionar `aal`/`amr` del nuevo
+access token. Si sigue emitiendo `aal2`, hay que invalidar sus sesiones con la Admin API de Supabase y añadirlo al endpoint. Mientras no
+se verifique, el límite «≤ 1 h» de abajo es una **hipótesis**, no un hecho comprobado.
+
 ### Límites conocidos
 
-- Un access token `aal2` ya emitido al empleado sigue válido hasta su `exp` (≤ 1 h); no se revocan sesiones (la Admin API de `signOut`
+- Un access token `aal2` ya emitido al empleado sigue válido hasta su `exp` (hipótesis de ≤ 1 h; ver la verificación pendiente); no se revocan sesiones (la Admin API de `signOut`
   exige el JWT del usuario, no su id). Mitigación: desactivar al empleado (`PATCH …/status`) corta el acceso al instante si hay sospecha de robo del dispositivo.
 - No se ofrece enrolar un segundo factor de respaldo (la UI actual no lo permite a propósito).
 
