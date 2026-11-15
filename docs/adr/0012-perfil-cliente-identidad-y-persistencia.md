@@ -1,4 +1,4 @@
-# ADR-0011 Perfil de cliente: identidad (Supabase Auth) frente a perfil comercial (Sushi Mon)
+# ADR-0012 Perfil de cliente: identidad (Supabase Auth) frente a perfil comercial (Sushi Mon)
 
 **Estado**: **propuesta** (F04). Complementa a ADR-0009 (identidad) y ADR-0010 (RBAC); no los reemplaza.
 
