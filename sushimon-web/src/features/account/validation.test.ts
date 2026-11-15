@@ -25,14 +25,11 @@ describe('teléfono y correo', () => {
 
 describe('validateProfile', () => {
   it('devuelve claves de mensaje por campo', () => {
-    expect(validateProfile({ fullName: 'Ab', phone: '12', email: 'x' })).toEqual({
+    expect(validateProfile({ fullName: 'Ab', phone: '12' })).toEqual({
       fullName: 'validation.name',
       phone: 'validation.phone',
-      email: 'validation.email',
     });
-    expect(
-      hasErrors(validateProfile({ fullName: 'Ana López', phone: '5555-6789', email: 'a@b.co' })),
-    ).toBe(false);
+    expect(hasErrors(validateProfile({ fullName: 'Ana López', phone: '5555-6789' }))).toBe(false);
   });
 });
 

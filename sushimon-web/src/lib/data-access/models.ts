@@ -103,6 +103,11 @@ export type RoleRef = S['RoleRef'];
 export type AuthStaffContext = S['AuthStaffContext'];
 export type AdminContextResponse = S['AdminContextResponse'];
 export type Customer = S['Customer'];
+/** F04: perfil de cliente tal como lo devuelve la API (`GET`/`PATCH /v1/me`). */
+export type MeResponse = S['MeResponse'];
+export type CustomerProfile = S['CustomerProfile'];
+export type CustomerStorefrontContext = S['CustomerStorefrontContext'];
+export type UpdateCustomerProfileRequest = S['UpdateCustomerProfileRequest'];
 export type Address = S['Address'];
 export type AddressInput = S['AddressInput'];
 export type Incident = S['Incident'];

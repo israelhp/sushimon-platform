@@ -45,6 +45,7 @@ describe('JwtVerifierService', () => {
       googleOAuth: true,
       aal: 'aal1',
       displayName: 'Cliente Prueba',
+      avatarUrl: null,
     });
   });
 
