@@ -37,7 +37,7 @@ export function ReviewStep({
   const locale = useLocale();
   const steps = useCheckoutSteps();
   const { draft } = useCheckoutDraft();
-  const { type, branch, quote, now } = data;
+  const { type, branch, now } = data;
   const delivery = type === 'delivery';
   const edit = (title: string) => `${t('common.change')} ${title}`;
   const when = formatWhen(data.when, now ? localDate(now) : null, locale, {
@@ -89,8 +89,8 @@ export function ReviewStep({
           delivery ? t('delivery.title') : t('delivery.branch'),
           3,
           <Store className="h-5 w-5" />,
-          delivery && quote?.covered && quote.fee !== null && quote.tier
-            ? `${formatMoney(quote.fee, locale)} · ${t(`delivery.tier.${quote.tier}`)} · ${branch?.name ?? ''}`
+          delivery && data.covered && data.shipping !== null
+            ? `${formatMoney(data.shipping, locale)} · ${branch?.name ?? ''}`
             : branch?.name,
           'shipping',
         )}

@@ -1,90 +1,17 @@
 import type {
   Category,
-  DeliveryQuote,
   JobApplication,
   JobApplicationRequest,
-  OrderAddress,
   StoreConfig,
 } from '@/lib/data-access/models';
-import {
-  assertAddress,
-  bestBranchFor,
-  fail,
-  feeFor,
-  isValidEmail,
-  isValidPhone,
-  productView,
-  promotionView,
-  tierFor,
-} from '../domain';
-import { hashSeed } from '../factories/random';
-import { body, now, oneOf, str, type Handler, type Req } from './shared';
+import { fail, isValidEmail, isValidPhone, productView, promotionView } from '../domain';
+import { body, now, oneOf, str, type Handler } from './shared';
 
 /** GET /v1/store/config */
 export const getStoreConfig: Handler = (req): StoreConfig => ({
   ...req.store.config,
   serverTime: now(req).toISOString(),
 });
-
-function quoteFor(req: Req, address: OrderAddress, branchId?: string | null): DeliveryQuote {
-  const createdAt = now(req).toISOString();
-  const miss = (reason: 'not_covered' | 'branch_not_covered'): DeliveryQuote => ({
-    covered: false,
-    reason,
-    quoteId: null,
-    branchId: branchId ?? null,
-    tier: null,
-    fee: null,
-    currency: 'GTQ',
-    etaMinMinutes: null,
-    etaMaxMinutes: null,
-    simulated: true,
-    createdAt,
-  });
-  let branch;
-  let tier;
-  if (branchId) {
-    branch = req.store.branches.find((b) => b.id === branchId);
-    if (!branch) fail(404, 'Sucursal no encontrada');
-    tier = tierFor(branch, address.municipality, address.zone);
-    if (!tier) return miss('branch_not_covered');
-  } else {
-    const best = bestBranchFor(req.store.branches, address.municipality, address.zone);
-    if (!best) return miss('not_covered');
-    ({ branch, tier } = best);
-  }
-  const t = feeFor(req.store, tier);
-  return {
-    covered: true,
-    reason: null,
-    quoteId: `EST-${hashSeed(`${branch.id}|${address.municipality}|${address.zone}`).toString(36).toUpperCase()}`,
-    branchId: branch.id,
-    tier,
-    fee: t.fee,
-    currency: 'GTQ',
-    etaMinMinutes: t.etaMinMinutes,
-    etaMaxMinutes: t.etaMaxMinutes,
-    simulated: true,
-    createdAt,
-  };
-}
-
-/** Cotización interna reutilizada al crear pedidos. */
-export { quoteFor };
-
-/** GET /v1/delivery/quote?branchId&department&municipality&zone[&line] */
-export const getDeliveryQuote: Handler = (req) => {
-  const q = req.query;
-  const address = assertAddress(req.store, {
-    department: q.get('department') ?? '',
-    municipality: q.get('municipality') ?? '',
-    zone: q.get('zone') ?? '',
-    // La cotización por zona no exige la línea de dirección.
-    line: q.get('line') ?? 'cotización',
-    references: '',
-  });
-  return quoteFor(req, address, q.get('branchId'));
-};
 
 /** GET /v1/catalog/categories — solo visibles, ordenadas. */
 export const listCategories: Handler = (req): Category[] =>

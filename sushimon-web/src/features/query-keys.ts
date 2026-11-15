@@ -1,4 +1,5 @@
-import type { DeliveryQuoteArgs, ProductFilters } from '@/services/store';
+import type { ProductFilters } from '@/services/store';
+import type { DeliveryZoneFilters } from '@/services/delivery-zones';
 import type { BackofficeOrderFilters, DeliveryFilters } from '@/services/backoffice-orders';
 import type { ReportFilters } from '@/services/backoffice-admin';
 import type { AdminBranchFilters } from '@/services/branches';
@@ -21,9 +22,6 @@ export const queryKeys = {
     publicBranch: (id: string) => ['store', 'branches', 'public', id] as const,
     /** Operación SIMULADA (horario, abierta ahora, cobertura: F08/F09). */
     branchOperations: ['store', 'branches', 'operations'] as const,
-    /** Prefijo de las cotizaciones de envío (cambian si cambia el conjunto de sucursales activas). */
-    deliveryQuotes: ['store', 'delivery-quote'] as const,
-    deliveryQuote: (args: DeliveryQuoteArgs) => ['store', 'delivery-quote', args] as const,
   },
   /**
    * F08 (spec 007 D16): horario y disponibilidad PÚBLICOS por sucursal, jerárquicos: `branches.byId(id)` invalida los dos.
@@ -34,6 +32,37 @@ export const queryKeys = {
     byId: (id: string) => ['branches', id] as const,
     hours: (id: string) => ['branches', id, 'hours'] as const,
     availability: (id: string) => ['branches', id, 'availability'] as const,
+  },
+  /**
+   * F09 (spec 008): catálogos geográficos PÚBLICOS (casi inmutables: `staleTime` ≥ 1 h). Nunca se invalidan por una mutación.
+   */
+  locations: {
+    all: ['locations'] as const,
+    departments: () => ['locations', 'departments'] as const,
+    municipalities: (departmentId: string) =>
+      ['locations', 'municipalities', departmentId] as const,
+  },
+  /** F09: zonas propias (admin). `adminLists` es el prefijo de TODAS las listas filtradas. */
+  deliveryZones: {
+    all: ['deliveryZones'] as const,
+    adminLists: ['deliveryZones', 'admin'] as const,
+    admin: (filters: DeliveryZoneFilters = {}) => ['deliveryZones', 'admin', filters] as const,
+    detail: (id: string) => ['deliveryZones', 'detail', id] as const,
+  },
+  /** F09: configuración de entrega por sucursal (admin). */
+  deliverySettings: {
+    all: ['deliverySettings'] as const,
+    branch: (branchId: string) => ['deliverySettings', 'branch', branchId] as const,
+  },
+  /**
+   * F09: cobertura pública por proveedor. Jerárquica por SUCURSAL (`branch(id)` invalida todas las comprobaciones de esa
+   * sucursal tras cambiar zonas o configuración). `zone` es la etiqueta enviada (`Zona 10`) o '' sin zona.
+   */
+  deliveryCoverage: {
+    all: ['deliveryCoverage'] as const,
+    branch: (branchId: string) => ['deliveryCoverage', branchId] as const,
+    check: (branchId: string, municipalityId: string, zone: string | null) =>
+      ['deliveryCoverage', branchId, municipalityId, zone ?? ''] as const,
   },
   catalog: {
     all: ['catalog'] as const,

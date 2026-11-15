@@ -4,6 +4,7 @@ import * as account from './account';
 import * as admin from './backoffice-admin';
 import * as bo from './backoffice';
 import * as branches from './branches';
+import * as delivery from './delivery';
 import * as orders from './orders';
 import * as pub from './public';
 import * as schedule from './schedule';
@@ -21,7 +22,6 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   // F08: horario público y disponibilidad (calculada con el reloj del servidor)
   'GET /v1/branches/:id/hours': schedule.getPublicBranchHours,
   'GET /v1/branches/:id/availability': schedule.getPublicBranchAvailability,
-  'GET /v1/delivery/quote': pub.getDeliveryQuote,
   'GET /v1/catalog/categories': pub.listCategories,
   'GET /v1/catalog/products': pub.listProducts,
   'GET /v1/promotions': pub.listPromotions,
@@ -79,6 +79,17 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'POST /v1/admin/branches/:id/closures': schedule.createAdminBranchClosure,
   'PATCH /v1/admin/branches/:id/closures/:closureId': schedule.updateAdminBranchClosure,
   'DELETE /v1/admin/branches/:id/closures/:closureId': schedule.deleteAdminBranchClosure,
+  // F09: geografía, zonas propias, configuración de entrega y cobertura (contrato)
+  'GET /v1/locations/departments': delivery.listDepartments,
+  'GET /v1/locations/municipalities': delivery.listMunicipalities,
+  'GET /v1/admin/delivery-zones': delivery.listAdminDeliveryZones,
+  'POST /v1/admin/delivery-zones': delivery.createAdminDeliveryZone,
+  'GET /v1/admin/delivery-zones/:id': delivery.getAdminDeliveryZone,
+  'PATCH /v1/admin/delivery-zones/:id': delivery.updateAdminDeliveryZone,
+  'PATCH /v1/admin/delivery-zones/:id/status': delivery.updateAdminDeliveryZoneStatus,
+  'GET /v1/admin/branches/:id/delivery-settings': delivery.getAdminBranchDeliverySettings,
+  'PATCH /v1/admin/branches/:id/delivery-settings': delivery.updateAdminBranchDeliverySettings,
+  'POST /v1/delivery-coverage/check': delivery.checkDeliveryCoverage,
   // F03: empleados, roles y permisos (contrato)
   'GET /v1/admin/me/context': staff.getAdminContext,
   'GET /v1/admin/staff': staff.listAdminStaff,
@@ -96,7 +107,8 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
 
   // 🎭 Solo simulación
   'GET /v1/demo/branches/operations': branches.listBranchOperations,
-  'PATCH /v1/demo/branches/:id/operations': branches.updateBranchOperations,
+  'GET /v1/demo/delivery/pedidosya-coverage': delivery.getPedidosyaCoverageScenario,
+  'PUT /v1/demo/delivery/pedidosya-coverage': delivery.setPedidosyaCoverageScenario,
   'POST /v1/demo/orders/:id/advance': orders.demoAdvanceOrder,
   'POST /v1/demo/orders/simulate': orders.demoSimulateOrder,
 };

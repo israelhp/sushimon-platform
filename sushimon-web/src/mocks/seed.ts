@@ -13,12 +13,13 @@ import {
   CLOSURE_SEEDS,
   branchClosedScenarioClosures,
 } from './fixtures/schedule';
+import { DELIVERY_SETTINGS_SEEDS, DELIVERY_ZONE_SEEDS, seedDeliveryFee } from './fixtures/delivery';
 import { PRODUCT_SEEDS } from './fixtures/products';
 import { PROMOTION_SEEDS } from './fixtures/promotions';
 import { ROLE_SEEDS } from './fixtures/rbac';
 import { RIDER_SEEDS, STAFF_SEEDS } from './fixtures/staff';
 import { CATEGORY_SEEDS, STORE_CONFIG_SEED } from './fixtures/store';
-import { event, tierFor, totals } from './domain';
+import { event, totals } from './domain';
 import { rngFor } from './factories/random';
 import type { MockScenario } from './scenarios';
 import { MOCK_STORE_VERSION, type MockStore, type ProductRecord } from './store';
@@ -87,13 +88,13 @@ export function buildSeedOrder(seed: OrderSeed, base: Date, scenario: MockScenar
 
   const branch = BRANCH_SEEDS.find((b) => b.id === seed.branchId);
   if (!branch) throw new Error(`Sucursal desconocida: ${seed.branchId}`);
-  let tier: Order['deliveryTier'] = null;
   let fee = 0;
   if (seed.fulfillment === 'delivery') {
     if (!seed.address) throw new Error(`${seed.id}: falta dirección`);
-    tier = tierFor(branch, seed.address.municipality, seed.address.zone);
-    if (!tier) throw new Error(`${seed.id}: dirección fuera de cobertura`);
-    fee = STORE_CONFIG_SEED.deliveryTiers.find((t) => t.id === tier)?.fee ?? 0;
+    // F09: la tarifa es el `baseFee` de la zona propia sembrada (instantánea del pedido), no un «nivel».
+    const zoneFee = seedDeliveryFee(branch.id, seed.address);
+    if (zoneFee === null) throw new Error(`${seed.id}: dirección fuera de cobertura`);
+    fee = zoneFee;
   }
   const t = totals(lines, fee);
 
@@ -181,7 +182,7 @@ export function buildSeedOrder(seed: OrderSeed, base: Date, scenario: MockScenar
     ...t,
     currency: 'GTQ',
     note: seed.note,
-    deliveryTier: tier,
+    deliveryTier: null,
     status: seed.status,
     rejectionReason: seed.rejectionReason ?? null,
     payment,
@@ -246,6 +247,9 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
     closures,
     // Sucursal-5 (inactiva): la primera escritura de horario/cierres responde BRANCH_SCHEDULE_BUSY (reintentable).
     scheduleBusy: { 'sucursal-5': 1 },
+    deliveryZones: structuredClone(DELIVERY_ZONE_SEEDS),
+    deliverySettings: structuredClone(DELIVERY_SETTINGS_SEEDS),
+    pedidosyaCoverage: 'unknown',
     categories: empty ? [] : structuredClone(CATEGORY_SEEDS),
     products: buildProducts(scenario),
     promotions,
@@ -285,6 +289,7 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
       courier: 32000,
       branch: 5,
       closure: 3,
+      zone: DELIVERY_ZONE_SEEDS.length,
     },
   };
 }

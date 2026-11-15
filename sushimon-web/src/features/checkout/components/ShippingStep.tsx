@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { SimulationBadge } from '@/components/ui/SimulationBadge';
+import { useDataClient } from '@/lib/data-access/provider';
+import { formatMoneyGtq } from '@/features/delivery-coverage/summary';
 import { formatMoney } from '@/lib/format';
 import { BranchHoursDisclosure } from '@/features/branch-schedule/components/BranchHoursPanel';
 import { useAvailabilityText } from '@/features/branch-schedule/use-availability-text';
@@ -22,7 +24,6 @@ import { MapLinks } from '@/features/store-shell/components/StoreFooter';
 import { ErrorNotice } from '@/features/store-shell/components/ErrorNotice';
 import { formatAddress, type CheckoutStep } from '../checkout-model';
 import { useCheckoutDraft } from '../checkout-context';
-import { coveringBranch } from '../coverage';
 import type { CheckoutData } from '../use-checkout-data';
 import { ChoiceCard, useCheckoutSteps } from './parts';
 
@@ -84,7 +85,8 @@ export function ShippingStep({
   const steps = useCheckoutSteps();
   const { draft, dispatch } = useCheckoutDraft();
   const { update } = useOrderMode();
-  const { config, now, quote, quoteQuery, branches, branch } = data;
+  const { config, now, outcome, coverage, branches, branch } = data;
+  const client = useDataClient();
   const zoneWord = t('checkoutFlow.zoneInline');
   const money = (v: number) => formatMoney(v, locale);
   const area = (b: { area: { es: string; en?: string } }) =>
@@ -157,9 +159,12 @@ export function ShippingStep({
     );
   }
 
-  const autoBranch = coveringBranch(branches, draft.address);
-  const loading = data.quoteRequested && quoteQuery.isPending;
-  const uncovered = !!quote && !quote.covered;
+  // Sucursal sugerida: la de menor tarifa propia confirmada entre todas (el servidor deriva cada resultado).
+  const autoBranchId = coverage.best?.kind === 'confirmed' ? coverage.best.branchId : null;
+  const loading = data.selectionComplete && coverage.state === 'loading';
+  const pending = coverage.state === 'ready' && outcome?.kind === 'pending';
+  const uncovered = coverage.state === 'ready' && !data.covered && !pending;
+  const pyOnly = outcome?.kind === 'confirmed' && outcome.provider === 'PEDIDOSYA';
 
   return (
     <section aria-label={steps[2]} className="flex flex-col gap-5">
@@ -194,7 +199,7 @@ export function ShippingStep({
           aria-label={t('delivery.branchOrigin')}
         >
           {branches.map((b) => {
-            const current = (draft.deliveryBranchId ?? quote?.branchId ?? autoBranch?.id) === b.id;
+            const current = (draft.deliveryBranchId ?? data.branchId ?? autoBranchId) === b.id;
             return (
               <ChoiceCard
                 key={b.id}
@@ -203,14 +208,14 @@ export function ShippingStep({
                 onClick={() =>
                   dispatch({
                     type: 'delivery-branch',
-                    branchId: b.id === autoBranch?.id ? null : b.id,
+                    branchId: b.id === autoBranchId ? null : b.id,
                   })
                 }
                 icon={<Store className="h-5 w-5" aria-hidden="true" />}
                 title={b.name}
                 sub={area(b)}
                 badge={
-                  b.id === autoBranch?.id ? (
+                  b.id === autoBranchId ? (
                     <span
                       className="rounded-full bg-success-soft px-2 py-0.5 text-[11px] font-extrabold text-success"
                       title={t('checkoutFlow.autoBranch')}
@@ -233,34 +238,26 @@ export function ShippingStep({
           </div>
         ) : null}
 
-        {quoteQuery.isError && data.quoteRequested ? (
-          <ErrorNotice message={t('validation.quote')} onRetry={() => void quoteQuery.refetch()} />
+        {coverage.state === 'error' ? (
+          <ErrorNotice message={t('coverage.error')} onRetry={coverage.refetch} />
         ) : null}
 
-        {data.covered && quote && quote.fee !== null && quote.tier ? (
+        {data.covered && data.coveredFee !== null ? (
           <div className="rounded-2xl border border-secondary/40 bg-secondary-soft p-4 shadow-card">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="m-0 flex flex-wrap items-center gap-2 text-[12px] font-bold uppercase tracking-wide text-muted">
-                  {t('delivery.estimated')}{' '}
-                  {quote.simulated ? (
-                    <SimulationBadge kind="demo">{t('common.demo')}</SimulationBadge>
-                  ) : null}
+                  {t('delivery.estimated')}
                 </p>
                 <p
                   className="m-0 mt-1 font-display text-[34px] leading-none"
                   data-testid="shipping-fee"
                 >
-                  {money(quote.fee)}
+                  {formatMoneyGtq(data.coveredFee)}
                 </p>
                 <p className="m-0 mt-1.5 text-[14px] font-bold">
-                  {t(`delivery.tier.${quote.tier}`)} · {branch?.name ?? quote.branchId}
+                  {t('coverage.ownConfirmed', { branch: branch?.name ?? data.branchId ?? '' })}
                 </p>
-                {quote.etaMinMinutes != null && quote.etaMaxMinutes != null ? (
-                  <p className="m-0 text-[13px] text-muted">
-                    {t('delivery.eta', { a: quote.etaMinMinutes, b: quote.etaMaxMinutes })}
-                  </p>
-                ) : null}
               </div>
               <Truck className="h-8 w-8 flex-none text-secondary" aria-hidden="true" />
             </div>
@@ -271,7 +268,7 @@ export function ShippingStep({
               </div>
               <div className="flex justify-between">
                 <span className="text-muted">{t('checkout.estimatedShipping')}</span>
-                <span>{money(quote.fee)}</span>
+                <span>{formatMoneyGtq(data.coveredFee)}</span>
               </div>
               <div className="mt-1 flex items-baseline justify-between">
                 <span className="font-extrabold">{t('checkout.estimatedTotal')}</span>
@@ -281,13 +278,43 @@ export function ShippingStep({
           </div>
         ) : null}
 
+        {pending || pyOnly ? (
+          <div className="notice notice-warn" role="status">
+            <TriangleAlert className="mt-0.5 h-[18px] w-[18px] flex-none" aria-hidden="true" />
+            <div>
+              {pyOnly ? t('coverage.pyConfirmed') : t('coverage.pending')}{' '}
+              {pyOnly && outcome?.kind === 'confirmed' && outcome.simulated ? (
+                <SimulationBadge kind="simulation" />
+              ) : null}
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="btn btn-primary !min-h-[42px] !px-4 text-sm"
+                  onClick={() => {
+                    update({ type: 'pickup' });
+                    dispatch({ type: 'goto', step: 3 });
+                  }}
+                >
+                  <Store className="h-4 w-4" aria-hidden="true" />{' '}
+                  {t('checkoutFlow.switchToPickup')}
+                </button>
+                <button
+                  type="button"
+                  className="btn !min-h-[42px] !px-4 text-sm"
+                  onClick={coverage.refetch}
+                >
+                  <RotateCcw className="h-4 w-4" aria-hidden="true" /> {t('delivery.recalc')}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {uncovered ? (
           <div className="rounded-2xl border border-danger/40 bg-danger-soft p-4" role="alert">
             <p className="m-0 flex items-start gap-2 font-bold text-fg">
               <TriangleAlert className="mt-0.5 h-5 w-5 flex-none text-danger" aria-hidden="true" />
-              {quote?.reason === 'branch_not_covered'
-                ? t('delivery.notCoveredBranch')
-                : t('delivery.notCovered')}
+              {draft.deliveryBranchId ? t('delivery.notCoveredBranch') : t('delivery.notCovered')}
             </p>
             <p className="m-0 mt-1.5 pl-7 text-[14px] font-bold">{t('addr.notCovered')}</p>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -325,9 +352,10 @@ export function ShippingStep({
 
         <p className="m-0 mt-1 text-[12px] leading-snug text-muted">{t('delivery.disclaimer')}</p>
         <p className="m-0 flex flex-wrap items-center gap-2 text-[12px] leading-snug text-muted">
-          {t('delivery.provider')} <SimulationBadge kind="simulation" />
+          {t('delivery.provider')}
+          {client.kind === 'mock' ? <SimulationBadge kind="simulation" /> : null}
         </p>
-        {!data.quoteRequested && !loading ? (
+        {!data.selectionComplete && !loading ? (
           <p className="m-0 flex items-center gap-2 text-[13px] text-muted">
             <Clock className="h-4 w-4" aria-hidden="true" /> {t('delivery.needAddress')}
           </p>

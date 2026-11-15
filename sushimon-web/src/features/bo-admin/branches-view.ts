@@ -1,7 +1,6 @@
 import { isApiError } from '@/lib/data-access/errors';
 import type {
   AdminBranch,
-  Branch,
   CreateBranchRequest,
   Order,
   UpdateBranchRequest,
@@ -242,10 +241,7 @@ export function coordinatesLabel(branch: Pick<AdminBranch, 'latitude' | 'longitu
     : `${branch.latitude}, ${branch.longitude}`;
 }
 
-// ── Operación simulada (F08/F09/F33) ──────────────────────────────────────────────────────
-
-export const radiusLabel = (branch: Pick<Branch, 'radiusKm'>) =>
-  branch.radiusKm > 0 ? `Radio ${branch.radiusKm} km` : '—';
+// ── Estadísticas simuladas (F33) ──────────────────────────────────────────────────────
 
 export interface BranchStats {
   orders: number;

@@ -1,4 +1,4 @@
-import type { Department, FulfillmentType } from '@/lib/data-access/models';
+import type { FulfillmentType } from '@/lib/data-access/models';
 
 /**
  * Borrador y validación del modo de pedido (hoja "Pedir ahora" / "Programar"). Puras y sin React:
@@ -27,10 +27,9 @@ export function requiresZone(department: string, municipality: string): boolean 
   return department === 'Guatemala' && municipality === 'Guatemala';
 }
 
-/** Municipios de un departamento según la configuración de la tienda. */
-export function municipalitiesOf(departments: Department[], department: string) {
-  return departments.find((d) => d.department === department)?.municipalities ?? [];
-}
+/** Zonas elegibles de la Ciudad de Guatemala (1–25 menos las inexistentes de la configuración). */
+export const zoneChoices = (nonexistent: readonly number[]): number[] =>
+  Array.from({ length: MAX_ZONE }, (_, i) => i + 1).filter((z) => !nonexistent.includes(z));
 
 export type ZoneCheck = 'ok' | 'required' | 'invalid';
 

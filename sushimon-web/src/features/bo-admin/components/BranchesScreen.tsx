@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
-import { IconClock, IconPencil, IconPlus, IconStore } from '@/components/icons/bo';
+import { IconBike, IconClock, IconPencil, IconPlus, IconStore } from '@/components/icons/bo';
 import { Banner } from '@/components/ui/Banner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Pill } from '@/components/ui/Pill';
@@ -16,8 +16,7 @@ import { useAdminBranches } from '@/features/branches/hooks';
 import { ForbiddenScreen } from '@/features/backoffice-shell/ForbiddenScreen';
 import { useShell } from '@/features/backoffice-shell/shell-context';
 import { isForbidden } from '@/features/bo-orders/error-message';
-import { useBranches } from '@/features/store/hooks';
-import type { AdminBranch, Branch } from '@/lib/data-access/models';
+import type { AdminBranch } from '@/lib/data-access/models';
 import { canGlobally } from '@/lib/permissions';
 import { cn } from '@/lib/cn';
 import {
@@ -26,13 +25,14 @@ import {
   DEFAULT_BRANCH_LIST,
   hasActiveFilters,
   pageCount,
-  radiusLabel,
   toAdminFilters,
   type BranchListState,
   type BranchSortKey,
   type BranchStatusFilter,
 } from '../branches-view';
 import { formatMoneyCompact } from '../format';
+import { AllDeliveryZonesModal, BranchDeliveryModal } from './BranchDeliveryModal';
+import { BranchDeliverySummary } from './BranchDeliverySummary';
 import { BranchFormModal } from './BranchFormModal';
 import { BranchOperationalStatus } from './BranchOperationalStatus';
 import { BranchScheduleModal } from './BranchScheduleModal';
@@ -49,19 +49,23 @@ type Modal =
   | { kind: 'create' }
   | { kind: 'edit'; branch: AdminBranch }
   | { kind: 'status'; branch: AdminBranch }
-  | { kind: 'schedule'; branch: AdminBranch };
+  | { kind: 'schedule'; branch: AdminBranch }
+  | { kind: 'delivery'; branch: AdminBranch }
+  | { kind: 'allZones' };
 
 /**
  * Sucursales (admin) — F07. Lista paginada con búsqueda, filtro por estado y orden; alta, edición y activación /
  * desactivación (estado ADMINISTRATIVO, con motivo). F08: estado operativo diferenciado (abierta, cerrada por horario,
- * cierre extraordinario, sin horario) y editor de horario semanal y cierres. La cobertura y las estadísticas siguen
- * siendo SIMULADAS (F09/F33) y se rotulan «Simulación». La pausa operativa no existe (pendiente de negocio). La UI solo
+ * cierre extraordinario, sin horario) y editor de horario semanal y cierres. F09: «Entrega y zonas» por sucursal
+ * (proveedores y zonas propias) y «Zonas de entrega» de todas las sucursales del alcance. Las estadísticas siguen
+ * siendo SIMULADAS (F33) y se rotulan «Simulación». La pausa operativa no existe (pendiente de negocio). La UI solo
  * muestra/oculta; la API autoriza.
  */
 export function BranchesScreen() {
   const t = useTranslations('backoffice.branches');
   const tu = useTranslations('ui');
   const ts = useTranslations('backoffice.branchSchedule');
+  const td = useTranslations('backoffice.branchDelivery');
   const { can, grants } = useShell();
   const [list, setList] = useState<BranchListState>(DEFAULT_BRANCH_LIST);
   const [search, setSearch] = useState('');
@@ -78,8 +82,7 @@ export function BranchesScreen() {
 
   const filters = useMemo(() => toAdminFilters(list), [list]);
   const branches = useAdminBranches(filters);
-  // 🎭 Operación y estadísticas SIMULADAS (F08/F09/F33).
-  const operations = useBranches();
+  // 🎭 Estadísticas SIMULADAS (F33).
   const dashboard = useDashboard();
   const orders = useBackofficeOrders({});
 
@@ -103,7 +106,6 @@ export function BranchesScreen() {
     setSearch('');
     setList(DEFAULT_BRANCH_LIST);
   };
-  const opsOf = (id: string): Branch | undefined => operations.data?.find((b) => b.id === id);
 
   const statusOptions: { value: BranchStatusFilter; label: string }[] = [
     { value: 'all', label: t('filterAll') },
@@ -132,6 +134,10 @@ export function BranchesScreen() {
           label={t('searchLabel')}
           placeholder={t('searchPlaceholder')}
         />
+        <button type="button" className="btn" onClick={() => setModal({ kind: 'allZones' })}>
+          <IconBike size="sm" />
+          {td('allZonesOpen')}
+        </button>
         {canCreate ? (
           <button
             type="button"
@@ -214,7 +220,6 @@ export function BranchesScreen() {
       ) : (
         <div className="bgrid" aria-busy={branches.isFetching}>
           {items.map((branch) => {
-            const ops = opsOf(branch.id);
             const stats = branchStats(branch.id, dashboard.data?.byBranch, orders.data);
             const statsPending = dashboard.isPending || orders.isPending;
             const statsAvailable = !dashboard.isError && !orders.isError;
@@ -249,25 +254,17 @@ export function BranchesScreen() {
                       <BranchOperationalStatus branch={branch} />
                     </dd>
                   </dl>
+                  <dl className="kv">
+                    <dt>{td('summaryLabel')}</dt>
+                    <dd>
+                      <BranchDeliverySummary branchId={branch.id} />
+                    </dd>
+                  </dl>
                   <div className="row gap8" style={{ flexWrap: 'wrap' }}>
                     <span className="sm muted" style={{ fontWeight: 700 }}>
-                      {t('operations')}
+                      {t('statsLabel')}
                     </span>
                     <SimulationBadge zone="bo" />
-                  </div>
-                  <dl className="kv">
-                    <dt>{t('coverage')}</dt>
-                    <dd>{ops ? radiusLabel(ops) : t('pending')}</dd>
-                  </dl>
-                  <div className="ptags">
-                    {(ops && ops.coverageLabels.length
-                      ? ops.coverageLabels
-                      : [t('zonesPending')]
-                    ).map((zone) => (
-                      <span key={zone} className="ptag">
-                        {zone}
-                      </span>
-                    ))}
                   </div>
                   <div className="row gap8">
                     <Switch
@@ -281,6 +278,15 @@ export function BranchesScreen() {
                       {branch.active ? t('switchOn') : t('switchOff')}
                     </span>
                     <span className="spacer" />
+                    <button
+                      type="button"
+                      className="btn sm"
+                      aria-label={td('openLabel', { name: branch.name })}
+                      onClick={() => setModal({ kind: 'delivery', branch })}
+                    >
+                      <IconBike size="sm" />
+                      {td('open')}
+                    </button>
                     <button
                       type="button"
                       className="btn sm"
@@ -361,6 +367,10 @@ export function BranchesScreen() {
       {modal?.kind === 'schedule' ? (
         <BranchScheduleModal branch={modal.branch} onClose={() => setModal(null)} />
       ) : null}
+      {modal?.kind === 'delivery' ? (
+        <BranchDeliveryModal branch={modal.branch} onClose={() => setModal(null)} />
+      ) : null}
+      {modal?.kind === 'allZones' ? <AllDeliveryZonesModal onClose={() => setModal(null)} /> : null}
       {modal?.kind === 'status' ? (
         <BranchStatusModal branch={modal.branch} onClose={() => setModal(null)} />
       ) : null}

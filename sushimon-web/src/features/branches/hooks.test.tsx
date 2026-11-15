@@ -30,14 +30,17 @@ describe('claves de invalidación de sucursales', () => {
     ]);
   });
 
-  it('estado: además invalida las cotizaciones de envío; nunca toda la app', () => {
+  it('estado: además invalida la cobertura de entrega; nunca toda la app', () => {
     const keys = branchInvalidationKeys('status', 'b1');
-    expect(keys).toContainEqual(queryKeys.store.deliveryQuotes);
+    expect(keys).toContainEqual(queryKeys.deliveryCoverage.all);
     expect(keys).not.toContainEqual([]);
     for (const kind of ['create', 'update', 'status'] as const) {
       for (const key of branchInvalidationKeys(kind, 'b1')) {
-        expect(key.length, JSON.stringify(key)).toBeGreaterThanOrEqual(2);
-        expect(['store', 'backoffice']).toContain(key[0]);
+        // `deliveryCoverage` es el prefijo de TODA la cobertura (cambia el conjunto de sucursales activas), no de toda la app.
+        expect(key.length, JSON.stringify(key)).toBeGreaterThanOrEqual(
+          key[0] === 'deliveryCoverage' ? 1 : 2,
+        );
+        expect(['store', 'backoffice', 'deliveryCoverage']).toContain(key[0]);
       }
     }
   });

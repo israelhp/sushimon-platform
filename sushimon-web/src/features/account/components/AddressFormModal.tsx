@@ -7,7 +7,8 @@ import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
 import type { Address } from '@/lib/data-access/models';
-import { MAX_ZONE, municipalitiesOf, requiresZone } from '@/features/order-mode/draft';
+import { useLocationOptions } from '@/features/delivery-coverage/hooks';
+import { requiresZone, zoneChoices } from '@/features/order-mode/draft';
 import { useStoreConfig } from '@/features/store/hooks';
 import { useCreateAddress, useSetDefaultAddress, useUpdateAddress } from '../hooks';
 import {
@@ -50,6 +51,7 @@ export function AddressFormModal({
   const t = useTranslations('addr');
   const tv = useTranslations();
   const tCheckout = useTranslations('checkout');
+  const tCoverage = useTranslations('coverage');
   const tCommon = useTranslations('common');
   const { notify } = useToast();
   const formId = useId();
@@ -74,12 +76,10 @@ export function AddressFormModal({
   const [submitted, setSubmitted] = useState(false);
   const [serverError, setServerError] = useState('');
 
-  const departments = config.data?.departments ?? [];
   const nonexistent = config.data?.nonexistentZones ?? [];
-  const municipalities = municipalitiesOf(departments, values.department);
-  const zones = Array.from({ length: MAX_ZONE }, (_, i) => i + 1).filter(
-    (n) => !nonexistent.includes(n),
-  );
+  // F09: departamentos y municipios del catálogo público `locations`; la dirección guarda los NOMBRES.
+  const locations = useLocationOptions(values.department);
+  const zones = zoneChoices(nonexistent);
   const zoneApplies = requiresZone(values.department, values.municipality);
   const errors = validateAddress(values, nonexistent);
   const visible = submitted ? errors : {};
@@ -210,19 +210,12 @@ export function AddressFormModal({
               <select
                 {...props}
                 value={values.department}
-                onChange={(e) => {
-                  const department = e.target.value;
-                  set({
-                    department,
-                    municipality: municipalitiesOf(departments, department)[0]?.name ?? '',
-                    zone: '',
-                  });
-                }}
+                onChange={(e) => set({ department: e.target.value, municipality: '', zone: '' })}
               >
                 <option value="">{tCheckout('select')}</option>
-                {departments.map((d) => (
-                  <option key={d.department} value={d.department}>
-                    {d.department}
+                {locations.departments.map((d) => (
+                  <option key={d.id} value={d.name}>
+                    {d.name}
                   </option>
                 ))}
               </select>
@@ -240,14 +233,19 @@ export function AddressFormModal({
                 onChange={(e) => set({ municipality: e.target.value, zone: '' })}
               >
                 <option value="">{tCheckout('select')}</option>
-                {municipalities.map((m) => (
-                  <option key={m.name} value={m.name}>
+                {locations.municipalities.map((m) => (
+                  <option key={m.id} value={m.name}>
                     {m.name}
                   </option>
                 ))}
               </select>
             )}
           </Field>
+          {locations.municipalitiesEmpty ? (
+            <p className="notice notice-info sm:col-span-2" role="status">
+              {tCoverage('onlyGuatemala')}
+            </p>
+          ) : null}
           {zoneApplies ? (
             <Field id={`${formId}-zone`} label={tCheckout('zone')} error={message(visible.zone)}>
               {(props) => (

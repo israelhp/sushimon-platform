@@ -1,12 +1,10 @@
 'use client';
 
-import { CalendarClock, Clock, Store, TriangleAlert, Truck } from 'lucide-react';
+import { CalendarClock, Store, TriangleAlert, Truck } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useId, useMemo, useState, type ReactNode } from 'react';
 import { Modal } from '@/components/ui/Modal';
-import { Price } from '@/components/ui/Price';
-import { SimulationBadge } from '@/components/ui/SimulationBadge';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { cn } from '@/lib/cn';
 import type {
@@ -23,9 +21,9 @@ import {
   DEFAULT_DELIVERY_DRAFT,
   checkZone,
   hasErrors,
-  municipalitiesOf,
   requiresZone,
   validateDraft,
+  zoneChoices,
   type DeliveryDraft,
   type DraftErrors,
 } from '@/features/order-mode/draft';
@@ -35,7 +33,10 @@ import { usePublicBranches } from '@/features/branches/hooks';
 import { useBranchChangeInvalidation } from '@/features/order-mode/branch-selection';
 import { useOrderMode } from '@/features/order-mode/order-mode-context';
 import { dateOptions, firstSlot, type WhenLabels } from '@/features/order-mode/when';
-import { useBranches, useDeliveryQuote, useStoreConfig } from '@/features/store/hooks';
+import { CoverageNotice } from '@/features/delivery-coverage/components/CoverageNotice';
+import { useAddressCoverage, useLocationOptions } from '@/features/delivery-coverage/hooks';
+import type { CoverageOutcome } from '@/features/delivery-coverage/summary';
+import { useBranches, useStoreConfig } from '@/features/store/hooks';
 import { STORE_ROUTES } from '../nav';
 import {
   useOrderSheet,
@@ -161,23 +162,29 @@ function OrderModeSheetDialog({
   };
   const now = config ? new Date(config.serverTime) : null;
 
-  // ── Cotización y sucursal por cobertura (a domicilio) ─────────────────────────────────────
+  // ── Cobertura y sucursal (a domicilio) ────────────────────────────────────────────────────
+  // La comprobación (F09) se dispara SOLO al completar la selección departamento → municipio → zona (son <select>:
+  // no hay consulta por pulsación) y únicamente con «A domicilio» elegido; abrir Home/Menú no consulta nada.
   const needsZone = requiresZone(delivery.department, delivery.municipality);
   const zoneOk = !needsZone || checkZone(delivery.zone, config?.nonexistentZones ?? []) === 'ok';
-  const quoteArgs =
-    type === 'delivery' && delivery.department && delivery.municipality && zoneOk
-      ? {
-          department: delivery.department,
-          municipality: delivery.municipality,
-          zone: needsZone ? String(Number(delivery.zone)) : undefined,
-        }
+  const selectionComplete =
+    type === 'delivery' && !!delivery.department && !!delivery.municipality && zoneOk;
+  const locations = useLocationOptions(delivery.department, type === 'delivery');
+  const coverage = useAddressCoverage(
+    { department: delivery.department, municipality: delivery.municipality, zone: delivery.zone },
+    publicBranches.map((b) => b.id),
+    selectionComplete,
+  );
+  // Solo una cobertura PROPIA confirmada (con tarifa del servidor) permite continuar a domicilio (checkout: F19).
+  const best = coverage.best;
+  const assignedId =
+    best?.kind === 'confirmed' && best.provider === 'OWN' && best.fee !== null
+      ? best.branchId
       : null;
-  const quote = useDeliveryQuote(quoteArgs);
-  const quoteData = quoteArgs ? quote.data : undefined;
   const assignedBranch: Branch | undefined =
-    type === 'delivery' && quoteData?.covered
-      ? branches.find((b) => b.id === quoteData.branchId)
-      : undefined;
+    type === 'delivery' && assignedId ? branches.find((b) => b.id === assignedId) : undefined;
+  const branchNameOf = (id: string) =>
+    publicBranches.find((b) => b.id === id)?.name ?? branches.find((b) => b.id === id)?.name ?? id;
 
   // Sucursal de recogida: la elegida (si sigue activa en la lista pública) o la primera abierta (simulado).
   const pickupChoice =
@@ -258,9 +265,9 @@ function OrderModeSheetDialog({
     setErrors(found);
     setWhenError('');
     if (hasErrors(found)) return;
-    if (type === 'delivery' && !quoteData?.covered) {
-      // Sin cotización (calculando o con error) o sin cobertura: no se continúa.
-      setWhenError(quoteData ? t('delivery.notCovered') : t('validation.quote'));
+    if (type === 'delivery' && !assignedId) {
+      // Sin comprobación (calculando o con error), sin cobertura o solo pendiente: no se continúa a domicilio.
+      setWhenError(coverageMessage(best, t));
       return;
     }
     if (view === 'schedule' && when.kind !== 'scheduled') {
@@ -296,8 +303,6 @@ function OrderModeSheetDialog({
   const loading =
     !loadFailed && (configQuery.isPending || publicQuery.isPending || branchesQuery.isPending);
   const err = (key: DraftErrors[keyof DraftErrors]) => (key ? t(key) : undefined);
-
-  const municipalities = config ? municipalitiesOf(config.departments, delivery.department) : [];
 
   return (
     <Modal
@@ -431,19 +436,14 @@ function OrderModeSheetDialog({
                       className="input"
                       value={delivery.department}
                       aria-invalid={!!errors.department}
-                      onChange={(e) => {
-                        const department = e.target.value;
-                        const first = municipalitiesOf(config.departments, department)[0];
-                        setDeliveryField({
-                          department,
-                          municipality: first?.name ?? '',
-                          zone: '',
-                        });
-                      }}
+                      onChange={(e) =>
+                        setDeliveryField({ department: e.target.value, municipality: '', zone: '' })
+                      }
                     >
-                      {config.departments.map((d) => (
-                        <option key={d.department} value={d.department}>
-                          {d.department}
+                      <option value="">{t('checkout.select')}</option>
+                      {locations.departments.map((d) => (
+                        <option key={d.id} value={d.name}>
+                          {d.name}
                         </option>
                       ))}
                     </select>
@@ -460,8 +460,9 @@ function OrderModeSheetDialog({
                       aria-invalid={!!errors.municipality}
                       onChange={(e) => setDeliveryField({ municipality: e.target.value, zone: '' })}
                     >
-                      {municipalities.map((m) => (
-                        <option key={m.name} value={m.name}>
+                      <option value="">{t('checkout.select')}</option>
+                      {locations.municipalities.map((m) => (
+                        <option key={m.id} value={m.name}>
                           {m.name}
                         </option>
                       ))}
@@ -474,17 +475,21 @@ function OrderModeSheetDialog({
                     <label className="lbl" htmlFor={fieldId('zone')}>
                       {t('checkout.zone')}
                     </label>
-                    <input
+                    <select
                       id={fieldId('zone')}
                       className="input"
-                      autoComplete="off"
-                      inputMode="numeric"
                       aria-invalid={!!errors.zone}
                       aria-describedby={errors.zone ? fieldId('zone-error') : undefined}
-                      placeholder={t('mode.zonePh')}
                       value={delivery.zone}
                       onChange={(e) => setDeliveryField({ zone: e.target.value })}
-                    />
+                    >
+                      <option value="">{t('checkout.select')}</option>
+                      {zoneChoices(config.nonexistentZones).map((z) => (
+                        <option key={z} value={String(z)}>
+                          {t('checkout.zone')} {z}
+                        </option>
+                      ))}
+                    </select>
                     <FieldError id={fieldId('zone-error')} message={err(errors.zone)} />
                   </div>
                 ) : null}
@@ -504,27 +509,18 @@ function OrderModeSheetDialog({
                   />
                   <FieldError id={fieldId('addr-error')} message={err(errors.line)} />
                 </div>
-                <CoverageSummary
-                  state={
-                    !quoteArgs
-                      ? 'idle'
-                      : quote.isError
-                        ? 'error'
-                        : quote.isPending
-                          ? 'loading'
-                          : quoteData?.covered
-                            ? 'covered'
-                            : 'uncovered'
-                  }
-                  branch={assignedBranch}
-                  fee={quoteData?.fee ?? null}
-                  eta={
-                    quoteData?.etaMinMinutes != null && quoteData.etaMaxMinutes != null
-                      ? [quoteData.etaMinMinutes, quoteData.etaMaxMinutes]
-                      : null
-                  }
-                  simulated={quoteData?.simulated ?? true}
-                  onRetry={() => void quote.refetch()}
+                {locations.isError ? (
+                  <ErrorNotice message={t('coverage.locationsError')} onRetry={locations.refetch} />
+                ) : null}
+                {!selectionComplete && !locations.isError && !locations.municipalitiesEmpty ? (
+                  <p className="m-0 text-[13px] text-muted">{t('coverage.selectionHint')}</p>
+                ) : null}
+                <CoverageNotice
+                  state={coverage.state}
+                  outcome={best}
+                  branchName={branchNameOf}
+                  municipalityUnavailable={locations.municipalitiesEmpty}
+                  onRetry={coverage.refetch}
                 />
                 <p className="text-[12px] text-muted">{t('mode.savedNote')}</p>
               </>
@@ -586,66 +582,12 @@ function OrderModeSheetDialog({
   );
 }
 
-function CoverageSummary({
-  state,
-  branch,
-  fee,
-  eta,
-  simulated,
-  onRetry,
-}: {
-  state: 'idle' | 'loading' | 'covered' | 'uncovered' | 'error';
-  branch?: Branch;
-  fee: number | null;
-  eta: [number, number] | null;
-  simulated: boolean;
-  onRetry: () => void;
-}) {
-  const t = useTranslations();
-  const locale = useLocale();
-  if (state === 'idle') return null;
-  if (state === 'error') return <ErrorNotice onRetry={onRetry} message={t('validation.quote')} />;
-  return (
-    <div aria-live="polite" className="rounded-2xl border border-line bg-surface p-3.5 shadow-card">
-      {state === 'loading' ? (
-        <p className="m-0 flex items-center gap-2 text-sm font-bold text-muted">
-          <Clock className="h-4 w-4" aria-hidden="true" /> {t('delivery.calculating')}
-        </p>
-      ) : state === 'uncovered' ? (
-        <p className="m-0 flex items-start gap-2 text-sm font-bold text-danger">
-          <TriangleAlert className="mt-0.5 h-4 w-4 flex-none" aria-hidden="true" />
-          {t('delivery.notCovered')}
-        </p>
-      ) : (
-        <div className="flex flex-col gap-1.5">
-          {branch ? (
-            <p className="m-0 text-sm">
-              <span className="text-muted">{t('delivery.branchOrigin')}: </span>
-              <strong>{branch.name}</strong>
-              <span className="text-muted">
-                {' '}
-                · {branch.area[locale === 'en' ? 'en' : 'es'] ?? branch.area.es}
-              </span>
-            </p>
-          ) : null}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-sm font-bold">{t('delivery.estimated')}</span>
-            {fee != null ? <Price value={fee} decimals={2} className="!text-[20px]" /> : null}
-          </div>
-          {eta ? (
-            <p className="m-0 text-[13px] text-muted">
-              {t('delivery.eta', { a: eta[0], b: eta[1] })}
-            </p>
-          ) : null}
-          {simulated ? (
-            <div>
-              <SimulationBadge kind="simulation" />
-            </div>
-          ) : null}
-        </div>
-      )}
-    </div>
-  );
+/** Mensaje cuando no se puede continuar a domicilio: pendiente, sin cobertura, solo PedidosYa simulado o sin datos. */
+function coverageMessage(best: CoverageOutcome | null, t: ReturnType<typeof useTranslations>) {
+  if (!best) return t('validation.quote');
+  if (best.kind === 'pending') return t('coverage.pending');
+  if (best.kind === 'confirmed') return t('coverage.pyConfirmed');
+  return t('delivery.notCovered');
 }
 
 function ScheduleFields({

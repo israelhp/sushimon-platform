@@ -1,6 +1,5 @@
 import type { DataClient } from '@/lib/data-access/types';
 import type {
-  Branch,
   ProductBranchAvailability,
   Category,
   Order,
@@ -56,20 +55,6 @@ export const createPromotion = (client: DataClient, input: PromotionInput) =>
 
 export const updatePromotion = (client: DataClient, id: string, input: Partial<PromotionInput>) =>
   client.patch<Promotion>(paths.boPromotion(id), input);
-
-/**
- * 🎭 Solo simulación (F09/F33): zona, radio y cobertura de una sucursal (el horario es F08, ya es contrato). La identidad y el estado
- * administrativo (F07) se cambian con `services/branches`. Nada de esto está en el contrato real todavía.
- */
-export type BranchOperationsUpdate = Partial<
-  Pick<Branch, 'zoneLabel' | 'radiusKm' | 'coverage' | 'coverageLabels'>
->;
-
-export const updateBranchOperations = (
-  client: DataClient,
-  id: string,
-  input: BranchOperationsUpdate,
-) => client.patch<Branch>(paths.demoBranchOperation(id), input);
 
 export interface ReportFilters {
   /** YYYY-MM-DD; por defecto hoy. Se recorta a los 60 días disponibles (`clipped`). */

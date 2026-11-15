@@ -5,12 +5,13 @@ import { useTranslations } from 'next-intl';
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import { cn } from '@/lib/cn';
 import type { Address, StoreConfig } from '@/lib/data-access/models';
+import { CoverageChip } from '@/features/account/components/CoverageChip';
+import { CoverageNotice } from '@/features/delivery-coverage/components/CoverageNotice';
 import { useDemoSession } from '@/features/session/demo-session';
 import { GoogleLogo } from '@/features/store-shell/components/GoogleLogo';
 import { useAuthModal } from '@/features/store-shell/store-shell-context';
 import { formatAddress, hasAnyError, type AddressForm } from '../checkout-model';
 import { useCheckoutDraft } from '../checkout-context';
-import { coveringBranch } from '../coverage';
 import type { CheckoutData } from '../use-checkout-data';
 import { AddressFields } from './AddressFields';
 import { OrderTypeFields } from './OrderTypeFields';
@@ -228,7 +229,6 @@ export function DeliveryStep({
             >
               {addresses.map((a) => {
                 const Icon = LABEL_ICON[a.label];
-                const branch = coveringBranch(data.branches, a);
                 return (
                   <ChoiceCard
                     key={a.id}
@@ -244,14 +244,7 @@ export function DeliveryStep({
                             {t('addr.isDefault')}
                           </span>
                         ) : null}
-                        <span
-                          className={cn(
-                            'inline-flex items-center rounded-full px-2 py-0.5 text-[11.5px] font-extrabold',
-                            branch ? 'bg-success-soft text-success' : 'bg-danger-soft text-danger',
-                          )}
-                        >
-                          {branch ? t('addr.covered', { a: branch.name }) : t('addr.notCovered')}
-                        </span>
+                        <CoverageChip address={a} />
                       </>
                     }
                   />
@@ -285,6 +278,15 @@ export function DeliveryStep({
                   errors={addressErr}
                   config={config as StoreConfig | undefined}
                 />
+                <div className="sm:col-span-2">
+                  <CoverageNotice
+                    state={data.coverage.state}
+                    outcome={data.outcome ?? null}
+                    branchName={(id) => data.branches.find((b) => b.id === id)?.name ?? id}
+                    municipalityUnavailable={data.coverage.municipalityUnavailable}
+                    onRetry={data.coverage.refetch}
+                  />
+                </div>
               </div>
             )
           ) : null}

@@ -31,7 +31,7 @@ import { TEST_CARDS } from '../fixtures/orders';
 import { pick, rngFor } from '../factories/random';
 import type { MockStore } from '../store';
 import { advanceDelivery, applyOrderStatus, dispatchOrder, freeOwnRider } from './logistics';
-import { quoteFor } from './public';
+import { resolveOwnDelivery } from '../coverage';
 import { body, now, oneOf, requireStaff, str, type Handler, type Req } from './shared';
 
 const REVIEW_SETTLE_MS = 20_000;
@@ -110,16 +110,13 @@ export const createOrder: Handler = (req): Order => {
   let branchId = str(b.branchId) || null;
   let address = null;
   let deliveryFee = 0;
-  let tier = null;
   if (fulfillment === 'delivery') {
     address = assertAddress(req.store, b.address);
-    const quote = quoteFor(req, address, branchId);
-    if (!quote.covered || !quote.branchId || quote.fee === null) {
-      fail(422, 'Sin cobertura de envío para esa dirección');
-    }
-    branchId = quote.branchId;
-    deliveryFee = quote.fee;
-    tier = quote.tier;
+    // F09: la tarifa es el `baseFee` de la zona propia (nunca un monto del cliente). Checkout/pedidos reales: F19/F20.
+    const own = resolveOwnDelivery(req.store, address, branchId);
+    if (!own) fail(422, 'Sin cobertura de envío para esa dirección');
+    branchId = own.branchId;
+    deliveryFee = own.fee;
   } else if (!branchId) {
     fail(400, 'Elige la sucursal para recoger');
   }
@@ -176,7 +173,7 @@ export const createOrder: Handler = (req): Order => {
     ...t,
     currency: 'GTQ',
     note: str(b.note).trim(),
-    deliveryTier: tier,
+    deliveryTier: null,
     status: 'received',
     rejectionReason: null,
     payment: {
@@ -447,10 +444,11 @@ export const demoSimulateOrder: Handler = (req) => {
       subtotal: p.price * quantity,
     };
   });
-  const zoneRule = branch.coverage.find((r) => r.tier === 'near' && r.zone !== null);
-  const fee = delivery
-    ? (req.store.config.deliveryTiers.find((x) => x.id === 'near')?.fee ?? 0)
-    : 0;
+  const zoneRule = req.store.deliveryZones.find(
+    (z) =>
+      z.branchId === branch.id && z.active && z.municipalityName === 'Guatemala' && z.zoneLabel,
+  );
+  const fee = delivery && zoneRule ? Number(zoneRule.baseFee) : 0;
   const t = totals(lines, fee);
   const name = SIM_NAMES[n % SIM_NAMES.length] ?? 'Cliente';
   const order: Order = {
@@ -470,8 +468,8 @@ export const demoSimulateOrder: Handler = (req) => {
         ? {
             department: 'Guatemala',
             municipality: 'Guatemala',
-            zone: zoneRule.zone ?? '',
-            line: `${1 + (n % 20)}a avenida ${n % 30}-${10 + (n % 80)}, Zona ${zoneRule.zone}`,
+            zone: (zoneRule.zoneLabel ?? '').replace(/^Zona /, ''),
+            line: `${1 + (n % 20)}a avenida ${n % 30}-${10 + (n % 80)}, ${zoneRule.zoneLabel}`,
             references: '',
           }
         : null,
@@ -479,7 +477,7 @@ export const demoSimulateOrder: Handler = (req) => {
     ...t,
     currency: 'GTQ',
     note: n % 2 ? '' : 'Agregar palillos extra, por favor.',
-    deliveryTier: delivery ? 'near' : null,
+    deliveryTier: null,
     status: 'received',
     rejectionReason: null,
     payment: {

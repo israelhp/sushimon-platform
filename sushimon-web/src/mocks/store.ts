@@ -1,4 +1,5 @@
 import type {
+  AdminDeliveryZone,
   Address,
   Category,
   Customer,
@@ -12,6 +13,7 @@ import type { DemoSessionState } from '@/lib/demo-session';
 import type { BranchSeed } from './fixtures/branches';
 import type { BranchHoursDay } from '@/lib/data-access/models';
 import type { ClosureRecord } from './fixtures/schedule';
+import type { DeliverySettingsRecord } from './fixtures/delivery';
 import type { PromotionSeed } from './fixtures/promotions';
 import type { RiderSeed } from './fixtures/staff';
 import type { Clock } from './clock';
@@ -23,7 +25,7 @@ import type { MockScenario } from './scenarios';
  * el historial de días anteriores lo genera `factories/history.ts` de forma determinista.
  * NUNCA contiene PAN completo, CVV ni PIN: de una tarjeta solo marca, últimos 4 y referencia.
  */
-export const MOCK_STORE_VERSION = 4;
+export const MOCK_STORE_VERSION = 5;
 
 export type ProductRecord = Omit<Product, 'available'>;
 
@@ -71,6 +73,15 @@ export interface MockStore {
    * sucursal que fallarán con 409 antes de que una funcione. Opcional: stores anteriores no lo traen.
    */
   scheduleBusy?: Record<string, number>;
+  /** F09: zonas propias (sin borrado físico; `active` + `version`). */
+  deliveryZones: AdminDeliveryZone[];
+  /** F09: configuración por sucursal. AUSENTE = valores por defecto (`isDefault=true`), como en la API. */
+  deliverySettings: Record<string, DeliverySettingsRecord>;
+  /**
+   * F09: respuesta SIMULADA del adaptador de PedidosYa. `unknown` (defecto) = integración bloqueada
+   * (`UNKNOWN` + `BLOCKED_EXTERNAL`). `available`/`unavailable` solo existen en el mock y se rotulan `MOCK`/`simulated`.
+   */
+  pedidosyaCoverage: 'unknown' | 'available' | 'unavailable';
   categories: Category[];
   products: ProductRecord[];
   promotions: PromotionSeed[];
@@ -106,6 +117,7 @@ export interface MockStore {
     courier: number;
     branch: number;
     closure: number;
+    zone: number;
   };
 }
 

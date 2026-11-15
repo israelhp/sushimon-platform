@@ -330,6 +330,126 @@ export const A11Y_ROUTES: RouteCase[] = [
       await page.getByText(/Solo lectura: no tienes permiso para modificar horarios/).waitFor();
     },
   },
+  // F09: entrega por sucursal (proveedores y zonas propias) y cobertura en la hoja de pedido.
+  {
+    path: '/backoffice/sucursales',
+    label: 'entrega y zonas: proveedores',
+    ready: { role: 'heading', name: 'Sucursales' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Entrega y zonas de Sucursal 1' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Entrega y zonas' });
+      await dialog.getByTestId('pedidosya-integration').waitFor();
+    },
+  },
+  {
+    path: '/backoffice/sucursales',
+    label: 'entrega y zonas: confirmar cambio de proveedor',
+    ready: { role: 'heading', name: 'Sucursales' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Entrega y zonas de Sucursal 1' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Entrega y zonas' });
+      await dialog.getByRole('switch', { name: 'Entrega propia en Sucursal 1' }).click();
+      await page.getByRole('dialog', { name: 'Desactivar la entrega propia' }).waitFor();
+    },
+  },
+  {
+    path: '/backoffice/sucursales',
+    label: 'zonas propias',
+    ready: { role: 'heading', name: 'Sucursales' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Entrega y zonas de Sucursal 1' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Entrega y zonas' });
+      await dialog.getByRole('tab', { name: 'Zonas propias' }).click();
+      await dialog.getByRole('table', { name: 'Zonas de entrega propias' }).waitFor();
+    },
+  },
+  {
+    path: '/backoffice/sucursales',
+    label: 'todas las zonas de entrega',
+    ready: { role: 'heading', name: 'Sucursales' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Zonas de entrega' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Zonas de entrega' });
+      await dialog.getByRole('table', { name: 'Zonas de entrega propias' }).waitFor();
+    },
+  },
+  {
+    path: '/backoffice/sucursales',
+    label: 'nueva zona con errores',
+    ready: { role: 'heading', name: 'Sucursales' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Entrega y zonas de Sucursal 1' }).click();
+      await page.getByRole('tab', { name: 'Zonas propias' }).click();
+      await page.getByRole('button', { name: 'Nueva zona' }).click();
+      const form = page.getByRole('dialog', { name: 'Nueva zona de entrega' });
+      await form.getByLabel('Tarifa de envío (GTQ)').fill('15.001');
+      await form.getByRole('button', { name: 'Crear zona' }).click();
+      await form.getByText('Elige el municipio.').waitFor();
+    },
+  },
+  {
+    path: '/backoffice/sucursales',
+    label: 'zona duplicada (409)',
+    ready: { role: 'heading', name: 'Sucursales' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Entrega y zonas de Sucursal 1' }).click();
+      await page.getByRole('tab', { name: 'Zonas propias' }).click();
+      await page.getByRole('button', { name: 'Nueva zona' }).click();
+      const form = page.getByRole('dialog', { name: 'Nueva zona de entrega' });
+      await form.getByLabel('Departamento').selectOption({ label: 'Guatemala' });
+      await form.getByLabel('Municipio').selectOption({ label: 'Guatemala' });
+      await form.getByLabel('Zona (opcional)').fill('Zona 10');
+      await form.getByLabel('Tarifa de envío (GTQ)').fill('10');
+      await form.getByRole('button', { name: 'Crear zona' }).click();
+      await form.getByText(/Ya existe una zona con esa etiqueta/).waitFor();
+    },
+  },
+  {
+    path: '/backoffice/sucursales',
+    label: 'entrega en solo lectura (encargado)',
+    ready: { role: 'heading', name: 'Sucursales' },
+    staff: 'manager',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Entrega y zonas de Sucursal 1' }).click();
+      await page.getByText(/Solo lectura: no tienes permiso para modificar la entrega/).waitFor();
+    },
+  },
+  {
+    path: '/',
+    label: 'pedir ahora a domicilio: cobertura pendiente',
+    ready: { role: 'heading', name: /Favoritos/ },
+    step: async (page) => {
+      await page
+        .getByRole('button', { name: /Iniciar pedido/ })
+        .first()
+        .click();
+      const sheet = page.getByRole('dialog', { name: 'Pedir ahora' });
+      await sheet.getByRole('button', { name: 'A domicilio' }).click();
+      await sheet.getByLabel('Municipio').selectOption({ label: 'Palencia' });
+      await sheet.getByText(/No podemos confirmar el envío a domicilio/).waitFor();
+    },
+  },
+  {
+    path: '/',
+    label: 'pedir ahora a domicilio: cobertura confirmada',
+    ready: { role: 'heading', name: /Favoritos/ },
+    step: async (page) => {
+      await page
+        .getByRole('button', { name: /Iniciar pedido/ })
+        .first()
+        .click();
+      const sheet = page.getByRole('dialog', { name: 'Pedir ahora' });
+      await sheet.getByRole('button', { name: 'A domicilio' }).click();
+      await sheet.getByLabel('Zona', { exact: true }).selectOption('10');
+      await sheet.getByTestId('coverage-fee').waitFor();
+    },
+  },
   { path: '/backoffice/usuarios', ready: { role: 'heading', name: 'Usuarios' }, staff: 'admin' },
   {
     path: '/backoffice/roles',
