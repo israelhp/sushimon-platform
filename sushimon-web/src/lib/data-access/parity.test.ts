@@ -1,3 +1,4 @@
+import { municipalityByName } from '@/mocks/fixtures/geography';
 import { describe, expect, it } from 'vitest';
 import type { MockScenario } from '@/mocks/scenarios';
 import { createHarness, type TestHarness } from '@/mocks/testing';
@@ -251,6 +252,7 @@ describe('paridad mock ↔ http', () => {
       (c) =>
         account.createAddress(c, {
           label: 'work',
+          municipalityId: municipalityByName('Guatemala', 'Mixco')!.id,
           department: 'Guatemala',
           municipality: 'Mixco',
           zone: '',

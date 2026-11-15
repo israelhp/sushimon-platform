@@ -11,6 +11,7 @@ import type {
 } from '@/lib/data-access/models';
 import { isScheduleValid } from '@/lib/schedule';
 import { useAddresses, useMe } from '@/features/account/hooks';
+import { defaultAddressIdOf } from '@/features/account/address-format';
 import { estimateSubtotal, type CartLine } from '@/features/cart/cart';
 import { useCart } from '@/features/cart/cart-context';
 import { useProducts } from '@/features/catalog/hooks';
@@ -211,7 +212,7 @@ export function useCheckoutData() {
     needsZone,
     addresses,
     me: meQuery.data ?? null,
-    defaultAddressId: meQuery.data?.defaultAddressId ?? null,
+    defaultAddressId: defaultAddressIdOf(addresses),
     stepOk,
     productsQuery,
     configQuery,

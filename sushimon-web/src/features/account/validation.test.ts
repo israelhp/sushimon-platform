@@ -34,7 +34,12 @@ describe('validateProfile', () => {
 });
 
 describe('validateAddress', () => {
-  const base = { ...EMPTY_ADDRESS, line: '6a avenida 12-34', zone: '10' };
+  const base = {
+    ...EMPTY_ADDRESS,
+    municipalityId: 'mun-guatemala',
+    line: '6a avenida 12-34',
+    zone: '10',
+  };
 
   it('exige zona solo en la Ciudad de Guatemala y la valida contra las inexistentes', () => {
     expect(validateAddress(base, [])).toEqual({});
@@ -42,7 +47,12 @@ describe('validateAddress', () => {
     expect(validateAddress({ ...base, zone: '20' }, [20])).toEqual({
       zone: 'mode.errZoneInvalid',
     });
-    expect(validateAddress({ ...base, municipality: 'Mixco', zone: '' }, [])).toEqual({});
+    expect(
+      validateAddress(
+        { ...base, municipality: 'Mixco', municipalityId: 'mun-mixco', zone: '' },
+        [],
+      ),
+    ).toEqual({});
   });
 
   it('exige departamento, municipio y una dirección exacta de 5 caracteres', () => {

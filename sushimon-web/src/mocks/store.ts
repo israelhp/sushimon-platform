@@ -1,6 +1,6 @@
 import type {
   AdminDeliveryZone,
-  Address,
+  StoredAddress,
   Category,
   Customer,
   JobApplication,
@@ -31,7 +31,7 @@ export type ProductRecord = Omit<Product, 'available'>;
 
 export interface CustomerAccount {
   profile: Customer;
-  addresses: Address[];
+  addresses: StoredAddress[];
   favorites: string[];
 }
 

@@ -135,11 +135,16 @@ export type CustomerAddressResponse = S['CustomerAddress'];
 export type CreateCustomerAddressRequest = S['CreateCustomerAddressRequest'];
 export type UpdateCustomerAddressRequest = S['UpdateCustomerAddressRequest'];
 
-/** 🎭 F05 simulado: forma de UI del prototipo (etiqueta enum + texto libre). Pendiente de migrar a `CustomerAddressResponse`. */
+/**
+ * Dirección en la vista de la UI (F05). Se construye desde `CustomerAddressResponse` en `services/account.ts`.
+ * La etiqueta es un enum de UI: la API guarda texto ("Casa", "Trabajo" o el nombre propio).
+ */
 export type Address = {
   id: string;
+  isDefault: boolean;
   label: 'home' | 'work' | 'other';
   customLabel: string;
+  municipalityId: string;
   department: string;
   municipality: string;
   zone: string;
@@ -147,10 +152,15 @@ export type Address = {
   references: string;
   createdAt: string;
 };
-/** 🎭 F05 simulado: entrada de la UI del prototipo. Pendiente de migrar a `CreateCustomerAddressRequest`. */
+
+/** Forma interna de la dirección en el mock (sin predeterminada ni id de municipio). */
+export type StoredAddress = Omit<Address, 'isDefault' | 'municipalityId'>;
+
+/** Entrada del formulario de direcciones (UI). Los nombres sirven a la validación de zona y a la vista. */
 export type AddressInput = {
   label: 'home' | 'work' | 'other';
   customLabel?: string;
+  municipalityId: string;
   department: string;
   municipality: string;
   zone: string;

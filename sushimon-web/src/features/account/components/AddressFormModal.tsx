@@ -63,6 +63,7 @@ export function AddressFormModal({
     editing
       ? {
           label: editing.label,
+          municipalityId: editing.municipalityId,
           customLabel: editing.customLabel,
           department: editing.department,
           municipality: editing.municipality,
@@ -79,9 +80,17 @@ export function AddressFormModal({
   const nonexistent = config.data?.nonexistentZones ?? [];
   // F09: departamentos y municipios del catálogo público `locations`; la dirección guarda los NOMBRES.
   const locations = useLocationOptions(values.department);
+  // Guatemala es el municipio por defecto hasta que el cliente elija otro (derivado, sin efectos).
+  const guatemalaId =
+    values.department === 'Guatemala' && !values.municipalityId
+      ? locations.municipalities.find((m) => m.name === 'Guatemala')?.id
+      : undefined;
+  const shown: AddressFormValues = guatemalaId
+    ? { ...values, municipalityId: guatemalaId, municipality: 'Guatemala' }
+    : values;
   const zones = zoneChoices(nonexistent);
-  const zoneApplies = requiresZone(values.department, values.municipality);
-  const errors = validateAddress(values, nonexistent);
+  const zoneApplies = requiresZone(shown.department, shown.municipality);
+  const errors = validateAddress(shown, nonexistent);
   const visible = submitted ? errors : {};
   const message = (key?: string) => (key ? tv(key as 'validation.name') : undefined);
   const busy = create.isPending || update.isPending || setDefault.isPending;
@@ -101,7 +110,7 @@ export function AddressFormModal({
       return;
     }
     const input: AddressFormValues = {
-      ...values,
+      ...shown,
       zone: zoneApplies ? values.zone : '',
       customLabel: values.label === 'other' ? values.customLabel.trim() : '',
       line: values.line.trim(),
@@ -210,7 +219,14 @@ export function AddressFormModal({
               <select
                 {...props}
                 value={values.department}
-                onChange={(e) => set({ department: e.target.value, municipality: '', zone: '' })}
+                onChange={(e) =>
+                  set({
+                    department: e.target.value,
+                    municipalityId: '',
+                    municipality: '',
+                    zone: '',
+                  })
+                }
               >
                 <option value="">{tCheckout('select')}</option>
                 {locations.departments.map((d) => (
@@ -229,12 +245,19 @@ export function AddressFormModal({
             {(props) => (
               <select
                 {...props}
-                value={values.municipality}
-                onChange={(e) => set({ municipality: e.target.value, zone: '' })}
+                value={shown.municipalityId}
+                onChange={(e) => {
+                  const picked = locations.municipalities.find((m) => m.id === e.target.value);
+                  set({
+                    municipalityId: e.target.value,
+                    municipality: picked?.name ?? '',
+                    zone: '',
+                  });
+                }}
               >
                 <option value="">{tCheckout('select')}</option>
                 {locations.municipalities.map((m) => (
-                  <option key={m.id} value={m.name}>
+                  <option key={m.id} value={m.id}>
                     {m.name}
                   </option>
                 ))}

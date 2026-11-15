@@ -81,9 +81,10 @@ export function useDeleteAddress() {
   return useAddressMutation((id: string) => deleteAddress(client, id));
 }
 
+/** Marca la predeterminada (PATCH /v1/me/addresses/{id}/default). La API no admite «ninguna». */
 export function useSetDefaultAddress() {
   const client = useDataClient();
-  return useAddressMutation((id: string | null) => setDefaultAddress(client, id));
+  return useAddressMutation((id: string) => setDefaultAddress(client, id));
 }
 
 export function useFavorites() {

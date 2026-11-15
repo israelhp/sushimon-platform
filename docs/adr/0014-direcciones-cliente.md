@@ -47,10 +47,10 @@ is_default`. Las mutaciones toman `SELECT … FOR UPDATE` sobre la fila del clie
 
 ## Consecuencias
 
-- La web **sigue usando datos simulados** para direcciones (`MOCK_ONLY`). Sus tipos `Address`/`AddressInput` son
-  locales y marcados como simulación; migrarlos a `CustomerAddressResponse` es trabajo pendiente de la integración
-  web (Mis direcciones y selector de checkout).
-- Las pruebas de integración contra PostgreSQL real (`test/customer-addresses.int-spec.ts`) requieren
-  `DATABASE_URL_TEST`; no se han ejecutado todavía. Antes de declarar F05 verificada hay que ejecutarlas en una base
-  de pruebas autorizada.
+- La web consume la API real para direcciones (`services/account.ts` mapea `CustomerAddressResponse` a la vista de
+  UI). La etiqueta se guarda como texto (`Casa`, `Trabajo` o el nombre propio); la UI reconstruye el enum. La
+  predeterminada se deriva del listado (`isDefault`), no de `/v1/me`. El selector de checkout guarda con el
+  `municipalityId` del catálogo de F09.
+- Las pruebas de integración contra PostgreSQL (`test/customer-addresses.int-spec.ts` y `customers.int-spec.ts`)
+  pasan en la base de pruebas (10/10). Requieren `DATABASE_URL_TEST` y se omiten sin ella.
 - Pendientes fuera de F05: cotización (F19), creación de pedidos y snapshot (F20), cobertura real de PedidosYa (F29).

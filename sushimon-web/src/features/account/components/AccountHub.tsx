@@ -172,7 +172,7 @@ function SignedInHub({ name, email }: { name: string; email: string }) {
   const profile = me.data;
   const ready = !!profile && !!addresses.data && !!favorites.data;
   const labels = useAddressLabels();
-  const defaultAddress = addresses.data?.find((a) => a.id === profile?.defaultAddressId);
+  const defaultAddress = addresses.data?.find((a) => a.isDefault);
   const orderCount = orders.data?.length ?? 0;
   const activeCount = (orders.data ?? []).filter(isOrderInProgress).length;
 

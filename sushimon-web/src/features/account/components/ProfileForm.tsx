@@ -6,7 +6,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useState, type FormEvent } from 'react';
 import { useToast } from '@/components/ui/Toast';
 import type { Address, Customer } from '@/lib/data-access/models';
-import { addressLine, addressTitle } from '../address-format';
+import { addressLine, addressTitle, defaultAddressIdOf } from '../address-format';
 import { useAddressLabels } from '../use-address-labels';
 import { useAddresses, useMe, useSetDefaultAddress, useUpdateMe } from '../hooks';
 import { hasErrors, validateProfile } from '../validation';
@@ -31,16 +31,26 @@ export function ProfileForm() {
       {me.data && addresses.data ? (
         // Al guardar, los datos del servidor cambian y el formulario se reinicia con ellos.
         <ProfileFields
-          key={`${me.data.fullName}|${me.data.phone}|${me.data.defaultAddressId ?? ''}`}
+          key={`${me.data.fullName}|${me.data.phone}|${defaultAddressIdOf(addresses.data) ?? ''}`}
           profile={me.data}
           addresses={addresses.data}
+          defaultAddressId={defaultAddressIdOf(addresses.data)}
         />
       ) : null}
     </AccountSection>
   );
 }
 
-function ProfileFields({ profile, addresses }: { profile: Customer; addresses: Address[] }) {
+function ProfileFields({
+  profile,
+  addresses,
+  defaultAddressId,
+}: {
+  profile: Customer;
+  addresses: Address[];
+  /** Predeterminada según el listado (F05); la API no la devuelve en /v1/me. */
+  defaultAddressId: string | null;
+}) {
   const t = useTranslations('personal');
   const tv = useTranslations();
   const tCheckout = useTranslations('checkout');
@@ -51,7 +61,7 @@ function ProfileFields({ profile, addresses }: { profile: Customer; addresses: A
   const [values, setValues] = useState({
     fullName: profile.fullName,
     phone: profile.phone,
-    defaultAddressId: profile.defaultAddressId ?? '',
+    defaultAddressId: defaultAddressId ?? '',
   });
   const [submitted, setSubmitted] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -63,7 +73,7 @@ function ProfileFields({ profile, addresses }: { profile: Customer; addresses: A
   const dirty =
     values.fullName.trim() !== profile.fullName ||
     values.phone.trim() !== profile.phone ||
-    (values.defaultAddressId || null) !== profile.defaultAddressId;
+    values.defaultAddressId !== (defaultAddressId ?? '');
   const selected = addresses.find((a) => a.id === values.defaultAddressId);
   const set = (patch: Partial<typeof values>) => setValues((v) => ({ ...v, ...patch }));
 
@@ -77,8 +87,8 @@ function ProfileFields({ profile, addresses }: { profile: Customer; addresses: A
       );
       return;
     }
-    // F04: nombre y teléfono van a /v1/me. La dirección predeterminada es de F05 (simulada, otra ruta).
-    const defaultChanged = (values.defaultAddressId || null) !== profile.defaultAddressId;
+    // F04: nombre y teléfono van a /v1/me. La predeterminada es de F05 (PATCH …/addresses/{id}/default).
+    const defaultChanged = values.defaultAddressId !== (defaultAddressId ?? '');
     update.mutate(
       { fullName: values.fullName.trim(), phone: values.phone.trim() },
       {
@@ -88,7 +98,7 @@ function ProfileFields({ profile, addresses }: { profile: Customer; addresses: A
             notify(t('saved'));
             return;
           }
-          setDefault.mutate(values.defaultAddressId || null, {
+          setDefault.mutate(values.defaultAddressId, {
             onSuccess: () => {
               setSubmitted(false);
               notify(t('saved'));
@@ -165,7 +175,6 @@ function ProfileFields({ profile, addresses }: { profile: Customer; addresses: A
                 value={values.defaultAddressId}
                 onChange={(e) => set({ defaultAddressId: e.target.value })}
               >
-                <option value="">{t('noDefault')}</option>
                 {addresses.map((a) => (
                   <option key={a.id} value={a.id}>
                     {addressTitle(a, labels)} · {a.line}

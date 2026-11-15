@@ -39,7 +39,7 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'GET /v1/me': account.getMe,
   'PATCH /v1/me': account.updateMe,
   'GET /v1/me/storefront': account.getStorefront,
-  'PUT /v1/demo/me/default-address': account.setDemoDefaultAddress,
+  'GET /v1/me/addresses/:id': account.getAddress,
   'GET /v1/me/addresses': account.listAddresses,
   'POST /v1/me/addresses': account.createAddress,
   'PATCH /v1/me/addresses/:id': account.updateAddress,

@@ -12,6 +12,7 @@ import { isApiError } from '@/lib/data-access/errors';
 import type { CreateOrderRequest, Order } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
 import { useCreateAddress, useUpdateMe } from '@/features/account/hooks';
+import { useLocationOptions } from '@/features/delivery-coverage/hooks';
 import { useCart } from '@/features/cart/cart-context';
 import { useCreateOrder } from '@/features/orders/hooks';
 import { saveLastOrder } from '@/features/orders/last-order';
@@ -77,6 +78,7 @@ export function CheckoutFlow() {
   const cartDrawer = useCartDrawer();
   const createOrder = useCreateOrder();
   const createAddress = useCreateAddress();
+  const addressLocations = useLocationOptions(draft.address.department);
   const updateMe = useUpdateMe();
 
   const [confirmed, setConfirmed] = useState<Order | null>(null);
@@ -116,7 +118,7 @@ export function CheckoutFlow() {
       },
     });
     const preferred =
-      data.addresses.find((a) => a.id === data.me?.defaultAddressId) ?? data.addresses[0];
+      data.addresses.find((a) => a.id === data.defaultAddressId) ?? data.addresses[0];
     if (preferred) {
       dispatch({
         type: 'fill-address',
@@ -130,7 +132,7 @@ export function CheckoutFlow() {
         },
       });
     }
-  }, [customer, data.me, data.addresses, dispatch]);
+  }, [customer, data.me, data.addresses, data.defaultAddressId, dispatch]);
 
   // Al cambiar de paso, el foco pasa al título (lectores de pantalla y teclado).
   useEffect(() => {
@@ -207,10 +209,20 @@ export function CheckoutFlow() {
           a.municipality === draft.address.municipality &&
           a.zone === draft.address.zone,
       );
-      if (delivery && draft.addressId === 'other' && extras.saveAddress && !known) {
+      const municipalityId =
+        addressLocations.municipalities.find((m) => m.name === draft.address.municipality)?.id ??
+        '';
+      if (
+        delivery &&
+        draft.addressId === 'other' &&
+        extras.saveAddress &&
+        !known &&
+        municipalityId
+      ) {
         createAddress.mutate({
           label: extras.addressLabel,
           customLabel: '',
+          municipalityId,
           department: draft.address.department,
           municipality: draft.address.municipality,
           zone: draft.address.zone,
