@@ -16,3 +16,8 @@ export function addressLine(
   const zone = address.zone ? `${locale === 'en' ? 'Zone' : 'zona'} ${address.zone}, ` : '';
   return `${address.line}, ${zone}${address.municipality}, ${address.department}`;
 }
+
+/** Id de la predeterminada según el listado de la API (`isDefault`); null si no hay direcciones. */
+export function defaultAddressIdOf(list: readonly Address[] | undefined): string | null {
+  return list?.find((a) => a.isDefault)?.id ?? null;
+}

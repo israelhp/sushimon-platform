@@ -127,8 +127,46 @@ export type MeResponse = S['MeResponse'];
 export type CustomerProfile = S['CustomerProfile'];
 export type CustomerStorefrontContext = S['CustomerStorefrontContext'];
 export type UpdateCustomerProfileRequest = S['UpdateCustomerProfileRequest'];
-export type Address = S['Address'];
-export type AddressInput = S['AddressInput'];
+/**
+ * F05: dirección tal como la devuelve la API real (`GET /v1/me/addresses`, contrato `CustomerAddress`).
+ * La web todavía NO la consume: su UI usa la forma simulada de abajo (Etapa 1, `MOCK_ONLY`).
+ */
+export type CustomerAddressResponse = S['CustomerAddress'];
+export type CreateCustomerAddressRequest = S['CreateCustomerAddressRequest'];
+export type UpdateCustomerAddressRequest = S['UpdateCustomerAddressRequest'];
+
+/**
+ * Dirección en la vista de la UI (F05). Se construye desde `CustomerAddressResponse` en `services/account.ts`.
+ * La etiqueta es un enum de UI: la API guarda texto ("Casa", "Trabajo" o el nombre propio).
+ */
+export type Address = {
+  id: string;
+  isDefault: boolean;
+  label: 'home' | 'work' | 'other';
+  customLabel: string;
+  municipalityId: string;
+  department: string;
+  municipality: string;
+  zone: string;
+  line: string;
+  references: string;
+  createdAt: string;
+};
+
+/** Forma interna de la dirección en el mock (sin predeterminada ni id de municipio). */
+export type StoredAddress = Omit<Address, 'isDefault' | 'municipalityId'>;
+
+/** Entrada del formulario de direcciones (UI). Los nombres sirven a la validación de zona y a la vista. */
+export type AddressInput = {
+  label: 'home' | 'work' | 'other';
+  customLabel?: string;
+  municipalityId: string;
+  department: string;
+  municipality: string;
+  zone: string;
+  line: string;
+  references?: string;
+};
 export type Incident = S['Incident'];
 export type CreateIncidentRequest = S['CreateIncidentRequest'];
 export type JobApplication = S['JobApplication'];
