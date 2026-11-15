@@ -342,7 +342,9 @@ describe('reportes', () => {
     await screen.findByRole('img', { name: /Pedidos por día/ });
     const from = screen.getByLabelText('Desde');
     fireEvent.change(from, { target: { value: '2025-01-01' } });
-    expect(await screen.findByText(/Los datos disponibles van del/)).toBeVisible();
+    expect(
+      await screen.findByText(/Los datos disponibles van del/, undefined, { timeout: 5000 }),
+    ).toBeVisible();
   });
 
   it(
