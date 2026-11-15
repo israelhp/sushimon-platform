@@ -11,12 +11,12 @@ import {
 } from './support/db.js';
 
 /**
- * Migración 0008 (favoritos de clientes, F06) sobre una base DESECHABLE creada aquí (`sushimon_mig0008_test`),
- * con 0001..0008 aplicadas en orden. Mismo patrón y misma omisión explícita que migration-0005/0006/0007.int-spec.ts:
+ * Migración 0009 (favoritos de clientes, F06) sobre una base DESECHABLE creada aquí (`sushimon_mig0009_test`),
+ * con 0001..0009 aplicadas en orden. Mismo patrón y misma omisión explícita que migration-0005/0006/0007.int-spec.ts:
  * requiere PostgreSQL plano (`DATABASE_URL_TEST`); si `auth.users` es la de Supabase real se omite y se avisa.
  */
 const url = TEST_URL;
-const SCRATCH = 'sushimon_mig0008_test';
+const SCRATCH = 'sushimon_mig0009_test';
 const MIGRATIONS = [
   '0001_create_app_schema',
   '0002_identity_staff',
@@ -25,7 +25,7 @@ const MIGRATIONS = [
   '0005_staff_rbac',
   '0006_branch_hours_closures',
   '0007_delivery_geography_coverage',
-  '0008_customer_favorites',
+  '0009_customer_favorites',
 ];
 const migrationSql = (name: string) =>
   readFileSync(join(process.cwd(), 'prisma', 'migrations', name, 'migration.sql'), 'utf8');
@@ -36,7 +36,7 @@ const ADD = `INSERT INTO app.customer_favorites (customer_id, product_id) VALUES
 const NIL = '00000000-0000-0000-0000-000000000000';
 const LIMIT = 200;
 
-describe.skipIf(!url)('Migración 0008: customer_favorites (base desechable)', () => {
+describe.skipIf(!url)('Migración 0009: customer_favorites (base desechable)', () => {
   let scratch = '';
   let plain = false;
 
@@ -45,7 +45,7 @@ describe.skipIf(!url)('Migración 0008: customer_favorites (base desechable)', (
     scratch = withDatabase(url as string, SCRATCH);
     if (!plain) {
       console.warn(
-        '[migration-0008.int-spec] OMITIDA: DATABASE_URL_TEST apunta a un Supabase (auth.users real). Requiere PostgreSQL plano desechable; la migración 0008 NO se probó.',
+        '[migration-0009.int-spec] OMITIDA: DATABASE_URL_TEST apunta a un Supabase (auth.users real). Requiere PostgreSQL plano desechable; la migración 0009 NO se probó.',
       );
       return;
     }
@@ -244,7 +244,7 @@ describe.skipIf(!url)('Migración 0008: customer_favorites (base desechable)', (
     );
     if (roles.rowCount === 0) {
       console.warn(
-        '[migration-0008.int-spec] REVOKE no verificado: los roles anon/authenticated no existen en este PostgreSQL plano.',
+        '[migration-0009.int-spec] REVOKE no verificado: los roles anon/authenticated no existen en este PostgreSQL plano.',
       );
       ctx.skip();
     }

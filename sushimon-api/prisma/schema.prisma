@@ -140,7 +140,7 @@ model Customer {
   @@schema("app")
 }
 
-/// F06 (0008). SIN relación a Product: products no existe aún; F11 añade la FK (NOT VALID + VALIDATE).
+/// F06 (0009). SIN relación a Product: products no existe aún; F11 añade la FK (NOT VALID + VALIDATE).
 model CustomerFavorite {
   customerId String   @map("customer_id") @db.Uuid
   productId  String   @map("product_id") @db.Uuid

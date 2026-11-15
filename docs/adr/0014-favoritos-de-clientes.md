@@ -9,7 +9,7 @@ inventar un catálogo ni guardar ids no validados, y un contrato que sirva a la 
 
 ## Decisión
 
-1. **Tabla sin FK a `products`** (migración `0008_customer_favorites`): FK a `customers ON DELETE CASCADE`, PK `(customer_id, product_id)`, `created_at`
+1. **Tabla sin FK a `products`** (migración `0009_customer_favorites`): FK a `customers ON DELETE CASCADE`, PK `(customer_id, product_id)`, `created_at`
    (nuevo respecto al DBML) e índice `(customer_id, created_at DESC, product_id)`; RLS sin políticas + `REVOKE` como 0006/0007. La FK a productos la
    añade F11 (`NOT VALID` + `VALIDATE`, tras revisar huérfanos) con **`ON DELETE CASCADE`** (el DBML decía sin acción): los productos se dan de baja por
    `active` (los favoritos se conservan y se muestran como no disponibles), y un borrado físico no debe quedar bloqueado por una tabla de conveniencia.
@@ -38,7 +38,7 @@ inventar un catálogo ni guardar ids no validados, y un contrato que sirva a la 
 
 ## Consecuencias
 
-- Migración `0008` incremental y no destructiva (1 tabla). Hasta F11 el flujo real no existe: la API es `API_IMPLEMENTED` con catálogo `BLOCKED` por F11 (dependencia interna) y la web
+- Migración `0009` incremental y no destructiva (1 tabla). Hasta F11 el flujo real no existe: la API es `API_IMPLEMENTED` con catálogo `BLOCKED` por F11 (dependencia interna) y la web
   es `MOCK_ONLY`; ningún documento puede declarar el flujo de extremo a extremo.
 - F11 debe implementar el puerto (lote, sin precios), añadir la FK y el índice de producto, y retirar `UnavailableCatalogAdapter` del módulo.
 - Se cambia el filtro central de errores (lista blanca de un código 5xx) y la copia web `fav.guestNote`.

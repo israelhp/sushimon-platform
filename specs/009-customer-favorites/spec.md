@@ -18,7 +18,7 @@ sucursal (F13), modificadores, carrito (F18), checkout, pedidos, reordenar (F23)
 | Componente                                                                        | Estado                                                | Nota                                                                                                  |
 | --------------------------------------------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | Contrato OpenAPI (3 operaciones) + tipos generados                                | `CONTRACT_DEFINED`                                    | `pnpm contracts:check` en rojo hasta implementar la API (igual que F08/F09)                           |
-| Migración `0008_customer_favorites` + modelo Prisma                               | propuesta (`CONTRACT_DEFINED`)                        | Sin aplicar; requiere aprobación humana. SIN FK a `products` (no existe)                              |
+| Migración `0009_customer_favorites` + modelo Prisma                               | propuesta (`CONTRACT_DEFINED`)                        | Sin aplicar; requiere aprobación humana. SIN FK a `products` (no existe)                              |
 | API (`src/favorites/`): GET/PUT/DELETE, tope, throttle, `CustomerFavoritesReader` | `CONTRACT_DEFINED` → `API_IMPLEMENTED` al implementar | Real; probada con un fake del puerto de catálogo                                                      |
 | Puerto `CatalogProductsPort` + `UnavailableCatalogAdapter`                        | `CONTRACT_DEFINED` → READY al implementar             | Adaptador por defecto: siempre "no disponible". El adaptador real es de F11                           |
 | Validación y resumen REAL de productos                                            | **`BLOCKED` por F11**                                 | PUT => 503 `CATALOG_UNAVAILABLE`; GET degrada a `UNKNOWN`. Hoy no se puede crear ningún favorito real |
@@ -31,7 +31,7 @@ sucursal (F13), modificadores, carrito (F18), checkout, pedidos, reordenar (F23)
 - DBML (`docs/references/monsushi_dbdiagram.dbml:199-206, 473-474`): `app.customer_favorites (customer_id, product_id)`, PK compuesta, FK a
   `customers` `ON DELETE CASCADE`, FK a `products` sin acción. **No hay `created_at`** (se añade aquí).
 - `products`/`categories` NO existen en migraciones (0001–0007) ni en `schema.prisma`; F10/F11 no existen en ninguna rama. Migraciones vigentes:
-  0001–0007 (la última, `0007_delivery_geography_coverage`, F09). La siguiente libre es **0008**.
+  0001–0007 (la última, `0007_delivery_geography_coverage`, F09). La `0008` está reservada por otra rama en curso (decisión del usuario, 2026-11-14), así que esta feature usa **0009**; el orden de aplicación lo fija el número, no la fecha de merge.
 - Cliente autenticado (F04): `IdentityService.ensureCustomer(principal)` (`sushimon-api/src/identity/identity.service.ts:35`) busca por
   `auth_user_id` (UNIQUE) y crea idempotente si falta (resuelve la carrera `P2002`). `CustomerProfileService` lo usa en `GET /v1/me` y `PATCH /v1/me`; la
   identidad sale SIEMPRE del `Principal` del JWT. Es global desde `AuthModule`: F06 lo reutiliza; **no se crea otro servicio de clientes**.
@@ -59,7 +59,7 @@ sucursal (F13), modificadores, carrito (F18), checkout, pedidos, reordenar (F23)
 - **D2 Cliente sin perfil**: se aplica exactamente la regla de F04: `IdentityService.ensureCustomer(principal)` (crea de forma idempotente) en los tres
   verbos, por uniformidad (un solo patrón y mismo costo en el camino normal: una lectura por `auth_user_id`). Optimización posible, no necesaria:
   GET/DELETE sin crear (devolverían vacío/204).
-- **D3 Modelo sin FK a productos** (migración `0008_customer_favorites`, propuesta): ver "Modelo de datos". `product_id` no tiene FK porque
+- **D3 Modelo sin FK a productos** (migración `0009_customer_favorites`, propuesta): ver "Modelo de datos". `product_id` no tiene FK porque
   `products` no existe; el id solo se persiste tras validarse con el puerto de catálogo (D6), por lo que, mientras `CATALOG_UNAVAILABLE`, **la tabla
   permanece vacía en entornos reales** y la FK de F11 es trivialmente segura (F11 igualmente debe verificar huérfanos antes de validar la FK).
   Cuando F11 añada la FK: `ON DELETE CASCADE` (desviación consciente del DBML, que dice sin acción = `NO ACTION`): los productos son soft-delete por
@@ -150,7 +150,7 @@ favoriteProductIds, limit, catalogStatus }`. `favoriteProductIds` = TODOS los id
   adaptador, `CustomerFavoritesReader`), importa solo `IdentityService` (global), `PrismaService`. `AppModule` solo lo compone. No depende de
   `CustomersModule`/`CustomerProfileService`. Controlador: `@ApiBearerAuth()`, sin `@Public()`/`@RequireStaff`, `@Header('Cache-Control','private, no-store')`.
 
-## Modelo de datos (propuesta para `database-engineer`, migración `0008_customer_favorites`)
+## Modelo de datos (propuesta para `database-engineer`, migración `0009_customer_favorites`)
 
 ```
 app.customer_favorites (
@@ -228,7 +228,7 @@ rojo** (solo estas 3 operaciones sin implementar) hasta que la API exista; `pnpm
   llamar al puerto; `ensureCustomer` se invoca (cliente nuevo); orden (`created_at DESC`, desempate) y paginación; `CustomerFavoritesReader`.
 - **API e2e** (supertest, sin red): sin token 401 en las tres; UUID inválido 400; propiedades/params desconocidos 400; `Cache-Control: private, no-store` en 200/204 y `no-store` en errores; **no hay
   IDOR** (dos usuarios: el B no ve ni borra lo del A); un empleado (staff, aal1) usa favoritos como cliente; 429 con `code RATE_LIMITED`; el 503 expone `code` y un 500 genérico no; sin `customerId` aceptado.
-- **Integración con BD** (`test/migration-0008.int-spec.ts`, PostgreSQL desechable vía `DATABASE_URL_TEST`; PGlite para estructura): PK, `ON CONFLICT DO NOTHING`, cascada al borrar el cliente, índice presente, RLS/REVOKE;
+- **Integración con BD** (`test/migration-0009.int-spec.ts`, PostgreSQL desechable vía `DATABASE_URL_TEST`; PGlite para estructura): PK, `ON CONFLICT DO NOTHING`, cascada al borrar el cliente, índice presente, RLS/REVOKE;
   **carrera**: N (> 200) PUT concurrentes de productos distintos desde conexiones distintas ⇒ exactamente 200 filas y el resto 422 (requiere varias conexiones; se omite sin BD real); dos PUT simultáneos del mismo producto ⇒ 1 fila.
 - **Filtro de errores**: `CATALOG_UNAVAILABLE` conserva `code`; cualquier otro 5xx no.
 - **Web** (Vitest/RTL): `FavoriteButton` (`aria-pressed`, `aria-label` es/en, `aria-busy`, sin doble envío, visitante abre login y NO llama a la API, sin sesión no hay consulta); `useToggleFavorite` (optimista, rollback
@@ -237,7 +237,7 @@ rojo** (solo estas 3 operaciones sin implementar) hasta que la API exista; `pnpm
 
 ## Tareas por dueño
 
-1. **database-engineer**: migración `0008_customer_favorites` (tabla, FK `ON DELETE CASCADE`, índice, RLS/REVOKE, encabezado con reversión), modelo Prisma, `test/migration-0008.int-spec.ts` (incluye la carrera), nota en `docs/database/README.md` (propuesta hecha).
+1. **database-engineer**: migración `0009_customer_favorites` (tabla, FK `ON DELETE CASCADE`, índice, RLS/REVOKE, encabezado con reversión), modelo Prisma, `test/migration-0009.int-spec.ts` (incluye la carrera), nota en `docs/database/README.md` (propuesta hecha).
 2. **api-engineer**: `src/favorites/` (módulo, controlador `me/favorites`, servicio, repositorio, puerto + `UnavailableCatalogAdapter`, `CustomerFavoritesReader` exportado), tope exacto D10, throttles D13 (constantes junto a las de F09), lista blanca 5xx en el filtro D9, DTOs con `type:` explícito
    y `@Inject` explícito, logging sin PII, pruebas anteriores; `pnpm contracts:check` verde.
 3. **web-engineer**: servicios/hooks/claves D15–D16, `FavoriteButton` D17, Mis favoritos D18, handlers mock D19, retirar `queryKeys.account.favorites`, contadores de AccountHub/MorePage desde `total`, i18n es/en (incluye nuevo `guestNote`, tope, no disponible), pruebas web.

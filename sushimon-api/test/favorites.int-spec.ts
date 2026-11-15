@@ -24,9 +24,9 @@ const everything: CatalogProductsPort = {
 /**
  * F06 contra PostgreSQL real: tope exacto bajo concurrencia, idempotencia con altas simultáneas, cascada y aislamiento.
  *
- * Esta prueba NO aplica migraciones (la 0008 requiere aprobación humana y NO se aplica a Supabase desde aquí): se
+ * Esta prueba NO aplica migraciones (la 0009 requiere aprobación humana y NO se aplica a Supabase desde aquí): se
  * OMITE, con aviso, si `app.customer_favorites` no existe en `DATABASE_URL_TEST`. Ver también
- * `migration-0008.int-spec.ts` (estructura sobre una base desechable de PostgreSQL plano).
+ * `migration-0009.int-spec.ts` (estructura sobre una base desechable de PostgreSQL plano).
  */
 describe.skipIf(!url)('Favoritos contra PostgreSQL real', () => {
   let ready = false;
@@ -39,7 +39,7 @@ describe.skipIf(!url)('Favoritos contra PostgreSQL real', () => {
   const skipUnlessReady = (ctx: TestContext) => {
     if (!ready)
       ctx.skip(
-        'app.customer_favorites no existe en DATABASE_URL_TEST (migración 0008 sin aplicar)',
+        'app.customer_favorites no existe en DATABASE_URL_TEST (migración 0009 sin aplicar)',
       );
   };
 
@@ -87,7 +87,7 @@ describe.skipIf(!url)('Favoritos contra PostgreSQL real', () => {
     });
     if (!ready) {
       console.warn(
-        '[favorites.int-spec] OMITIDA: app.customer_favorites no existe en DATABASE_URL_TEST. La migración 0008 no está aplicada; la concurrencia y el SQL de F06 NO se probaron contra PostgreSQL real.',
+        '[favorites.int-spec] OMITIDA: app.customer_favorites no existe en DATABASE_URL_TEST. La migración 0009 no está aplicada; la concurrencia y el SQL de F06 NO se probaron contra PostgreSQL real.',
       );
     }
     // Pool amplio: la prueba exige varias conexiones simultáneas reales.
