@@ -119,3 +119,11 @@ authenticated`, porque en Supabase los privilegios por defecto sobre tablas nuev
     aplicando 0001..0007 en PGlite 0.4.3 en memoria.
   - **Fuente de verdad**: `docs/references/monsushi_dbdiagram.dbml` NO se edita; la evolución del modelo (columnas y tabla nuevas, `UNIQUE`
     sobre `zone_key`, CHECK) vive en la migración + ADR-0013.
+- `0008_customer_favorites` (F06, `specs/009-customer-favorites`, ADR-0014; **PROPUESTA: el SQL aún no existe, sin aplicar; requiere aprobación humana**): incremental y no
+  destructiva (solo `CREATE`). `app.customer_favorites (customer_id, product_id, created_at)`: PK `(customer_id, product_id)` (como el DBML), FK a `customers`
+  `ON DELETE CASCADE`, **sin FK a `products`** (la tabla no existe en 0001–0007 ni en Prisma; F10/F11 pendientes) y `created_at timestamptz DEFAULT now()` (nuevo respecto al DBML).
+  Índice `customer_favorites_customer_created_idx (customer_id, created_at DESC, product_id)` para el listado paginado. RLS habilitado sin políticas + `REVOKE ALL FROM PUBLIC`
+  y, solo si existen, `anon`/`authenticated` (igual que 0006/0007). El tope de 200 favoritos por cliente vive en la API (transacción con `FOR NO KEY UPDATE` sobre el cliente), no en CHECK.
+  El `product_id` solo se persiste tras validarse con el catálogo: hasta F11 la tabla permanece vacía en entornos reales. **F11** añadirá la FK `NOT VALID` + `VALIDATE`
+  con `ON DELETE CASCADE` (el DBML decía sin acción; los productos son soft-delete por `active`) y `customer_favorites_product_idx (product_id)`. El DBML NO se edita.
+  Reversión manual: eliminar la tabla `app.customer_favorites` (sin dependientes). Pruebas previstas: `test/migration-0008.int-spec.ts` (incluye la carrera del tope; requiere `DATABASE_URL_TEST`).

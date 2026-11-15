@@ -12,6 +12,8 @@ implemente (`contracts:check` exige que contrato y API coincidan). Los esquemas 
 >
 > Definido en F09 (`CONTRACT_DEFINED`, ya en `openapi.yaml`; API pendiente): `GET /v1/locations/departments`, `GET /v1/locations/municipalities?departmentId`, `GET|POST /v1/admin/delivery-zones`, `GET|PATCH /v1/admin/delivery-zones/{id}`, `PATCH /v1/admin/delivery-zones/{id}/status`, `GET|PATCH /v1/admin/branches/{id}/delivery-settings`, `POST /v1/delivery-coverage/check`. La cobertura por proveedor de `POST /v1/delivery-coverage/check` reemplaza la parte de cobertura de `GET /v1/delivery/quote`; la cotización/ETA de ese endpoint se redefine en F19 (PedidosYa real: F29, `BLOCKED_EXTERNAL`). Los esquemas draft `Department`/`Municipality` pasaron a `DraftDepartment`/`DraftMunicipality`.
 >
+> Definido en F06 (`CONTRACT_DEFINED`, ya en `openapi.yaml`; API pendiente): `GET /v1/me/favorites` (`listMyFavorites`), `PUT|DELETE /v1/me/favorites/{productId}` (`addMyFavorite`, `removeMyFavorite`). `GET` devuelve `items` paginados + `favoriteProductIds` completo (≤ 200) para los corazones; `PUT`/`DELETE` responden 204 y son idempotentes. El catálogo real es de F11 (`BLOCKED`): hasta entonces `PUT` responde 503 `CATALOG_UNAVAILABLE` y `GET` degrada a `UNKNOWN`. Ya no devuelve `string[]`.
+>
 > Implementado en F07 (`API_IMPLEMENTED`, ya en `openapi.yaml`): `GET /v1/branches[/{id}]` y `/v1/admin/branches[/{id}[/status]]`; se retiraron de esta tabla.
 
 | Método           | Ruta                                                       | Esquema de respuesta        | Uso                                                                    | Auth prevista               |
@@ -32,7 +34,7 @@ implemente (`contracts:check` exige que contrato y API coincidan). Los esquemas 
 | GET              | `/v1/me/storefront`                                        | `CustomerStorefrontContext` | contexto agregado de Mi cuenta (✅ F04; sin contadores de F05/F06/F23) | cliente                     |
 | PUT              | `/v1/demo/me/default-address`                              | `{defaultAddressId}`        | 🎭 dirección predeterminada (F05 simulado; no está en la API)          | cliente                     |
 | GET/POST         | `/v1/me/addresses` · PATCH/DELETE `/v1/me/addresses/{id}`  | `Address`                   | direcciones                                                            | cliente                     |
-| GET/PUT/DELETE   | `/v1/me/favorites[/{productId}]`                           | `string[]`                  | favoritos                                                              | cliente                     |
+| GET/PUT/DELETE   | `/v1/me/favorites[/{productId}]`                           | `CustomerFavorites` · 204   | favoritos (✅ contrato F06; API pendiente, catálogo F11)               | cliente                     |
 | GET              | `/v1/me/orders`                                            | `Order[]`                   | historial del cliente                                                  | cliente                     |
 | GET              | `/v1/backoffice/me`                                        | `StaffUser`                 | sesión del personal y permisos                                         | personal                    |
 | GET              | `/v1/backoffice/dashboard?branchId`                        | `DashboardSummary`          | KPIs del panel                                                         | personal                    |

@@ -1,6 +1,6 @@
 # Contrato HTTP canónico de Sushi Mon (Contract First).
 # Se diseña ANTES de implementar cada slice y se verifica contra NestJS con `pnpm contracts:check`.
-# Estado: F09 (geografía, cobertura y zonas propias: /v1/locations/*, /v1/admin/delivery-zones, /v1/admin/branches/{id}/delivery-settings, /v1/delivery-coverage/check) + F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
+# Estado: F06 (favoritos de clientes: /v1/me/favorites, /v1/me/favorites/{productId}; catálogo real pendiente de F11) + F09 (geografía, cobertura y zonas propias: /v1/locations/*, /v1/admin/delivery-zones, /v1/admin/branches/{id}/delivery-settings, /v1/delivery-coverage/check) + F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
 # Seguridad por defecto: Bearer JWT de Supabase Auth en todo salvo operaciones con `security: []` (health).
 # Transversal a TODAS las respuestas: cabecera `X-Request-Id`; errores con `ErrorResponse`; 429 cuando
 # se excede el rate limit global (no se repite por operación).
@@ -191,6 +191,168 @@ paths:
                 $ref: '#/components/schemas/CustomerStorefrontContext'
         '401':
           description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/me/favorites:
+    get:
+      operationId: listMyFavorites
+      summary: Favoritos del cliente autenticado (lista paginada + ids completos para los corazones)
+      description: |
+        F06. El propietario sale SIEMPRE del JWT (no existe `customerId` en la ruta, la consulta ni el cuerpo). Solo requiere
+        sesión de cliente: ni rol de personal ni MFA (un empleado usa SUS favoritos como cliente). Crea el perfil de cliente
+        de forma idempotente si todavía no existe (misma regla que `getMe`).
+
+        Una sola respuesta sirve a la lista y al estado `isFavorite` de todas las tarjetas: `favoriteProductIds` trae TODOS los
+        ids del cliente (acotado por `limit`, 200), más recientes primero, y `items` la página pedida. Con `pageSize=0` no se
+        devuelven `items` ni se consulta el catálogo (uso de los corazones: respuesta barata). No hay endpoint por producto.
+
+        `items[].product` es un resumen público mínimo (id, nombre, imagen, categoría) que entrega el catálogo; NUNCA precios ni
+        disponibilidad por sucursal (los resuelve el catálogo/F13 del lado del cliente). Un producto retirado, despublicado o
+        desconocido NO se borra del favorito: se devuelve con `status` y `product = null` (sin datos internos).
+
+        Degradación honesta: mientras el catálogo real no exista (F11) o falle/expire la consulta, responde 200 con
+        `catalogStatus = UNAVAILABLE` y cada item con `status = UNKNOWN` y `product = null`; `productId`, `addedAt`,
+        `favoriteProductIds` y `total` siguen siendo reales (vienen de la base de datos). Nunca se inventan datos de producto.
+
+        Orden: `addedAt` descendente, desempate por `productId` ascendente. Respuesta `Cache-Control: private, no-store`
+        (datos personales: jamás en CDN ni caché compartida).
+      tags: [me]
+      security:
+        - bearer: []
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 10000, default: 1 }
+        - name: pageSize
+          in: query
+          description: '0 = solo `favoriteProductIds`/`total` (sin `items` ni consulta al catálogo). Máximo 50.'
+          schema: { type: integer, minimum: 0, maximum: 50, default: 20 }
+      responses:
+        '200':
+          description: Favoritos del cliente
+          headers:
+            Cache-Control:
+              description: private, no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerFavorites'
+        '400':
+          description: Parámetros de consulta inválidos o desconocidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: '`RATE_LIMITED`: 120 por minuto por IP en esta ruta. `Cache-Control: no-store` y `Retry-After`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/me/favorites/{productId}:
+    put:
+      operationId: addMyFavorite
+      summary: Marca un producto como favorito (idempotente)
+      description: |
+        F06. Sin cuerpo; el propietario sale del JWT. Idempotente: marcar dos veces (o dos clics/solicitudes simultáneas) es
+        éxito igual, sin 409; `addedAt` no cambia si ya era favorito. Éxito = `204` siempre (creado o ya existente).
+        El producto se valida contra el catálogo ANTES de guardar: un id no validado nunca se persiste. Producto inexistente,
+        despublicado o retirado => `404 PRODUCT_NOT_FOUND` (no se distingue). Catálogo no disponible (hoy y hasta F11, o
+        fallo/timeout) => `503 CATALOG_UNAVAILABLE`, sin escribir. Tope de favoritos por cliente (`limit` = 200): al
+        alcanzarlo, un producto NUEVO => `422 FAVORITES_LIMIT_REACHED` (ya favorito => 204). El tope es exacto bajo
+        concurrencia (se serializa por cliente). Sin auditoría por clic. `Cache-Control: private, no-store`.
+      tags: [me]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/FavoriteProductId'
+      responses:
+        '204':
+          description: El producto es favorito del cliente (recién marcado o ya lo era). Sin cuerpo.
+          headers:
+            Cache-Control:
+              description: private, no-store
+              schema: { type: string }
+        '400':
+          description: '`productId` no es un UUID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`PRODUCT_NOT_FOUND`: el producto no existe o no está publicado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`FAVORITES_LIMIT_REACHED`: el cliente ya tiene el máximo de favoritos'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: '`RATE_LIMITED`: 60 por minuto por IP en esta ruta. `Cache-Control: no-store` y `Retry-After`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: |
+            `CATALOG_UNAVAILABLE`: no se puede validar el producto (catálogo sin implementar, caído o con timeout).
+            No se guardó nada; reintentar más tarde. Es el único 5xx que expone `code`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      operationId: removeMyFavorite
+      summary: Quita un producto de los favoritos (idempotente)
+      description: |
+        F06. Sin cuerpo; el propietario sale del JWT, así que solo se puede borrar un favorito propio. Idempotente: si el
+        producto no era favorito (o ya no existe en el catálogo) también es éxito `204`. No consulta el catálogo: funciona
+        aunque no esté disponible. Sin auditoría por clic. `Cache-Control: private, no-store`.
+      tags: [me]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/FavoriteProductId'
+      responses:
+        '204':
+          description: El producto ya no es favorito del cliente (lo fuera o no antes). Sin cuerpo.
+          headers:
+            Cache-Control:
+              description: private, no-store
+              schema: { type: string }
+        '400':
+          description: '`productId` no es un UUID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: '`RATE_LIMITED`: 60 por minuto por IP en esta ruta. `Cache-Control: no-store` y `Retry-After`.'
           content:
             application/json:
               schema:
@@ -1957,6 +2119,12 @@ components:
       required: true
       description: UUID del cierre extraordinario (`branch_closures.id`).
       schema: { type: string, format: uuid }
+    FavoriteProductId:
+      name: productId
+      in: path
+      required: true
+      description: UUID del producto (`products.id`, catálogo F11).
+      schema: { type: string, format: uuid }
     DeliveryZoneId:
       name: id
       in: path
@@ -2430,6 +2598,57 @@ components:
           items:
             type: string
             enum: [addresses, favorites, orders]
+    FavoriteProductStatus:
+      type: string
+      description: |
+        Estado del producto favorito según el catálogo (enum abierto: tolerar valores futuros). `ACTIVE` = publicado y
+        pedible; `UNAVAILABLE` = publicado pero no pedible ahora; `INACTIVE` = despublicado; `REMOVED` = ya no existe;
+        `UNKNOWN` = no se pudo consultar el catálogo. Solo `ACTIVE` y `UNAVAILABLE` traen `product`.
+      enum: [ACTIVE, INACTIVE, UNAVAILABLE, REMOVED, UNKNOWN]
+    FavoriteProductSummary:
+      type: object
+      description: |
+        Resumen público MÍNIMO que entrega el catálogo. Sin precios, sin disponibilidad por sucursal y sin datos internos
+        (costos, notas, banderas administrativas). El precio vigente lo resuelve el catálogo de la sucursal elegida.
+      required: [id, name, nameEn, imageUrl, categoryId]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        nameEn: { type: string, nullable: true }
+        imageUrl: { type: string, format: uri, nullable: true }
+        categoryId: { type: string, format: uuid, nullable: true }
+    FavoriteItem:
+      type: object
+      required: [productId, addedAt, status, product]
+      properties:
+        productId: { type: string, format: uuid }
+        addedAt: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/FavoriteProductStatus' }
+        product:
+          allOf:
+            - $ref: '#/components/schemas/FavoriteProductSummary'
+          nullable: true
+          description: null cuando `status` no es `ACTIVE`/`UNAVAILABLE` (retirado, despublicado o catálogo no consultable).
+    CustomerFavorites:
+      type: object
+      required: [items, page, pageSize, total, favoriteProductIds, limit, catalogStatus]
+      properties:
+        items:
+          type: array
+          description: Página pedida (vacía con `pageSize=0`).
+          items: { $ref: '#/components/schemas/FavoriteItem' }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer, description: Cantidad total de favoritos del cliente (≤ `limit`). }
+        favoriteProductIds:
+          type: array
+          description: TODOS los ids favoritos (≤ `limit`), más recientes primero. Fuente del estado `isFavorite` de las tarjetas.
+          items: { type: string, format: uuid }
+        limit: { type: integer, description: Tope de favoritos por cliente (200). }
+        catalogStatus:
+          type: string
+          description: '`UNAVAILABLE` = el catálogo no pudo consultarse; los items vienen con `status = UNKNOWN` y `product = null`.'
+          enum: [AVAILABLE, UNAVAILABLE]
     ReadyResponse:
       type: object
       required: [status, checks]
@@ -2472,7 +2691,7 @@ components:
           type: string
           description: |
             Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`). Los clientes deben ramificar por `code`, nunca por `message`.
+            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F06: `PRODUCT_NOT_FOUND`, `FAVORITES_LIMIT_REACHED`, `CATALOG_UNAVAILABLE` —el único 5xx con `code`—, `RATE_LIMITED`). Los clientes deben ramificar por `code`, nunca por `message`.
         violations:
           type: array
           description: Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09).

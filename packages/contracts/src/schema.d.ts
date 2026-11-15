@@ -135,6 +135,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Favoritos del cliente autenticado (lista paginada + ids completos para los corazones)
+         * @description F06. El propietario sale SIEMPRE del JWT (no existe `customerId` en la ruta, la consulta ni el cuerpo). Solo requiere
+         *     sesión de cliente: ni rol de personal ni MFA (un empleado usa SUS favoritos como cliente). Crea el perfil de cliente
+         *     de forma idempotente si todavía no existe (misma regla que `getMe`).
+         *
+         *     Una sola respuesta sirve a la lista y al estado `isFavorite` de todas las tarjetas: `favoriteProductIds` trae TODOS los
+         *     ids del cliente (acotado por `limit`, 200), más recientes primero, y `items` la página pedida. Con `pageSize=0` no se
+         *     devuelven `items` ni se consulta el catálogo (uso de los corazones: respuesta barata). No hay endpoint por producto.
+         *
+         *     `items[].product` es un resumen público mínimo (id, nombre, imagen, categoría) que entrega el catálogo; NUNCA precios ni
+         *     disponibilidad por sucursal (los resuelve el catálogo/F13 del lado del cliente). Un producto retirado, despublicado o
+         *     desconocido NO se borra del favorito: se devuelve con `status` y `product = null` (sin datos internos).
+         *
+         *     Degradación honesta: mientras el catálogo real no exista (F11) o falle/expire la consulta, responde 200 con
+         *     `catalogStatus = UNAVAILABLE` y cada item con `status = UNKNOWN` y `product = null`; `productId`, `addedAt`,
+         *     `favoriteProductIds` y `total` siguen siendo reales (vienen de la base de datos). Nunca se inventan datos de producto.
+         *
+         *     Orden: `addedAt` descendente, desempate por `productId` ascendente. Respuesta `Cache-Control: private, no-store`
+         *     (datos personales: jamás en CDN ni caché compartida).
+         */
+        get: operations["listMyFavorites"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/favorites/{productId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Marca un producto como favorito (idempotente)
+         * @description F06. Sin cuerpo; el propietario sale del JWT. Idempotente: marcar dos veces (o dos clics/solicitudes simultáneas) es
+         *     éxito igual, sin 409; `addedAt` no cambia si ya era favorito. Éxito = `204` siempre (creado o ya existente).
+         *     El producto se valida contra el catálogo ANTES de guardar: un id no validado nunca se persiste. Producto inexistente,
+         *     despublicado o retirado => `404 PRODUCT_NOT_FOUND` (no se distingue). Catálogo no disponible (hoy y hasta F11, o
+         *     fallo/timeout) => `503 CATALOG_UNAVAILABLE`, sin escribir. Tope de favoritos por cliente (`limit` = 200): al
+         *     alcanzarlo, un producto NUEVO => `422 FAVORITES_LIMIT_REACHED` (ya favorito => 204). El tope es exacto bajo
+         *     concurrencia (se serializa por cliente). Sin auditoría por clic. `Cache-Control: private, no-store`.
+         */
+        put: operations["addMyFavorite"];
+        post?: never;
+        /**
+         * Quita un producto de los favoritos (idempotente)
+         * @description F06. Sin cuerpo; el propietario sale del JWT, así que solo se puede borrar un favorito propio. Idempotente: si el
+         *     producto no era favorito (o ya no existe en el catálogo) también es éxito `204`. No consulta el catálogo: funciona
+         *     aunque no esté disponible. Sin auditoría por clic. `Cache-Control: private, no-store`.
+         */
+        delete: operations["removeMyFavorite"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/branches": {
         parameters: {
             query?: never;
@@ -1113,6 +1182,53 @@ export interface components {
             /** @description Secciones de Mi cuenta sin contrato implementado todavía. No tienen contadores. */
             pendingSections: ("addresses" | "favorites" | "orders")[];
         };
+        /**
+         * @description Estado del producto favorito según el catálogo (enum abierto: tolerar valores futuros). `ACTIVE` = publicado y
+         *     pedible; `UNAVAILABLE` = publicado pero no pedible ahora; `INACTIVE` = despublicado; `REMOVED` = ya no existe;
+         *     `UNKNOWN` = no se pudo consultar el catálogo. Solo `ACTIVE` y `UNAVAILABLE` traen `product`.
+         * @enum {string}
+         */
+        FavoriteProductStatus: "ACTIVE" | "INACTIVE" | "UNAVAILABLE" | "REMOVED" | "UNKNOWN";
+        /**
+         * @description Resumen público MÍNIMO que entrega el catálogo. Sin precios, sin disponibilidad por sucursal y sin datos internos
+         *     (costos, notas, banderas administrativas). El precio vigente lo resuelve el catálogo de la sucursal elegida.
+         */
+        FavoriteProductSummary: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            nameEn: string | null;
+            /** Format: uri */
+            imageUrl: string | null;
+            /** Format: uuid */
+            categoryId: string | null;
+        };
+        FavoriteItem: {
+            /** Format: uuid */
+            productId: string;
+            /** Format: date-time */
+            addedAt: string;
+            status: components["schemas"]["FavoriteProductStatus"];
+            /** @description null cuando `status` no es `ACTIVE`/`UNAVAILABLE` (retirado, despublicado o catálogo no consultable). */
+            product: components["schemas"]["FavoriteProductSummary"] | null;
+        };
+        CustomerFavorites: {
+            /** @description Página pedida (vacía con `pageSize=0`). */
+            items: components["schemas"]["FavoriteItem"][];
+            page: number;
+            pageSize: number;
+            /** @description Cantidad total de favoritos del cliente (≤ `limit`). */
+            total: number;
+            /** @description TODOS los ids favoritos (≤ `limit`), más recientes primero. Fuente del estado `isFavorite` de las tarjetas. */
+            favoriteProductIds: string[];
+            /** @description Tope de favoritos por cliente (200). */
+            limit: number;
+            /**
+             * @description `UNAVAILABLE` = el catálogo no pudo consultarse; los items vienen con `status = UNKNOWN` y `product = null`.
+             * @enum {string}
+             */
+            catalogStatus: "AVAILABLE" | "UNAVAILABLE";
+        };
         ReadyResponse: {
             /** @enum {string} */
             status: "ok";
@@ -1137,7 +1253,7 @@ export interface components {
             details?: string[];
             /**
              * @description Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`). Los clientes deben ramificar por `code`, nunca por `message`.
+             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F06: `PRODUCT_NOT_FOUND`, `FAVORITES_LIMIT_REACHED`, `CATALOG_UNAVAILABLE` —el único 5xx con `code`—, `RATE_LIMITED`). Los clientes deben ramificar por `code`, nunca por `message`.
              */
             code?: string;
             /** @description Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09). */
@@ -2059,6 +2175,8 @@ export interface components {
         BranchId: string;
         /** @description UUID del cierre extraordinario (`branch_closures.id`). */
         ClosureId: string;
+        /** @description UUID del producto (`products.id`, catálogo F11). */
+        FavoriteProductId: string;
         /** @description UUID de la zona de entrega (`delivery_zones.id`). */
         DeliveryZoneId: string;
     };
@@ -2284,6 +2402,189 @@ export interface operations {
             };
             /** @description Token ausente, inválido o expirado */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listMyFavorites: {
+        parameters: {
+            query?: {
+                page?: number;
+                /** @description 0 = solo `favoriteProductIds`/`total` (sin `items` ni consulta al catálogo). Máximo 50. */
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Favoritos del cliente */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerFavorites"];
+                };
+            };
+            /** @description Parámetros de consulta inválidos o desconocidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED`: 120 por minuto por IP en esta ruta. `Cache-Control: no-store` y `Retry-After`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    addMyFavorite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del producto (`products.id`, catálogo F11). */
+                productId: components["parameters"]["FavoriteProductId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description El producto es favorito del cliente (recién marcado o ya lo era). Sin cuerpo. */
+            204: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `productId` no es un UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCT_NOT_FOUND`: el producto no existe o no está publicado */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `FAVORITES_LIMIT_REACHED`: el cliente ya tiene el máximo de favoritos */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED`: 60 por minuto por IP en esta ruta. `Cache-Control: no-store` y `Retry-After`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /**
+             * @description `CATALOG_UNAVAILABLE`: no se puede validar el producto (catálogo sin implementar, caído o con timeout).
+             *     No se guardó nada; reintentar más tarde. Es el único 5xx que expone `code`.
+             */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    removeMyFavorite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del producto (`products.id`, catálogo F11). */
+                productId: components["parameters"]["FavoriteProductId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description El producto ya no es favorito del cliente (lo fuera o no antes). Sin cuerpo. */
+            204: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `productId` no es un UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED`: 60 por minuto por IP en esta ruta. `Cache-Control: no-store` y `Retry-After`. */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
