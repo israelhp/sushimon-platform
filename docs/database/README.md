@@ -93,3 +93,9 @@ authenticated`, porque en Supabase los privilegios por defecto sobre tablas nuev
   - Pruebas: `sushimon-api/test/migration-0006.int-spec.ts` (PostgreSQL plano desechable vía `DATABASE_URL_TEST`; se
     omite sin ella o si hay Supabase real). Las mismas restricciones se comprobaron aplicando 0001..0006 en PGlite
     0.4.3 en memoria. Reversión manual descrita en el encabezado del SQL.
+- `0007_delivery_geography_coverage` (F09, `specs/008-delivery-zones-coverage`, ADR-0012; **PROPUESTA de diseño: la migración aún NO existe**):
+  incremental y no destructiva. Crea `departments`, `municipalities`, `delivery_zones` (DBML + `zone_key`, `version`, `created_at`, `updated_at`,
+  `UNIQUE (branch_id, municipality_id, zone_key)`, CHECK de tarifa `0..99999.99` y de coherencia etiqueta/clave) y `branch_delivery_settings`
+  (1:1 con `branches`; defaults `own_delivery_zones_enabled=false`, `pedidosya_enabled=true`; fila ausente = defaults, sin backfill). Seed idempotente
+  (`ON CONFLICT DO NOTHING`): 22 departamentos y solo los 17 municipios del departamento de Guatemala; el resto, pendiente de fuente oficial (INE).
+  Cierra la brecha B7 (municipio + zona, no radio). RLS sin políticas y `REVOKE` como 0006. No toca RBAC, `customer_addresses` (F05) ni `audit_events`.

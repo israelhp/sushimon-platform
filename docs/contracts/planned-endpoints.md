@@ -9,6 +9,8 @@ implemente (`contracts:check` exige que contrato y API coincidan). Los esquemas 
 >
 > Definido en F08 (`CONTRACT_DEFINED`, ya en `openapi.yaml`; API pendiente): `GET /v1/branches/{id}/hours`, `GET /v1/branches/{id}/availability`, `GET|PUT /v1/admin/branches/{id}/hours`, `GET|POST /v1/admin/branches/{id}/closures`, `PATCH|DELETE /v1/admin/branches/{id}/closures/{closureId}`. Los esquemas draft `BranchHours`/`BranchAvailability` pasaron a `DraftBranchHours`/`DraftBranchAvailability`.
 >
+> Definido en F09 (`CONTRACT_DEFINED`, ya en `openapi.yaml`; API pendiente): `GET /v1/locations/departments`, `GET /v1/locations/municipalities?departmentId`, `GET|POST /v1/admin/delivery-zones`, `GET|PATCH /v1/admin/delivery-zones/{id}`, `PATCH /v1/admin/delivery-zones/{id}/status`, `GET|PATCH /v1/admin/branches/{id}/delivery-settings`, `POST /v1/delivery-coverage/check`. La cobertura por proveedor de `POST /v1/delivery-coverage/check` reemplaza la parte de cobertura de `GET /v1/delivery/quote`; la cotización/ETA de ese endpoint se redefine en F19 (PedidosYa real: F29, `BLOCKED_EXTERNAL`). Los esquemas draft `Department`/`Municipality` pasaron a `DraftDepartment`/`DraftMunicipality`.
+>
 > Implementado en F07 (`API_IMPLEMENTED`, ya en `openapi.yaml`): `GET /v1/branches[/{id}]` y `/v1/admin/branches[/{id}[/status]]`; se retiraron de esta tabla.
 
 | Método           | Ruta                                                       | Esquema de respuesta  | Uso                                                    | Auth prevista               |

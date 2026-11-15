@@ -563,6 +563,204 @@ export interface paths {
         patch: operations["updateAdminBranchClosure"];
         trace?: never;
     };
+    "/v1/locations/departments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Departamentos de Guatemala (catálogo público)
+         * @description F09. Sin autenticación. Los 22 departamentos, ordenados alfabéticamente en español (comparación sin distinguir
+         *     acentos ni mayúsculas; desempate por `id`). Solo `id` y `name`. Catálogo de solo lectura (cambia por migración):
+         *     caché pública larga. Los `id` son específicos de cada entorno: los clientes NO deben codificarlos.
+         */
+        get: operations["listLocationDepartments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/locations/municipalities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Municipios de un departamento (catálogo público)
+         * @description F09. Sin autenticación. `departmentId` es obligatorio (no hay listado global). Orden alfabético en español (sin
+         *     distinguir acentos; desempate por `id`). Un departamento existente sin municipios cargados devuelve 200 con
+         *     `items: []` (la carga de municipios fuera del departamento de Guatemala está PENDIENTE de fuente oficial, ver
+         *     specs/008-delivery-zones-coverage D9). `departmentId` con formato inválido o ausente => 400; UUID válido que no existe
+         *     => 404 `DEPARTMENT_NOT_FOUND`. Caché pública larga solo en 2xx; los errores llevan `no-store`.
+         */
+        get: operations["listLocationMunicipalities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/delivery-zones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Zonas de entrega propias (backoffice, paginado)
+         * @description F09. Exige JWT -> personal activo con `branches.read` -> `aal2`. Solo devuelve zonas de sucursales dentro del
+         *     alcance de `branches.read`. `branchId` fuera de alcance o inexistente => 404 (no se distingue). Incluye zonas
+         *     inactivas salvo que se filtre `active`. Orden por defecto: departamento, municipio, zona general (sin etiqueta)
+         *     primero y luego etiqueta; desempate por `id`. `q` busca por etiqueta (contiene; sin distinguir mayúsculas ni
+         *     acentos). Respuesta `Cache-Control: no-store`.
+         */
+        get: operations["listAdminDeliveryZones"];
+        put?: never;
+        /**
+         * Crea una zona de entrega propia
+         * @description F09. Exige `branches.manage_delivery_zones` en `branchId` (inexistente o fuera de alcance => 404; una sucursal
+         *     inactiva SÍ admite zonas). `zoneLabel` se normaliza (NFC, recorte, colapso de espacios); `null` o en blanco = cobertura
+         *     GENERAL del municipio. Unicidad lógica `(branchId, municipalityId, clave normalizada de zoneLabel)` incluyendo
+         *     zonas inactivas: duplicado => 409 `DELIVERY_ZONE_DUPLICATE` (también ante creaciones concurrentes) con
+         *     `violations[0].path = deliveryZones/<id existente>`. `baseFee` es un string decimal GTQ con 0 a 2 decimales
+         *     (`"15"` o `"15.00"`; un número JSON => 400) y se devuelve siempre con 2 decimales. Municipio inexistente => 422
+         *     `MUNICIPALITY_NOT_FOUND`. Se audita en la misma transacción (`delivery_zone.created`). Respuesta `no-store`.
+         */
+        post: operations["createAdminDeliveryZone"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/delivery-zones/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detalle de una zona de entrega propia
+         * @description F09. Exige `branches.read` en la sucursal de la zona. 404 si no existe o está fuera de alcance (no se distingue).
+         *     Una zona inactiva SÍ se puede consultar. Respuesta `no-store`.
+         */
+        get: operations["getAdminDeliveryZone"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edita etiqueta y/o tarifa de una zona
+         * @description F09. Exige `branches.manage_delivery_zones` en la sucursal de la zona (404 fuera de alcance). Solo `zoneLabel`
+         *     (`null` = pasa a cobertura general del municipio) y `baseFee`; sucursal, municipio y `active` NO se aceptan (400;
+         *     el estado se cambia con `PATCH .../status`). Concurrencia optimista: `expectedVersion` debe coincidir con `version`
+         *     vigente, si no 409 `DELIVERY_ZONE_VERSION_CONFLICT` sin guardar. Si ningún valor cambia responde 200 sin escribir,
+         *     sin subir `version` y sin auditar. Cambiar la etiqueta a una ya existente => 409 `DELIVERY_ZONE_DUPLICATE`. Se audita
+         *     `delivery_zone.updated` (old/new solo de los campos cambiados). Respuesta `no-store`.
+         */
+        patch: operations["updateAdminDeliveryZone"];
+        trace?: never;
+    };
+    "/v1/admin/delivery-zones/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Activa o desactiva una zona (no hay borrado físico)
+         * @description F09. Exige `branches.manage_delivery_zones` en la sucursal de la zona (404 fuera de alcance). Establece `active`
+         *     con valor explícito (idempotente: si ya tiene ese valor responde 200 sin escribir ni auditar; no usa
+         *     `expectedVersion`, el último valor gana). Un cambio real sube `version` y audita `delivery_zone.status_changed`.
+         *     Desactivar NO borra la zona ni afecta pedidos ya creados; solo deja de contar para nuevas comprobaciones. `reason`
+         *     opcional (máx. 200; sin PII). Respuesta `no-store`.
+         */
+        patch: operations["updateAdminDeliveryZoneStatus"];
+        trace?: never;
+    };
+    "/v1/admin/branches/{id}/delivery-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Configuración logística de una sucursal
+         * @description F09. Exige `branches.read` en esa sucursal (404 si no existe o fuera de alcance; una inactiva SÍ se consulta). Si la
+         *     sucursal aún no tiene fila, devuelve los valores por defecto (`ownDeliveryZonesEnabled=false`,
+         *     `pedidosyaEnabled=true`) con `isDefault=true` y `updatedAt=null`. `pedidosyaIntegrationStatus` refleja el
+         *     adaptador activo en el servidor (`BLOCKED_EXTERNAL` mientras no exista integración verificable): NO es un
+         *     indicador de conexión. Respuesta `no-store`.
+         */
+        get: operations["getAdminBranchDeliverySettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Actualiza los indicadores logísticos de una sucursal
+         * @description F09. Exige `branches.manage_delivery_zones` en esa sucursal (404 fuera de alcance). Campos omitidos no se tocan;
+         *     valores explícitos (idempotente, el último gana; sin `expectedVersion`). Crea la fila si no existía (upsert).
+         *     `pedidosyaEnabled` es un indicador ADMINISTRATIVO: no activa operaciones reales ni equivale a integración
+         *     operativa. Desactivar zonas propias NO borra zonas, motoristas, entregas en curso ni pedidos; solo impide nuevas
+         *     elegibilidades. Un PATCH sin cambios reales no escribe ni audita. Se audita `branch_delivery_settings.updated`
+         *     (old/new solo de los flags cambiados). Respuesta `no-store`.
+         */
+        patch: operations["updateAdminBranchDeliverySettings"];
+        trace?: never;
+    };
+    "/v1/delivery-coverage/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Comprueba cobertura de entrega a domicilio por proveedor (público, informativo)
+         * @description F09. Sin autenticación. NO crea pedidos, NO solicita motorista ni cotiza, y NO recibe costos del cliente (cuerpo
+         *     con propiedades desconocidas => 400). La tarifa de `OWN.baseFee` es la del servidor; el pedido (F19/F20)
+         *     la recalcula. Se evalúa cada proveedor por separado; NO existe un booleano `covered`.
+         *     `providers.PEDIDOSYA.coverageStatus = UNKNOWN` mientras no haya integración verificable (`integrationStatus =
+         *     BLOCKED_EXTERNAL`): NO equivale a UNAVAILABLE ni a AVAILABLE. Si `integrationStatus = MOCK` la respuesta es
+         *     una simulación (`eligibility.simulated = true`) y jamás autoriza operaciones reales; el mock no puede activarse
+         *     en producción. Un proveedor deshabilitado se indica con `enabled=false` (su `coverageStatus` no es significativo).
+         *     Timeout o error del proveedor => `UNKNOWN` con `reason`, nunca UNAVAILABLE ni 5xx. NO considera horarios ni cierres
+         *     (F08 se combina en checkout). La recogida en sucursal no depende de cobertura. Prioridad de zona propia: zona
+         *     específica > cobertura general del municipio > sin cobertura. `branchId` inexistente o inactiva => 422
+         *     `BRANCH_NOT_AVAILABLE` (no se distingue); `municipalityId` inexistente => 422 `MUNICIPALITY_NOT_FOUND`.
+         *     Respuesta `Cache-Control: no-store`.
+         */
+        post: operations["checkDeliveryCoverage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -877,10 +1075,10 @@ export interface components {
             details?: string[];
             /**
              * @description Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`). Los clientes deben ramificar por `code`, nunca por `message`.
+             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`). Los clientes deben ramificar por `code`, nunca por `message`.
              */
             code?: string;
-            /** @description Violaciones estructuradas de reglas de negocio (422/409 de F08). */
+            /** @description Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09). */
             violations?: components["schemas"]["ErrorViolation"][];
         };
         /** @description Violación estructurada de una regla de negocio (F08). `path` localiza el elemento; `code` es estable. */
@@ -1063,14 +1261,14 @@ export interface components {
             zone: string | null;
             tier: components["schemas"]["DeliveryTierId"];
         };
-        Municipality: {
+        DraftMunicipality: {
             name: string;
             /** @description Número de zonas (0 = el municipio no usa zonas). */
             zones: number;
         };
-        Department: {
+        DraftDepartment: {
             department: string;
-            municipalities: components["schemas"]["Municipality"][];
+            municipalities: components["schemas"]["DraftMunicipality"][];
         };
         StoreConfig: {
             name: string;
@@ -1106,7 +1304,7 @@ export interface components {
                 days: number;
             };
             deliveryTiers: components["schemas"]["DeliveryTier"][];
-            departments: components["schemas"]["Department"][];
+            departments: components["schemas"]["DraftDepartment"][];
             /** @description Zonas de la Ciudad de Guatemala que no existen (20, 22, 23). */
             nonexistentZones: number[];
         };
@@ -1600,6 +1798,193 @@ export interface components {
             averageTicket: number;
             deliveryOrders: number;
         };
+        Department: {
+            /** Format: uuid */
+            id: string;
+            /** @example Guatemala */
+            name: string;
+        };
+        DepartmentListResponse: {
+            items: components["schemas"]["Department"][];
+        };
+        Municipality: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            departmentId: string;
+            /** @example Mixco */
+            name: string;
+        };
+        MunicipalityListResponse: {
+            items: components["schemas"]["Municipality"][];
+        };
+        /** @enum {string} */
+        CurrencyGtq: "GTQ";
+        /**
+         * @description Monto GTQ como string decimal EXACTO con 2 decimales (nunca número flotante). Rango 0.00..99999.99
+         *     (tope técnico anti-error de captura; CHECK en BD).
+         * @example 15.00
+         */
+        MoneyGtq: string;
+        /**
+         * @description Monto GTQ de entrada, string decimal con 0 a 2 decimales ("15", "15.5", "15.00"). No se acepta número JSON, signo ni notación científica.
+         * @example 15.00
+         */
+        MoneyGtqInput: string;
+        AdminDeliveryZone: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            branchId: string;
+            /** Format: uuid */
+            municipalityId: string;
+            municipalityName: string;
+            /** Format: uuid */
+            departmentId: string;
+            departmentName: string;
+            /** @description Etiqueta legible normalizada (NFC, recortada, espacios colapsados). `null` = cobertura GENERAL del municipio. */
+            zoneLabel: string | null;
+            baseFee: components["schemas"]["MoneyGtq"];
+            currency: components["schemas"]["CurrencyGtq"];
+            active: boolean;
+            /** @description Contador de concurrencia optimista; se reenvía como `expectedVersion` en PATCH. */
+            version: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AdminDeliveryZonePage: {
+            items: components["schemas"]["AdminDeliveryZone"][];
+            page: number;
+            pageSize: number;
+            /** @description Total de zonas que cumplen los filtros y el alcance. */
+            total: number;
+        };
+        CreateDeliveryZoneRequest: {
+            /** Format: uuid */
+            branchId: string;
+            /** Format: uuid */
+            municipalityId: string;
+            /** @description Opcional. Máx. 60 caracteres tras normalizar; sin caracteres de control. `null`, ausente o en blanco = cobertura general del municipio. */
+            zoneLabel?: string | null;
+            baseFee: components["schemas"]["MoneyGtqInput"];
+            /** @default true */
+            active: boolean;
+        };
+        /** @description Además de `expectedVersion` debe venir al menos `zoneLabel` o `baseFee` (si no, 400). */
+        UpdateDeliveryZoneRequest: {
+            expectedVersion: number;
+            zoneLabel?: string | null;
+            baseFee?: components["schemas"]["MoneyGtqInput"];
+        };
+        UpdateDeliveryZoneStatusRequest: {
+            active: boolean;
+            reason?: string;
+        };
+        /** @enum {string} */
+        CourierProvider: "PEDIDOSYA" | "OWN";
+        /**
+         * @description Estado de la integración del proveedor en este servidor. `BLOCKED_EXTERNAL`: sin documentación/credenciales
+         *     (valor por defecto y el único posible en producción hoy). `MOCK`: adaptador simulado (solo desarrollo/pruebas).
+         *     `LIVE`: reservado para F29; F09 nunca lo produce. Los clientes deben tolerar valores futuros.
+         * @enum {string}
+         */
+        ProviderIntegrationStatus: "BLOCKED_EXTERNAL" | "MOCK" | "LIVE";
+        /**
+         * @description Motivo estable de un estado no determinante. Los clientes deben tolerar valores futuros.
+         * @enum {string}
+         */
+        CoverageReason: "PROVIDER_DISABLED" | "INTEGRATION_NOT_CONFIGURED" | "PROVIDER_TIMEOUT" | "PROVIDER_ERROR" | "INVALID_REQUEST" | "PROVIDER_UNDETERMINED" | "NO_ZONE_COVERAGE";
+        BranchDeliverySettings: {
+            /** Format: uuid */
+            branchId: string;
+            /** @description Entrega con repartidores propios y zonas del restaurante. Por defecto false. */
+            ownDeliveryZonesEnabled: boolean;
+            /** @description Indicador ADMINISTRATIVO. No equivale a integración operativa ni habilita llamadas reales. Por defecto true. */
+            pedidosyaEnabled: boolean;
+            pedidosyaIntegrationStatus: components["schemas"]["ProviderIntegrationStatus"];
+            /** @description true si la sucursal aún no tiene fila (valores por defecto). */
+            isDefault: boolean;
+            /** Format: date-time */
+            updatedAt: string | null;
+        };
+        UpdateBranchDeliverySettingsRequest: {
+            ownDeliveryZonesEnabled?: boolean;
+            pedidosyaEnabled?: boolean;
+        };
+        DeliveryCoverageCheckRequest: {
+            /** Format: uuid */
+            branchId: string;
+            /** Format: uuid */
+            municipalityId: string;
+            /** @description Zona opcional (texto libre; se normaliza igual que `zoneLabel`). Sin zona solo puede aplicar la cobertura general del municipio. */
+            zone?: string | null;
+        };
+        PedidosYaCoverage: {
+            enabled: boolean;
+            /**
+             * @description Solo significativo si `enabled=true`. UNKNOWN = no verificable (no es UNAVAILABLE).
+             * @enum {string}
+             */
+            coverageStatus: "AVAILABLE" | "UNAVAILABLE" | "UNKNOWN";
+            integrationStatus: components["schemas"]["ProviderIntegrationStatus"];
+            /**
+             * @description F09 no cotiza (la cobertura y la cotización son conceptos separados). Puede ampliarse en F29.
+             * @enum {string}
+             */
+            quoteStatus: "NOT_AVAILABLE";
+            reason?: components["schemas"]["CoverageReason"];
+        };
+        OwnCoverage: {
+            enabled: boolean;
+            /**
+             * @description Solo significativo si `enabled=true` (deshabilitado => UNAVAILABLE sin evaluar zonas).
+             * @enum {string}
+             */
+            coverageStatus: "AVAILABLE" | "UNAVAILABLE";
+            /** Format: uuid */
+            deliveryZoneId: string | null;
+            baseFee: components["schemas"]["MoneyGtq"] | null;
+            currency: components["schemas"]["CurrencyGtq"];
+            /**
+             * @description ZONE = zona específica; MUNICIPALITY = cobertura general; null = sin cobertura.
+             * @enum {string|null}
+             */
+            matchedBy: "ZONE" | "MUNICIPALITY" | null;
+            reason?: components["schemas"]["CoverageReason"];
+        };
+        /**
+         * @description Resumen derivado en servidor. `confirmedProviders`: proveedores habilitados con cobertura AVAILABLE.
+         *     `pendingProviders`: habilitados con UNKNOWN (no confirmado). `status`: CONFIRMED si hay algún confirmado; PENDING
+         *     si no hay confirmados pero sí pendientes; NONE si no hay ninguno. `simulated=true` si algún dato proviene del
+         *     mock: nunca autoriza operaciones reales.
+         */
+        DeliveryEligibility: {
+            /** @enum {string} */
+            status: "CONFIRMED" | "PENDING" | "NONE";
+            confirmedProviders: components["schemas"]["CourierProvider"][];
+            pendingProviders: components["schemas"]["CourierProvider"][];
+            simulated: boolean;
+        };
+        DeliveryCoverageCheckResponse: {
+            /** Format: uuid */
+            branchId: string;
+            /** Format: uuid */
+            municipalityId: string;
+            /** @description Zona normalizada (o null). */
+            zone: string | null;
+            /**
+             * Format: date-time
+             * @description Reloj del servidor, ISO 8601 UTC con milisegundos.
+             */
+            checkedAt: string;
+            providers: {
+                PEDIDOSYA: components["schemas"]["PedidosYaCoverage"];
+                OWN: components["schemas"]["OwnCoverage"];
+            };
+            eligibility: components["schemas"]["DeliveryEligibility"];
+        };
     };
     responses: never;
     parameters: {
@@ -1611,6 +1996,8 @@ export interface components {
         BranchId: string;
         /** @description UUID del cierre extraordinario (`branch_closures.id`). */
         ClosureId: string;
+        /** @description UUID de la zona de entrega (`delivery_zones.id`). */
+        DeliveryZoneId: string;
     };
     requestBodies: never;
     headers: never;
@@ -3261,6 +3648,576 @@ export interface operations {
                 };
             };
             /** @description `CLOSURE_RANGE_INVALID`. Rango o duración inválidos. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listLocationDepartments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Lista completa de departamentos */
+            200: {
+                headers: {
+                    /** @description public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400 */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepartmentListResponse"];
+                };
+            };
+        };
+    };
+    listLocationMunicipalities: {
+        parameters: {
+            query: {
+                departmentId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Municipios del departamento */
+            200: {
+                headers: {
+                    /** @description public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400 */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MunicipalityListResponse"];
+                };
+            };
+            /** @description `departmentId` ausente o no es un UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DEPARTMENT_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAdminDeliveryZones: {
+        parameters: {
+            query?: {
+                branchId?: string;
+                departmentId?: string;
+                municipalityId?: string;
+                /** @description Sin valor = todas. */
+                active?: boolean;
+                /** @description Busca en la etiqueta de zona. Máx. 60 caracteres. */
+                q?: string;
+                sort?: "municipality" | "baseFee" | "createdAt";
+                order?: "asc" | "desc";
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de zonas */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliveryZonePage"];
+                };
+            };
+            /** @description Parámetros de consulta inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `branches.read` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `branchId` inexistente o fuera de alcance */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAdminDeliveryZone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDeliveryZoneRequest"];
+            };
+        };
+        responses: {
+            /** @description Zona creada */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliveryZone"];
+                };
+            };
+            /** @description Forma inválida (UUID, `baseFee` no decimal/negativo/fuera de rango, `zoneLabel` demasiado larga o con caracteres de control) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `branches.manage_delivery_zones` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Sucursal inexistente o fuera de alcance */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERY_ZONE_DUPLICATE` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MUNICIPALITY_NOT_FOUND` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAdminDeliveryZone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la zona de entrega (`delivery_zones.id`). */
+                id: components["parameters"]["DeliveryZoneId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Zona */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliveryZone"];
+                };
+            };
+            /** @description El identificador no es un UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `branches.read` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o fuera de alcance */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAdminDeliveryZone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la zona de entrega (`delivery_zones.id`). */
+                id: components["parameters"]["DeliveryZoneId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDeliveryZoneRequest"];
+            };
+        };
+        responses: {
+            /** @description Zona actualizada (o sin cambios) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliveryZone"];
+                };
+            };
+            /** @description Forma inválida o campos no permitidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `branches.manage_delivery_zones` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o fuera de alcance */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERY_ZONE_VERSION_CONFLICT` o `DELIVERY_ZONE_DUPLICATE` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAdminDeliveryZoneStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la zona de entrega (`delivery_zones.id`). */
+                id: components["parameters"]["DeliveryZoneId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDeliveryZoneStatusRequest"];
+            };
+        };
+        responses: {
+            /** @description Zona con su estado actual */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliveryZone"];
+                };
+            };
+            /** @description Forma inválida */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `branches.manage_delivery_zones` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o fuera de alcance */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAdminBranchDeliverySettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la sucursal. */
+                id: components["parameters"]["BranchId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Configuración vigente o por defecto */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BranchDeliverySettings"];
+                };
+            };
+            /** @description El identificador no es un UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `branches.read` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o fuera de alcance */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAdminBranchDeliverySettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la sucursal. */
+                id: components["parameters"]["BranchId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateBranchDeliverySettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Configuración resultante */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BranchDeliverySettings"];
+                };
+            };
+            /** @description Forma inválida, sin campos o campos no permitidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `branches.manage_delivery_zones` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No existe o fuera de alcance */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    checkDeliveryCoverage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeliveryCoverageCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Cobertura por proveedor y resumen de elegibilidad */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryCoverageCheckResponse"];
+                };
+            };
+            /** @description Forma inválida (UUID, `zone` demasiado larga, propiedades desconocidas como `fee`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `BRANCH_NOT_AVAILABLE` o `MUNICIPALITY_NOT_FOUND` (ver `code` y `violations`) */
             422: {
                 headers: {
                     [name: string]: unknown;

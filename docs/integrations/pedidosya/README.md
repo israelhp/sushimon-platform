@@ -11,6 +11,14 @@ Segunda modalidad de reparto junto a repartidores propios. El restaurante elige 
 `DeliveryApplicationService → DeliveryProvider → { OwnRiderProvider, PedidosYaProvider }`. El ciclo del pedido no
 depende del JSON del proveedor; las capacidades difieren y no se asume equivalencia 1:1.
 
+## Contrato neutral de cobertura (F09, `specs/008-delivery-zones-coverage`, ADR-0012)
+
+El estado sigue siendo `AWAITING_DOCUMENTATION` / `BLOCKED_EXTERNAL`. F09 solo define el puerto interno `CourierCoveragePort`
+(`{ provider: 'PEDIDOSYA', status: AVAILABLE|UNAVAILABLE|UNKNOWN, integrationStatus, reason? }`), separado de la cotización, y dos adaptadores:
+`UnavailableIntegrationAdapter` (defecto y producción: siempre `UNKNOWN`) y `MockPedidosYaCoverageAdapter` (`MOCK_READY`, solo desarrollo/pruebas,
+la API no arranca con él en `NODE_ENV=production`). No asume endpoints, payloads, tarifas, tiempos ni estados del proveedor; timeout o error ⇒
+`UNKNOWN`. El adaptador real y su política de caché/reintentos corresponden a F29.
+
 ## A confirmar con la documentación oficial (no asumido)
 
 Cotización · solicitud de courier · identificadores externos · confirmación de asignación · seguimiento (webhooks o
