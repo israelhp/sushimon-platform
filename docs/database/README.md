@@ -93,9 +93,29 @@ authenticated`, porque en Supabase los privilegios por defecto sobre tablas nuev
   - Pruebas: `sushimon-api/test/migration-0006.int-spec.ts` (PostgreSQL plano desechable vía `DATABASE_URL_TEST`; se
     omite sin ella o si hay Supabase real). Las mismas restricciones se comprobaron aplicando 0001..0006 en PGlite
     0.4.3 en memoria. Reversión manual descrita en el encabezado del SQL.
-- `0007_delivery_geography_coverage` (F09, `specs/008-delivery-zones-coverage`, ADR-0012; **PROPUESTA de diseño: la migración aún NO existe**):
-  incremental y no destructiva. Crea `departments`, `municipalities`, `delivery_zones` (DBML + `zone_key`, `version`, `created_at`, `updated_at`,
-  `UNIQUE (branch_id, municipality_id, zone_key)`, CHECK de tarifa `0..99999.99` y de coherencia etiqueta/clave) y `branch_delivery_settings`
-  (1:1 con `branches`; defaults `own_delivery_zones_enabled=false`, `pedidosya_enabled=true`; fila ausente = defaults, sin backfill). Seed idempotente
-  (`ON CONFLICT DO NOTHING`): 22 departamentos y solo los 17 municipios del departamento de Guatemala; el resto, pendiente de fuente oficial (INE).
-  Cierra la brecha B7 (municipio + zona, no radio). RLS sin políticas y `REVOKE` como 0006. No toca RBAC, `customer_addresses` (F05) ni `audit_events`.
+- `0007_delivery_geography_coverage` (F09, `specs/008-delivery-zones-coverage`, ADR-0012; **migración existente, sin aplicar a bases reales;
+  requiere aprobación humana**): incremental y no destructiva (solo `CREATE` + seed). No es relanzable el DDL; el seed sí es idempotente.
+  - **Tablas**: `departments` y `municipalities` (DBML tal cual + CHECK `name` no vacío y sin espacios en bordes; UNIQUE `name` y
+    `(department_id, name)`); `delivery_zones` (DBML + `zone_key`, `version`, `created_at`, `updated_at`); `branch_delivery_settings`
+    (PK = `branch_id`, 1:1 con `branches`; defaults `own_delivery_zones_enabled=false`, `pedidosya_enabled=true`; fila ausente = defaults, sin backfill).
+  - **`delivery_zones`**: `UNIQUE delivery_zones_branch_municipality_zone_key (branch_id, municipality_id, zone_key)` sobre todas las filas
+    (activas e inactivas); `zone_key = ''` representa la cobertura general (zona NULL), por lo que no hay hueco de NULL. CHECK:
+    `delivery_zones_base_fee_range` (0..99999.99), `delivery_zones_version_positive`, `delivery_zones_label_key_coherent`,
+    `delivery_zones_label_valid` (sin espacios en bordes, 1..60), `delivery_zones_key_normalized` (minúsculas, sin bordes ni espacios
+    consecutivos). La BD no calcula `zone_key` (no hay `unaccent` inmutable): lo hace la API (D6). `version`/`updated_at` los mantiene la API (sin triggers).
+    El `23505` sobre el UNIQUE se mapea a 409 `DELIVERY_ZONE_DUPLICATE`.
+  - **Índices**: el UNIQUE sirve la consulta de cobertura (`zone_key IN (clave, '')`), el listado por sucursal y la FK de `branch_id`;
+    `delivery_zones_municipality_idx (municipality_id)` sirve la FK y el filtro por municipio. Sin trigram.
+  - **FKs `ON DELETE RESTRICT`** en todas (la sucursal no se borra; el catálogo geográfico tampoco mientras tenga hijos).
+  - **RLS/privilegios**: RLS habilitado sin políticas en las 4 tablas + `REVOKE ALL FROM PUBLIC` y, solo si existen, `anon`/`authenticated` (igual que 0006).
+  - **Dinero**: `base_fee numeric(12,2)`; en Prisma `Decimal`. Leer/escribir como `Prisma.Decimal`/`::text`, nunca `number`.
+  - **Seed** (`ON CONFLICT DO NOTHING`, sin `id` fijos: los UUID son por entorno y se busca por nombre): 22 departamentos y 17 municipios del
+    departamento de Guatemala (lista del negocio; cotejar con INE antes de producción). **Pendiente**: municipios de los otros 21 departamentos
+    (fuente oficial verificada por una persona; migración posterior).
+  - Cierra la brecha B7 (municipio + zona, no radio). No toca RBAC (0005), `customer_addresses` (F05) ni `audit_events`.
+    Reversión manual descrita en el encabezado del SQL (eliminar las 4 tablas, sin dependientes hasta F05).
+  - Pruebas: `sushimon-api/test/migration-0007.int-spec.ts` (PostgreSQL plano desechable vía `DATABASE_URL_TEST`; se omite sin ella o si
+    `auth.users` es la de Supabase real). Los mismos casos (salvo la carrera concurrente, que requiere varias conexiones) se comprobaron
+    aplicando 0001..0007 en PGlite 0.4.3 en memoria.
+  - **Fuente de verdad**: `docs/references/monsushi_dbdiagram.dbml` NO se edita; la evolución del modelo (columnas y tabla nuevas, `UNIQUE`
+    sobre `zone_key`, CHECK) vive en la migración + ADR-0012.
