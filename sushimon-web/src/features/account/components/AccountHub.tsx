@@ -54,8 +54,8 @@ export function AccountHub() {
 }
 
 /**
- * Cuenta con Supabase Auth real: perfil de `GET /v1/me`. Las secciones de pedidos, direcciones y favoritos
- * llegan cuando sus módulos de API existan (hoy solo hay identidad), así que aquí no se simulan.
+ * Cuenta con Supabase Auth real: perfil de `GET /v1/me` y secciones de datos, direcciones y favoritos (F04–F06).
+ * Los pedidos del cliente llegan con F20 (hoy no hay API), así que aquí no se simulan ni se consultan.
  */
 function RealAccountHub() {
   const t = useTranslations('account');
@@ -73,29 +73,12 @@ function RealAccountHub() {
   if (auth.status === 'anonymous' || me.isError || !me.data) return <SignedOutHub />;
   const { customer, email } = me.data;
   return (
-    <div className="wrap max-w-[720px] pb-10 pt-5 sm:pt-8">
-      <Heading />
-      <section className="flex items-center gap-3.5 rounded-3xl border border-line bg-surface p-4 shadow-card sm:p-5">
-        <Avatar name={customer.fullName} className="h-14 w-14 text-[18px]" />
-        <div className="min-w-0 flex-1">
-          <p className="m-0 truncate font-extrabold">{customer.fullName}</p>
-          <p className="m-0 truncate text-[13px] text-muted">{email ?? customer.email}</p>
-          <p className="m-0 mt-1 flex flex-wrap items-center gap-1.5 text-[12px] font-bold text-muted">
-            <GoogleLogo className="h-3.5 w-3.5" /> {t('realProfile')}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void auth.signOut()}
-          aria-label={tAuth('signOut')}
-          className="btn !min-h-[40px] flex-none !px-3 text-sm min-[420px]:!px-4"
-        >
-          <LogOut className="h-4 w-4" aria-hidden="true" />{' '}
-          <span className="max-[419px]:hidden">{tAuth('signOut')}</span>
-        </button>
-      </section>
-      <p className="mt-4 text-[14px] text-muted">{t('realModulesPending')}</p>
-    </div>
+    <SignedInHub
+      name={customer.fullName}
+      email={email ?? customer.email ?? ''}
+      real
+      note={t('realModulesPending')}
+    />
   );
 }
 
@@ -156,7 +139,18 @@ function SignedOutHub() {
   );
 }
 
-function SignedInHub({ name, email }: { name: string; email: string }) {
+function SignedInHub({
+  name,
+  email,
+  real = false,
+  note,
+}: {
+  name: string;
+  email: string;
+  /** Supabase Auth real: sin insignia de simulación, cierre de sesión real y sin pedidos (F20 sin API). */
+  real?: boolean;
+  note?: string;
+}) {
   const t = useTranslations('account');
   const tAuth = useTranslations('auth');
   const tHub = useTranslations('hub');
@@ -168,7 +162,8 @@ function SignedInHub({ name, email }: { name: string; email: string }) {
   const me = useMe();
   const addresses = useAddresses();
   const favorites = useFavoriteIds();
-  const orders = useMyOrders();
+  const orders = useMyOrders({ enabled: !real });
+  const auth = useAuth();
 
   const profile = me.data;
   const ready = !!profile && !!addresses.data && favorites.isLoaded;
@@ -201,13 +196,17 @@ function SignedInHub({ name, email }: { name: string; email: string }) {
           <p className="m-0 truncate font-extrabold">{profile?.fullName || name}</p>
           <p className="m-0 truncate text-[13px] text-muted">{email}</p>
           <p className="m-0 mt-1 flex flex-wrap items-center gap-1.5 text-[12px] font-bold text-muted">
-            <GoogleLogo className="h-3.5 w-3.5" /> {tAuth('viaGoogle')}
-            <SimulationBadge />
+            <GoogleLogo className="h-3.5 w-3.5" /> {real ? t('realProfile') : tAuth('viaGoogle')}
+            {real ? null : <SimulationBadge />}
           </p>
         </div>
         <button
           type="button"
           onClick={() => {
+            if (real) {
+              void auth.signOut();
+              return;
+            }
             session.signOutCustomer();
             notify(tAuth('signedOut'));
           }}
@@ -219,7 +218,7 @@ function SignedInHub({ name, email }: { name: string; email: string }) {
         </button>
       </section>
 
-      {me.isError || addresses.isError || favorites.isError || orders.isError ? (
+      {me.isError || addresses.isError || favorites.isError || (!real && orders.isError) ? (
         <ErrorNotice
           className="mt-4"
           message={tHub('loadError')}
@@ -227,7 +226,7 @@ function SignedInHub({ name, email }: { name: string; email: string }) {
             void me.refetch();
             void addresses.refetch();
             favorites.refetch();
-            void orders.refetch();
+            if (!real) void orders.refetch();
           }}
         />
       ) : null}
@@ -251,18 +250,24 @@ function SignedInHub({ name, email }: { name: string; email: string }) {
           title={tHub('favorites')}
           sub={ready ? tHub('favoritesSub', { a: favorites.total }) : tHub('loading')}
         />
-        <HubCard
-          href="/cuenta/pedidos"
-          icon={icon(ClipboardList)}
-          title={tHub('orders')}
-          sub={tHub('ordersSub', { a: orderCount, b: activeCount })}
-          badge={
-            activeCount > 0 ? (
-              <span className="h-2 w-2 animate-pulse rounded-full bg-primary" aria-hidden="true" />
-            ) : undefined
-          }
-        />
+        {real ? null : (
+          <HubCard
+            href="/cuenta/pedidos"
+            icon={icon(ClipboardList)}
+            title={tHub('orders')}
+            sub={tHub('ordersSub', { a: orderCount, b: activeCount })}
+            badge={
+              activeCount > 0 ? (
+                <span
+                  className="h-2 w-2 animate-pulse rounded-full bg-primary"
+                  aria-hidden="true"
+                />
+              ) : undefined
+            }
+          />
+        )}
       </nav>
+      {note ? <p className="mt-4 text-[14px] text-muted">{note}</p> : null}
 
       <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
         <Link href={STORE_ROUTES.track} className="btn w-full no-underline">

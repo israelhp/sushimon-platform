@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { ErrorNotice } from '@/features/store-shell/components/ErrorNotice';
 import { GoogleLogo } from '@/features/store-shell/components/GoogleLogo';
 import { useAuthModal } from '@/features/store-shell/store-shell-context';
-import { useDemoSession } from '@/features/session/demo-session';
+import { useCustomerScope } from '@/features/session/customer-scope';
 import { STORE_ROUTES } from '@/features/store-shell/nav';
 
 /** Los datos de la cuenta salen del adaptador mock (la API real sincroniza con la cuenta). */
@@ -22,7 +22,8 @@ export interface SectionQueryState {
 /**
  * Armazón de las subpáginas de la cuenta (datos, direcciones, favoritos, pedidos): enlace de regreso,
  * título, acción y los tres estados que no son contenido: sin sesión (invitación a entrar), carga y error.
- * La sesión es de DEMOSTRACIÓN y solo decide qué se pinta; la API real autoriza cada petición (401/403).
+ * La identidad sale de `useCustomerScope` (Supabase Auth real o sesión de demostración) y solo decide qué se pinta;
+ * la API real autoriza cada petición (401/403).
  */
 export function AccountSection({
   title,
@@ -42,11 +43,13 @@ export function AccountSection({
 }) {
   const t = useTranslations('hub');
   const tAuth = useTranslations('auth');
-  const { customer } = useDemoSession();
+  const identity = useCustomerScope();
   const auth = useAuthModal();
-  const gated = requireAuth && !customer;
-  const loading = !!customer && !!query?.isPending;
-  const failed = !!customer && !loading && !!query?.isError;
+  const signedIn = identity.state === 'ready';
+  const gated = requireAuth && identity.state === 'guest';
+  // `pending`: la sesión real ya autenticó pero aún no se conoce la identidad; no se muestra la invitación a entrar.
+  const loading = (requireAuth && identity.state === 'pending') || (signedIn && !!query?.isPending);
+  const failed = signedIn && !loading && !!query?.isError;
   const ready = !gated && !loading && !failed;
 
   let body: ReactNode = children;
@@ -98,7 +101,7 @@ export function AccountSection({
         {action && (!requireAuth || ready) ? action : null}
       </div>
       {body}
-      {customer && ready && IS_DEMO_DATA ? (
+      {signedIn && ready && IS_DEMO_DATA ? (
         <p className="m-0 mt-5 flex items-center justify-center gap-1.5 text-[12px] text-muted">
           <Database className="h-4 w-4" aria-hidden="true" /> {t('demoStorage')}
         </p>

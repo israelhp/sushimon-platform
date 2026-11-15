@@ -44,14 +44,8 @@ const MOCK_API: AuthApi = {
 const AuthContext = createContext<AuthApi>(MOCK_API);
 
 /** Cachés que dependen de la identidad: se descartan al cambiar o cerrar sesión. */
-/** `customer` = datos del cliente con la identidad en la raíz (F06: favoritos…); se limpian explícitamente al cerrar sesión. */
-const IDENTITY_KEYS = [
-  ['auth'],
-  ['account'],
-  ['customer'],
-  ['backoffice'],
-  ['orders', 'mine'],
-] as const;
+/** `customer` = datos del cliente con la identidad en la raíz (F04–F06: cuenta, direcciones, pedidos, favoritos); se limpian explícitamente al cerrar sesión. */
+const IDENTITY_KEYS = [['auth'], ['customer'], ['backoffice']] as const;
 
 export function AuthProvider({ children, config }: { children: ReactNode; config?: AuthConfig }) {
   const resolved = useMemo(() => config ?? resolveAuthConfig(publicEnv()), [config]);

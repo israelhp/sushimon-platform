@@ -506,7 +506,11 @@
     "switchToPickup": "Recoger en sucursal",
     "errOffline": "No hay conexión. Revisá tu internet e intentá de nuevo.",
     "errConflict": "Tu pedido cambió: la sucursal está cerrada o un producto dejó de estar disponible. Revisalo e intentá de nuevo.",
-    "advanceError": "No se pudo avanzar el estado de este pedido."
+    "advanceError": "No se pudo avanzar el estado de este pedido.",
+    "addressSaved": "Dirección guardada en Mis direcciones.",
+    "addressSaveFailed": "No pudimos guardar la dirección en Mis direcciones. Tu pedido sigue; puedes guardarla luego desde tu cuenta.",
+    "addressSaveNoMunicipality": "No pudimos guardar la dirección porque no encontramos su municipio en el catálogo. Tu pedido sigue; puedes agregarla luego desde Mis direcciones.",
+    "addressSaveFull": "No guardamos la dirección: ya tienes el máximo en Mis direcciones. Tu pedido sigue."
   },
   "validation": {
     "name": "Escribí tu nombre completo.",
@@ -684,7 +688,7 @@
     "orders": "{a, plural, one {# pedido} other {# pedidos}}",
     "spent": "Total en pedidos",
     "demoData": "Pedidos de ejemplo de la cuenta de prueba",
-    "realModulesPending": "Tus pedidos, direcciones y favoritos aparecerán aquí cuando esos módulos estén conectados a la API.",
+    "realModulesPending": "Tus pedidos aparecerán aquí cuando ese módulo esté conectado a la API.",
     "realProfile": "Sesión iniciada con Google"
   },
   "orders": {

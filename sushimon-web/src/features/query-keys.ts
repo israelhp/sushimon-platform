@@ -8,7 +8,7 @@ import type { AdminStaffFilters } from '@/services/staff';
 
 /**
  * Claves de TanStack Query centralizadas. Jerárquicas para invalidar por prefijo
- * (p. ej., `queryKeys.orders.all` invalida detalle, lista del cliente y backoffice).
+ * (p. ej., `queryKeys.orders.all` invalida detalle y backoffice; los pedidos del cliente viven bajo `customer`).
  */
 export const queryKeys = {
   store: {
@@ -73,12 +73,6 @@ export const queryKeys = {
   orders: {
     all: ['orders'] as const,
     detail: (id: string) => ['orders', 'detail', id] as const,
-    mine: ['orders', 'mine'] as const,
-  },
-  account: {
-    all: ['account'] as const,
-    me: ['account', 'me'] as const,
-    addresses: ['account', 'addresses'] as const,
   },
   /**
    * F06 (spec 010 D15): datos del CLIENTE con la IDENTIDAD en la raíz (`scope` = id de Supabase Auth, o `demo:<correo>` en el
@@ -87,6 +81,16 @@ export const queryKeys = {
    */
   customer: {
     all: ['customer'] as const,
+    /** F04/F05: perfil y direcciones del cliente (`/v1/me`, `/v1/me/addresses`), aislados por identidad. */
+    account: {
+      all: (scope: string) => ['customer', scope, 'account'] as const,
+      me: (scope: string) => ['customer', scope, 'account', 'me'] as const,
+      addresses: (scope: string) => ['customer', scope, 'account', 'addresses'] as const,
+    },
+    /** Pedidos DEL CLIENTE (SIMULADOS hasta F20). Su invalidación va por `customerOrdersPredicate`. */
+    orders: {
+      mine: (scope: string) => ['customer', scope, 'orders', 'mine'] as const,
+    },
     favorites: {
       all: (scope: string) => ['customer', scope, 'favorites'] as const,
       /** Ids completos (`pageSize=0`): el estado de TODOS los corazones y el contador. */
@@ -139,3 +143,7 @@ export const queryKeys = {
       ['orders', 'reports', 'history', filters] as const,
   },
 } as const;
+
+/** Coincide con las consultas de pedidos del cliente de CUALQUIER identidad (`['customer', scope, 'orders', …]`). */
+export const customerOrdersPredicate = (query: { queryKey: readonly unknown[] }): boolean =>
+  query.queryKey[0] === queryKeys.customer.all[0] && query.queryKey[2] === 'orders';

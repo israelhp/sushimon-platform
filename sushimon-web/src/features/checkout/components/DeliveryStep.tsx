@@ -7,7 +7,6 @@ import { cn } from '@/lib/cn';
 import type { Address, StoreConfig } from '@/lib/data-access/models';
 import { CoverageChip } from '@/features/account/components/CoverageChip';
 import { CoverageNotice } from '@/features/delivery-coverage/components/CoverageNotice';
-import { useDemoSession } from '@/features/session/demo-session';
 import { GoogleLogo } from '@/features/store-shell/components/GoogleLogo';
 import { useAuthModal } from '@/features/store-shell/store-shell-context';
 import { formatAddress, hasAnyError, type AddressForm } from '../checkout-model';
@@ -17,7 +16,7 @@ import { AddressFields } from './AddressFields';
 import { OrderTypeFields } from './OrderTypeFields';
 import { ChangeButton, ChoiceCard, Field, useCheckoutSteps } from './parts';
 
-/** Opciones del paso Entrega que no forman parte del pedido (se aplican tras confirmarlo). */
+/** Opciones del paso Entrega que no forman parte del pedido (guardar dirección: al continuar; perfil/recordar: tras confirmar). */
 export interface CheckoutExtras {
   saveAddress: boolean;
   addressLabel: 'home' | 'work' | 'other';
@@ -61,9 +60,8 @@ export function DeliveryStep({
   const t = useTranslations();
   const steps = useCheckoutSteps();
   const { draft, dispatch } = useCheckoutDraft();
-  const { customer } = useDemoSession();
   const authModal = useAuthModal();
-  const { type, config, contactErrors, addressErrors, addresses } = data;
+  const { type, config, contactErrors, addressErrors, addresses, signedIn, identityPending } = data;
   const show = draft.showErrors;
 
   const [editContact, setEditContact] = useState(() => hasAnyError(contactErrors));
@@ -84,7 +82,7 @@ export function DeliveryStep({
       a.municipality === draft.address.municipality &&
       a.zone === draft.address.zone,
   );
-  const showSaveAddress = type === 'delivery' && !!customer && (!saved || other) && !alreadySaved;
+  const showSaveAddress = type === 'delivery' && signedIn && (!saved || other) && !alreadySaved;
   const labelOf = (a: Address) =>
     (a.label === 'other' && a.customLabel.trim()) || t(`addr.labels.${a.label}`);
 
@@ -115,14 +113,14 @@ export function DeliveryStep({
         </p>
       ) : null}
 
-      {customer ? (
+      {signedIn && data.signedInEmail ? (
         <p className="m-0 -mb-2 flex items-center gap-2 rounded-xl bg-subtle px-3.5 py-2.5 text-[13px] font-bold">
           <UserRound className="h-4 w-4 flex-none" aria-hidden="true" />
           <span className="min-w-0 break-words">
-            {t('checkout.signedInAs', { a: customer.email })}
+            {t('checkout.signedInAs', { a: data.signedInEmail })}
           </span>
         </p>
-      ) : (
+      ) : signedIn || identityPending ? null : (
         <div className="-mb-2 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-dashed border-line px-3.5 py-2.5">
           <p className="m-0 min-w-[180px] flex-1 text-[13px] leading-snug text-muted">
             {t('checkout.signInPrompt')}
@@ -331,7 +329,7 @@ export function DeliveryStep({
         </div>
       ) : null}
 
-      {!customer ? (
+      {!signedIn && !identityPending ? (
         <div className="rounded-xl border border-line bg-surface px-3.5 py-2.5">
           <label className="flex min-h-[40px] cursor-pointer items-center gap-3 text-[14px] font-bold">
             <input

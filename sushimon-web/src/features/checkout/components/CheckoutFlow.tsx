@@ -17,7 +17,6 @@ import { useCart } from '@/features/cart/cart-context';
 import { useCreateOrder } from '@/features/orders/hooks';
 import { saveLastOrder } from '@/features/orders/last-order';
 import { useOrderMode } from '@/features/order-mode/order-mode-context';
-import { useDemoSession } from '@/features/session/demo-session';
 import { ErrorNotice } from '@/features/store-shell/components/ErrorNotice';
 import { STORE_ROUTES } from '@/features/store-shell/nav';
 import { useCartDrawer } from '@/features/store-shell/store-shell-context';
@@ -25,6 +24,7 @@ import { CHECKOUT_STEP_COUNT, zoneForOrder, type CheckoutStep } from '../checkou
 import { useCheckoutDraft } from '../checkout-context';
 import { clearRemembered, writeRemembered } from '../remember';
 import { useCheckoutData } from '../use-checkout-data';
+import { addressSignature, decideSaveAddress } from '../save-address';
 import { Confirmation } from './Confirmation';
 import { DeliveryStep, type CheckoutExtras } from './DeliveryStep';
 import { NeonetDialog, type NeonetOutcome } from './NeonetDialog';
@@ -74,7 +74,6 @@ export function CheckoutFlow() {
   const data = useCheckoutData();
   const cart = useCart();
   const { mode } = useOrderMode();
-  const { customer } = useDemoSession();
   const cartDrawer = useCartDrawer();
   const createOrder = useCreateOrder();
   const createAddress = useCreateAddress();
@@ -95,26 +94,29 @@ export function CheckoutFlow() {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const firstRender = useRef(true);
   const prefilledFor = useRef('');
+  /** Firma de la dirección ya guardada desde este checkout (evita duplicados al ir y volver). */
+  const savedSignature = useRef<string | null>(null);
 
   const step = draft.step;
   const isLast = step === CHECKOUT_STEP_COUNT;
   const stepName = steps[step - 1] ?? '';
   const money = (v: number) => formatMoney(v, locale);
 
-  // Con sesión de demostración: contacto y dirección predeterminada de la cuenta (una vez por cuenta).
+  // Con sesión de cliente (real o de demostración): contacto y dirección predeterminada de la cuenta (una vez por cuenta).
+  const { signedIn, scope } = data;
   useEffect(() => {
-    if (!customer) {
+    if (!scope) {
       prefilledFor.current = '';
       return;
     }
-    if (!data.me || prefilledFor.current === customer.email) return;
-    prefilledFor.current = customer.email;
+    if (!data.me || prefilledFor.current === scope) return;
+    prefilledFor.current = scope;
     dispatch({
       type: 'contact',
       patch: {
-        name: data.me.fullName || customer.name,
+        name: data.me.fullName,
         phone: data.me.phone,
-        email: data.me.email || customer.email,
+        email: data.me.email,
       },
     });
     const preferred =
@@ -132,7 +134,7 @@ export function CheckoutFlow() {
         },
       });
     }
-  }, [customer, data.me, data.addresses, data.defaultAddressId, dispatch]);
+  }, [scope, data.me, data.addresses, data.defaultAddressId, dispatch]);
 
   // Al cambiar de paso, el foco pasa al título (lectores de pantalla y teclado).
   useEffect(() => {
@@ -156,9 +158,43 @@ export function CheckoutFlow() {
         }
       }
     }
+    if (step === 2 && to > 2) saveAddressIfWanted();
     setSubmitError('');
     dispatch({ type: 'goto', step: to });
     scrollTop();
+  };
+
+  /**
+   * F05: guarda la dirección en «Mis direcciones» al continuar desde el paso Entrega (F20 aún no existe, así que no se
+   * espera a confirmar el pedido). Nunca bloquea el checkout: avisa del resultado y, si falla, permite reintentar al
+   * volver a continuar. La firma evita duplicados al ir y volver entre pasos.
+   */
+  const saveAddressIfWanted = () => {
+    const decision = decideSaveAddress({
+      delivery: data.type === 'delivery',
+      signedIn,
+      wantsSave: extras.saveAddress,
+      isOther: draft.addressId === 'other',
+      label: extras.addressLabel,
+      draft: draft.address,
+      addresses: data.addresses,
+      municipalities: addressLocations.municipalities,
+      alreadySavedSignature: savedSignature.current,
+    });
+    if (decision.action === 'full') notify(t('checkoutFlow.addressSaveFull'));
+    else if (decision.action === 'no-municipality')
+      notify(t('checkoutFlow.addressSaveNoMunicipality'));
+    else if (decision.action === 'save') {
+      const signature = addressSignature(draft.address);
+      savedSignature.current = signature;
+      createAddress.mutateAsync(decision.input).then(
+        () => notify(t('checkoutFlow.addressSaved')),
+        () => {
+          savedSignature.current = null;
+          notify(t('checkoutFlow.addressSaveFailed'));
+        },
+      );
+    }
   };
 
   /** Cuerpo del pedido: intención del cliente (el servidor calcula precios, envío y totales). */
@@ -195,41 +231,13 @@ export function CheckoutFlow() {
   /** Pedido confirmado: guarda el resumen, vacía el carrito, aplica las preferencias y muestra la confirmación. */
   const finalize = (order: Order) => {
     saveLastOrder(order);
-    if (!customer) {
+    if (!signedIn) {
       if (extras.remember) {
         writeRemembered({ contact: draft.contact, address: draft.address });
       } else {
         clearRemembered();
       }
     } else {
-      const delivery = order.fulfillment === 'delivery';
-      const known = data.addresses.some(
-        (a) =>
-          a.line.trim().toLowerCase() === draft.address.line.trim().toLowerCase() &&
-          a.municipality === draft.address.municipality &&
-          a.zone === draft.address.zone,
-      );
-      const municipalityId =
-        addressLocations.municipalities.find((m) => m.name === draft.address.municipality)?.id ??
-        '';
-      if (
-        delivery &&
-        draft.addressId === 'other' &&
-        extras.saveAddress &&
-        !known &&
-        municipalityId
-      ) {
-        createAddress.mutate({
-          label: extras.addressLabel,
-          customLabel: '',
-          municipalityId,
-          department: draft.address.department,
-          municipality: draft.address.municipality,
-          zone: draft.address.zone,
-          line: draft.address.line.trim(),
-          references: draft.address.references.trim(),
-        });
-      }
       const me = data.me;
       if (
         extras.updateProfile &&
@@ -352,7 +360,7 @@ export function CheckoutFlow() {
   };
   const summary = <OrderSummary data={data} onEdit={cartDrawer.open} action={action} />;
   const profileChanged =
-    !!customer &&
+    signedIn &&
     !!data.me &&
     (draft.contact.name.trim() !== data.me.fullName ||
       draft.contact.phone.trim() !== data.me.phone ||

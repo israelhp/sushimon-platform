@@ -506,7 +506,11 @@
     "switchToPickup": "Pick up at a branch",
     "errOffline": "You're offline. Check your connection and try again.",
     "errConflict": "Your order changed: the branch is closed or an item is no longer available. Review it and try again.",
-    "advanceError": "We couldn't advance this order's status."
+    "advanceError": "We couldn't advance this order's status.",
+    "addressSaved": "Address saved to My addresses.",
+    "addressSaveFailed": "We couldn't save the address to My addresses. Your order continues; you can save it later from your account.",
+    "addressSaveNoMunicipality": "We couldn't save the address because its municipality wasn't found in the catalog. Your order continues; you can add it later from My addresses.",
+    "addressSaveFull": "We didn't save the address: you already have the maximum in My addresses. Your order continues."
   },
   "validation": {
     "name": "Enter your full name.",
@@ -684,7 +688,7 @@
     "orders": "{a, plural, one {# order} other {# orders}}",
     "spent": "Total ordered",
     "demoData": "Sample orders from the test account",
-    "realModulesPending": "Your orders, addresses and favorites will appear here once those modules are connected to the API.",
+    "realModulesPending": "Your orders will appear here once that module is connected to the API.",
     "realProfile": "Signed in with Google"
   },
   "orders": {
