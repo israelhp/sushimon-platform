@@ -233,6 +233,60 @@ describe.skipIf(!ready)('Zonas, settings y cobertura contra PostgreSQL real', ()
     ).toBe('MUNICIPALITY_NOT_FOUND');
   });
 
+  it('q con comodines (%, _, \\) busca literalmente en BD real: no devuelve todo', async () => {
+    const branchId = await newBranch();
+    await zones.create(admin, {
+      branchId,
+      municipalityId: mixco,
+      zoneLabel: 'Zona 4',
+      baseFee: '1',
+    });
+    await zones.create(admin, {
+      branchId,
+      municipalityId: mixco,
+      zoneLabel: 'Zona_5',
+      baseFee: '1',
+    });
+    await zones.create(admin, { branchId, municipalityId: mixco, zoneLabel: '100%', baseFee: '1' });
+    const total = async (q: string) => (await zones.list(admin, { branchId, q })).total;
+    expect(await total('zona')).toBe(2);
+    expect(await total('%')).toBe(1);
+    expect(await total('_')).toBe(1);
+    expect(await total('\\')).toBe(0);
+    expect(await total('4')).toBe(1);
+  });
+
+  it('auditoría en BD real: sin PII y tarifa como string', async () => {
+    const branchId = await newBranch();
+    const z = await zones.create(admin, {
+      branchId,
+      municipalityId: mixco,
+      zoneLabel: 'Aud',
+      baseFee: '9',
+    });
+    await zones.update(admin, z.id, { expectedVersion: 1, baseFee: '10.5' });
+    await zones.setStatus(admin, z.id, { active: false, reason: 'cierre temporal' });
+    const events = await prisma.auditEvent.findMany({ where: { entityId: z.id, branchId } });
+    expect(events.map((e) => e.action).sort()).toEqual([
+      'delivery_zone.created',
+      'delivery_zone.status_changed',
+      'delivery_zone.updated',
+    ]);
+    for (const e of events) {
+      for (const v of [e.oldValues, e.newValues] as (Record<string, unknown> | null)[]) {
+        if (v && 'baseFee' in v) expect(typeof v['baseFee']).toBe('string');
+      }
+      expect(JSON.stringify([e.oldValues, e.newValues])).not.toMatch(/@|email|phone|token/i);
+    }
+  });
+
+  it('check: sucursal inexistente e inactiva dan respuesta idéntica en BD real', async () => {
+    const inactive = await newBranch(false);
+    const a = await failure(coverage.check({ branchId: inactive, municipalityId: mixco }));
+    const b = await failure(coverage.check({ branchId: randomUUID(), municipalityId: mixco }));
+    expect(a.getResponse()).toEqual(b.getResponse());
+  });
+
   it('catálogos sembrados: 22 departamentos y 17 municipios de Guatemala', async () => {
     expect(await prisma.department.count()).toBeGreaterThanOrEqual(22);
     const gt = await prisma.department.findUniqueOrThrow({ where: { name: 'Guatemala' } });

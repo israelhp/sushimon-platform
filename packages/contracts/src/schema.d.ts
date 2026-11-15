@@ -1880,6 +1880,7 @@ export interface components {
         };
         UpdateDeliveryZoneStatusRequest: {
             active: boolean;
+            /** @description Texto libre de operador; se guarda en auditoría. NO debe contener datos personales. */
             reason?: string;
         };
         /** @enum {string} */
@@ -4219,6 +4220,15 @@ export interface operations {
             };
             /** @description `BRANCH_NOT_AVAILABLE` o `MUNICIPALITY_NOT_FOUND` (ver `code` y `violations`) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED`: límite por IP (30 por minuto en esta ruta). `Cache-Control: no-store` y `Retry-After`. */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

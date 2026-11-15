@@ -2,7 +2,7 @@ import { Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuditModule } from '../audit/audit.module.js';
 import { BranchesModule } from '../branches/branches.module.js';
-import type { Env } from '../config/env.js';
+import { isMockAllowedNodeEnv, type Env } from '../config/env.js';
 import {
   AdminDeliverySettingsController,
   AdminDeliveryZonesController,
@@ -22,9 +22,11 @@ import { UnavailableIntegrationAdapter } from './unavailable-integration.adapter
 export function selectCourierAdapter(config: ConfigService<Env, true>): CourierCoveragePort {
   const kind = config.get('PEDIDOSYA_COVERAGE_ADAPTER', { infer: true });
   if (kind !== 'mock') return new UnavailableIntegrationAdapter();
-  // Defensa en profundidad: `validateEnv` ya impide arrancar así.
-  if (config.get('NODE_ENV', { infer: true }) === 'production') {
-    throw new Error('El adaptador simulado de PedidosYa no se permite en producción');
+  // Defensa en profundidad: `validateEnv` ya impide arrancar así (solo NODE_ENV explícito development|test).
+  if (!isMockAllowedNodeEnv(process.env['NODE_ENV'])) {
+    throw new Error(
+      'El adaptador simulado de PedidosYa solo se permite con NODE_ENV=development o test',
+    );
   }
   new Logger('DeliveryCoverageModule').warn(
     'Cobertura de PedidosYa SIMULADA (adaptador mock): los resultados no son reales ni autorizan operaciones',

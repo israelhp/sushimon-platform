@@ -607,6 +607,107 @@ describe('Zonas propias, settings y cobertura (e2e)', () => {
     });
   });
 
+  describe('abuso y seguridad adicional', () => {
+    it('rate limit por ruta: la petición 31 de /delivery-coverage/check => 429 RATE_LIMITED con no-store y Retry-After', async () => {
+      const body = { branchId: A, municipalityId: MUN_MIXCO };
+      for (let i = 0; i < 30; i++)
+        await http().post('/v1/delivery-coverage/check').send(body).expect(200);
+      const res = await http().post('/v1/delivery-coverage/check').send(body).expect(429);
+      expect(res.body).toMatchObject({ statusCode: 429, code: 'RATE_LIMITED' });
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.headers['retry-after']).toBeDefined();
+      // otra ruta pública no comparte el contador por ruta del check
+      await http().get('/v1/health').expect(200);
+    });
+
+    it('__proto__, constructor y claves extra en el check => 400 y sin efecto', async () => {
+      const raw = (json: string) =>
+        http()
+          .post('/v1/delivery-coverage/check')
+          .set('Content-Type', 'application/json')
+          .send(json);
+      const base = `"branchId":"${A}","municipalityId":"${MUN_MIXCO}"`;
+      await raw(`{${base},"__proto__":{"covered":true}}`).expect(400);
+      // `constructor` no es propiedad propia del DTO: class-transformer lo ignora (200) sin efecto; no contamina.
+      const ctor = await raw(`{${base},"constructor":{"prototype":{"x":1}}}`);
+      expect([200, 400]).toContain(ctor.status);
+      await raw(`{${base},"zone":{"__proto__":{}}}`).expect(400);
+      expect(({} as Record<string, unknown>)['covered']).toBeUndefined();
+    });
+
+    it('PATCH de zona: mass assignment (branchId, municipalityId, version, active, id, zoneKey) => 400 y la zona no cambia', async () => {
+      const auth = await asStaff();
+      const z = repo.addZone({ branchId: A, municipalityId: MUN_MIXCO });
+      for (const extra of [
+        { branchId: B },
+        { municipalityId: MUN_VN },
+        { version: 7 },
+        { active: false },
+        { id: MISSING },
+        { zoneKey: 'x' },
+      ]) {
+        await call('patch', `/v1/admin/delivery-zones/${z.id}`, auth, {
+          expectedVersion: 1,
+          baseFee: '1',
+          ...extra,
+        }).expect(400);
+      }
+      await http()
+        .patch(`/v1/admin/delivery-zones/${z.id}`)
+        .set('Authorization', auth)
+        .set('Content-Type', 'application/json')
+        .send('{"expectedVersion":1,"baseFee":"1","__proto__":{"active":false}}')
+        .expect(400);
+      expect(repo.zones.get(z.id)).toMatchObject({
+        branchId: A,
+        municipalityId: MUN_MIXCO,
+        version: 1,
+        active: true,
+        baseFee: '15.00',
+      });
+    });
+
+    it('q con comodines (%, _, \\) se busca literalmente y no devuelve todo el listado', async () => {
+      const auth = await asStaff();
+      repo.addZone({
+        branchId: A,
+        municipalityId: MUN_MIXCO,
+        zoneLabel: 'Zona 4',
+        zoneKey: 'zona 4',
+      });
+      repo.addZone({
+        branchId: A,
+        municipalityId: MUN_MIXCO,
+        zoneLabel: 'Zona_5',
+        zoneKey: 'zona_5',
+      });
+      for (const q of ['%', '_', '\\']) {
+        const res = await call(
+          'get',
+          `/v1/admin/delivery-zones?q=${encodeURIComponent(q)}`,
+          auth,
+        ).expect(200);
+        const total = (res.body as { total: number }).total;
+        expect(total).toBe(q === '_' ? 1 : 0);
+      }
+    });
+
+    it('auditoría sin PII y con tarifa como string (nunca número)', async () => {
+      const auth = await asStaff();
+      const res = await call('post', '/v1/admin/delivery-zones', auth, zoneBody()).expect(201);
+      await call('patch', `/v1/admin/delivery-zones/${(res.body as { id: string }).id}`, auth, {
+        expectedVersion: 1,
+        baseFee: '20',
+      }).expect(200);
+      for (const e of repo.audit) {
+        const values = [e.oldValues, e.newValues].filter(Boolean) as Record<string, unknown>[];
+        for (const v of values) if ('baseFee' in v) expect(typeof v['baseFee']).toBe('string');
+        expect(JSON.stringify(e)).not.toMatch(/Ana Admin|@|email|phone|token/i);
+      }
+      expect(repo.audit).toHaveLength(2);
+    });
+  });
+
   describe('selección del adaptador por configuración', () => {
     it('mock en desarrollo: escenario available => integrationStatus MOCK, simulated=true, CONFIRMED', async () => {
       await app.close();

@@ -1866,6 +1866,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: '`RATE_LIMITED`: límite por IP (30 por minuto en esta ruta). `Cache-Control: no-store` y `Retry-After`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   parameters:
     StaffId:
@@ -3542,7 +3548,10 @@ components:
       additionalProperties: false
       properties:
         active: { type: boolean }
-        reason: { type: string, maxLength: 200 }
+        reason:
+          type: string
+          maxLength: 200
+          description: Texto libre de operador; se guarda en auditoría. NO debe contener datos personales.
     CourierProvider:
       type: string
       enum: [PEDIDOSYA, OWN]

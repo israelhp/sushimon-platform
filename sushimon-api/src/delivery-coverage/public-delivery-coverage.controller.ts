@@ -1,5 +1,7 @@
 import { Body, Controller, Header, HttpCode, Inject, Post } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { COVERAGE_CHECK_THROTTLE } from '../common/throttle/app-throttler.guard.js';
 import { Public } from '../auth/public.decorator.js';
 import { DeliveryCoverageService } from './delivery-coverage.service.js';
 import { DeliveryCoverageCheckRequest } from './dto/delivery-zone-requests.dto.js';
@@ -19,6 +21,7 @@ export class PublicDeliveryCoverageController {
   ) {}
 
   @Post('check')
+  @Throttle(COVERAGE_CHECK_THROTTLE)
   @HttpCode(200)
   @Header('Cache-Control', 'no-store')
   @ApiOperation({
@@ -30,6 +33,7 @@ export class PublicDeliveryCoverageController {
     status: 400,
     description: 'Forma inválida (UUID, zone, propiedades desconocidas)',
   })
+  @ApiResponse({ status: 429, description: 'RATE_LIMITED' })
   @ApiResponse({ status: 422, description: 'BRANCH_NOT_AVAILABLE o MUNICIPALITY_NOT_FOUND' })
   check(@Body() body: DeliveryCoverageCheckRequest): Promise<DeliveryCoverageCheckResponseDto> {
     return this.coverage.check({

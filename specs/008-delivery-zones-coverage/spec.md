@@ -233,6 +233,11 @@ Cuerpo base `ErrorResponse` + `code` + `violations` (F08).
 | 422  | `MUNICIPALITY_NOT_FOUND`         | create, check                | `municipalityId` inexistente; `violations[0].path = 'municipalityId'`                                                                                 |
 | 422  | `BRANCH_NOT_AVAILABLE`           | check                        | `branchId` inexistente o inactiva (no se distingue); `violations[0].path = 'branchId'`                                                                |
 
+Adicionales (ronda de seguridad): 429 `RATE_LIMITED` en `checkDeliveryCoverage` (30/min por IP) y `listLocation*` (60/min por IP), `no-store`, con
+`Retry-After`; requiere `TRUST_PROXY_HOPS >= 1` tras un proxy (bloqueante de despliegue, ver `docs/security/README.md`). El mock de PedidosYa solo
+arranca con `NODE_ENV` explícito `development|test`. `reason` de `PATCH …/status` es texto libre de operador y NO debe contener datos personales. La
+búsqueda `q` del listado es literal (`%`, `_`, `\` no son comodines).
+
 El `ErrorResponse.error` sigue siendo el nombre HTTP. Los 5xx nunca incluyen `code`/`violations` (filtro central, F08).
 
 ## Contrato (resumen)

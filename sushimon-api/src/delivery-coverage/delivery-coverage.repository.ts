@@ -157,7 +157,12 @@ export class DeliveryCoverageRepository {
     if (f.municipalityId) and.push({ municipalityId: f.municipalityId });
     if (f.departmentId) and.push({ municipality: { departmentId: f.departmentId } });
     if (f.active !== undefined) and.push({ active: f.active });
-    if (f.keyContains) and.push({ zoneKey: { contains: f.keyContains } });
+    if (f.keyContains) {
+      // Búsqueda LITERAL: `contains` de Prisma se traduce a LIKE sin escapar `%`, `_` ni `\`, así que `q=%` devolvería
+      // todo. `position()` compara subcadenas sin comodines. Se acota por sucursal/alcance igual que el listado.
+      const ids = await this.zoneIdsContaining(f.keyContains, f.branchId, f.scope);
+      and.push({ id: { in: ids } });
+    }
     const where: Prisma.DeliveryZoneWhereInput = { AND: and };
     const dir = f.order;
     const orderBy: Prisma.DeliveryZoneOrderByWithRelationInput[] =
@@ -183,6 +188,22 @@ export class DeliveryCoverageRepository {
       this.prisma.deliveryZone.count({ where }),
     ]);
     return { items: rows.map(toZone), total };
+  }
+
+  private async zoneIdsContaining(
+    key: string,
+    branchId: string | null,
+    scope: string[] | null,
+  ): Promise<string[]> {
+    const branches = branchId !== null ? [branchId] : scope;
+    const rows =
+      branches === null
+        ? await this.prisma.$queryRaw<{ id: string }[]>`
+            SELECT id FROM app.delivery_zones WHERE position(${key} in zone_key) > 0`
+        : await this.prisma.$queryRaw<{ id: string }[]>`
+            SELECT id FROM app.delivery_zones
+            WHERE branch_id = ANY(${branches}::uuid[]) AND position(${key} in zone_key) > 0`;
+    return rows.map((r) => r.id);
   }
 
   async insertZone(tx: CoverageTx, data: NewZoneData): Promise<ZoneRecord> {

@@ -163,5 +163,17 @@ export function validateEnv(raw: Record<string, unknown>): Env {
     const detail = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
     throw new Error(`Configuración de entorno inválida: ${detail}`);
   }
+  // El mock exige NODE_ENV EXPLÍCITO en development|test: un NODE_ENV ausente (que aquí se resuelve a `development`
+  // por defecto), vacío o desconocido no basta. No cambia el default de NODE_ENV para el resto de la app.
+  if (parsed.data.PEDIDOSYA_COVERAGE_ADAPTER === 'mock' && !isMockAllowedNodeEnv(raw['NODE_ENV'])) {
+    throw new Error(
+      'Configuración de entorno inválida: PEDIDOSYA_COVERAGE_ADAPTER: el adaptador simulado solo se permite con NODE_ENV=development o test explícito',
+    );
+  }
   return parsed.data;
+}
+
+/** `NODE_ENV` explícito y permitido para el adaptador simulado de PedidosYa. */
+export function isMockAllowedNodeEnv(value: unknown): boolean {
+  return value === 'development' || value === 'test';
 }

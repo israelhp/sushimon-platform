@@ -16,6 +16,20 @@ Estado: ✅ controles de repositorio (hooks, escáner de secretos, CORS/validaci
 CORS por lista blanca (`CORS_ORIGINS`) · `ValidationPipe` (whitelist) · filtro de errores sin trazas · validación de entorno
 con falla al arrancar · `.env` fuera de Git · escáner de secretos (`pnpm secrets:scan`) · hooks de Claude Code.
 
+## Rate limiting por ruta y proxy (F09)
+
+`POST /v1/delivery-coverage/check` (30/min) y `GET /v1/locations/*` (60/min) llevan `@Throttle` por IP (429 `RATE_LIMITED`,
+`no-store`, `Retry-After`); el resto usa el tope global (`RATE_LIMIT_*`). El contador es en memoria por instancia y la IP sale de
+`req.ip`: **detrás de un proxy/CDN (Vercel, Render, Fly…) `TRUST_PROXY_HOPS` debe ser >= 1; con 0 todos los clientes comparten la IP
+del proxy y el límite se aplica al conjunto (o es evadible por cabeceras).** Es un **requisito bloqueante de despliegue**. No se
+exige en `env.ts` (dejaría de arrancar entornos F00-F08 existentes); verificarlo en la checklist de despliegue. Antes de F29
+(PedidosYa real) revisar un almacenamiento compartido del contador.
+
+El mock de cobertura de PedidosYa solo arranca con `NODE_ENV` explícitamente `development` o `test`.
+
+Los campos `reason` (cierres F08, estado de zonas F09) son texto libre de operador, se guardan en auditoría y NO deben contener
+datos personales.
+
 ## Pendiente (📐)
 
 Rate limiting (`@nestjs/throttler`) · cabeceras de seguridad (Helmet/Next headers) · política CSRF según mecanismo de sesión ·

@@ -1,5 +1,7 @@
 import { Controller, Get, Inject, Query } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { LOCATIONS_THROTTLE } from '../common/throttle/app-throttler.guard.js';
 import { Public } from '../auth/public.decorator.js';
 import { CacheControl } from '../common/http/cache-control.js';
 import {
@@ -15,6 +17,7 @@ export const LOCATIONS_CACHE_CONTROL =
 
 @ApiTags('locations')
 @Public()
+@Throttle(LOCATIONS_THROTTLE)
 @Controller('locations')
 export class LocationsController {
   constructor(@Inject(LocationsService) private readonly locations: LocationsService) {}

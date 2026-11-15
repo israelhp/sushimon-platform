@@ -84,9 +84,10 @@ describe('validateEnv', () => {
     });
 
     it('mock en desarrollo con cada escenario válido; sin escenario es válido', () => {
-      expect(validateEnv({ PEDIDOSYA_COVERAGE_ADAPTER: 'mock' }).PEDIDOSYA_COVERAGE_ADAPTER).toBe(
-        'mock',
-      );
+      expect(
+        validateEnv({ NODE_ENV: 'development', PEDIDOSYA_COVERAGE_ADAPTER: 'mock' })
+          .PEDIDOSYA_COVERAGE_ADAPTER,
+      ).toBe('mock');
       for (const s of [
         'available',
         'unavailable',
@@ -96,15 +97,22 @@ describe('validateEnv', () => {
         'invalid_request',
       ]) {
         expect(
-          validateEnv({ PEDIDOSYA_COVERAGE_ADAPTER: 'mock', PEDIDOSYA_MOCK_SCENARIO: s })
-            .PEDIDOSYA_MOCK_SCENARIO,
+          validateEnv({
+            NODE_ENV: 'test',
+            PEDIDOSYA_COVERAGE_ADAPTER: 'mock',
+            PEDIDOSYA_MOCK_SCENARIO: s,
+          }).PEDIDOSYA_MOCK_SCENARIO,
         ).toBe(s);
       }
     });
 
     it('escenario inválido, escenario sin mock o adaptador desconocido => error de arranque', () => {
       expect(() =>
-        validateEnv({ PEDIDOSYA_COVERAGE_ADAPTER: 'mock', PEDIDOSYA_MOCK_SCENARIO: 'raro' }),
+        validateEnv({
+          NODE_ENV: 'development',
+          PEDIDOSYA_COVERAGE_ADAPTER: 'mock',
+          PEDIDOSYA_MOCK_SCENARIO: 'raro',
+        }),
       ).toThrow(/PEDIDOSYA_MOCK_SCENARIO/);
       expect(() => validateEnv({ PEDIDOSYA_MOCK_SCENARIO: 'available' })).toThrow(
         /PEDIDOSYA_MOCK_SCENARIO/,
@@ -125,6 +133,17 @@ describe('validateEnv', () => {
       expect(message).not.toContain('postgresql://');
       expect(validateEnv({ ...prod, PEDIDOSYA_COVERAGE_ADAPTER: 'unavailable' })).toBeTruthy();
       expect(validateEnv(prod).PEDIDOSYA_COVERAGE_ADAPTER).toBe('unavailable');
+    });
+
+    it('mock exige NODE_ENV explícito development|test: ausente, vacío, staging o desconocido => no arranca', () => {
+      const mock = { PEDIDOSYA_COVERAGE_ADAPTER: 'mock' };
+      expect(() => validateEnv(mock)).toThrow(/PEDIDOSYA_COVERAGE_ADAPTER/);
+      expect(() => validateEnv({ ...mock, NODE_ENV: '' })).toThrow();
+      expect(() => validateEnv({ ...mock, NODE_ENV: 'staging' })).toThrow();
+      expect(() => validateEnv({ ...mock, NODE_ENV: 'Production' })).toThrow();
+      expect(validateEnv({ ...mock, NODE_ENV: 'test' }).PEDIDOSYA_COVERAGE_ADAPTER).toBe('mock');
+      // sin mock, NODE_ENV ausente conserva su default (development): no cambia el resto de la app
+      expect(validateEnv({}).NODE_ENV).toBe('development');
     });
 
     it('timeout: entero entre 100 y 10000', () => {

@@ -124,4 +124,17 @@ describe('Catálogos geográficos (e2e)', () => {
       .query({ departmentId: GT, q: 'x' })
       .expect(400);
   });
+
+  it('rate limit: al superar 60 por minuto y por IP => 429 RATE_LIMITED con no-store (el contador es compartido por el archivo)', async () => {
+    let sent = 0;
+    let res = await http().get('/v1/locations/departments');
+    while (res.status === 200 && sent < 70) {
+      sent++;
+      res = await http().get('/v1/locations/departments');
+    }
+    expect(res.status).toBe(429);
+    expect(sent).toBeLessThanOrEqual(60);
+    expect(res.body).toMatchObject({ statusCode: 429, code: 'RATE_LIMITED' });
+    expect(res.headers['cache-control']).toBe('no-store');
+  });
 });
