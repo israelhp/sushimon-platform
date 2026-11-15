@@ -170,7 +170,60 @@ export function validateEnv(raw: Record<string, unknown>): Env {
       'Configuración de entorno inválida: PEDIDOSYA_COVERAGE_ADAPTER: el adaptador simulado solo se permite con NODE_ENV=development o test explícito',
     );
   }
+  // Un NODE_ENV ausente se resuelve a `development` y se SALTARÍA las comprobaciones de producción: si hay señales
+  // claras de despliegue exigimos NODE_ENV explícito (el default de desarrollo/test/CI no cambia).
+  const signal = missingNodeEnv(raw['NODE_ENV']) ? deploymentSignal(raw, parsed.data) : null;
+  if (signal) {
+    throw new Error(
+      `Configuración de entorno inválida: NODE_ENV: debe definirse explícitamente (${signal}); ` +
+        'sin él se aplicarían los valores de desarrollo y se omitirían las comprobaciones de producción',
+    );
+  }
   return parsed.data;
+}
+
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+/** Variables que las plataformas de despliegue definen en runtime (solo su presencia; nunca su valor). */
+const DEPLOYMENT_VARS = [
+  'VERCEL',
+  'RENDER',
+  'FLY_APP_NAME',
+  'RAILWAY_ENVIRONMENT',
+  'K_SERVICE',
+  'WEBSITE_SITE_NAME',
+  'DYNO',
+] as const;
+
+function missingNodeEnv(value: unknown): boolean {
+  return value === undefined || (typeof value === 'string' && value.trim() === '');
+}
+
+/** Motivo (sin valores sensibles) por el que parece un despliegue, o null si parece entorno local. */
+function deploymentSignal(raw: Record<string, unknown>, env: Env): string | null {
+  if (env.DATABASE_URL) {
+    let host: string | null = null;
+    try {
+      host = new URL(env.DATABASE_URL).hostname.toLowerCase();
+    } catch {
+      // URL ilegible: no se puede afirmar que sea local.
+    }
+    if (host === null || !LOCAL_HOSTS.has(host)) return 'DATABASE_URL apunta a un host no local';
+  }
+  const platform = DEPLOYMENT_VARS.find((k) => !missingNodeEnv(raw[k]));
+  return platform ? `se detectó la variable de plataforma ${platform}` : null;
+}
+
+/** Avisos de arranque no bloqueantes (se registran en `main.ts`). Sin valores sensibles. */
+export function envWarnings(env: Pick<Env, 'NODE_ENV' | 'TRUST_PROXY_HOPS'>): string[] {
+  const warnings: string[] = [];
+  if (env.NODE_ENV === 'production' && env.TRUST_PROXY_HOPS === 0) {
+    warnings.push(
+      'TRUST_PROXY_HOPS=0 en producción: detrás de un proxy/CDN todos los clientes compartirían la IP del proxy ' +
+        'y el rate limit por IP se aplicaría al conjunto (o sería evadible por cabeceras). Definir >= 1 si hay proxy.',
+    );
+  }
+  return warnings;
 }
 
 /** `NODE_ENV` explícito y permitido para el adaptador simulado de PedidosYa. */

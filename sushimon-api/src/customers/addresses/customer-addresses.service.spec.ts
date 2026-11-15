@@ -157,15 +157,17 @@ function fakeDb(initial: Row[] = []) {
 
 function setup(initial: Row[] = []) {
   const db = fakeDb(initial);
+  const record = (p: Principal) => ({
+    id: p.authUserId.replace('auth-', ''),
+    fullName: 'P',
+    email: null,
+    phone: null,
+    createdAt: new Date(),
+  });
   const identity = {
-    ensureCustomer: vi.fn((p: Principal) =>
-      Promise.resolve({
-        id: p.authUserId.replace('auth-', ''),
-        fullName: 'P',
-        email: null,
-        phone: null,
-        createdAt: new Date(),
-      }),
+    ensureCustomer: vi.fn((p: Principal) => Promise.resolve(record(p))),
+    findCustomer: vi.fn((p: Principal) =>
+      Promise.resolve(p.authUserId.startsWith('auth-nocustomer') ? null : record(p)),
     ),
   };
   const audit = {
@@ -178,7 +180,7 @@ function setup(initial: Row[] = []) {
     identity as never,
     audit as never,
   );
-  return { service, db, audit };
+  return { service, db, audit, identity };
 }
 
 const baseInput = {
@@ -417,5 +419,34 @@ describe('CustomerAddressesService.remove', () => {
     const { service, db } = setup([a]);
     await service.remove(principal(CUSTOMER), a.id);
     expect(db.rows).toHaveLength(0);
+  });
+});
+
+describe('CustomerAddressesService: sin fila de cliente (lecturas no la crean)', () => {
+  const ghost = { authUserId: 'auth-nocustomer' } as Principal;
+
+  it('list => vacío y sin ensureCustomer', async () => {
+    const { service, identity } = setup();
+    await expect(service.list(ghost)).resolves.toEqual({ items: [] });
+    expect(identity.ensureCustomer).not.toHaveBeenCalled();
+  });
+
+  it.each(['get', 'update', 'setDefault', 'remove'] as const)(
+    '%s => 404 ADDRESS_NOT_FOUND sin ensureCustomer',
+    async (method) => {
+      const { service, identity } = setup();
+      const call = () =>
+        method === 'update'
+          ? service.update(ghost, randomUUID(), { label: 'X' })
+          : service[method](ghost, randomUUID());
+      await expect(call()).rejects.toMatchObject({ status: 404 });
+      expect(identity.ensureCustomer).not.toHaveBeenCalled();
+    },
+  );
+
+  it('create sí crea el cliente (ensureCustomer)', async () => {
+    const { service, identity } = setup();
+    await service.create(ghost, baseInput).catch(() => undefined);
+    expect(identity.ensureCustomer).toHaveBeenCalledTimes(1);
   });
 });

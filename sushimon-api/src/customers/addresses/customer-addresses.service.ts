@@ -69,7 +69,8 @@ export class CustomerAddressesService {
   ) {}
 
   async list(principal: Principal): Promise<CustomerAddressListDto> {
-    const customerId = await this.ownerId(principal);
+    const customerId = await this.existingOwnerId(principal);
+    if (!customerId) return { items: [] };
     const rows = await this.prisma.customerAddress.findMany({
       where: { customerId },
       select: ADDRESS_SELECT,
@@ -79,7 +80,7 @@ export class CustomerAddressesService {
   }
 
   async get(principal: Principal, id: string): Promise<CustomerAddressDto> {
-    const customerId = await this.ownerId(principal);
+    const customerId = await this.requireOwnerId(principal);
     const row = await this.prisma.customerAddress.findFirst({
       where: { id, customerId },
       select: ADDRESS_SELECT,
@@ -89,7 +90,7 @@ export class CustomerAddressesService {
   }
 
   async create(principal: Principal, input: CreateCustomerAddressDto): Promise<CustomerAddressDto> {
-    const customerId = await this.ownerId(principal);
+    const customerId = await this.ensureOwnerId(principal);
     const fields = normalizeOrThrow({
       label: input.label,
       zone: input.zone,
@@ -162,7 +163,7 @@ export class CustomerAddressesService {
     id: string,
     input: UpdateCustomerAddressDto,
   ): Promise<CustomerAddressDto> {
-    const customerId = await this.ownerId(principal);
+    const customerId = await this.requireOwnerId(principal);
     const touched = changedKeys(input);
     if (touched.length === 0) return this.get(principal, id);
 
@@ -230,7 +231,7 @@ export class CustomerAddressesService {
 
   /** Marca la predeterminada. Idempotente: si ya lo es, no escribe. */
   async setDefault(principal: Principal, id: string): Promise<CustomerAddressDto> {
-    const customerId = await this.ownerId(principal);
+    const customerId = await this.requireOwnerId(principal);
     return this.transactional(async (tx) => {
       await lockCustomer(tx, customerId);
       const target = await tx.customerAddress.findFirst({
@@ -265,7 +266,7 @@ export class CustomerAddressesService {
    * (createdAt, id). Los pedidos confirmados conservan su snapshot (F20); no hay borrado en cascada hacia ellos.
    */
   async remove(principal: Principal, id: string): Promise<void> {
-    const customerId = await this.ownerId(principal);
+    const customerId = await this.requireOwnerId(principal);
     await this.transactional(async (tx) => {
       await lockCustomer(tx, customerId);
       const target = await tx.customerAddress.findFirst({
@@ -296,8 +297,21 @@ export class CustomerAddressesService {
     });
   }
 
-  /** Identidad → cliente. Crea el perfil de forma idempotente si todavía no existe (reutiliza F04/F01). */
-  private async ownerId(principal: Principal): Promise<string> {
+  /** Lectura sin efectos: el cliente de la identidad, o null si aún no tiene fila (no la crea). */
+  private async existingOwnerId(principal: Principal): Promise<string | null> {
+    const customer = await this.identity.findCustomer(principal);
+    return customer?.id ?? null;
+  }
+
+  /** Sin fila de cliente no puede haber direcciones propias: 404 como una dirección inexistente. */
+  private async requireOwnerId(principal: Principal): Promise<string> {
+    const id = await this.existingOwnerId(principal);
+    if (!id) throw notFound();
+    return id;
+  }
+
+  /** Solo el alta crea el perfil de cliente (idempotente, reutiliza F04/F01). */
+  private async ensureOwnerId(principal: Principal): Promise<string> {
     const customer = await this.identity.ensureCustomer(principal);
     return customer.id;
   }

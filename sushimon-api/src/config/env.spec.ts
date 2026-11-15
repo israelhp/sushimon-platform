@@ -1,4 +1,4 @@
-import { validateEnv } from './env.js';
+import { envWarnings, validateEnv } from './env.js';
 
 const prod = {
   NODE_ENV: 'production',
@@ -156,5 +156,53 @@ describe('validateEnv', () => {
       expect(() => validateEnv({ PEDIDOSYA_COVERAGE_TIMEOUT_MS: '10001' })).toThrow();
       expect(() => validateEnv({ PEDIDOSYA_COVERAGE_TIMEOUT_MS: '1.5' })).toThrow();
     });
+  });
+});
+
+describe('NODE_ENV ausente en un despliegue (M3)', () => {
+  const remote = 'postgresql://u:p@db.example.invalid:6543/postgres';
+
+  it('sin NODE_ENV y DATABASE_URL remota => falla pidiendo NODE_ENV explícito (sin filtrar la URL)', () => {
+    const attempt = () => validateEnv({ DATABASE_URL: remote });
+    expect(attempt).toThrow(/NODE_ENV: debe definirse explícitamente/);
+    expect(attempt).not.toThrow(/db\.example|u:p/);
+    expect(() => validateEnv({ NODE_ENV: '', DATABASE_URL: remote })).toThrow(/NODE_ENV/);
+  });
+
+  it.each(['localhost', '127.0.0.1', '[::1]'])(
+    'sin NODE_ENV y DATABASE_URL en %s => arranca',
+    (h) => {
+      expect(validateEnv({ DATABASE_URL: `postgresql://u:p@${h}:5432/db` }).NODE_ENV).toBe(
+        'development',
+      );
+    },
+  );
+
+  it('sin NODE_ENV y sin DATABASE_URL (dev/test/CI) => arranca con development', () => {
+    expect(validateEnv({}).NODE_ENV).toBe('development');
+  });
+
+  it('sin NODE_ENV con variable de plataforma => falla', () => {
+    expect(() => validateEnv({ VERCEL: '1' })).toThrow(/VERCEL/);
+    expect(() => validateEnv({ RENDER: 'true' })).toThrow(/NODE_ENV/);
+  });
+
+  it('con NODE_ENV explícito y base remota no cambia nada', () => {
+    expect(validateEnv({ NODE_ENV: 'development', DATABASE_URL: remote }).NODE_ENV).toBe(
+      'development',
+    );
+    expect(validateEnv({ NODE_ENV: 'test', DATABASE_URL: remote }).NODE_ENV).toBe('test');
+  });
+});
+
+describe('envWarnings (M2)', () => {
+  it('producción con TRUST_PROXY_HOPS=0 => aviso (no falla el arranque)', () => {
+    const env = validateEnv({ ...prod, TRUST_PROXY_HOPS: '0' });
+    expect(envWarnings(env)).toEqual([expect.stringContaining('TRUST_PROXY_HOPS=0')]);
+  });
+
+  it('producción con >= 1, o desarrollo con 0 => sin avisos', () => {
+    expect(envWarnings(validateEnv({ ...prod, TRUST_PROXY_HOPS: '1' }))).toEqual([]);
+    expect(envWarnings(validateEnv({}))).toEqual([]);
   });
 });

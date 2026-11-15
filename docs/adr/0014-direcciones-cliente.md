@@ -43,7 +43,10 @@ is_default`. Las mutaciones toman `SELECT … FOR UPDATE` sobre la fila del clie
 12. **Errores**: `ADDRESS_NOT_FOUND` 404, `ADDRESS_LIMIT_REACHED` y `ADDRESS_DUPLICATE` 409,
     `MUNICIPALITY_NOT_FOUND` y `ADDRESS_INVALID` 400 (con `violations[]`). Ningún error incluye identificadores de
     otros clientes.
-13. **F04**: `addresses` sale de `pendingSections` de `GET /v1/me/storefront`. Los contadores siguen sin existir.
+13. **Lecturas sin efectos**: solo `POST /v1/me/addresses` crea la fila de cliente (`IdentityService.ensureCustomer`). Las
+    demás operaciones usan `findCustomer`: sin fila, `GET` de la lista responde `{ items: [] }` y el resto `404
+ADDRESS_NOT_FOUND`; ninguna escribe en `customers` (auditoría F00–F09).
+14. **F04**: `addresses` sale de `pendingSections` de `GET /v1/me/storefront`. Los contadores siguen sin existir.
 
 ## Consecuencias
 

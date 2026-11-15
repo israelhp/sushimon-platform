@@ -61,12 +61,12 @@ describe('StaffCommandsService.create', () => {
         entityType: 'staff_user',
         action: 'staff.created',
         newValues: expect.objectContaining({
-          email: 'luis@sushimon.test',
           identityStatus: 'PENDING_LINK',
           assignments: [`kitchen@${BRANCH_A}`],
         }) as unknown,
       }),
     ]);
+    expect(JSON.stringify(repo.audit)).not.toMatch(/luis|sushimon\.test/i);
   });
 
   it('el encargado NO otorga admin: 403 genérico + staff.denied_escalation en transacción aparte; nada se crea', async () => {
@@ -212,7 +212,7 @@ describe('StaffCommandsService.update', () => {
       email: 'luis@sushimon.test',
     });
 
-  it('cambia nombre y correo (PENDING_LINK) y audita solo el diff real', async () => {
+  it('cambia nombre y correo (PENDING_LINK) y audita SOLO los nombres de campo (sin PII)', async () => {
     const { commands, repo } = staffHarness();
     repo.seed(kitchenA());
     const view = await commands.update(managerActor(), T1, {
@@ -223,10 +223,10 @@ describe('StaffCommandsService.update', () => {
     expect(repo.audit).toEqual([
       expect.objectContaining({
         action: 'staff.updated',
-        oldValues: { fullName: 'Luis', email: 'luis@sushimon.test' },
-        newValues: { fullName: 'Luis Alberto', email: 'luis.a@sushimon.test' },
+        newValues: { changedFields: ['email', 'fullName'] },
       }),
     ]);
+    expect(JSON.stringify(repo.audit)).not.toMatch(/luis|sushimon\.test/i);
   });
 
   it('sin cambios reales: no escribe ni audita', async () => {

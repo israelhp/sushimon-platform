@@ -57,5 +57,7 @@ export class AppModule implements NestModule {
     consumer.apply(noStoreMiddleware).forRoutes('admin/*path');
     // Perfil propio del cliente (F01 + F04): datos personales, nunca en caché compartida.
     consumer.apply(noStoreMiddleware).forRoutes('me', 'me/*path');
+    // Contexto de identidad/autorización (roles, permisos, sucursales): nunca en caché (incluidos 401).
+    consumer.apply(noStoreMiddleware).forRoutes('auth/context');
   }
 }
