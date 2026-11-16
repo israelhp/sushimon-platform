@@ -1,6 +1,6 @@
 # Contrato HTTP canónico de Sushi Mon (Contract First).
 # Se diseña ANTES de implementar cada slice y se verifica contra NestJS con `pnpm contracts:check`.
-# Estado: F09 (geografía, cobertura y zonas propias: /v1/locations/*, /v1/admin/delivery-zones, /v1/admin/branches/{id}/delivery-settings, /v1/delivery-coverage/check) + F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
+# Estado: F10 (categorías y jerarquía del menú: /v1/store/categories, /v1/admin/categories, /v1/admin/categories/reorder) + F09 (geografía, cobertura y zonas propias: /v1/locations/*, /v1/admin/delivery-zones, /v1/admin/branches/{id}/delivery-settings, /v1/delivery-coverage/check) + F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
 # Seguridad por defecto: Bearer JWT de Supabase Auth en todo salvo operaciones con `security: []` (health).
 # Transversal a TODAS las respuestas: cabecera `X-Request-Id`; errores con `ErrorResponse`; 429 cuando
 # se excede el rate limit global (no se repite por operación).
@@ -2407,6 +2407,282 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /v1/store/categories:
+    get:
+      operationId: listStoreCategories
+      summary: Árbol público de categorías visibles
+      description: |
+        F10. Sin autenticación. Devuelve el árbol anidado (máx. 3 niveles) SOLO con categorías visibles: una categoría
+        aparece únicamente si ella y TODOS sus ancestros están activos (desactivar un padre oculta su subárbol). Respuesta
+        ligera: sin `sortOrder`, `active` ni marcas de tiempo. Orden estable por hermanos: `sortOrder`, `name`, `id`.
+        Lista vacía = ninguna categoría visible. No incluye productos (F11). Caché compartida corta con revalidación
+        (`Cache-Control: public`); no se emite `ETag`.
+      tags: [categories]
+      security: []
+      responses:
+        '200':
+          description: Árbol de categorías visibles
+          headers:
+            Cache-Control:
+              description: public, max-age=60, stale-while-revalidate=300
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicCategoryTree'
+  /v1/admin/categories:
+    get:
+      operationId: listAdminCategories
+      summary: Categorías del backoffice (lista plana, activas e inactivas)
+      description: |
+        F10. Exige JWT -> personal activo con `catalog.read` (cualquier alcance: las categorías son globales) -> `aal2`.
+        Lista PLANA, sin paginar, con TODAS las categorías que cumplan los filtros, tope documentado de 500 (`total`
+        refleja las devueltas; se garantiza que el catálogo de categorías no excede ese tope: crear la 501 => 422
+        `CATEGORY_LIMIT_REACHED`). Cada elemento trae `effectivelyVisible` (activa y con todos los ancestros activos) y
+        `depth` (raíz = 1) para que la UI pinte el árbol. Orden: profundidad-primero por `sortOrder`, `name`, `id` entre
+        hermanos (el orden en que se pintaría el árbol). Los filtros se aplican sobre esa lista sin reordenarla. Respuesta
+        `Cache-Control: no-store`.
+      tags: [categories]
+      security:
+        - bearer: []
+      parameters:
+        - name: active
+          in: query
+          description: Sin valor = todas.
+          schema: { type: boolean }
+        - name: parentId
+          in: query
+          description: Solo hijos directos de esa categoría. Inexistente => lista vacía.
+          schema: { type: string, format: uuid }
+        - name: q
+          in: query
+          description: Busca por nombre o slug (contiene; sin distinguir mayúsculas ni acentos). Máx. 80 caracteres.
+          schema: { type: string, maxLength: 80 }
+      responses:
+        '200':
+          description: Categorías
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCategoryList'
+        '400':
+          description: Parámetros de consulta inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: No es personal activo, falta `catalog.read` o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      operationId: createAdminCategory
+      summary: Crea una categoría
+      description: |
+        F10. Exige `catalog.create` con alcance GLOBAL (todas las sucursales; una asignación solo de sucursal => 403) y
+        `aal2`. `name` se normaliza (NFC, recorte, colapso de espacios; 1-80). `slug` opcional: si falta se genera desde
+        el nombre (minúsculas, sin acentos, kebab) y se desambigua con sufijo numérico; si se envía y ya existe => 409
+        `CATEGORY_SLUG_TAKEN` (también ante creaciones concurrentes). `parentId` null o ausente = raíz; un padre
+        inexistente o inactivo => 422 `CATEGORY_PARENT_INVALID`; superar 3 niveles => 422 `CATEGORY_DEPTH_EXCEEDED`.
+        La nueva categoría se coloca al final de sus hermanos (`sortOrder` = máximo + 1). Se audita en la misma
+        transacción (`category.created`). Respuesta `no-store`.
+      tags: [categories]
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCategoryRequest'
+      responses:
+        '201':
+          description: Categoría creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCategory'
+        '400':
+          description: Forma inválida (nombre vacío/largo, slug no kebab, UUID, propiedades desconocidas)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Falta `catalog.create` con alcance global o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`CATEGORY_SLUG_TAKEN`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`CATEGORY_PARENT_INVALID`, `CATEGORY_DEPTH_EXCEEDED` o `CATEGORY_LIMIT_REACHED`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`CATEGORIES_BUSY`: otra modificación de categorías está en curso o la transacción agotó su tiempo; reintentable'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/categories/reorder:
+    put:
+      operationId: reorderAdminCategories
+      summary: Reordena los hijos de un padre (o las raíces)
+      description: |
+        F10. Exige `catalog.update` con alcance GLOBAL y `aal2`. `orderedIds` debe contener EXACTAMENTE todos los hermanos
+        actuales de `parentId` (`null` = raíces; incluye inactivos), sin duplicados ni ajenos; si no => 422
+        `CATEGORY_REORDER_MISMATCH` sin escribir. `parentId` inexistente => 404. Asigna `sortOrder` 0..n-1 en una
+        transacción bajo bloqueo (el resultado concurrente es uno de los órdenes enviados, nunca mezclado). Idempotente:
+        repetir el mismo orden responde 200 sin escribir ni auditar. Un cambio real audita `category.reordered`.
+        Responde 200 con la lista de hermanos ya ordenada. Respuesta `no-store`.
+      tags: [categories]
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReorderCategoriesRequest'
+      responses:
+        '200':
+          description: Hermanos con su nuevo orden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCategoryList'
+        '400':
+          description: Forma inválida (UUID mal formado, más de 500 elementos, propiedades desconocidas). Los duplicados o ajenos son 422 `CATEGORY_REORDER_MISMATCH`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Falta `catalog.update` con alcance global o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`parentId` inexistente'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`CATEGORY_REORDER_MISMATCH`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`CATEGORIES_BUSY`: otra modificación de categorías está en curso o la transacción agotó su tiempo; reintentable'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/categories/{id}:
+    patch:
+      operationId: updateAdminCategory
+      summary: Edita una categoría (incluye mover y activar/desactivar)
+      description: |
+        F10. Exige `catalog.update` con alcance GLOBAL y `aal2`. Acepta `name`, `slug`, `description` (`null` la borra),
+        `parentId` (`null` = pasa a raíz) y `active`; al menos un campo (si no, 400); cualquier otro => 400. No existe
+        borrado físico: se desactiva con `active=false`. Desactivar un padre NO modifica a sus hijos (quedan con
+        `active=true` pero `effectivelyVisible=false`). Mover: destino inexistente o inactivo => 422
+        `CATEGORY_PARENT_INVALID`; destino ella misma o un descendiente => 422 `CATEGORY_CYCLE`; si el subárbol resultante
+        pasa de 3 niveles => 422 `CATEGORY_DEPTH_EXCEEDED`. Al cambiar de padre pasa al final de sus nuevos hermanos.
+        Slug ya usado => 409 `CATEGORY_SLUG_TAKEN`. Si ningún valor cambia responde 200 sin escribir ni auditar. Se audita
+        `category.updated` (old/new solo de lo cambiado) y, si cambia `active`, `category.activated` o `category.deactivated`.
+        Respuesta `no-store`.
+      tags: [categories]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCategoryRequest'
+      responses:
+        '200':
+          description: Categoría actualizada (o sin cambios)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCategory'
+        '400':
+          description: Forma inválida, cuerpo vacío o campos no permitidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Falta `catalog.update` con alcance global o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: La categoría no existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`CATEGORY_SLUG_TAKEN`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED` o `CATEGORY_PARENT_INVALID`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`CATEGORIES_BUSY`: otra modificación de categorías está en curso o la transacción agotó su tiempo; reintentable'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   parameters:
     StaffId:
@@ -2444,6 +2720,12 @@ components:
       in: path
       required: true
       description: UUID del producto (`products.id`, catálogo F11).
+      schema: { type: string, format: uuid }
+    CategoryId:
+      name: id
+      in: path
+      required: true
+      description: UUID de la categoría (`categories.id`).
       schema: { type: string, format: uuid }
   schemas:
     PublicBranch:
@@ -3005,7 +3287,7 @@ components:
           type: string
           description: |
             Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`). Los clientes deben ramificar por `code`, nunca por `message`.
+            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; 503 reintentable: `CATEGORIES_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
         violations:
           type: array
           description: Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09).
@@ -4392,6 +4674,106 @@ components:
             PEDIDOSYA: { $ref: '#/components/schemas/PedidosYaCoverage' }
             OWN: { $ref: '#/components/schemas/OwnCoverage' }
         eligibility: { $ref: '#/components/schemas/DeliveryEligibility' }
+    PublicCategory:
+      type: object
+      description: Categoría visible del menú (F10). Sin campos internos; `children` ya viene ordenado y solo con hijas visibles.
+      required: [id, slug, name, description, children]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string, maxLength: 80, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: string, nullable: true, maxLength: 500 }
+        children:
+          type: array
+          description: 'Hijas visibles (vacío en hojas). Profundidad máxima del árbol: 3 niveles.'
+          items: { $ref: '#/components/schemas/PublicCategory' }
+    PublicCategoryTree:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          description: Categorías raíz visibles, ordenadas por `sortOrder`, `name`, `id`.
+          items: { $ref: '#/components/schemas/PublicCategory' }
+    AdminCategory:
+      type: object
+      required:
+        [
+          id,
+          parentId,
+          slug,
+          name,
+          description,
+          sortOrder,
+          active,
+          effectivelyVisible,
+          depth,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        parentId: { type: string, format: uuid, nullable: true, description: '`null` = raíz.' }
+        slug: { type: string, maxLength: 80, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: string, nullable: true, maxLength: 500 }
+        sortOrder: { type: integer, minimum: 0, description: 'Posición entre hermanos (base 0).' }
+        active: { type: boolean, description: Estado propio (administrativo). }
+        effectivelyVisible:
+          type: boolean
+          description: '`true` solo si la categoría y TODOS sus ancestros están activos (lo que ve el público).'
+        depth:
+          { type: integer, minimum: 1, maximum: 3, description: 'Nivel en el árbol (raíz = 1).' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AdminCategoryList:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          maxItems: 500
+          items: { $ref: '#/components/schemas/AdminCategory' }
+        total:
+          { type: integer, minimum: 0, description: 'Número de elementos devueltos (tope 500).' }
+    CreateCategoryRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        slug:
+          type: string
+          maxLength: 80
+          pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+          description: Opcional. Si falta se genera desde `name` y se desambigua; si se envía y existe => 409 `CATEGORY_SLUG_TAKEN`.
+        description: { type: string, nullable: true, maxLength: 500 }
+        parentId:
+          { type: string, format: uuid, nullable: true, description: '`null` o ausente = raíz.' }
+        active: { type: boolean, description: 'Opcional; por defecto `true` en el servidor.' }
+    UpdateCategoryRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        slug: { type: string, maxLength: 80, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        description: { type: string, nullable: true, maxLength: 500 }
+        parentId:
+          { type: string, format: uuid, nullable: true, description: '`null` = mover a la raíz.' }
+        active: { type: boolean }
+    ReorderCategoriesRequest:
+      type: object
+      required: [parentId, orderedIds]
+      additionalProperties: false
+      properties:
+        parentId:
+          { type: string, format: uuid, nullable: true, description: '`null` = categorías raíz.' }
+        orderedIds:
+          type: array
+          maxItems: 500
+          description: Todos los hermanos actuales del padre, en el orden deseado, sin duplicados.
+          items: { type: string, format: uuid }
   securitySchemes:
     bearer:
       type: http

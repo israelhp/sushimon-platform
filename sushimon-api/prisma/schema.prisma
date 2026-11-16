@@ -155,6 +155,27 @@ model CustomerFavorite {
   @@schema("app")
 }
 
+/// F10 (0011). Jerarquía de hasta 3 niveles; ciclos/profundidad los impone el trigger categories_enforce_hierarchy
+/// (bloqueo advisory 1100110, ver migración). CHECK de slug/nombre/longitudes/sort_order solo en SQL.
+model Category {
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parentId    String?    @map("parent_id") @db.Uuid
+  slug        String     @unique
+  name        String
+  description String?
+  sortOrder   Int        @default(0) @map("sort_order")
+  active      Boolean    @default(true)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// La mantiene la API en el UPDATE (sin trigger).
+  updatedAt   DateTime   @default(now()) @map("updated_at") @db.Timestamptz(6)
+  parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  children    Category[] @relation("CategoryTree")
+
+  @@index([parentId, sortOrder, name, id], map: "categories_parent_sort_idx")
+  @@map("categories")
+  @@schema("app")
+}
+
 model StaffUser {
   id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// NULL = empleado preregistrado que aún no inició sesión (ADR-0009). Se vincula una sola vez.

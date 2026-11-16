@@ -991,6 +991,119 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/store/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Árbol público de categorías visibles
+         * @description F10. Sin autenticación. Devuelve el árbol anidado (máx. 3 niveles) SOLO con categorías visibles: una categoría
+         *     aparece únicamente si ella y TODOS sus ancestros están activos (desactivar un padre oculta su subárbol). Respuesta
+         *     ligera: sin `sortOrder`, `active` ni marcas de tiempo. Orden estable por hermanos: `sortOrder`, `name`, `id`.
+         *     Lista vacía = ninguna categoría visible. No incluye productos (F11). Caché compartida corta con revalidación
+         *     (`Cache-Control: public`); no se emite `ETag`.
+         */
+        get: operations["listStoreCategories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Categorías del backoffice (lista plana, activas e inactivas)
+         * @description F10. Exige JWT -> personal activo con `catalog.read` (cualquier alcance: las categorías son globales) -> `aal2`.
+         *     Lista PLANA, sin paginar, con TODAS las categorías que cumplan los filtros, tope documentado de 500 (`total`
+         *     refleja las devueltas; se garantiza que el catálogo de categorías no excede ese tope: crear la 501 => 422
+         *     `CATEGORY_LIMIT_REACHED`). Cada elemento trae `effectivelyVisible` (activa y con todos los ancestros activos) y
+         *     `depth` (raíz = 1) para que la UI pinte el árbol. Orden: profundidad-primero por `sortOrder`, `name`, `id` entre
+         *     hermanos (el orden en que se pintaría el árbol). Los filtros se aplican sobre esa lista sin reordenarla. Respuesta
+         *     `Cache-Control: no-store`.
+         */
+        get: operations["listAdminCategories"];
+        put?: never;
+        /**
+         * Crea una categoría
+         * @description F10. Exige `catalog.create` con alcance GLOBAL (todas las sucursales; una asignación solo de sucursal => 403) y
+         *     `aal2`. `name` se normaliza (NFC, recorte, colapso de espacios; 1-80). `slug` opcional: si falta se genera desde
+         *     el nombre (minúsculas, sin acentos, kebab) y se desambigua con sufijo numérico; si se envía y ya existe => 409
+         *     `CATEGORY_SLUG_TAKEN` (también ante creaciones concurrentes). `parentId` null o ausente = raíz; un padre
+         *     inexistente o inactivo => 422 `CATEGORY_PARENT_INVALID`; superar 3 niveles => 422 `CATEGORY_DEPTH_EXCEEDED`.
+         *     La nueva categoría se coloca al final de sus hermanos (`sortOrder` = máximo + 1). Se audita en la misma
+         *     transacción (`category.created`). Respuesta `no-store`.
+         */
+        post: operations["createAdminCategory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/categories/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reordena los hijos de un padre (o las raíces)
+         * @description F10. Exige `catalog.update` con alcance GLOBAL y `aal2`. `orderedIds` debe contener EXACTAMENTE todos los hermanos
+         *     actuales de `parentId` (`null` = raíces; incluye inactivos), sin duplicados ni ajenos; si no => 422
+         *     `CATEGORY_REORDER_MISMATCH` sin escribir. `parentId` inexistente => 404. Asigna `sortOrder` 0..n-1 en una
+         *     transacción bajo bloqueo (el resultado concurrente es uno de los órdenes enviados, nunca mezclado). Idempotente:
+         *     repetir el mismo orden responde 200 sin escribir ni auditar. Un cambio real audita `category.reordered`.
+         *     Responde 200 con la lista de hermanos ya ordenada. Respuesta `no-store`.
+         */
+        put: operations["reorderAdminCategories"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/categories/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edita una categoría (incluye mover y activar/desactivar)
+         * @description F10. Exige `catalog.update` con alcance GLOBAL y `aal2`. Acepta `name`, `slug`, `description` (`null` la borra),
+         *     `parentId` (`null` = pasa a raíz) y `active`; al menos un campo (si no, 400); cualquier otro => 400. No existe
+         *     borrado físico: se desactiva con `active=false`. Desactivar un padre NO modifica a sus hijos (quedan con
+         *     `active=true` pero `effectivelyVisible=false`). Mover: destino inexistente o inactivo => 422
+         *     `CATEGORY_PARENT_INVALID`; destino ella misma o un descendiente => 422 `CATEGORY_CYCLE`; si el subárbol resultante
+         *     pasa de 3 niveles => 422 `CATEGORY_DEPTH_EXCEEDED`. Al cambiar de padre pasa al final de sus nuevos hermanos.
+         *     Slug ya usado => 409 `CATEGORY_SLUG_TAKEN`. Si ningún valor cambia responde 200 sin escribir ni auditar. Se audita
+         *     `category.updated` (old/new solo de lo cambiado) y, si cambia `active`, `category.activated` o `category.deactivated`.
+         *     Respuesta `no-store`.
+         */
+        patch: operations["updateAdminCategory"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1386,7 +1499,7 @@ export interface components {
             details?: string[];
             /**
              * @description Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`). Los clientes deben ramificar por `code`, nunca por `message`.
+             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; 503 reintentable: `CATEGORIES_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
              */
             code?: string;
             /** @description Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09). */
@@ -2328,6 +2441,82 @@ export interface components {
             };
             eligibility: components["schemas"]["DeliveryEligibility"];
         };
+        /** @description Categoría visible del menú (F10). Sin campos internos; `children` ya viene ordenado y solo con hijas visibles. */
+        PublicCategory: {
+            /** Format: uuid */
+            id: string;
+            slug: string;
+            name: string;
+            description: string | null;
+            /** @description Hijas visibles (vacío en hojas). Profundidad máxima del árbol: 3 niveles. */
+            children: components["schemas"]["PublicCategory"][];
+        };
+        PublicCategoryTree: {
+            /** @description Categorías raíz visibles, ordenadas por `sortOrder`, `name`, `id`. */
+            items: components["schemas"]["PublicCategory"][];
+        };
+        AdminCategory: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: uuid
+             * @description `null` = raíz.
+             */
+            parentId: string | null;
+            slug: string;
+            name: string;
+            description: string | null;
+            /** @description Posición entre hermanos (base 0). */
+            sortOrder: number;
+            /** @description Estado propio (administrativo). */
+            active: boolean;
+            /** @description `true` solo si la categoría y TODOS sus ancestros están activos (lo que ve el público). */
+            effectivelyVisible: boolean;
+            /** @description Nivel en el árbol (raíz = 1). */
+            depth: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AdminCategoryList: {
+            items: components["schemas"]["AdminCategory"][];
+            /** @description Número de elementos devueltos (tope 500). */
+            total: number;
+        };
+        CreateCategoryRequest: {
+            name: string;
+            /** @description Opcional. Si falta se genera desde `name` y se desambigua; si se envía y existe => 409 `CATEGORY_SLUG_TAKEN`. */
+            slug?: string;
+            description?: string | null;
+            /**
+             * Format: uuid
+             * @description `null` o ausente = raíz.
+             */
+            parentId?: string | null;
+            /** @description Opcional; por defecto `true` en el servidor. */
+            active?: boolean;
+        };
+        UpdateCategoryRequest: {
+            name?: string;
+            slug?: string;
+            description?: string | null;
+            /**
+             * Format: uuid
+             * @description `null` = mover a la raíz.
+             */
+            parentId?: string | null;
+            active?: boolean;
+        };
+        ReorderCategoriesRequest: {
+            /**
+             * Format: uuid
+             * @description `null` = categorías raíz.
+             */
+            parentId: string | null;
+            /** @description Todos los hermanos actuales del padre, en el orden deseado, sin duplicados. */
+            orderedIds: string[];
+        };
     };
     responses: never;
     parameters: {
@@ -2343,6 +2532,8 @@ export interface components {
         DeliveryZoneId: string;
         /** @description UUID del producto (`products.id`, catálogo F11). */
         FavoriteProductId: string;
+        /** @description UUID de la categoría (`categories.id`). */
+        CategoryId: string;
     };
     requestBodies: never;
     headers: never;
@@ -5211,6 +5402,328 @@ export interface operations {
             };
             /** @description `RATE_LIMITED`: límite por IP (30 por minuto en esta ruta). `Cache-Control: no-store` y `Retry-After`. */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listStoreCategories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Árbol de categorías visibles */
+            200: {
+                headers: {
+                    /** @description public, max-age=60, stale-while-revalidate=300 */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicCategoryTree"];
+                };
+            };
+        };
+    };
+    listAdminCategories: {
+        parameters: {
+            query?: {
+                /** @description Sin valor = todas. */
+                active?: boolean;
+                /** @description Solo hijos directos de esa categoría. Inexistente => lista vacía. */
+                parentId?: string;
+                /** @description Busca por nombre o slug (contiene; sin distinguir mayúsculas ni acentos). Máx. 80 caracteres. */
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Categorías */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCategoryList"];
+                };
+            };
+            /** @description Parámetros de consulta inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.read` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAdminCategory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCategoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Categoría creada */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCategory"];
+                };
+            };
+            /** @description Forma inválida (nombre vacío/largo, slug no kebab, UUID, propiedades desconocidas) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `catalog.create` con alcance global o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `CATEGORY_SLUG_TAKEN` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `CATEGORY_PARENT_INVALID`, `CATEGORY_DEPTH_EXCEEDED` o `CATEGORY_LIMIT_REACHED` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `CATEGORIES_BUSY`: otra modificación de categorías está en curso o la transacción agotó su tiempo; reintentable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reorderAdminCategories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderCategoriesRequest"];
+            };
+        };
+        responses: {
+            /** @description Hermanos con su nuevo orden */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCategoryList"];
+                };
+            };
+            /** @description Forma inválida (UUID mal formado, más de 500 elementos, propiedades desconocidas). Los duplicados o ajenos son 422 `CATEGORY_REORDER_MISMATCH` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `catalog.update` con alcance global o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `parentId` inexistente */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `CATEGORY_REORDER_MISMATCH` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `CATEGORIES_BUSY`: otra modificación de categorías está en curso o la transacción agotó su tiempo; reintentable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAdminCategory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la categoría (`categories.id`). */
+                id: components["parameters"]["CategoryId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCategoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Categoría actualizada (o sin cambios) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCategory"];
+                };
+            };
+            /** @description Forma inválida, cuerpo vacío o campos no permitidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `catalog.update` con alcance global o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description La categoría no existe */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `CATEGORY_SLUG_TAKEN` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED` o `CATEGORY_PARENT_INVALID` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `CATEGORIES_BUSY`: otra modificación de categorías está en curso o la transacción agotó su tiempo; reintentable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
