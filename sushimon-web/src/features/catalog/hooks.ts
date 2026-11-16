@@ -1,13 +1,21 @@
 'use client';
 
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { useDataClient } from '@/lib/data-access/provider';
 import { isApiError } from '@/lib/data-access/errors';
 import { PRODUCT_SEARCH_MAX } from '@/lib/product-rules';
 import { listCategories, listPromotions } from '@/services/store';
 import { getStoreProduct, listStoreProducts } from '@/services/products';
 import { queryKeys } from '../query-keys';
-import { loadCatalog, type CatalogProduct, type ProductFilters } from './catalog-product';
+import { useStoreBranchMenu } from '../branch-products/hooks';
+import { useOptionalOrderMode } from '../order-mode/order-mode-context';
+import {
+  applyBranchMenu,
+  loadCatalog,
+  type CatalogProduct,
+  type ProductFilters,
+} from './catalog-product';
 
 /** Categorías visibles (incluye la de acceso a Happy Hour, `kind: 'happy_hour'`). */
 export function useCategories() {
@@ -19,15 +27,39 @@ export function useCategories() {
 }
 
 /**
- * Catálogo completo de la tienda (F11): los productos visibles de `GET /v1/store/products` (todas las páginas) con lo que
- * F11 no provee SIMULADO (ver `catalog-product.ts`). Lo comparten menú, carrito, checkout, favoritos y reorden.
+ * Catálogo completo de la tienda: los productos visibles de `GET /v1/store/products` (F11, todas las páginas) COMBINADOS con el
+ * overlay de la sucursal elegida `GET /v1/store/menu?branchId=` (F13: precio efectivo y `available`). Lo comparten menú, ficha,
+ * carrito, checkout, favoritos y reorden, por eso el precio nunca es el de otra sucursal.
+ * - Sin sucursal: precios base (F11) y todo «disponible».
+ * - Con sucursal: mientras el overlay carga el catálogo sigue «pendiente»; si el overlay FALLA, se muestran los precios base
+ *   y `overlayFailed=true` (la pantalla avisa y el servidor recalcula al pedir). Lo que el overlay no trae no se oferta.
  */
 export function useProducts(filters: ProductFilters = {}) {
   const client = useDataClient();
-  return useQuery<CatalogProduct[]>({
-    queryKey: queryKeys.catalog.products(filters),
-    queryFn: () => loadCatalog(client, filters),
+  const selected = useOptionalOrderMode()?.mode.branchId ?? null;
+  const branchId = filters.branchId === undefined ? selected : filters.branchId;
+  const base = useQuery<CatalogProduct[]>({
+    queryKey: queryKeys.catalog.products(),
+    queryFn: () => loadCatalog(client),
   });
+  const menu = useStoreBranchMenu(branchId);
+  const data = useMemo(() => {
+    if (!base.data) return undefined;
+    return branchId && menu.data ? applyBranchMenu(base.data, menu.data) : base.data;
+  }, [base.data, branchId, menu.data]);
+  const overlayFailed = Boolean(branchId) && menu.isError;
+  const { refetch: refetchBase } = base;
+  const { refetch: refetchMenu } = menu;
+  return {
+    data,
+    isPending: base.isPending || (Boolean(branchId) && menu.isPending),
+    isError: base.isError,
+    error: base.error,
+    /** F13: el overlay de la sucursal falló: se muestran precios base con aviso. */
+    overlayFailed,
+    branchId,
+    refetch: () => Promise.all([refetchBase(), branchId ? refetchMenu() : Promise.resolve()]),
+  };
 }
 
 const SEARCH_PAGE_SIZE = 20;

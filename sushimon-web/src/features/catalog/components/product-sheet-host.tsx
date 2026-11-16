@@ -48,7 +48,7 @@ export function ProductSheetHost() {
 
 /** Campos de `CatalogProduct` que la ficha aprovecha cuando existen (slug para la ficha del servidor, categoría e imágenes). */
 type ProductWithCatalogFields = Product &
-  Partial<Pick<CatalogProduct, 'slug' | 'category' | 'media' | 'basePrice'>>;
+  Partial<Pick<CatalogProduct, 'slug' | 'category' | 'media' | 'basePrice' | 'effectivePrice'>>;
 
 /**
  * Ficha del producto: hoja inferior en móvil y modal centrado de dos columnas desde `md` (como el
@@ -115,7 +115,8 @@ export function ProductSheet({
   const modifiersLoading = Boolean(detailSlug) && detail.isPending;
   const modifiersFailed = detail.isError && !gone;
   const canAdd = available && !modifiersLoading && !modifiersFailed && selection.valid;
-  const basePrice = extra.basePrice ?? null;
+  // F13: la estimación parte del precio EFECTIVO de la sucursal elegida (override o base), nunca del de otra.
+  const basePrice = extra.effectivePrice ?? extra.basePrice ?? null;
   const unitCents =
     (basePrice ? estimatedUnitCents(basePrice, selection.extraCents) : null) ??
     Math.round(product.price * 100) + selection.extraCents;

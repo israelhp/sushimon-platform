@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '@/lib/data-access/errors';
 import * as favorites from '@/services/favorites';
-import { createHarness } from '../testing';
+import { createHarness, markSoldOutEverywhere } from '../testing';
 import { MAX_FAVORITES } from './favorites';
 
 /** Error de la API (estado + `code` de negocio) o `null` si la promesa resolvió. */
@@ -157,9 +157,7 @@ describe('F06 favoritos · mock que reproduce las reglas del servidor', () => {
     const hiddenProduct = h.store.products.find((p) => p.id === 'dumplings')!;
     // Con la categoría oculta (F10) todos los productos de ella son INACTIVE.
     h.store.menuCategories.find((c) => c.id === hiddenProduct.categoryId)!.active = false;
-    h.store.products.find((p) => p.id === 'platanito-roll')!.availability = h.store.products
-      .find((p) => p.id === 'platanito-roll')!
-      .availability.map((a) => ({ ...a, available: false }));
+    markSoldOutEverywhere(h.store, 'platanito-roll');
     account.favorites = [
       { productId: 'dumplings', addedAt: '2026-02-04T00:00:00.000Z' },
       { productId: 'fantasma', addedAt: '2026-02-03T00:00:00.000Z' },

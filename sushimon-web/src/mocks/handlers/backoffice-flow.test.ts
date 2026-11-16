@@ -3,6 +3,7 @@ import { ApiError } from '@/lib/data-access/errors';
 import * as admin from '@/services/backoffice-admin';
 import * as bo from '@/services/backoffice-orders';
 import * as categories from '@/services/categories';
+import * as branchProducts from '@/services/branch-products';
 import * as products from '@/services/products';
 import { createHarness } from '../testing';
 
@@ -252,17 +253,20 @@ describe('catálogo y administración', () => {
     expect(
       await status(products.updateAdminProduct(h.client, 'dumplings', { basePrice: '60.00' })),
     ).toBe(403);
-    const p = await products.setSimulatedProductAvailability(h.client, 'dumplings', [
-      { branchId: 'sucursal-1', available: false },
-    ]);
-    expect(p.availability.find((a) => a.branchId === 'sucursal-1')?.available).toBe(false);
+    const p = await branchProducts.setAdminProductAvailability(h.client, 'dumplings', {
+      branchId: 'sucursal-1',
+      available: false,
+    });
+    expect(p.available).toBe(false);
+    // F13: otra sucursal = 404 (no se revela); fijar precio sin `catalog.update` = 403.
     expect(
       await status(
-        products.setSimulatedProductAvailability(h.client, 'dumplings', [
-          { branchId: 'sucursal-2', available: false },
-        ]),
+        branchProducts.setAdminProductAvailability(h.client, 'dumplings', {
+          branchId: 'sucursal-2',
+          available: false,
+        }),
       ),
-    ).toBe(403);
+    ).toBe(404);
 
     h.asStaff('admin');
     const edited = await products.updateAdminProduct(h.client, 'dumplings', { basePrice: '60.00' });
@@ -275,11 +279,12 @@ describe('catálogo y administración', () => {
   it('la disponibilidad del backoffice se refleja en la tienda', async () => {
     const h = createHarness();
     h.asStaff('admin');
-    await products.setSimulatedProductAvailability(h.client, 'cangreburger', [
-      { branchId: 'sucursal-2', available: false },
-    ]);
-    const extras = await products.listSimulatedProductExtras(h.client, 'sucursal-2');
-    expect(extras.items.find((p) => p.productId === 'cangreburger')?.available).toBe(false);
+    await branchProducts.setAdminProductAvailability(h.client, 'cangreburger', {
+      branchId: 'sucursal-2',
+      available: false,
+    });
+    const menu = await branchProducts.getStoreBranchMenu(h.client, 'sucursal-2');
+    expect(menu.items.find((p) => p.productId === 'cangreburger')?.available).toBe(false);
   });
 
   it('categorías (orden/visibilidad) afectan el menú público', async () => {

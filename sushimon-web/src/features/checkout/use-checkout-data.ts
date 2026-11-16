@@ -143,7 +143,9 @@ export function useCheckoutData() {
     (!!config && !!now && isScheduleValid(config.schedule, hours, when, now, closures));
 
   // ── Productos ───────────────────────────────────────────────────────────────────────────
-  const productsQuery = useProducts();
+  // F13: precio y disponibilidad de la sucursal ASIGNADA al pedido (en domicilio la decide la cobertura, que puede diferir de la
+  // elegida en el selector); sin sucursal asignada, ninguna (precios base).
+  const productsQuery = useProducts({ branchId });
   const rows = useMemo<CheckoutRow[]>(() => {
     const byId = new Map<string, Product>((productsQuery.data ?? []).map((p) => [p.id, p]));
     return cart.lines.flatMap((line, index) => {
@@ -151,12 +153,8 @@ export function useCheckoutData() {
       return product ? [{ line, index, product, subtotal: product.price * line.quantity }] : [];
     });
   }, [cart.lines, productsQuery.data]);
-  /** Disponibilidad en la sucursal asignada (o en alguna activa si aún no hay una). */
-  const availableHere = (p: Product) =>
-    branchId
-      ? (p.availability.find((a) => a.branchId === branchId)?.available ?? p.available)
-      : p.available;
-  const unavailable = rows.filter((r) => !availableHere(r.product));
+  /** Disponibilidad en la sucursal asignada (overlay F13 ya aplicado por `useProducts`). */
+  const unavailable = rows.filter((r) => !r.product.available);
   const prices = Object.fromEntries((productsQuery.data ?? []).map((p) => [p.id, p.price]));
   const subtotal = estimateSubtotal(
     rows.map((r) => r.line),
@@ -206,7 +204,6 @@ export function useCheckoutData() {
     scheduleValid,
     rows,
     unavailable,
-    availableHere,
     subtotal,
     units,
     shipping,

@@ -5,6 +5,7 @@ import { createHarness, type TestHarness } from '@/mocks/testing';
 import * as account from '@/services/account';
 import * as admin from '@/services/backoffice-admin';
 import * as bo from '@/services/backoffice-orders';
+import * as branchProducts from '@/services/branch-products';
 import * as coverage from '@/services/delivery-coverage';
 import * as categories from '@/services/categories';
 import * as favorites from '@/services/favorites';
@@ -129,7 +130,7 @@ const storeSteps: ((c: DataClient) => Promise<unknown>)[] = [
   (c) => store.listBranches(c),
   (c) => store.listCategories(c),
   (c) => products.listStoreProducts(c, { categorySlug: 'rolls', pageSize: 5 }),
-  (c) => products.listSimulatedProductExtras(c, 'sucursal-3'),
+  (c) => products.listSimulatedProductExtras(c),
   (c) => store.listPromotions(c),
   (c) =>
     coverage.checkDeliveryCoverage(c, {
@@ -315,6 +316,60 @@ describe('paridad mock ↔ http', () => {
     expect(y).toEqual(x);
     expect(x[0]).toMatchObject({ error: { status: 401 } });
     expect(x[1]).toHaveProperty('ok');
+  });
+
+  it('F13: precio y disponibilidad por sucursal (overlay, matrices, escrituras, 400/401/403/404/422/503) producen los mismos resultados y errores', async () => {
+    const p = pair();
+    for (const h of [p.mock, p.backend]) h.store.branchProductsBusy = 1;
+    const anon: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => branchProducts.getStoreBranchMenu(c, 'sucursal-2'),
+      (c) => branchProducts.getStoreBranchMenu(c, 'sucursal-4'), // 404 BRANCH_NOT_FOUND (inactiva)
+      (c) => branchProducts.listAdminBranchProducts(c, 'sucursal-1'), // 401
+    ];
+    expect(await run(anon, p.http)).toEqual(await run(anon, p.mock.client));
+
+    p.asStaff('manager');
+    const manager: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => branchProducts.listAdminBranchProducts(c, 'sucursal-1', { pageSize: 5 }),
+      (c) => branchProducts.listAdminBranchProducts(c, 'sucursal-2'), // 404 fuera de alcance
+      (c) => branchProducts.listAdminProductBranches(c, 'gaseosas'),
+      (c) => branchProducts.setAdminBranchProductPricing(c, 'sucursal-1', 'dumplings', '60.00'), // 403
+      (c) =>
+        branchProducts.setAdminProductAvailability(c, 'dumplings', {
+          branchId: 'sucursal-2',
+          available: false,
+        }), // 404
+    ];
+    expect(await run(manager, p.http)).toEqual(await run(manager, p.mock.client));
+
+    p.asStaff('admin');
+    const admin: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => branchProducts.listAdminProductBranches(c, 'dynamita-roll'),
+      (c) => branchProducts.listAdminBranchProducts(c, 'sucursal-2', { hasOverride: true }),
+      (c) => branchProducts.listAdminBranchProducts(c, 'sucursal-1', { pageSize: 101 }), // 400
+      (c) => branchProducts.listAdminProductBranches(c, 'no-existe'), // 404 PRODUCT_NOT_FOUND
+      (c) => branchProducts.setAdminBranchProductPricing(c, 'sucursal-1', 'dumplings', '60.00'), // 503 BRANCH_PRODUCTS_BUSY
+      (c) => branchProducts.setAdminBranchProductPricing(c, 'sucursal-1', 'dumplings', '60.00'),
+      (c) => branchProducts.setAdminBranchProductPricing(c, 'sucursal-1', 'dumplings', '60.00'), // idempotente
+      (c) => branchProducts.setAdminBranchProductPricing(c, 'sucursal-1', 'dumplings', '0.00'), // 422
+      (c) => branchProducts.setAdminBranchProductPricing(c, 'sucursal-1', 'dumplings', '85'), // 400
+      (c) => branchProducts.setAdminBranchProductPricing(c, 'zzz', 'dumplings', '60.00'), // 404 sucursal
+      (c) => branchProducts.setAdminBranchProductPricing(c, 'sucursal-1', 'zzz', '60.00'), // 404 producto
+      (c) =>
+        branchProducts.setAdminProductAvailability(c, 'dumplings', {
+          branchId: 'sucursal-1',
+          available: false,
+        }),
+      (c) => branchProducts.getStoreBranchMenu(c, 'sucursal-1'),
+      (c) => branchProducts.setAdminBranchProductPricing(c, 'sucursal-1', 'dumplings', null),
+      (c) =>
+        branchProducts.setAdminProductAvailability(c, 'dumplings', {
+          branchId: 'sucursal-1',
+          available: true,
+        }), // la fila vuelve al defecto
+      (c) => branchProducts.listAdminProductBranches(c, 'dumplings'),
+    ];
+    expect(await run(admin, p.http)).toEqual(await run(admin, p.mock.client));
   });
 
   it('F12: modificadores (grupos, opciones, reordenar, asociación, ficha pública, 400/401/403/404/409/422/503) producen los mismos resultados y errores', async () => {
@@ -639,9 +694,10 @@ describe('paridad mock ↔ http', () => {
       (c) => bo.listRiders(c),
       (c) => bo.listDeliveries(c, { from: '2026-11-10', to: '2026-11-11', provider: 'own' }),
       (c) =>
-        products.setSimulatedProductAvailability(c, 'gaseosas', [
-          { branchId: 'sucursal-1', available: false },
-        ]),
+        branchProducts.setAdminProductAvailability(c, 'gaseosas', {
+          branchId: 'sucursal-1',
+          available: false,
+        }),
       (c) => products.updateAdminProduct(c, 'gaseosas', { basePrice: '0.00' }),
       (c) => admin.getReportSummary(c, { from: '2026-11-01', to: '2026-11-11' }),
       (c) => admin.getReportHistory(c, { from: '2026-11-10' }),

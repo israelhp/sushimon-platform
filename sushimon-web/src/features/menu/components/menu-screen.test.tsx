@@ -114,7 +114,7 @@ describe('MenuScreen · pedido', () => {
 
 describe('MenuScreen · disponibilidad', () => {
   it('product-unavailable: rotula y no permite agregar los productos no disponibles', async () => {
-    await renderStore(<MenuScreen />, { scenario: 'product-unavailable' });
+    await renderStore(<MenuScreen />, { scenario: 'product-unavailable', branchId: 'sucursal-1' });
     await screen.findByRole('heading', { name: /^Entradas/ });
     expect(
       screen.queryByRole('button', { name: /Agregar Calientito Roll a tu pedido/ }),
@@ -122,7 +122,7 @@ describe('MenuScreen · disponibilidad', () => {
     expect(
       screen.queryByRole('button', { name: /Agregar Platanito Roll a tu pedido/ }),
     ).not.toBeInTheDocument();
-    expect(screen.getAllByText('No disponible por ahora').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText('Agotado').length).toBeGreaterThanOrEqual(2);
     // Los demás siguen disponibles.
     expect(
       screen.getAllByRole('button', { name: 'Agregar Dumplings a tu pedido' })[0],
@@ -360,5 +360,68 @@ describe('MenuScreen · búsqueda en el servidor (F11)', () => {
     expect(screen.queryByText('Gyoza Vegetal')).toBeNull();
     expect(screen.queryByText('Roll Edición Limitada')).toBeNull();
     expect(screen.getAllByText('Q53').length).toBeGreaterThan(0);
+  });
+});
+
+/** Texto de cada tarjeta/fila del menú que muestra el producto (puede aparecer en varias secciones). */
+const cardsOf = (name: string) =>
+  screen
+    .getAllByText(name)
+    .map((el) => (el.closest('article') ?? el.closest('button'))?.textContent ?? '');
+
+describe('MenuScreen · F13 precio y disponibilidad por sucursal', () => {
+  it('muestra el precio EFECTIVO de la sucursal elegida y lo cambia al cambiar de sucursal', async () => {
+    const view = await renderStore(<MenuScreen />, { branchId: 'sucursal-1' });
+    await screen.findByRole('region', { name: /^Sushi Rolls/ });
+    expect(cardsOf('Dynamita Roll').every((text) => text.includes('Q82'))).toBe(true);
+    // Sucursal 2 tiene precio especial Q86 para el mismo producto.
+    await act(async () => view.api().mode.update({ branchId: 'sucursal-2' }));
+    await waitFor(() =>
+      expect(cardsOf('Dynamita Roll').every((text) => text.includes('Q86'))).toBe(true),
+    );
+    expect(cardsOf('Dynamita Roll').some((text) => text.includes('Q82'))).toBe(false);
+  });
+
+  it('un producto agotado en la sucursal se rotula «Agotado» y su botón de agregar se deshabilita', async () => {
+    const view = await renderStore(<MenuScreen />, { branchId: 'sucursal-1' });
+    await screen.findByRole('heading', { name: /^Entradas/ });
+    expect(
+      screen.getAllByRole('button', { name: 'Agregar Gaseosas a tu pedido' })[0],
+    ).toBeEnabled();
+    await act(async () => view.api().mode.update({ branchId: 'sucursal-2' }));
+    const soldOut = await screen.findAllByRole('button', {
+      name: 'Gaseosas: agotado, no se puede agregar',
+    });
+    expect(soldOut[0]).toBeDisabled();
+    expect(
+      screen.queryByRole('button', { name: 'Agregar Gaseosas a tu pedido' }),
+    ).not.toBeInTheDocument();
+    expect(view.api().cart.lines).toEqual([]);
+  });
+
+  it('consulta el overlay de la sucursal elegida (GET /v1/store/menu?branchId=)', async () => {
+    const spy = createSpyClient();
+    await renderStore(<MenuScreen />, { branchId: 'sucursal-3', wrapClient: spy.wrap });
+    await screen.findByRole('heading', { name: /^Entradas/ });
+    const call = spy.calls.find((c) => c.path === '/v1/store/menu');
+    expect(call?.query).toMatchObject({ branchId: 'sucursal-3' });
+  });
+
+  it('sin sucursal elegida no pide el overlay y muestra el precio base', async () => {
+    const spy = createSpyClient();
+    await renderStore(<MenuScreen />, { wrapClient: spy.wrap });
+    await screen.findByRole('heading', { name: /^Entradas/ });
+    expect(spy.calls.some((c) => c.path === '/v1/store/menu')).toBe(false);
+  });
+
+  it('si el overlay falla muestra los precios base con aviso (el menú no se rompe) y permite reintentar', async () => {
+    const spy = createSpyClient();
+    const gate = spy.hold('GET', /\/v1\/store\/menu/);
+    await renderStore(<MenuScreen />, { branchId: 'sucursal-2', wrapClient: spy.wrap });
+    await waitFor(() => expect(gate.held()).toBe(true));
+    await act(async () => gate.fail(new ApiError(0, 'offline', 'sin conexión')));
+    expect(await screen.findByText(/No pudimos cargar los precios/)).toBeVisible();
+    await screen.findByRole('region', { name: /^Sushi Rolls/ });
+    expect(cardsOf('Dynamita Roll').every((text) => text.includes('Q82'))).toBe(true);
   });
 });

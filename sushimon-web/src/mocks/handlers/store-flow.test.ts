@@ -3,6 +3,7 @@ import { ApiError } from '@/lib/data-access/errors';
 import type { CreateOrderRequest, Order } from '@/lib/data-access/models';
 import * as orders from '@/services/orders';
 import { getBranchAvailability } from '@/services/branch-schedule';
+import * as branchProducts from '@/services/branch-products';
 import * as products from '@/services/products';
 import * as store from '@/services/store';
 import { createHarness } from '../testing';
@@ -75,10 +76,10 @@ describe('datos públicos', () => {
     expect(
       rolls.items.every((p) => ['rolls', 'rolls-frios', 'rolls-tempura'].includes(p.category.slug)),
     ).toBe(true);
-    const s3 = await products.listSimulatedProductExtras(client, 'sucursal-3');
+    const s3 = await branchProducts.getStoreBranchMenu(client, 'sucursal-3');
     expect(s3.items.find((p) => p.productId === 'joselito-roll')?.available).toBe(false);
     expect(s3.items.find((p) => p.productId === 'california-roll')?.available).toBe(true);
-    expect((await apiError(products.listSimulatedProductExtras(client, 'zzz'))).status).toBe(404);
+    expect((await apiError(branchProducts.getStoreBranchMenu(client, 'zzz'))).status).toBe(404);
   });
 
   it('promociones con estado calculado; promotion-expired las vence', async () => {

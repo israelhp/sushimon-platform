@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { PublicProduct } from '@/lib/data-access/models';
 import { withShortcuts } from '@/lib/data-access/types';
 import { createHarness } from '@/mocks/testing';
-import { loadCatalog, toCatalogProduct } from './catalog-product';
+import { getStoreBranchMenu } from '@/services/branch-products';
+import { applyBranchMenu, loadCatalog, toCatalogProduct } from './catalog-product';
 
 const pub: PublicProduct = {
   id: 'uuid-1',
@@ -34,21 +35,20 @@ describe('toCatalogProduct', () => {
     const drink = { ...pub, category: { id: 'c', slug: 'relax', name: 'Relax' } };
     expect(toCatalogProduct(drink)).toMatchObject({ illustration: 'shake', food: false });
   });
-  it('con extras simulados los usa (nombre en inglés, disponibilidad)', () => {
+  it('con extras simulados los usa (nombre en inglés, ilustración, destacado)', () => {
     const p = toCatalogProduct(pub, {
       productId: 'uuid-1',
       nameEn: 'Mon Roll',
       illustration: 'pizza',
       featured: true,
       food: true,
-      available: false,
-      availability: [{ branchId: 's1', available: false }],
     });
+    // La disponibilidad ya NO viene de los extras: es el overlay F13 (`applyBranchMenu`).
     expect(p).toMatchObject({
       nameEn: 'Mon Roll',
       illustration: 'pizza',
       featured: true,
-      available: false,
+      available: true,
     });
   });
 });
@@ -56,10 +56,11 @@ describe('toCatalogProduct', () => {
 describe('loadCatalog', () => {
   it('mock: todas las páginas de F11 + extras simulados por id', async () => {
     const h = createHarness();
-    const catalog = await loadCatalog(h.client, { branchId: 'sucursal-3' });
+    const catalog = await loadCatalog(h.client);
     expect(catalog).toHaveLength(29);
+    // El catálogo base no depende de la sucursal: precio base y «disponible» (el overlay F13 se aplica aparte).
     expect(catalog.find((p) => p.id === 'joselito-roll')).toMatchObject({
-      available: false,
+      available: true,
       price: 67,
       categoryId: 'cat-rolls',
       nameEn: undefined,
@@ -86,5 +87,29 @@ describe('loadCatalog', () => {
       return h.client.request(path, options);
     });
     expect(await loadCatalog(client)).toHaveLength(29);
+  });
+});
+
+describe('applyBranchMenu (overlay F13)', () => {
+  it('usa el precio EFECTIVO y la disponibilidad de la sucursal; sin overlay conserva el base', async () => {
+    const h = createHarness();
+    const catalog = await loadCatalog(h.client);
+    const s2 = applyBranchMenu(catalog, await getStoreBranchMenu(h.client, 'sucursal-2'));
+    const s1 = applyBranchMenu(catalog, await getStoreBranchMenu(h.client, 'sucursal-1'));
+    expect(s2.find((p) => p.id === 'dynamita-roll')).toMatchObject({
+      price: 86,
+      effectivePrice: '86.00',
+      basePrice: '82.00',
+      available: true,
+    });
+    expect(s1.find((p) => p.id === 'dynamita-roll')).toMatchObject({ price: 82 });
+    // Agotado en otra sucursal: visible pero no disponible; en la primera sigue disponible.
+    expect(s2.find((p) => p.id === 'gaseosas')?.available).toBe(false);
+    expect(s1.find((p) => p.id === 'gaseosas')?.available).toBe(true);
+    expect(catalog.find((p) => p.id === 'dynamita-roll')?.price).toBe(82);
+  });
+  it('un producto que el overlay no trae no se oferta', () => {
+    const base = toCatalogProduct(pub);
+    expect(applyBranchMenu([base], { branchId: 'b', items: [] })).toEqual([]);
   });
 });

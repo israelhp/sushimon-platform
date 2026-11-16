@@ -71,6 +71,18 @@ export function MenuScreen() {
             <EmptyState title={t('menu.emptyTitle')} description={t('menu.emptySub')} />
           ) : (
             <>
+              {products.overlayFailed ? (
+                <p role="status" className="notice notice-warn mb-4 mt-0">
+                  {t('menu.overlayFailed')}{' '}
+                  <button
+                    type="button"
+                    className="underline"
+                    onClick={() => void products.refetch()}
+                  >
+                    {t('ui.retry')}
+                  </button>
+                </p>
+              ) : null}
               <SearchInput
                 wrapperClassName="mb-4 max-w-[520px]"
                 label={t('menu.searchLabel')}

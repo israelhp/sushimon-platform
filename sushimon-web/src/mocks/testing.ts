@@ -62,3 +62,19 @@ export function createHarness(
     },
   };
 }
+
+/** F13: marca un producto como agotado en TODAS las sucursales activas (excepción por sucursal, como lo guardaría el servidor). */
+export function markSoldOutEverywhere(store: MockStore, productId: string): void {
+  for (const b of store.branches.filter((x) => x.status === 'active')) {
+    store.branchProducts = store.branchProducts.filter(
+      (r) => !(r.branchId === b.id && r.productId === productId),
+    );
+    store.branchProducts.push({
+      branchId: b.id,
+      productId,
+      priceOverride: null,
+      available: false,
+      updatedAt: '2026-11-01T12:00:00.000Z',
+    });
+  }
+}

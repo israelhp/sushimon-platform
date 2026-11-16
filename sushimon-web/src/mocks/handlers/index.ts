@@ -4,6 +4,7 @@ import * as account from './account';
 import * as admin from './backoffice-admin';
 import * as bo from './backoffice';
 import * as branches from './branches';
+import * as branchProducts from './branch-products';
 import * as categories from './categories';
 import * as delivery from './delivery';
 import * as favorites from './favorites';
@@ -32,6 +33,8 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   // F11: productos visibles y ficha por slug (contrato)
   'GET /v1/store/products': products.listStoreProducts,
   'GET /v1/store/products/:slug': products.getStoreProduct,
+  // F13: overlay público de precio efectivo y disponibilidad de una sucursal (contrato)
+  'GET /v1/store/menu': branchProducts.getStoreBranchMenu,
   'GET /v1/promotions': pub.listPromotions,
   'POST /v1/orders': orders.createOrder,
   'POST /v1/orders/lookup': orders.lookupOrder,
@@ -108,6 +111,12 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'POST /v1/admin/products': products.createAdminProduct,
   'GET /v1/admin/products/:id': products.getAdminProduct,
   'PATCH /v1/admin/products/:id': products.updateAdminProduct,
+  // F13: matrices administrativas y escrituras de precio/disponibilidad por sucursal (contrato)
+  'GET /v1/admin/branches/:id/products': branchProducts.listAdminBranchProducts,
+  'GET /v1/admin/products/:id/branches': branchProducts.listAdminProductBranches,
+  'PUT /v1/admin/branches/:id/products/:productId/pricing':
+    branchProducts.setAdminBranchProductPricing,
+  'PATCH /v1/admin/products/:id/availability': branchProducts.setAdminProductAvailability,
   // F12: grupos y opciones de modificadores y su asociación a productos (contrato)
   'GET /v1/admin/modifier-groups': modifiers.listAdminModifierGroups,
   'POST /v1/admin/modifier-groups': modifiers.createAdminModifierGroup,
@@ -136,9 +145,8 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
 
   // 🎭 Solo simulación
   'GET /v1/demo/branches/operations': branches.listBranchOperations,
-  // F12/F13/F15 SIMULADOS: lo que F11 no provee de cada producto
+  // F15/otros SIMULADOS: lo que F11 no provee de cada producto
   'GET /v1/demo/catalog/product-extras': products.listProductExtras,
-  'PATCH /v1/demo/catalog/products/:id/availability': products.setProductAvailability,
   'GET /v1/demo/delivery/pedidosya-coverage': delivery.getPedidosyaCoverageScenario,
   'PUT /v1/demo/delivery/pedidosya-coverage': delivery.setPedidosyaCoverageScenario,
   'POST /v1/demo/orders/:id/advance': orders.demoAdvanceOrder,

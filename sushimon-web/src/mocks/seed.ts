@@ -25,7 +25,12 @@ import { centsToPrice } from '@/lib/product-rules';
 import { event, totals } from './domain';
 import { rngFor } from './factories/random';
 import type { MockScenario } from './scenarios';
-import { MOCK_STORE_VERSION, type MockStore, type ProductRecord } from './store';
+import {
+  MOCK_STORE_VERSION,
+  type BranchProductRecord,
+  type MockStore,
+  type ProductRecord,
+} from './store';
 
 /**
  * Siembra determinista del MockStore para un escenario. La fecha base es la del reloj de la demo
@@ -41,10 +46,16 @@ import { MOCK_STORE_VERSION, type MockStore, type ProductRecord } from './store'
  */
 export const UNAVAILABLE_IN_SCENARIO = ['calientito-roll', 'platanito-roll'];
 
-/** Disponibilidad por sucursal del backoffice (p10 sin stock en s3, p16 sin stock en s2). */
+/** F13: agotados por sucursal (p10 sin stock en s3, p16 sin stock en s2). Sin fila = disponible. */
 const UNAVAILABLE_AT: Record<string, string[]> = {
   'joselito-roll': ['sucursal-3'],
   gaseosas: ['sucursal-2'],
+};
+
+/** F13: precio de sucursal distinto del base (producto → sucursal → precio efectivo). */
+const PRICE_OVERRIDE_AT: Record<string, Record<string, string>> = {
+  'dynamita-roll': { 'sucursal-2': '86.00' },
+  'cerveza-nacional': { 'sucursal-3': '35.00' },
 };
 
 const STATUS_OFFSETS: Record<string, number> = {
@@ -73,14 +84,34 @@ function buildProducts(scenario: MockScenario): ProductRecord[] {
       media: [],
       createdAt: PRODUCT_SEED_AT,
       updatedAt: PRODUCT_SEED_AT,
-      availability: BRANCH_SEEDS.filter((b) => b.status === 'active').map((b) => ({
-        branchId: b.id,
-        available:
-          !(UNAVAILABLE_AT[p.id] ?? []).includes(b.id) &&
-          !(scenario === 'product-unavailable' && UNAVAILABLE_IN_SCENARIO.includes(p.id)),
-      })),
     }),
   );
+}
+
+/** F13: excepciones de sucursal (solo filas no por defecto) a partir de los agotados y precios especiales sembrados. */
+function buildBranchProducts(
+  scenario: MockScenario,
+  products: ProductRecord[],
+): BranchProductRecord[] {
+  const rows: BranchProductRecord[] = [];
+  for (const p of products) {
+    for (const b of BRANCH_SEEDS.filter((x) => x.status === 'active')) {
+      const available =
+        !(UNAVAILABLE_AT[p.id] ?? []).includes(b.id) &&
+        !(scenario === 'product-unavailable' && UNAVAILABLE_IN_SCENARIO.includes(p.id));
+      const priceOverride = PRICE_OVERRIDE_AT[p.id]?.[b.id] ?? null;
+      if (!available || priceOverride !== null) {
+        rows.push({
+          branchId: b.id,
+          productId: p.id,
+          priceOverride,
+          available,
+          updatedAt: PRODUCT_SEED_AT,
+        });
+      }
+    }
+  }
+  return rows;
 }
 
 /** F12: grupos, opciones y asociaciones sembradas (escenario `empty`: sin ninguno). */
@@ -250,6 +281,7 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
   const base = new Date(DEMO_BASE_TIME);
   const today = localDate(base);
   const empty = scenario === 'empty';
+  const products = buildProducts(scenario);
 
   const branches = structuredClone(BRANCH_SEEDS);
   // F08: `branch-closed` = cierre extraordinario en curso en cada sucursal activa (lo decide el motor, no un booleano).
@@ -306,7 +338,8 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
     favoritesCatalog: 'available',
     categories: empty ? [] : structuredClone(CATEGORY_SEEDS),
     menuCategories: empty ? [] : structuredClone([...MENU_CATEGORY_SEEDS]),
-    products: buildProducts(scenario),
+    products,
+    branchProducts: buildBranchProducts(scenario, products),
     ...buildModifiers(scenario),
     promotions,
     orders,

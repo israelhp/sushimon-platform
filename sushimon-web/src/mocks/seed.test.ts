@@ -113,8 +113,9 @@ describe('createSeedStore', () => {
     expect(expired.promotions.every((p) => p.validTo < '2026-11-11')).toBe(true);
 
     const unavailable = createSeedStore('product-unavailable');
-    const cal = unavailable.products.find((p) => p.id === 'calientito-roll');
-    expect(cal?.availability.every((a) => !a.available)).toBe(true);
+    const soldOut = unavailable.branchProducts.filter((r) => r.productId === 'calientito-roll');
+    expect(soldOut.length).toBe(unavailable.branches.filter((b) => b.status === 'active').length);
+    expect(soldOut.every((r) => !r.available)).toBe(true);
 
     const pending = createSeedStore('order-pending');
     expect(pending.orders.find((o) => o.id === 'MON-490217')?.payment.status).toBe('review');

@@ -84,6 +84,31 @@ describe('paths', () => {
     }
   });
 
+  it('F13: rutas de precio y disponibilidad por sucursal; la demo de disponibilidad se retiró', () => {
+    expect(paths.storeMenu()).toBe('/v1/store/menu');
+    expect(paths.adminBranchProducts('b 1')).toBe('/v1/admin/branches/b%201/products');
+    expect(paths.adminBranchProductPricing('b1', 'p1')).toBe(
+      '/v1/admin/branches/b1/products/p1/pricing',
+    );
+    expect(paths.adminProductBranches('p1')).toBe('/v1/admin/products/p1/branches');
+    expect(paths.adminProductAvailability('p1')).toBe('/v1/admin/products/p1/availability');
+    expect(Object.keys(mockRoutes)).not.toContain(
+      'PATCH /v1/demo/catalog/products/:id/availability',
+    );
+    expect('demoProductAvailability' in paths).toBe(false);
+    // Los extras simulados siguen (ilustración, destacado, textos en inglés).
+    expect(paths.demoProductExtras()).toBe('/v1/demo/catalog/product-extras');
+    for (const key of [
+      'GET /v1/store/menu',
+      'GET /v1/admin/branches/:id/products',
+      'GET /v1/admin/products/:id/branches',
+      'PUT /v1/admin/branches/:id/products/:productId/pricing',
+      'PATCH /v1/admin/products/:id/availability',
+    ]) {
+      expect(Object.keys(mockRoutes)).toContain(key);
+    }
+  });
+
   it('todas las rutas del documento de endpoints previstos están en el mock', () => {
     const doc = readFileSync(
       join(__dirname, '../../../../docs/contracts/planned-endpoints.md'),
@@ -98,6 +123,9 @@ describe('paths', () => {
       // F11: los sustituyen `/v1/store/products` y `/v1/admin/products`; lo no cubierto (disponibilidad F13) vive en `/v1/demo/catalog/*`.
       '/v1/catalog/products',
       '/v1/backoffice/products',
+      // F13: la sustituyen `GET /v1/store/menu`, `/v1/admin/branches/{id}/products`, `/v1/admin/products/{id}/branches`,
+      // `PUT …/pricing` y `PATCH /v1/admin/products/{id}/availability`; la ruta demo se RETIRÓ del mock.
+      '/v1/demo/catalog/products/:id/availability',
     ]);
     const documented = [...doc.matchAll(/`(\/v1\/[^`?\s[]+)/g)]
       .map((m) => (m[1] ?? '').replace(/\{(\w+)\}/g, 'X'))

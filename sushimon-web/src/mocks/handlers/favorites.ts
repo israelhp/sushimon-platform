@@ -4,7 +4,7 @@ import type {
   FavoriteProductStatus,
   FavoriteProductSummary,
 } from '@/lib/data-access/models';
-import { badRequest, failCode } from '../domain';
+import { availableAt, badRequest, failCode } from '../domain';
 import type { FavoriteRecord, MockStore, ProductRecord } from '../store';
 import { isProductVisible } from './products';
 import { now, requireCustomer, type Handler, type Req } from './shared';
@@ -38,7 +38,7 @@ function statusOf(store: MockStore, productId: string): FavoriteProductStatus {
   const product = store.products.find((p) => p.id === productId);
   if (!product) return 'REMOVED';
   if (!isProductVisible(store, product)) return 'INACTIVE';
-  return product.availability.some((a) => a.available) ? 'ACTIVE' : 'UNAVAILABLE';
+  return availableAt(store, product, undefined) ? 'ACTIVE' : 'UNAVAILABLE';
 }
 
 /** Resumen público MÍNIMO (lista blanca): sin precio, disponibilidad, descripción ni banderas internas. */

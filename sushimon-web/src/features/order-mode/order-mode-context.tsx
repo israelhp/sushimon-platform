@@ -15,6 +15,11 @@ const modeStore = createPersistedStore<OrderMode>({
   parse: parseOrderMode,
 });
 
+/** Solo para pruebas: fija el modo persistido ANTES de montar (evita que el estado de una prueba anterior dispare consultas). */
+export function writeOrderModeForTests(next: OrderMode): void {
+  modeStore.set(next);
+}
+
 export interface OrderModeApi {
   mode: OrderMode;
   /** true si el cliente ya eligió recoger o domicilio. */
@@ -46,4 +51,9 @@ export function useOrderMode(): OrderModeApi {
   const ctx = useContext(OrderModeContext);
   if (!ctx) throw new Error('useOrderMode debe usarse dentro de <OrderModeProvider>');
   return ctx;
+}
+
+/** Como `useOrderMode`, pero `null` fuera del proveedor (hooks de datos que también corren en pruebas o fuera de la tienda). */
+export function useOptionalOrderMode(): OrderModeApi | null {
+  return useContext(OrderModeContext);
 }

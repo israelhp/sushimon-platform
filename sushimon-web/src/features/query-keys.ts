@@ -8,6 +8,7 @@ import type { ClosureFilters } from '@/services/branch-schedule';
 import type { AdminStaffFilters } from '@/services/staff';
 import type { CategoryFilters } from '@/services/categories';
 import type { ModifierGroupFilters } from '@/services/modifiers';
+import type { BranchProductFilters } from '@/services/branch-products';
 
 /**
  * Claves de TanStack Query centralizadas. Jerárquicas para invalidar por prefijo
@@ -102,6 +103,22 @@ export const queryKeys = {
     groups: (filters: ModifierGroupFilters = {}) => ['modifiers', 'groups', filters] as const,
     group: (id: string) => ['modifiers', 'group', id] as const,
     product: (productId: string) => ['modifiers', 'product', productId] as const,
+  },
+  /**
+   * F13 (spec 014 D5): overlay PÚBLICO de precio efectivo y disponibilidad por sucursal (`['store-menu', branchId]`). La caché HTTP
+   * dura ≤ 15 s: `staleTime` ≤ 15 s + invalidación al cambiar de sucursal, al volver al foco y tras cada cambio en el backoffice.
+   */
+  storeMenu: {
+    all: ['store-menu'] as const,
+    branch: (branchId: string) => ['store-menu', branchId] as const,
+  },
+  /** F13: matrices ADMIN. `byBranch` = por sucursal (con filtros); `byProduct` = por producto. Toda mutación invalida `all`. */
+  branchProducts: {
+    all: ['branch-products'] as const,
+    branchLists: (branchId: string) => ['branch-products', 'branch', branchId] as const,
+    byBranch: (branchId: string, filters: BranchProductFilters = {}) =>
+      ['branch-products', 'branch', branchId, filters] as const,
+    byProduct: (productId: string) => ['branch-products', 'product', productId] as const,
   },
   catalog: {
     all: ['catalog'] as const,

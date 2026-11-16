@@ -65,7 +65,7 @@ export function ProductListItem({
           <span className="mt-1 flex items-baseline gap-2">
             <span className="font-display text-[15px]">{money(product.price)}</span>
             {!product.available ? (
-              <span className="text-[12px] font-bold text-danger">{t('fav.unavailable')}</span>
+              <span className="text-[12px] font-bold text-danger">{t('product.soldOut')}</span>
             ) : null}
           </span>
         </span>
