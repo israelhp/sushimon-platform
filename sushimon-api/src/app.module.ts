@@ -21,6 +21,7 @@ import { MediaModule } from './media/media.module.js';
 import { ProductsModule } from './products/products.module.js';
 import { ModifiersModule } from './modifiers/modifiers.module.js';
 import { BranchProductsModule } from './branch-products/branch-products.module.js';
+import { PromotionsModule } from './promotions/promotions.module.js';
 import { BranchesModule } from './branches/branches.module.js';
 import { StaffModule } from './staff/staff.module.js';
 import { CustomersModule } from './customers/customers.module.js';
@@ -63,6 +64,7 @@ import { HealthTokenGuard } from './health/health-token.guard.js';
     ProductsModule,
     ModifiersModule,
     BranchProductsModule,
+    PromotionsModule,
     BranchScheduleModule,
     LocationsModule,
     DeliveryCoverageModule,

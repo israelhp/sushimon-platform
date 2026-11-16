@@ -207,6 +207,25 @@ describe('Arquitectura: toda ruta /v1/admin exige StaffGuard y MfaGuard', () => 
     }
   });
 
+  it('las 5 rutas admin de promociones (F15) están registradas y protegidas', async () => {
+    const { moduleRef, controllers, StaffGuard, MfaGuard } = await loadApp();
+    try {
+      const routes = adminRoutes(controllers).filter((r) =>
+        r.label.startsWith('AdminPromotionsController.'),
+      );
+      expect(routes.map((r) => r.label).sort()).toEqual([
+        'AdminPromotionsController.create (/admin/promotions)',
+        'AdminPromotionsController.get (/admin/promotions/:id)',
+        'AdminPromotionsController.list (/admin/promotions)',
+        'AdminPromotionsController.update (/admin/promotions/:id)',
+        'AdminPromotionsController.updateStatus (/admin/promotions/:id/status)',
+      ]);
+      expect(violations(routes, StaffGuard, MfaGuard)).toEqual([]);
+    } finally {
+      await moduleRef.close();
+    }
+  });
+
   it('prueba negativa: una ruta admin sin @RequireStaff se detecta', async () => {
     const { moduleRef, StaffGuard, MfaGuard } = await loadApp();
     try {
