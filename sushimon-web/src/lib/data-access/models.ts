@@ -136,9 +136,26 @@ export type AdminProductBranchRow = S['AdminProductBranchRow'];
 export type AdminProductBranches = S['AdminProductBranches'];
 export type SetBranchProductPricingRequest = S['SetBranchProductPricingRequest'];
 export type SetProductAvailabilityRequest = S['SetProductAvailabilityRequest'];
-export type Promotion = S['Promotion'];
-export type PromotionInput = S['PromotionInput'];
-export type HappyHourItem = S['HappyHourItem'];
+/**
+ * F15 (contrato): promociones, cupones y Happy Hour. Público = solo informativo (`StorePromotion`: nunca `code`; un cupón sale con
+ * `requiresCode=true` y sin descuento). Administración = `AdminPromotion*` (con `code`, `version` y `editable`). Los borradores
+ * `Promotion`/`PromotionInput`/`HappyHourItem` (2x1, precio especial) quedaron RETIRADOS del uso (P15).
+ */
+export type PromotionKind = S['PromotionKind'];
+export type PromotionScope = S['PromotionScope'];
+export type PromotionDecimal = S['PromotionDecimal'];
+export type PromotionScheduleSlot = S['PromotionScheduleSlot'];
+export type StorePromotion = S['StorePromotion'];
+export type StorePromotionItem = S['StorePromotionItem'];
+export type StorePromotionList = S['StorePromotionList'];
+export type AdminPromotionSummary = S['AdminPromotionSummary'];
+export type AdminPromotion = S['AdminPromotion'];
+export type AdminPromotionPage = S['AdminPromotionPage'];
+export type AdminPromotionBranchRef = S['AdminPromotionBranchRef'];
+export type AdminPromotionProductRef = S['AdminPromotionProductRef'];
+export type CreatePromotionRequest = S['CreatePromotionRequest'];
+export type UpdatePromotionRequest = S['UpdatePromotionRequest'];
+export type UpdatePromotionStatusRequest = S['UpdatePromotionStatusRequest'];
 export type OrderStatus = S['OrderStatus'];
 export type PaymentStatus = S['PaymentStatus'];
 export type PaymentMethod = S['PaymentMethod'];

@@ -27,7 +27,8 @@ export const paths = {
   storeMenu: () => '/v1/store/menu',
   /** LEGACY (mock previo a F10): categorías planas del catálogo simulado (Happy Hour y reportes). */
   categories: () => '/v1/catalog/categories',
-  promotions: () => '/v1/promotions',
+  /** F15 (contrato): promociones y Happy Hour vigentes o próximas de UNA sucursal (`?branchId=&state=live|upcoming`). Público, informativo. */
+  storePromotions: () => '/v1/store/promotions',
   orders: () => '/v1/orders',
   order: (id: string) => `/v1/orders/${seg(id)}`,
   orderLookup: () => '/v1/orders/lookup',
@@ -59,8 +60,10 @@ export const paths = {
   riders: () => '/v1/backoffice/riders',
   boCategories: () => '/v1/backoffice/categories',
   boCategory: (id: string) => `/v1/backoffice/categories/${seg(id)}`,
-  boPromotions: () => '/v1/backoffice/promotions',
-  boPromotion: (id: string) => `/v1/backoffice/promotions/${seg(id)}`,
+  /** F15 (contrato): promociones y cupones (`promotions.read|create|update` + aal2; escritura exige cubrir todas sus sucursales). Sin borrado. */
+  adminPromotions: () => '/v1/admin/promotions',
+  adminPromotion: (id: string) => `/v1/admin/promotions/${seg(id)}`,
+  adminPromotionStatus: (id: string) => `/v1/admin/promotions/${seg(id)}/status`,
   /** F07 (contrato): administración de sucursales (JWT + `branches.*` + aal2). */
   adminBranches: () => '/v1/admin/branches',
   adminBranch: (id: string) => `/v1/admin/branches/${seg(id)}`,

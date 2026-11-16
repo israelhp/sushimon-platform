@@ -298,32 +298,6 @@ describe('catálogo y administración', () => {
     const list = await products.listAllStoreProducts(h.client);
     expect(list.some((p) => p.category.slug === 'postres')).toBe(false);
   });
-
-  it('promociones: validación y alta', async () => {
-    const h = createHarness();
-    h.asStaff('admin');
-    const base = {
-      name: 'Jueves sake',
-      kind: 'percent' as const,
-      value: 15,
-      daysOfWeek: [4],
-      startTime: '18:00',
-      endTime: '22:00',
-      validFrom: '2026-11-01',
-      validTo: '2026-12-31',
-    };
-    expect(await admin.createPromotion(h.client, base)).toMatchObject({
-      id: 'promo-1',
-      status: 'current',
-      description: '15 % de descuento.',
-    });
-    expect(await status(admin.createPromotion(h.client, { ...base, daysOfWeek: [] }))).toBe(400);
-    expect(await status(admin.createPromotion(h.client, { ...base, value: 0 }))).toBe(400);
-    const off = await admin.updatePromotion(h.client, 'happy-hour', { active: false });
-    expect(off.status).toBe('inactive');
-    h.asStaff('manager');
-    expect(await status(admin.listBoPromotions(h.client))).toBe(403);
-  });
 });
 
 describe('reportes', () => {

@@ -17,7 +17,7 @@ import type { BranchHoursDay } from '@/lib/data-access/models';
 import type { CategoryRecord } from './fixtures/categories';
 import type { ClosureRecord } from './fixtures/schedule';
 import type { DeliverySettingsRecord } from './fixtures/delivery';
-import type { PromotionSeed } from './fixtures/promotions';
+import type { PromotionRecord } from './fixtures/promotions';
 import type { RiderSeed } from './fixtures/staff';
 import type { Clock } from './clock';
 import type { MockScenario } from './scenarios';
@@ -28,7 +28,7 @@ import type { MockScenario } from './scenarios';
  * el historial de días anteriores lo genera `factories/history.ts` de forma determinista.
  * NUNCA contiene PAN completo, CVV ni PIN: de una tarjeta solo marca, últimos 4 y referencia.
  */
-export const MOCK_STORE_VERSION = 11;
+export const MOCK_STORE_VERSION = 12;
 
 /**
  * Producto del mock. Los campos F11 (`id`…`updatedAt`) reproducen `app.products` + `app.product_media`; el bloque «SIMULADO»
@@ -209,6 +209,8 @@ export interface MockStore {
    * modificadores (grupos, opciones, reordenar, asociar a producto) que fallarán con 503 antes de que una funcione.
    */
   modifiersBusy?: number;
+  /** F15: simulación DETERMINISTA de `PROMOTIONS_BUSY`: nº de escrituras de promociones que fallarán con 503 antes de que una funcione. */
+  promotionsBusy?: number;
   /**
    * F02: simula que el reinicio de MFA no está disponible (falta la clave de servicio del servidor ⇒ 503
    * `MFA_RESET_UNAVAILABLE`). Opcional: ausente/false = disponible. Solo existe en el mock.
@@ -228,7 +230,8 @@ export interface MockStore {
   modifiers: ModifierRecord[];
   /** F12: id de producto → ids de grupos asociados, en orden de asociación (máx. 10). */
   productModifierGroups: Record<string, string[]>;
-  promotions: PromotionSeed[];
+  /** F15: promociones y cupones (alcance explícito, `version` para concurrencia optimista). */
+  promotions: PromotionRecord[];
   orders: Order[];
   staff: StaffRecord[];
   roles: RoleRecord[];

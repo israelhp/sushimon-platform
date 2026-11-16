@@ -1701,6 +1701,128 @@ export interface paths {
         patch: operations["updateAdminProductMedia"];
         trace?: never;
     };
+    "/v1/store/promotions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Promociones y Happy Hour vigentes o próximas de una sucursal (público, solo informativo)
+         * @description F15. Sin autenticación. `branchId` obligatorio (sucursal ACTIVA; inexistente o inactiva => 404 `BRANCH_NOT_FOUND`, sin distinguir). `state`: `live` (por defecto; vigente AHORA: `active`,
+         *     `validFrom <= ahora < validUntil` y, si hay `schedule`, el instante local de `America/Guatemala` cae en algún tramo `[startsAt, endsAt)` de su día ISO) o `upcoming` (activa, NO vigente
+         *     ahora y con un próximo inicio dentro de los próximos 14 días, sea por `validFrom` futuro o por el siguiente tramo semanal; las vigentes ahora se excluyen aunque tengan otro tramo futuro). Solo promociones que aplican a esa sucursal (las de «todas las sucursales» incluidas).
+         *     El horario de apertura de la sucursal (F08) NO interviene: una promoción puede estar `live` con la sucursal cerrada; F19 valida ambos.
+         *     Datos públicos únicamente: NUNCA se devuelve el código de un cupón; una promoción con código sale con `requiresCode=true` y SIN `kind`, `value`, `productIds` ni `items` (no se revela el
+         *     descuento de un cupón por esta vía). `isHappyHour` = promoción automática con `schedule` no vacío (derivado; no hay columna). `items` (solo promociones automáticas con productos
+         *     seleccionados, máx. 50): precio regular y precio promocional INDICATIVO calculados en el servidor con el mismo evaluador que usará F19 (cantidad 1, precio de la sucursal de F13,
+         *     solo productos visibles y disponibles, esa promoción por sí sola, sin cupón ni otras promociones); NO es una cotización: el total definitivo lo fija F19/F20 en el servidor y puede diferir.
+         *     `dineInOnly=true` significa «solo consumo en el local»: nunca aplica a pedidos de recojo o entrega. Máx. 100 promociones (primero `live`, luego por `validFrom`, `id`); `truncated`
+         *     indica si se recortó. Caché compartida acotada por el próximo cambio de estado: `Cache-Control: public, max-age=min(N,5), s-maxage=N` con `N = clamp(segundos enteros hasta nextChangeAt, 1, 30)` (el navegador cachea como máximo 5 s; la caché compartida hasta N)
+         *     (`no-store` si `nextChangeAt` ya pasó), sin `stale-while-revalidate` ni `ETag` (la respuesta no lleva cabecera `ETag`); una edición del backoffice puede tardar hasta 30 s en verse en público (F19 revalida al cotizar); `Vary` solo `Accept-Encoding` (la respuesta no depende de cookies ni de `Authorization`). Los errores llevan
+         *     `no-store`. Límite de tasa propio (60/min por IP).
+         */
+        get: operations["listStorePromotions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/promotions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Promociones del backoffice (paginado, con filtros)
+         * @description F15. Exige `promotions.read` y `aal2`. Alcance por sucursal: con alcance global ve todas; con alcance acotado solo las que aplican a alguna de sus sucursales (incluidas las de «todas las
+         *     sucursales»), con `branchIds` recortado a su alcance y `editable=false` si no cubre todas las sucursales de la promoción. Filtros: `branchId` (promociones que aplican a esa sucursal;
+         *     fuera de alcance o inexistente => 404 `BRANCH_NOT_FOUND`), `status` (`active` = `active=true`; `inactive`; `scheduled` = activa y aún no empieza; `running` = activa y dentro de
+         *     `[startsAt, endsAt)` (sin mirar el horario semanal; ver `liveNow`); `expired` = activa y ya terminó; el ciclo de vida usa precedencia inactive > expired > scheduled > running), `kind`,
+         *     `from`/`to` (instantes; promociones cuyo `[startsAt, endsAt)` se solapa con `[from, to)`), `q` (nombre o código; contiene, sin distinguir mayúsculas ni acentos; comodines literales; máx. 80).
+         *     Orden por defecto `startsAt` descendente, `id`; `id` desempata siempre. Una consulta para la página + una para sus sucursales (sin N+1). Respuesta `Cache-Control: no-store`.
+         */
+        get: operations["listAdminPromotions"];
+        put?: never;
+        /**
+         * Crea una promoción o cupón
+         * @description F15. Exige `promotions.create` y `aal2`. Alcance: `branchScope=ALL` exige alcance GLOBAL del permiso (si no, 403 `PROMOTION_SCOPE_FORBIDDEN`); `SELECTED` exige que TODAS las `branchIds`
+         *     estén dentro del alcance (una sucursal inexistente o fuera de alcance => 404 `BRANCH_NOT_FOUND`, sin distinguir). `productScope` es explícito: `ALL` (todos los productos; `productIds`
+         *     debe omitirse o venir vacío; si no, 400) o `SELECTED` (1..200 productos existentes; si no, 422 `PROMOTION_SCOPE_INVALID` con `violations` por `productIds[i]`). `code` (opcional; `null` u omitido
+         *     = promoción AUTOMÁTICA; con valor = CUPÓN) se normaliza (recorta espacios y pasa a mayúsculas); único sin distinguir mayúsculas => 409 `PROMOTION_CODE_TAKEN`. `kind` `PERCENT`
+         *     (`0 < value <= 100`) o `FIXED_AMOUNT` (monto en GTQ POR UNIDAD, `0 < value <= 999999.99`); otro `value` bien formado pero fuera de rango => 422 `PROMOTION_VALUE_INVALID`.
+         *     `startsAt`/`endsAt` son instantes con zona; `endsAt > startsAt` (si no, 422 `PROMOTION_PERIOD_INVALID`). `schedule` (opcional; vacío u omitido = todos los días y todo el día dentro de la
+         *     vigencia): tramos semanales `[startsAt, endsAt)` en hora local de `America/Guatemala`, `weekday` ISO 1..7, sin cruzar la medianoche (se parten en dos días; `endsAt` puede ser `24:00`),
+         *     sin solaparse en el mismo día y <= 6 por día; más de 42 tramos en total => 400 (`maxItems`); reglas de negocio (`SLOT_ENDS_BEFORE_START`, `SLOT_OVERLAP`, `SLOT_LIMIT` por día) => 422 `PROMOTION_SCHEDULE_INVALID` con `violations`. `dineInOnly` por defecto `false`; `active` por defecto
+         *     `true`. Nace con `version=1`. Se audita `promotion.created` en la misma transacción (sin PII). Respuesta `no-store`.
+         */
+        post: operations["createAdminPromotion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/promotions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detalle administrativo de una promoción
+         * @description F15. Exige `promotions.read` y `aal2`. Inexistente o que no aplica a ninguna sucursal del alcance del actor => 404 `PROMOTION_NOT_FOUND` (no se distingue). Incluye el código del cupón
+         *     (solo el personal con permiso lo ve), productos con nombre, tramos y `version`. Respuesta `Cache-Control: no-store`.
+         */
+        get: operations["getAdminPromotion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edita una promoción (parcial, con concurrencia optimista)
+         * @description F15. Exige `promotions.update` y `aal2`. `expectedVersion` es OBLIGATORIO y debe coincidir con `version`; si no, 409 `PROMOTION_VERSION_CONFLICT` sin guardar. Parcial: además de
+         *     `expectedVersion` al menos un campo entre `name`, `description`, `code` (`null` la convierte en automática), `kind`, `value`, `startsAt`, `endsAt`, `dineInOnly`, `branchScope`/`branchIds`,
+         *     `productScope`/`productIds`, `schedule` (reemplaza TODOS los tramos; `[]` = sin restricción semanal); `active` NO se acepta (usa `PATCH .../status`). Las reglas de `POST` se
+         *     validan sobre el estado RESULTANTE (p. ej. cambiar `kind` a `PERCENT` revalida `value`). Alcance: el actor debe cubrir TODAS las sucursales de la promoción, tanto las actuales como las
+         *     nuevas (`ALL` exige alcance global); una promoción que no toca su alcance => 404 `PROMOTION_NOT_FOUND`; que la toca pero no la cubre entera => 403 `PROMOTION_SCOPE_FORBIDDEN`. Si
+         *     ningún valor cambia responde 200 sin escribir, sin subir `version` y sin auditar. Un cambio real sube `version` en 1 y audita `promotion.updated` (old/new solo de lo cambiado) en la misma
+         *     transacción. Editar una promoción en curso rige de inmediato en el servidor (la caché pública puede tardar hasta 30 s). Respuesta `no-store`.
+         */
+        patch: operations["updateAdminPromotion"];
+        trace?: never;
+    };
+    "/v1/admin/promotions/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Activa o desactiva una promoción (no hay borrado físico)
+         * @description F15. Exige `promotions.update` con las mismas reglas de alcance que `PATCH /v1/admin/promotions/{id}` (404 `PROMOTION_NOT_FOUND` si no la toca; 403 `PROMOTION_SCOPE_FORBIDDEN` si no la
+         *     cubre entera). Establece `active` con valor explícito: idempotente (si ya tiene ese valor => 200 sin escribir ni auditar); no usa `expectedVersion` (el último valor gana). Un cambio real
+         *     sube `version` y audita `promotion.status_changed` (`oldActive`/`newActive`, `reason` opcional <= 200 sin PII) en la misma transacción. Desactivar NO borra la promoción ni afecta a pedidos ya creados:
+         *     solo deja de ofrecerse y de evaluarse. Reactivar una ya vencida es válido (sigue vencida). Respuesta `no-store`.
+         */
+        patch: operations["updateAdminPromotionStatus"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2096,7 +2218,7 @@ export interface components {
             details?: string[];
             /**
              * @description Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable)). Los clientes deben ramificar por `code`, nunca por `message`.
+             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable)). Los clientes deben ramificar por `code`, nunca por `message`.
              */
             code?: string;
             /** @description Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09). */
@@ -2397,58 +2519,6 @@ export interface components {
             /** @description Disponible en la sucursal pedida (o en alguna sucursal activa si no se indica). */
             available: boolean;
             availability: components["schemas"]["DraftBranchAvailability"][];
-        };
-        HappyHourItem: {
-            id: string;
-            name: string;
-            nameEn?: string;
-            priceLabel: string;
-            group: string;
-            illustration: string;
-        };
-        Promotion: {
-            id: string;
-            name: string;
-            description: string;
-            /** @enum {string} */
-            kind: "2x1" | "percent" | "fixed_price";
-            /** @description 0 para 2x1; porcentaje; o precio especial en GTQ. */
-            value: number;
-            /** @description Días ISO (1 = lunes … 7 = domingo). */
-            daysOfWeek: number[];
-            /** @example 15:00 */
-            startTime: string;
-            /** @example 18:00 */
-            endTime: string;
-            /** Format: date */
-            validFrom: string;
-            /** Format: date */
-            validTo: string;
-            active: boolean;
-            /**
-             * @description Calculado con la fecha del servidor.
-             * @enum {string}
-             */
-            status: "current" | "scheduled" | "expired" | "inactive";
-            dineInOnly: boolean;
-            subtitle?: components["schemas"]["LocalizedText"];
-            conditions?: components["schemas"]["LocalizedText"];
-            items: components["schemas"]["HappyHourItem"][];
-        };
-        PromotionInput: {
-            name: string;
-            description?: string;
-            /** @enum {string} */
-            kind: "2x1" | "percent" | "fixed_price";
-            value: number;
-            daysOfWeek: number[];
-            startTime: string;
-            endTime: string;
-            /** Format: date */
-            validFrom: string;
-            /** Format: date */
-            validTo: string;
-            active?: boolean;
         };
         /** @enum {string} */
         OrderStatus: "received" | "accepted" | "preparing" | "ready" | "on_the_way" | "delivered" | "rejected" | "cancelled";
@@ -3556,9 +3626,219 @@ export interface components {
         AdminProductMediaList: {
             items: components["schemas"]["AdminProductMedia"][];
         };
+        /**
+         * @description `PERCENT`: porcentaje de descuento sobre el precio de la línea (`value` 0 < v <= 100). `FIXED_AMOUNT`: monto fijo en GTQ descontado POR UNIDAD (`value` > 0), sin superar nunca el precio
+         *     de la unidad. Las modalidades `2x1` y «precio especial» del prototipo NO existen en F15 (decisión de negocio P15).
+         * @enum {string}
+         */
+        PromotionKind: "PERCENT" | "FIXED_AMOUNT";
+        /** @enum {string} */
+        PromotionScope: "ALL" | "SELECTED";
+        /**
+         * @description Número decimal como CADENA con 2 decimales (porcentaje o importe en GTQ según `kind`); nunca `number`.
+         * @example 15.00
+         */
+        PromotionDecimal: string;
+        PromotionScheduleSlot: {
+            /** @description Día ISO (1 = lunes … 7 = domingo). Nunca `Date.getDay()`. Es el día de la hora LOCAL de `America/Guatemala`. */
+            weekday: number;
+            /**
+             * @description Hora local `HH:mm`, inclusiva.
+             * @example 15:00
+             */
+            startsAt: string;
+            /**
+             * @description Hora local `HH:mm` o `24:00`, exclusiva; debe ser mayor que `startsAt` (no se cruza la medianoche: parte el tramo en dos días).
+             * @example 18:00
+             */
+            endsAt: string;
+        };
+        StorePromotionItem: {
+            /** Format: uuid */
+            productId: string;
+            regularPrice: components["schemas"]["ProductPrice"];
+            promoPrice: components["schemas"]["ProductPrice"];
+        };
+        StorePromotion: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            description: string | null;
+            /** @description `true` = cupón: nunca se devuelve el código ni el descuento. */
+            requiresCode: boolean;
+            /** @description Promoción automática con horario semanal (derivado de `schedule`). */
+            isHappyHour: boolean;
+            /** @description Solo consumo en el local; nunca aplica a recojo ni entrega. */
+            dineInOnly: boolean;
+            /** @enum {string} */
+            state: "live" | "upcoming";
+            /** @description Ausente si `requiresCode`. */
+            kind?: components["schemas"]["PromotionKind"];
+            /** @description Ausente si `requiresCode`. */
+            value?: components["schemas"]["PromotionDecimal"];
+            /**
+             * Format: date-time
+             * @description Inicio de vigencia (inclusivo), instante con zona.
+             */
+            validFrom: string;
+            /**
+             * Format: date-time
+             * @description Fin de vigencia (EXCLUSIVO), instante con zona.
+             */
+            validUntil: string;
+            /** @description Tramos semanales locales; vacío = todos los días y todo el día dentro de la vigencia. */
+            schedule: components["schemas"]["PromotionScheduleSlot"][];
+            /**
+             * Format: date-time
+             * @description Próximo instante en que pasa a regir (si `upcoming`) o vuelve a regir tras terminar el tramo actual; `null` si no hay en 14 días.
+             */
+            nextStartsAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Próximo instante en que deja de regir (si `live`; tramos contiguos fusionados); `null` si no hay.
+             */
+            nextEndsAt?: string | null;
+            productScope: components["schemas"]["PromotionScope"];
+            /** @description Solo si `productScope=SELECTED` y no `requiresCode`. */
+            productIds?: string[];
+            /** @description Precios INDICATIVOS calculados por el servidor (ver la operación). Solo promociones automáticas con productos seleccionados. */
+            items?: components["schemas"]["StorePromotionItem"][];
+        };
+        StorePromotionList: {
+            /** Format: uuid */
+            branchId: string;
+            /**
+             * Format: date-time
+             * @description Hora del servidor al generar la respuesta (puede estar en caché hasta 30 s).
+             */
+            generatedAt: string;
+            /**
+             * Format: date-time
+             * @description Próximo instante (en 14 días) en que cambia el conjunto de promociones vigentes de la sucursal; `null` si no hay. Acota `max-age`.
+             */
+            nextChangeAt: string | null;
+            truncated: boolean;
+            items: components["schemas"]["StorePromotion"][];
+        };
+        AdminPromotionBranchRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        AdminPromotionProductRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            slug: string;
+        };
+        AdminPromotionSummary: {
+            /** Format: uuid */
+            id: string;
+            /** @description Código del cupón en mayúsculas; `null` = promoción automática. */
+            code: string | null;
+            name: string;
+            description: string | null;
+            kind: components["schemas"]["PromotionKind"];
+            value: components["schemas"]["PromotionDecimal"];
+            /** Format: date-time */
+            startsAt: string;
+            /**
+             * Format: date-time
+             * @description Exclusivo.
+             */
+            endsAt: string;
+            dineInOnly: boolean;
+            active: boolean;
+            /**
+             * @description Precedencia INACTIVE > EXPIRED > SCHEDULED > RUNNING (solo vigencia; el horario semanal está en `liveNow`).
+             * @enum {string}
+             */
+            lifecycle: "INACTIVE" | "SCHEDULED" | "RUNNING" | "EXPIRED";
+            /** @description `RUNNING` Y dentro de un tramo semanal (o sin tramos) en este instante. */
+            liveNow: boolean;
+            branchScope: components["schemas"]["PromotionScope"];
+            /** @description Sucursales seleccionadas, recortadas al alcance del actor; vacío si `branchScope=ALL`. */
+            branches: components["schemas"]["AdminPromotionBranchRef"][];
+            productScope: components["schemas"]["PromotionScope"];
+            productCount: number;
+            scheduleCount: number;
+            /** @description El actor cubre TODAS las sucursales de la promoción con `promotions.update`. */
+            editable: boolean;
+            version: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AdminPromotion: components["schemas"]["AdminPromotionSummary"] & {
+            /** @description Productos seleccionados (vacío si `productScope=ALL`), orden `name`, `id`. */
+            products: components["schemas"]["AdminPromotionProductRef"][];
+            /** @description Orden `weekday`, `startsAt`. */
+            schedule: components["schemas"]["PromotionScheduleSlot"][];
+        };
+        AdminPromotionPage: {
+            items: components["schemas"]["AdminPromotionSummary"][];
+            page: number;
+            pageSize: number;
+            total: number;
+        };
+        CreatePromotionRequest: {
+            name: string;
+            description?: string | null;
+            /** @description `null` u omitido = automática. Se guarda en mayúsculas; único sin distinguir mayúsculas (409 `PROMOTION_CODE_TAKEN`). */
+            code?: string | null;
+            kind: components["schemas"]["PromotionKind"];
+            value: components["schemas"]["PromotionDecimal"];
+            /**
+             * Format: date-time
+             * @description Instante con zona (`Z` u offset); sin zona => 400.
+             */
+            startsAt: string;
+            /**
+             * Format: date-time
+             * @description Exclusivo; debe ser mayor que `startsAt` (422 `PROMOTION_PERIOD_INVALID`).
+             */
+            endsAt: string;
+            /** @default false */
+            dineInOnly: boolean;
+            /** @default true */
+            active: boolean;
+            branchScope: components["schemas"]["PromotionScope"];
+            /** @description Obligatorio y no vacío si `SELECTED`; omitido o vacío si `ALL` (si no, 400). */
+            branchIds?: string[];
+            productScope: components["schemas"]["PromotionScope"];
+            /** @description Obligatorio y no vacío si `SELECTED` (si no, 422 `PROMOTION_SCOPE_INVALID`); omitido o vacío si `ALL` (si no, 400). */
+            productIds?: string[];
+            schedule?: components["schemas"]["PromotionScheduleSlot"][];
+        };
+        UpdatePromotionRequest: {
+            expectedVersion: number;
+            name?: string;
+            description?: string | null;
+            code?: string | null;
+            kind?: components["schemas"]["PromotionKind"];
+            value?: components["schemas"]["PromotionDecimal"];
+            /** Format: date-time */
+            startsAt?: string;
+            /** Format: date-time */
+            endsAt?: string;
+            dineInOnly?: boolean;
+            branchScope?: components["schemas"]["PromotionScope"];
+            branchIds?: string[];
+            productScope?: components["schemas"]["PromotionScope"];
+            productIds?: string[];
+            schedule?: components["schemas"]["PromotionScheduleSlot"][];
+        };
+        UpdatePromotionStatusRequest: {
+            active: boolean;
+            /** @description Opcional; sin datos personales. */
+            reason?: string;
+        };
     };
     responses: never;
     parameters: {
+        /** @description UUID de la promoción (`promotions.id`). */
+        PromotionId: string;
         /** @description UUID del empleado (`staff_users.id`). */
         StaffId: string;
         /** @description UUID del rol. */
@@ -8869,6 +9149,464 @@ export interface operations {
                 };
             };
             /** @description `PRODUCTS_BUSY` (reintentable) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listStorePromotions: {
+        parameters: {
+            query: {
+                /** @description UUID de una sucursal activa. */
+                branchId: string;
+                /** @description `live` (por defecto) o `upcoming`. */
+                state?: "live" | "upcoming";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Promociones de la sucursal */
+            200: {
+                headers: {
+                    /** @description public, max-age=min(N,5), s-maxage=N con 1 <= N <= 30 (o no-store) */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorePromotionList"];
+                };
+            };
+            /** @description `branchId` ausente o mal formado, o `state` desconocido */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `BRANCH_NOT_FOUND`: no existe o está inactiva */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED`: límite por IP (60 por minuto). `Cache-Control: no-store` y `Retry-After`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAdminPromotions: {
+        parameters: {
+            query?: {
+                branchId?: string;
+                status?: "active" | "inactive" | "scheduled" | "running" | "expired";
+                kind?: components["schemas"]["PromotionKind"];
+                /** @description Instante ISO 8601 con zona (`Z` u offset). Sin zona => 400. */
+                from?: string;
+                /** @description Instante ISO 8601 con zona; debe ser mayor que `from` (si no, 400). */
+                to?: string;
+                q?: string;
+                sort?: "startsAt" | "endsAt" | "name" | "createdAt";
+                order?: "asc" | "desc";
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de promociones */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromotionPage"];
+                };
+            };
+            /** @description Parámetros de consulta inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `promotions.read` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `BRANCH_NOT_FOUND` (filtro `branchId` inexistente o fuera de alcance) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAdminPromotion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePromotionRequest"];
+            };
+        };
+        responses: {
+            /** @description Promoción creada */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromotion"];
+                };
+            };
+            /** @description Forma inválida, campos desconocidos o faltantes */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `promotions.create`, la sesión no es aal2 o `PROMOTION_SCOPE_FORBIDDEN` */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `BRANCH_NOT_FOUND` (alguna sucursal no existe o está fuera de alcance) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PROMOTION_CODE_TAKEN` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID` o `PROMOTION_SCOPE_INVALID` (ver `code` y `violations`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PROMOTIONS_BUSY`: la transacción agotó su tiempo; reintentable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAdminPromotion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la promoción (`promotions.id`). */
+                id: components["parameters"]["PromotionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Promoción */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromotion"];
+                };
+            };
+            /** @description UUID inválido */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `promotions.read` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PROMOTION_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAdminPromotion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la promoción (`promotions.id`). */
+                id: components["parameters"]["PromotionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdatePromotionRequest"];
+            };
+        };
+        responses: {
+            /** @description Promoción actualizada (o sin cambios) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromotion"];
+                };
+            };
+            /** @description Forma inválida, `expectedVersion` ausente, cuerpo sin campos o campos no permitidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `promotions.update`, la sesión no es aal2 o `PROMOTION_SCOPE_FORBIDDEN` */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PROMOTION_NOT_FOUND` o `BRANCH_NOT_FOUND` (sucursal nueva inexistente o fuera de alcance) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PROMOTION_VERSION_CONFLICT` o `PROMOTION_CODE_TAKEN` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID` o `PROMOTION_SCOPE_INVALID` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PROMOTIONS_BUSY`: la transacción agotó su tiempo; reintentable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAdminPromotionStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la promoción (`promotions.id`). */
+                id: components["parameters"]["PromotionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdatePromotionStatusRequest"];
+            };
+        };
+        responses: {
+            /** @description Promoción con su estado actual */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromotion"];
+                };
+            };
+            /** @description Forma inválida */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `promotions.update`, la sesión no es aal2 o `PROMOTION_SCOPE_FORBIDDEN` */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PROMOTION_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PROMOTIONS_BUSY`: la transacción agotó su tiempo; reintentable */
             503: {
                 headers: {
                     [name: string]: unknown;

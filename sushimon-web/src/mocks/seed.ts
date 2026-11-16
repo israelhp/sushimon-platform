@@ -329,8 +329,13 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
   const promotions = empty
     ? []
     : structuredClone(PROMOTION_SEEDS).map((p) =>
+        // F15: todas terminaron ayer (`endsAt` EXCLUSIVO = hoy 00:00 local) y empezaron hace 40 días.
         scenario === 'promotion-expired'
-          ? { ...p, validTo: addDaysISO(today, -1), validFrom: addDaysISO(today, -40) }
+          ? {
+              ...p,
+              startsAt: fromLocal(addDaysISO(today, -40)).toISOString(),
+              endsAt: fromLocal(today).toISOString(),
+            }
           : p,
       );
   const orders = empty

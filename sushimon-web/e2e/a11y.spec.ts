@@ -258,6 +258,19 @@ export const A11Y_ROUTES: RouteCase[] = [
     },
   },
   {
+    path: '/backoffice/promociones',
+    label: 'modal editar promoción (horario, sucursales y productos)',
+    ready: { role: 'heading', name: 'Promociones' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Editar Happy Hour' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Editar promoción' });
+      await dialog.getByRole('textbox', { name: 'Nombre' }).waitFor();
+      await dialog.getByRole('button', { name: 'Elegir productos' }).click();
+      await dialog.getByRole('button', { name: 'Añadir franja' }).click();
+    },
+  },
+  {
     path: '/backoffice/sucursales',
     ready: { role: 'heading', name: 'Sucursales' },
     staff: 'admin',

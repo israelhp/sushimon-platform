@@ -12,6 +12,7 @@ import * as media from './media';
 import * as modifiers from './modifiers';
 import * as orders from './orders';
 import * as products from './products';
+import * as promotions from './promotions';
 import * as pub from './public';
 import * as schedule from './schedule';
 import * as staff from './staff';
@@ -36,7 +37,8 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'GET /v1/store/products/:slug': products.getStoreProduct,
   // F13: overlay público de precio efectivo y disponibilidad de una sucursal (contrato)
   'GET /v1/store/menu': branchProducts.getStoreBranchMenu,
-  'GET /v1/promotions': pub.listPromotions,
+  // F15: promociones y Happy Hour de una sucursal (contrato, público)
+  'GET /v1/store/promotions': promotions.listStorePromotions,
   'POST /v1/orders': orders.createOrder,
   'POST /v1/orders/lookup': orders.lookupOrder,
   'GET /v1/orders/:id': orders.getOrder,
@@ -75,9 +77,6 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'GET /v1/backoffice/categories': admin.listBoCategories,
   'POST /v1/backoffice/categories': admin.createCategory,
   'PATCH /v1/backoffice/categories/:id': admin.updateCategory,
-  'GET /v1/backoffice/promotions': admin.listBoPromotions,
-  'POST /v1/backoffice/promotions': admin.createPromotion,
-  'PATCH /v1/backoffice/promotions/:id': admin.updatePromotion,
   // F07: administración de sucursales (contrato)
   'GET /v1/admin/branches': branches.listAdminBranches,
   'POST /v1/admin/branches': branches.createAdminBranch,
@@ -128,6 +127,12 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'PUT /v1/admin/branches/:id/products/:productId/pricing':
     branchProducts.setAdminBranchProductPricing,
   'PATCH /v1/admin/products/:id/availability': branchProducts.setAdminProductAvailability,
+  // F15: promociones y cupones (contrato)
+  'GET /v1/admin/promotions': promotions.listAdminPromotions,
+  'POST /v1/admin/promotions': promotions.createAdminPromotion,
+  'GET /v1/admin/promotions/:id': promotions.getAdminPromotion,
+  'PATCH /v1/admin/promotions/:id': promotions.updateAdminPromotion,
+  'PATCH /v1/admin/promotions/:id/status': promotions.updateAdminPromotionStatus,
   // F12: grupos y opciones de modificadores y su asociación a productos (contrato)
   'GET /v1/admin/modifier-groups': modifiers.listAdminModifierGroups,
   'POST /v1/admin/modifier-groups': modifiers.createAdminModifierGroup,

@@ -5,12 +5,9 @@ import type {
   OrderAddress,
   OrderLine,
   OrderStatusEvent,
-  Promotion,
 } from '@/lib/data-access/models';
 import { effectivePrice } from '@/lib/branch-pricing-rules';
-import { localDate, localIsoWeekday, localMinutes, hmToMinutes } from '@/lib/time';
 import type { BranchSeed } from './fixtures/branches';
-import type { PromotionSeed } from './fixtures/promotions';
 import type { MockStore, ProductRecord } from './store';
 
 /**
@@ -124,28 +121,6 @@ export function effectivePriceAt(
   return effectivePrice(
     product.basePrice,
     branchRowOf(store, branchId, product.id)?.priceOverride ?? null,
-  );
-}
-
-export function promotionView(seed: PromotionSeed, now: Date): Promotion {
-  const today = localDate(now);
-  let status: Promotion['status'];
-  if (!seed.active) status = 'inactive';
-  else if (today > seed.validTo) status = 'expired';
-  else if (today < seed.validFrom) status = 'scheduled';
-  else status = 'current';
-  return { ...seed, status };
-}
-
-/** ¿La promoción aplica en este instante (día y hora)? Útil para la UI de Happy Hour. */
-export function isPromotionLiveAt(promo: Promotion, now: Date): boolean {
-  if (promo.status !== 'current') return false;
-  const isoDay = localIsoWeekday(now);
-  const m = localMinutes(now);
-  return (
-    promo.daysOfWeek.includes(isoDay) &&
-    m >= hmToMinutes(promo.startTime) &&
-    m < hmToMinutes(promo.endTime)
   );
 }
 

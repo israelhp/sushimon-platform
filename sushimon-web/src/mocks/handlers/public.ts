@@ -4,7 +4,7 @@ import type {
   JobApplicationRequest,
   StoreConfig,
 } from '@/lib/data-access/models';
-import { fail, isValidEmail, isValidPhone, promotionView } from '../domain';
+import { fail, isValidEmail, isValidPhone } from '../domain';
 import { body, now, oneOf, str, type Handler } from './shared';
 
 /** GET /v1/store/config */
@@ -16,10 +16,6 @@ export const getStoreConfig: Handler = (req): StoreConfig => ({
 /** GET /v1/catalog/categories — solo visibles, ordenadas. */
 export const listCategories: Handler = (req): Category[] =>
   req.store.categories.filter((c) => c.visible).sort((a, b) => a.sortOrder - b.sortOrder);
-
-/** GET /v1/promotions — activas (vigentes, programadas o vencidas: la UI muestra el estado). */
-export const listPromotions: Handler = (req) =>
-  req.store.promotions.filter((p) => p.active).map((p) => promotionView(p, now(req)));
 
 const MAX_CV_BYTES = 5 * 1024 * 1024;
 

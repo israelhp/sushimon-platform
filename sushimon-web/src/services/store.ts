@@ -4,12 +4,11 @@ import type {
   Category,
   JobApplication,
   JobApplicationRequest,
-  Promotion,
   StoreConfig,
 } from '@/lib/data-access/models';
 import { paths } from '@/lib/data-access/paths';
 
-/** Datos públicos de la tienda: configuración, sucursales, catálogo, promociones, empleo. */
+/** Datos públicos de la tienda: configuración, sucursales, catálogo, empleo (las promociones F15: `services/promotions`). */
 
 export const getStoreConfig = (client: DataClient) => client.get<StoreConfig>(paths.storeConfig());
 
@@ -21,8 +20,6 @@ export const listBranches = (client: DataClient) =>
   client.get<Branch[]>(paths.demoBranchOperations());
 
 export const listCategories = (client: DataClient) => client.get<Category[]>(paths.categories());
-
-export const listPromotions = (client: DataClient) => client.get<Promotion[]>(paths.promotions());
 
 export const submitJobApplication = (client: DataClient, input: JobApplicationRequest) =>
   client.post<JobApplication>(paths.jobApplications(), input);
