@@ -61,6 +61,10 @@ describe.skipIf(!url || !ready)('Banners (F16) contra PostgreSQL real', () => {
   const staffId = randomUUID();
   const PERMS = ['banners.read', 'banners.create', 'banners.update'];
   const staff = globalStaff(PERMS, { staffId });
+  // Crear promociones vinculadas exige permisos de promociones, distintos de los de banners.
+  const promoStaff = globalStaff(['promotions.read', 'promotions.create', 'promotions.update'], {
+    staffId,
+  });
   // Sembrar categorías/productos exige permisos de catálogo, distintos de los de banners (lección de F15).
   const catalogStaff = globalStaff(['catalog.read', 'catalog.create', 'catalog.update'], {
     staffId,
@@ -152,7 +156,7 @@ describe.skipIf(!url || !ready)('Banners (F16) contra PostgreSQL real', () => {
     return out;
   };
   const promotion = async (over: Record<string, unknown> = {}) => {
-    const p = await promotions.create(staff, {
+    const p = await promotions.create(promoStaff, {
       name: `Promo ${run}`,
       kind: 'PERCENT',
       value: '15.00',
@@ -463,7 +467,7 @@ describe.skipIf(!url || !ready)('Banners (F16) contra PostgreSQL real', () => {
     const live = await promotion({ code: `SEC${run.toUpperCase()}`, value: '90.00' });
     const onlyB = await promotion({ branchScope: 'SELECTED', branchIds: [branchB] });
     const inactive = await promotion();
-    await promotions.updateStatus(staff, inactive.id, { active: false });
+    await promotions.updateStatus(promoStaff, inactive.id, { active: false });
     const future = await promotion({
       startsAt: '2027-02-01T00:00:00-06:00',
       endsAt: '2027-03-01T00:00:00-06:00',
