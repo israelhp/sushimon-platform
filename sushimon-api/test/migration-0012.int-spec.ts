@@ -387,7 +387,9 @@ describe.skipIf(!url)('Migración 0012: productos y multimedia (base desechable)
       `SELECT id FROM app.products WHERE category_id = $1 AND active ORDER BY name, id`,
       [cat],
     );
-    expect(a).toContain('products_category_active_name_idx');
+    // El planificador puede elegir cualquiera de los dos índices (ambos entregan name,id ordenado): lo que se
+    // exige es un recorrido por índice SIN Sort, no el nombre del índice (dependía de las estadísticas).
+    expect(a).toMatch(/Index (Only )?Scan using products_(category_active_name|active_name)_idx/);
     expect(a).not.toMatch(/\bSort\b/);
     const b = await explain(`SELECT id FROM app.products WHERE active ORDER BY name, id`, []);
     expect(b).toContain('products_active_name_idx');
