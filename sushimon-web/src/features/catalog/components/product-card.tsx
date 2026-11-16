@@ -55,6 +55,9 @@ function TileCard({ product, catalog, className }: Omit<ProductCardProps, 'varia
         >
           <ProductArt
             product={product}
+            sizing={{ width: 320, height: 110, sizes: '(min-width: 1024px) 25vw, 50vw' }}
+            altFallback={name}
+            className={cn(!product.available && 'opacity-50 grayscale')}
             artClassName={cn('h-[80%] w-auto', !product.available && 'opacity-50 grayscale')}
           />
         </span>
@@ -104,6 +107,9 @@ function RowCard({ product, catalog, className }: Omit<ProductCardProps, 'varian
       >
         <ProductArt
           product={product}
+          sizing={{ width: 96, height: 96, sizes: '96px' }}
+          altFallback={name}
+          className={cn(!product.available && 'opacity-50 grayscale')}
           artClassName={cn('h-[78%] w-auto', !product.available && 'opacity-50 grayscale')}
         />
       </button>

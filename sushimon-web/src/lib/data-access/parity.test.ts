@@ -9,6 +9,7 @@ import * as branchProducts from '@/services/branch-products';
 import * as coverage from '@/services/delivery-coverage';
 import * as categories from '@/services/categories';
 import * as favorites from '@/services/favorites';
+import * as media from '@/services/media';
 import * as modifiers from '@/services/modifiers';
 import * as products from '@/services/products';
 import * as zones from '@/services/delivery-zones';
@@ -316,6 +317,110 @@ describe('paridad mock ↔ http', () => {
     expect(y).toEqual(x);
     expect(x[0]).toMatchObject({ error: { status: 401 } });
     expect(x[1]).toHaveProperty('ok');
+  });
+
+  it('F14: medios (intent, dedup, complete, biblioteca, vínculo, orden, borrado; 400/401/403/404/409/410/422/503) producen los mismos resultados y errores', async () => {
+    const p = pair();
+    const hex = (n: number) => n.toString(16).padStart(64, '0');
+    const intent = (n: number, extra: Record<string, unknown> = {}) =>
+      ({
+        kind: 'PRODUCT_IMAGE',
+        mimeType: 'image/webp',
+        sizeBytes: 1000 + n,
+        checksumSha256: hex(n),
+        ...extra,
+      }) as never;
+    const object = (n: number) => ({
+      sizeBytes: 1000 + n,
+      contentType: 'image/webp',
+      checksumSha256: hex(n),
+    });
+    for (const h of [p.mock, p.backend]) h.store.mediaBusy = 1;
+    const anon: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => media.listMedia(c), // 401
+      (c) => media.createMediaUploadIntent(c, intent(1)), // 401
+    ];
+    expect(await run(anon, p.http)).toEqual(await run(anon, p.mock.client));
+
+    p.asStaff('manager');
+    const manager: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => media.listMedia(c, { pageSize: 2 }),
+      (c) => media.getMedia(c, 'media-seed-1'),
+      (c) => media.createMediaUploadIntent(c, intent(1)), // 403
+      (c) => media.deleteMedia(c, 'media-seed-2'), // 403
+    ];
+    expect(await run(manager, p.http)).toEqual(await run(manager, p.mock.client));
+
+    p.asStaff('admin');
+    let created = '';
+    const admin: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => media.createMediaUploadIntent(c, intent(1, { sizeBytes: 0 })), // 400
+      (c) => media.createMediaUploadIntent(c, intent(1, { mimeType: 'image/gif' })), // 422
+      (c) => media.createMediaUploadIntent(c, intent(1, { sizeBytes: 6_000_000 })), // 422
+      (c) => media.createMediaUploadIntent(c, intent(1)), // 503 MEDIA_BUSY
+      (c) =>
+        media.createMediaUploadIntent(c, intent(1)).then((i) => {
+          created = i.assetId;
+          return i;
+        }), // 201
+      (c) => media.completeMediaUpload(c, created), // 422 MEDIA_OBJECT_MISSING
+      (c) => media.putSimulatedMediaObject(c, created, object(1)),
+      (c) => media.completeMediaUpload(c, created), // 200
+      (c) => media.completeMediaUpload(c, created), // 200 idempotente
+      (c) => media.completeMediaUpload(c, 'nada'), // 404
+      (c) => media.createMediaUploadIntent(c, intent(1)), // 200 deduplicado
+      (c) => media.listMedia(c, { unreferenced: true }),
+      (c) => media.listMedia(c, { pageSize: 101 }), // 400
+      (c) => media.getMedia(c, created),
+      (c) => media.attachProductMedia(c, 'gaseosas', { assetId: created, altText: 'Gaseosa' }),
+      (c) => media.attachProductMedia(c, 'gaseosas', { assetId: created }), // 409
+      (c) => media.attachProductMedia(c, 'gaseosas', { assetId: 'media-seed-2' }),
+      (c) => media.attachProductMedia(c, 'zzz', { assetId: created }), // 404 producto
+      (c) => media.updateProductMedia(c, 'gaseosas', 'media-seed-pm-9', 'x'), // 404
+      (c) => media.reorderProductMedia(c, 'gaseosas', ['x']), // 422
+      (c) => products.getAdminProduct(c, 'gaseosas'),
+      (c) => products.getStoreProduct(c, 'gaseosas'),
+      (c) => media.deleteMedia(c, created), // 409 en uso
+      (c) => media.deleteMedia(c, 'media-seed-3'), // 204
+      (c) => media.deleteMedia(c, 'media-seed-3'), // 404
+    ];
+    expect(await run(admin, p.http)).toEqual(await run(admin, p.mock.client));
+    // Orden y desvinculación con los ids reales (los dos stores generan los mismos).
+    const gaseosas = await products.getAdminProduct(p.mock.client, 'gaseosas');
+    const ids = gaseosas.media.map((m) => m.id).reverse();
+    const tail: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => media.reorderProductMedia(c, 'gaseosas', ids),
+      (c) => media.updateProductMedia(c, 'gaseosas', ids[0] as string, 'nuevo'),
+      (c) => media.detachProductMedia(c, 'gaseosas', ids[0] as string), // 204
+      (c) => media.detachProductMedia(c, 'gaseosas', ids[0] as string), // 404
+      (c) => products.getAdminProduct(c, 'gaseosas'),
+    ];
+    expect(await run(tail, p.http)).toEqual(await run(tail, p.mock.client));
+    // Sin almacenamiento: 503 en intent/complete/borrado.
+    for (const h of [p.mock, p.backend]) h.store.mediaStorageUnavailable = true;
+    const down: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => media.createMediaUploadIntent(c, intent(77)),
+      (c) => media.deleteMedia(c, 'media-seed-1'),
+      (c) => media.listMedia(c),
+    ];
+    expect(await run(down, p.http)).toEqual(await run(down, p.mock.client));
+    // Caducidad: 410.
+    for (const h of [p.mock, p.backend]) h.store.mediaStorageUnavailable = false;
+    let pending = '';
+    const expiry: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) =>
+        media.createMediaUploadIntent(c, intent(88)).then((i) => {
+          pending = i.assetId;
+          return i;
+        }),
+    ];
+    expect(await run(expiry, p.http)).toEqual(await run(expiry, p.mock.client));
+    p.mock.clock.advance(301_000);
+    p.backend.clock.advance(301_000);
+    const expired: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => media.completeMediaUpload(c, pending),
+    ];
+    expect(await run(expired, p.http)).toEqual(await run(expired, p.mock.client));
   });
 
   it('F13: precio y disponibilidad por sucursal (overlay, matrices, escrituras, 400/401/403/404/422/503) producen los mismos resultados y errores', async () => {

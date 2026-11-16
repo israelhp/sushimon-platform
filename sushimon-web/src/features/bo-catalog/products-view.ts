@@ -1,22 +1,13 @@
 import { ancestorsOf } from '@/lib/category-tree';
 import { isApiError } from '@/lib/data-access/errors';
-import type {
-  AdminCategory,
-  AdminProduct,
-  ProductMediaInput,
-  UpdateProductRequest,
-} from '@/lib/data-access/models';
+import type { AdminCategory, AdminProduct, UpdateProductRequest } from '@/lib/data-access/models';
 import {
-  PRODUCT_ALT_MAX,
   PRODUCT_DESCRIPTION_MAX,
-  PRODUCT_MEDIA_MAX,
-  PRODUCT_MEDIA_URL_MAX,
   PRODUCT_NAME_MAX,
   PRODUCT_SKU_MAX,
   PRODUCT_SLUG_MAX,
   PRODUCT_SLUG_PATTERN,
   hasDisallowedControlChars,
-  isValidMediaUrl,
   isValidSku,
   normalizeProductName,
   normalizeSku,
@@ -32,13 +23,6 @@ import type { CreateProductInput } from '@/services/products';
 
 // ── Formulario ─────────────────────────────────────────────────────────────────────────────
 
-export interface MediaFormRow {
-  /** Clave estable de la fila (no viaja al servidor). */
-  key: string;
-  url: string;
-  altText: string;
-}
-
 export interface ProductFormValues {
   name: string;
   slug: string;
@@ -48,8 +32,9 @@ export interface ProductFormValues {
   price: string;
   description: string;
   active: boolean;
-  media: MediaFormRow[];
 }
+
+/** F14: las imágenes ya no son parte del formulario; se gestionan con `ProductMediaSection` (API de medios, efecto inmediato). */
 
 export const PRODUCT_FIELDS = [
   'name',
@@ -58,17 +43,9 @@ export const PRODUCT_FIELDS = [
   'categoryId',
   'price',
   'description',
-  'media',
 ] as const;
 export type ProductField = (typeof PRODUCT_FIELDS)[number];
 export type ProductFormErrors = Partial<Record<ProductField, string>>;
-
-let rowSeq = 0;
-export const newMediaRow = (url = '', altText = ''): MediaFormRow => ({
-  key: `m${++rowSeq}`,
-  url,
-  altText,
-});
 
 export const emptyProductForm = (categoryId = ''): ProductFormValues => ({
   name: '',
@@ -78,7 +55,6 @@ export const emptyProductForm = (categoryId = ''): ProductFormValues => ({
   price: '',
   description: '',
   active: true,
-  media: [],
 });
 
 export const productToForm = (p: AdminProduct): ProductFormValues => ({
@@ -89,9 +65,6 @@ export const productToForm = (p: AdminProduct): ProductFormValues => ({
   price: p.basePrice,
   description: p.description ?? '',
   active: p.active,
-  media: [...p.media]
-    .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map((m) => newMediaRow(m.url, m.altText ?? '')),
 });
 
 export const NAME_MESSAGE = `Escribe un nombre de 1 a ${PRODUCT_NAME_MAX} caracteres.`;
@@ -101,13 +74,6 @@ export const CATEGORY_MESSAGE = 'Elige una categoría activa.';
 export const PRICE_MESSAGE =
   'Escribe un precio mayor a Q0.00 y hasta Q999,999.99 (máximo 2 decimales).';
 export const DESCRIPTION_MESSAGE = `La descripción admite hasta ${PRODUCT_DESCRIPTION_MAX} caracteres de texto.`;
-
-export function mediaMessage(index: number, problem: 'url' | 'alt' | 'max'): string {
-  if (problem === 'max') return `Máximo ${PRODUCT_MEDIA_MAX} imágenes por producto.`;
-  return problem === 'url'
-    ? `Imagen ${index + 1}: escribe una URL https válida (hasta ${PRODUCT_MEDIA_URL_MAX} caracteres).`
-    : `Imagen ${index + 1}: el texto alternativo admite hasta ${PRODUCT_ALT_MAX} caracteres.`;
-}
 
 /** Mismas reglas que el servidor (forma y rangos) para avisar antes de enviar. `mode` solo cambia el slug (obligatorio al editar). */
 export function validateProductForm(
@@ -135,27 +101,11 @@ export function validateProductForm(
   ) {
     errors.description = DESCRIPTION_MESSAGE;
   }
-  if (values.media.length > PRODUCT_MEDIA_MAX) errors.media = mediaMessage(0, 'max');
-  else {
-    for (const [i, row] of values.media.entries()) {
-      if (!isValidMediaUrl(row.url.trim())) {
-        errors.media = mediaMessage(i, 'url');
-        break;
-      }
-      if (row.altText.trim().length > PRODUCT_ALT_MAX) {
-        errors.media = mediaMessage(i, 'alt');
-        break;
-      }
-    }
-  }
   return errors;
 }
 
 export const firstProductError = (errors: ProductFormErrors): ProductField | null =>
   PRODUCT_FIELDS.find((f) => errors[f]) ?? null;
-
-export const toMediaInput = (rows: readonly MediaFormRow[]): ProductMediaInput[] =>
-  rows.map((r) => ({ url: r.url.trim(), altText: r.altText.trim() || null }));
 
 /** Alta: el precio ya está validado (`parsePriceInput`). `slug`/`sku` vacíos no se envían (el servidor genera el slug). */
 export function toCreateRequest(values: ProductFormValues): CreateProductInput {
@@ -169,21 +119,10 @@ export function toCreateRequest(values: ProductFormValues): CreateProductInput {
     basePrice: parsePriceInput(values.price) as string,
     categoryId: values.categoryId,
     active: values.active,
-    ...(values.media.length > 0 ? { media: toMediaInput(values.media) } : {}),
   };
 }
 
-const sameMedia = (current: AdminProduct['media'], next: readonly ProductMediaInput[]) => {
-  const sorted = [...current].sort((a, b) => a.sortOrder - b.sortOrder);
-  return (
-    sorted.length === next.length &&
-    sorted.every(
-      (m, i) => m.url === next[i]?.url && (m.altText ?? null) === (next[i]?.altText ?? null),
-    )
-  );
-};
-
-/** Solo lo que cambió (o `null` si nada): el PATCH exige al menos un campo y `media` REEMPLAZA la lista completa. */
+/** Solo lo que cambió (o `null` si nada): el PATCH exige al menos un campo. Nunca envía `media` (F14: se gestiona aparte). */
 export function toUpdateRequest(
   values: ProductFormValues,
   current: AdminProduct,
@@ -201,8 +140,6 @@ export function toUpdateRequest(
   if (price !== null && price !== current.basePrice) patch.basePrice = price;
   if (values.categoryId !== current.categoryId) patch.categoryId = values.categoryId;
   if (values.active !== current.active) patch.active = values.active;
-  const media = toMediaInput(values.media);
-  if (!sameMedia(current.media, media)) patch.media = media;
   return Object.keys(patch).length > 0 ? patch : null;
 }
 
@@ -300,8 +237,7 @@ export function productServerError(error: unknown): ProductServerError {
     case 'PRODUCT_MEDIA_INVALID':
       return result(
         'mediaInvalid',
-        `Revisa las imágenes: máximo ${PRODUCT_MEDIA_MAX}, solo URL https y texto alternativo de hasta ${PRODUCT_ALT_MAX} caracteres.`,
-        { media: 'Alguna imagen no es válida.' },
+        'Revisa las imágenes: máximo 8 por producto y texto alternativo de hasta 200 caracteres.',
       );
     case 'PRODUCTS_BUSY':
       return result('busy', BUSY_MESSAGE);
@@ -317,7 +253,6 @@ export function productServerError(error: unknown): ProductServerError {
       description: 'description',
       categoryId: 'categoryId',
       basePrice: 'price',
-      media: 'media',
     };
     for (const detail of error.details ?? []) {
       const key = Object.keys(keys).find(

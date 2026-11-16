@@ -170,6 +170,43 @@ describe('Arquitectura: toda ruta /v1/admin exige StaffGuard y MfaGuard', () => 
     }
   });
 
+  it('las 5 rutas admin de la biblioteca de medios (F14) están registradas y protegidas', async () => {
+    const { moduleRef, controllers, StaffGuard, MfaGuard } = await loadApp();
+    try {
+      const routes = adminRoutes(controllers).filter((r) =>
+        r.label.startsWith('AdminMediaController.'),
+      );
+      expect(routes.map((r) => r.label).sort()).toEqual([
+        'AdminMediaController.complete (/admin/media/complete)',
+        'AdminMediaController.createUpload (/admin/media/upload-intents)',
+        'AdminMediaController.get (/admin/media/:id)',
+        'AdminMediaController.list (/admin/media)',
+        'AdminMediaController.remove (/admin/media/:id)',
+      ]);
+      expect(violations(routes, StaffGuard, MfaGuard)).toEqual([]);
+    } finally {
+      await moduleRef.close();
+    }
+  });
+
+  it('las 4 rutas admin de imágenes de producto (F14) están registradas y protegidas', async () => {
+    const { moduleRef, controllers, StaffGuard, MfaGuard } = await loadApp();
+    try {
+      const routes = adminRoutes(controllers).filter((r) =>
+        r.label.startsWith('AdminProductMediaController.'),
+      );
+      expect(routes.map((r) => r.label).sort()).toEqual([
+        'AdminProductMediaController.attach (/admin/products/:id/media)',
+        'AdminProductMediaController.detach (/admin/products/:id/media/:mediaId)',
+        'AdminProductMediaController.reorder (/admin/products/:id/media/order)',
+        'AdminProductMediaController.update (/admin/products/:id/media/:mediaId)',
+      ]);
+      expect(violations(routes, StaffGuard, MfaGuard)).toEqual([]);
+    } finally {
+      await moduleRef.close();
+    }
+  });
+
   it('prueba negativa: una ruta admin sin @RequireStaff se detecta', async () => {
     const { moduleRef, StaffGuard, MfaGuard } = await loadApp();
     try {

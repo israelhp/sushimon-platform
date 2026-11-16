@@ -89,6 +89,15 @@ export const paths = {
   adminProductAvailability: (productId: string) =>
     `/v1/admin/products/${seg(productId)}/availability`,
   adminProduct: (id: string) => `/v1/admin/products/${seg(id)}`,
+  /** F14 (contrato): biblioteca de medios y subida firmada (`catalog.read|update` + aal2; escrituras con alcance global). */
+  adminMediaUploadIntents: () => '/v1/admin/media/upload-intents',
+  adminMediaComplete: () => '/v1/admin/media/complete',
+  adminMediaList: () => '/v1/admin/media',
+  adminMedia: (id: string) => `/v1/admin/media/${seg(id)}`,
+  adminProductMediaList: (productId: string) => `/v1/admin/products/${seg(productId)}/media`,
+  adminProductMediaOrder: (productId: string) => `/v1/admin/products/${seg(productId)}/media/order`,
+  adminProductMediaItem: (productId: string, mediaId: string) =>
+    `/v1/admin/products/${seg(productId)}/media/${seg(mediaId)}`,
   /**
    * F12 (contrato): grupos y opciones de modificadores y su asociación a productos (`catalog.read|create|update` + aal2;
    * escrituras con alcance global). Sin borrado físico.
@@ -128,6 +137,8 @@ export const paths = {
   demoBranchOperations: () => '/v1/demo/branches/operations',
   /** F15/otros SIMULADOS: ilustración, destacado y textos en inglés de cada producto (F11 no los provee). */
   demoProductExtras: () => '/v1/demo/catalog/product-extras',
+  /** SOLO mock: el «almacén» simulado recibe el objeto del PUT (en http el PUT va directo a la `uploadUrl` firmada). */
+  demoMediaObject: (assetId: string) => `/v1/demo/media/objects/${seg(assetId)}`,
   /** Escenario SIMULADO de PedidosYa para la cobertura (solo mock; nunca existe en la API real). */
   demoPedidosyaCoverage: () => '/v1/demo/delivery/pedidosya-coverage',
   demoAdvanceOrder: (id: string) => `/v1/demo/orders/${seg(id)}/advance`,

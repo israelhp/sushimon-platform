@@ -1,6 +1,6 @@
 # Contrato HTTP canónico de Sushi Mon (Contract First).
 # Se diseña ANTES de implementar cada slice y se verifica contra NestJS con `pnpm contracts:check`.
-# Estado: F13 (precio y disponibilidad por sucursal: /v1/store/menu, /v1/admin/branches/{id}/products[/{productId}/pricing], /v1/admin/products/{id}/branches|availability) + F12 (modificadores de producto: /v1/admin/modifier-groups, /v1/admin/modifiers, /v1/admin/products/{id}/modifiers|modifier-groups; modifierGroups en la ficha pública) + F11 (productos y fichas de catálogo: /v1/store/products, /v1/admin/products) + F10 (categorías y jerarquía del menú: /v1/store/categories, /v1/admin/categories, /v1/admin/categories/reorder) + F09 (geografía, cobertura y zonas propias: /v1/locations/*, /v1/admin/delivery-zones, /v1/admin/branches/{id}/delivery-settings, /v1/delivery-coverage/check) + F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
+# Estado: F14 (medios en Cloudflare R2: /v1/admin/media, /v1/admin/media/upload-intents|complete, /v1/admin/products/{id}/media[/order|/{mediaId}]) + F13 (precio y disponibilidad por sucursal: /v1/store/menu, /v1/admin/branches/{id}/products[/{productId}/pricing], /v1/admin/products/{id}/branches|availability) + F12 (modificadores de producto: /v1/admin/modifier-groups, /v1/admin/modifiers, /v1/admin/products/{id}/modifiers|modifier-groups; modifierGroups en la ficha pública) + F11 (productos y fichas de catálogo: /v1/store/products, /v1/admin/products) + F10 (categorías y jerarquía del menú: /v1/store/categories, /v1/admin/categories, /v1/admin/categories/reorder) + F09 (geografía, cobertura y zonas propias: /v1/locations/*, /v1/admin/delivery-zones, /v1/admin/branches/{id}/delivery-settings, /v1/delivery-coverage/check) + F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
 # Seguridad por defecto: Bearer JWT de Supabase Auth en todo salvo operaciones con `security: []` (health).
 # Transversal a TODAS las respuestas: cabecera `X-Request-Id`; errores con `ErrorResponse`; 429 cuando
 # se excede el rate limit global (no se repite por operación).
@@ -3882,6 +3882,565 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/media/upload-intents:
+    post:
+      operationId: createAdminMediaUpload
+      summary: 'Autoriza una subida directa a R2 (URL PUT firmada de corta vida)'
+      description: |
+        F14. Exige `catalog.update` con alcance GLOBAL y `aal2`. Valida `kind` (`PRODUCT_IMAGE`), `mimeType` (solo `image/jpeg`, `image/png`, `image/webp`, `image/avif`; otro => 422
+        `MEDIA_TYPE_NOT_ALLOWED`; SVG y GIF se rechazan a propósito), `sizeBytes` (> 0 y <= `MEDIA_MAX_BYTES`, por defecto 5 MiB; si no => 422 `MEDIA_TOO_LARGE`) y `checksumSha256` (SHA-256 del archivo
+        en hexadecimal minúsculas, 64 caracteres). Si ya existe un asset READY del mismo `kind` y checksum => 200 con `deduplicated=true`, ese asset y SIN `uploadUrl` (no hay nada que subir).
+        Si no => 201: crea un asset `PENDING` con clave de objeto inmutable `products/<yyyy>/<uuid>.<ext>` (extensión derivada del MIME aceptado, nunca del nombre del cliente) y devuelve `uploadUrl`
+        (PUT SigV4 contra el endpoint S3 de R2, vigencia <= `MEDIA_UPLOAD_TTL_SECONDS`, por defecto 300 s), los `headers` que el navegador DEBE enviar tal cual (`Content-Type`, `Cache-Control`
+        `public, max-age=31536000, immutable`, `x-amz-checksum-sha256` en base64) y `expiresAt`. Los bytes viajan del navegador a R2: nunca por la API. La URL firmada solo existe en esta respuesta (no se
+        persiste ni se registra) y la respuesta es `no-store`. Cada empleado puede tener como máximo 50 intents `PENDING` vigentes (si no => 422 `MEDIA_PENDING_LIMIT_REACHED`); al crear un intent se purgan de
+        forma perezosa los `PENDING` caducados. Sin almacenamiento configurado => 503 `MEDIA_STORAGE_UNAVAILABLE` (el resto de la API sigue funcionando). `storageMode=MOCK` marca el adaptador en memoria
+        (solo desarrollo/pruebas; nunca prueba nada real). Auditoría sin PII: `media.upload_intent_created` (`assetId`, `mimeType`, `sizeBytes`).
+      tags: [media]
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMediaUploadIntentRequest'
+      responses:
+        '201':
+          description: 'Intent creado; el asset queda PENDING'
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMediaUploadIntent'
+        '200':
+          description: 'Deduplicado: ya existe un asset READY con el mismo contenido; no hay URL de subida'
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMediaUploadIntent'
+        '400':
+          description: 'Forma inválida (`kind` fuera del enum, `sizeBytes` no entero o < 1, `checksumSha256` fuera de forma, propiedades desconocidas o faltantes)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 'Token ausente, inválido o expirado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.update` (con alcance global si es escritura) o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE` o `MEDIA_PENDING_LIMIT_REACHED` (con `violations`)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`MEDIA_STORAGE_UNAVAILABLE` (R2 sin configurar o inaccesible) o `MEDIA_BUSY` (la transacción agotó su tiempo; reintentable)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/media/complete:
+    post:
+      operationId: completeAdminMediaUpload
+      summary: 'Confirma una subida: verifica el objeto en R2 y deja el asset READY'
+      description: |
+        F14. Exige `catalog.update` con alcance GLOBAL y `aal2`. Con el `assetId` de un intent: si ya es READY responde 200 sin tocar nada (idempotente). Si es PENDING y el intent expiró => 410
+        `MEDIA_UPLOAD_EXPIRED` (hay que pedir otro intent). Si no, la API consulta R2 con `HeadObject` (existencia, tamaño, `Content-Type`, checksum SHA-256) y lee los primeros ~32 bytes (GET con rango)
+        para comprobar la FIRMA REAL del archivo (JPEG, PNG, WebP o AVIF) frente al MIME declarado. Objeto ausente => 422 `MEDIA_OBJECT_MISSING` (el asset sigue PENDING y se puede reintentar dentro de la vigencia).
+        Tamaño, tipo, checksum o firma que no coinciden => se BORRA el objeto y el asset y se responde 422 `MEDIA_CONTENT_MISMATCH` (hay que pedir otro intent). Si es correcto, el asset pasa a READY y la respuesta
+        incluye su `url` pública HTTPS estable (`R2_PUBLIC_BASE_URL` + clave). Si otro asset READY con el mismo checksum ganó la carrera, el objeto propio se elimina y se responde 200 con ESE asset (el `id` puede
+        diferir del enviado). Auditoría sin PII: `media.confirmed` o `media.rejected`. Respuesta `no-store`.
+      tags: [media]
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteMediaUploadRequest'
+      responses:
+        '200':
+          description: 'Asset READY con su URL pública'
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMediaAsset'
+        '400':
+          description: 'Forma inválida (`assetId` no es UUID, propiedades desconocidas o faltantes)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 'Token ausente, inválido o expirado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.update` (con alcance global si es escritura) o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`MEDIA_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: '`MEDIA_UPLOAD_EXPIRED`: el intent PENDING caducó'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`MEDIA_OBJECT_MISSING` o `MEDIA_CONTENT_MISMATCH`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`MEDIA_STORAGE_UNAVAILABLE` o `MEDIA_BUSY` (reintentable)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/media:
+    get:
+      operationId: listAdminMedia
+      summary: 'Biblioteca de medios (paginada)'
+      description: |
+        F14. Exige `catalog.read` (cualquier alcance: el catálogo es global) y `aal2`. Filtros `kind`, `status` y `unreferenced`; orden `createdAt` descendente y `id`. Cada elemento trae `usageCount`
+        (cuántas filas de `product_media` lo referencian) y `url` (null mientras esté PENDING). Una consulta para la página + una para los conteos (sin N+1). No toca R2. Respuesta `no-store`.
+      tags: [media]
+      security:
+        - bearer: []
+      parameters:
+        - name: kind
+          in: query
+          schema: { $ref: '#/components/schemas/MediaKind' }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/MediaStatus' }
+        - name: unreferenced
+          in: query
+          description: '`true` = solo assets que ningún producto usa (candidatos a borrar); `false` = solo los usados; sin valor = todos.'
+          schema: { type: boolean }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: 'Página de assets'
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMediaAssetPage'
+        '400':
+          description: 'Parámetros de consulta inválidos'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 'Token ausente, inválido o expirado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.read` (con alcance global si es escritura) o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/media/{id}:
+    get:
+      operationId: getAdminMedia
+      summary: 'Detalle de un asset y dónde se usa'
+      description: |
+        F14. Exige `catalog.read` y `aal2`. Devuelve el asset y la lista `usages` (producto y fila de `product_media`). 404 `MEDIA_NOT_FOUND` si no existe. No consulta R2. Respuesta `no-store`.
+      tags: [media]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/MediaAssetId'
+      responses:
+        '200':
+          description: 'Asset con sus usos'
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMediaAssetDetail'
+        '400':
+          description: '`id` no es un UUID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 'Token ausente, inválido o expirado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.read` (con alcance global si es escritura) o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`MEDIA_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      operationId: deleteAdminMedia
+      summary: 'Elimina un asset que ningún producto usa (y su objeto en R2)'
+      description: |
+        F14. Exige `catalog.update` con alcance GLOBAL y `aal2`. Si algún `product_media` lo referencia => 409 `MEDIA_IN_USE` (la FK `ON DELETE RESTRICT` es el respaldo ante carreras). Si no, elimina la
+        fila en una transacción (con auditoría `media.deleted`, sin PII) y DESPUÉS borra el objeto en R2; si ese borrado falla la fila ya no existe (nunca queda una referencia colgante) y se registra una
+        advertencia con la clave del objeto para su limpieza; el endpoint responde igualmente 204. Sin almacenamiento configurado => 503 `MEDIA_STORAGE_UNAVAILABLE` sin tocar la fila. Repetir la llamada tras el
+        éxito responde 404 `MEDIA_NOT_FOUND` sin efectos. Respuesta `no-store`.
+      tags: [media]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/MediaAssetId'
+      responses:
+        '204':
+          description: 'Asset eliminado. Sin cuerpo.'
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+        '400':
+          description: '`id` no es un UUID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 'Token ausente, inválido o expirado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.update` (con alcance global si es escritura) o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`MEDIA_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`MEDIA_IN_USE`: algún producto lo referencia'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`MEDIA_STORAGE_UNAVAILABLE` o `MEDIA_BUSY` (reintentable)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/products/{id}/media:
+    post:
+      operationId: attachAdminProductMedia
+      summary: 'Adjunta un asset READY a un producto'
+      description: |
+        F14. Exige `catalog.update` con alcance GLOBAL y `aal2`. Añade el asset al FINAL de la lista del producto (`sortOrder` = tamaño actual). Reglas: producto inexistente => 404 `PRODUCT_NOT_FOUND`; asset
+        inexistente => 404 `MEDIA_NOT_FOUND`; asset PENDING => 422 `MEDIA_ASSET_NOT_READY`; ya adjunto al mismo producto => 409 `MEDIA_ALREADY_ATTACHED`; más de 8 imágenes => 422 `PRODUCT_MEDIA_INVALID` (mismo tope y
+        código que F11). `altText` opcional (<= 200; si no => 422 `PRODUCT_MEDIA_INVALID`). `media_url` se deriva del asset (URL pública estable). Un mismo asset puede usarse en varios productos. Auditoría sin PII:
+        `product.media_attached` (`productId`, `assetId`). Responde 201 con el elemento creado. `no-store`.
+      tags: [media]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachProductMediaRequest'
+      responses:
+        '201':
+          description: 'Imagen adjuntada'
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProductMedia'
+        '400':
+          description: 'Forma inválida (UUID mal formado, propiedades desconocidas o `assetId` ausente)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 'Token ausente, inválido o expirado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.update` (con alcance global si es escritura) o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`PRODUCT_NOT_FOUND` o `MEDIA_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`MEDIA_ALREADY_ATTACHED`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`MEDIA_ASSET_NOT_READY` o `PRODUCT_MEDIA_INVALID` (más de 8 imágenes o `altText` inválido)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`PRODUCTS_BUSY`: la transacción agotó su tiempo; reintentable'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/products/{id}/media/order:
+    put:
+      operationId: reorderAdminProductMedia
+      summary: 'Reordena las imágenes de un producto'
+      description: |
+        F14. Exige `catalog.update` con alcance GLOBAL y `aal2`. `orderedIds` (ids de `product_media`, no de assets) debe contener EXACTAMENTE todas las imágenes actuales del producto, sin duplicados ni ajenas; si no =>
+        422 `MEDIA_REORDER_MISMATCH` sin escribir. Asigna `sortOrder` 0..n-1 en una transacción bajo bloqueo de la fila del producto. Idempotente: repetir el mismo orden responde 200 sin escribir ni auditar; un
+        cambio real audita `product.media_reordered`. Producto inexistente => 404 `PRODUCT_NOT_FOUND`. Responde 200 con la lista ordenada. `no-store`.
+      tags: [media]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReorderProductMediaRequest'
+      responses:
+        '200':
+          description: 'Imágenes con su nuevo orden'
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProductMediaList'
+        '400':
+          description: 'Forma inválida (UUID mal formado, más de 8 elementos, propiedades desconocidas)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 'Token ausente, inválido o expirado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.update` (con alcance global si es escritura) o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`PRODUCT_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`MEDIA_REORDER_MISMATCH`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`PRODUCTS_BUSY` (reintentable)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/products/{id}/media/{mediaId}:
+    patch:
+      operationId: updateAdminProductMedia
+      summary: 'Edita el texto alternativo de una imagen del producto'
+      description: |
+        F14. Exige `catalog.update` con alcance GLOBAL y `aal2`. Solo `altText` (`null` o cadena vacía lo borra; <= 200 => si no 422 `PRODUCT_MEDIA_INVALID`). No cambia el orden ni el asset. 404 `PRODUCT_NOT_FOUND`
+        o `PRODUCT_MEDIA_NOT_FOUND` (la imagen no pertenece a ese producto). Idempotente: sin cambio => 200 sin auditar. Responde 200 con el elemento. `no-store`.
+      tags: [media]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - $ref: '#/components/parameters/ProductMediaId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProductMediaRequest'
+      responses:
+        '200':
+          description: 'Imagen actualizada'
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProductMedia'
+        '400':
+          description: 'Forma inválida (UUID mal formado, propiedades desconocidas o `altText` ausente)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 'Token ausente, inválido o expirado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.update` (con alcance global si es escritura) o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`PRODUCT_NOT_FOUND` o `PRODUCT_MEDIA_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`PRODUCT_MEDIA_INVALID` (`altText` > 200)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`PRODUCTS_BUSY` (reintentable)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      operationId: detachAdminProductMedia
+      summary: 'Desvincula una imagen del producto (no borra el asset)'
+      description: |
+        F14. Exige `catalog.update` con alcance GLOBAL y `aal2`. Elimina la fila de `product_media` y renumera `sortOrder` de las restantes (0..n-1) en la misma transacción. NO borra el asset ni el objeto
+        en R2 (se gestionan en la biblioteca de medios). 404 `PRODUCT_NOT_FOUND` o `PRODUCT_MEDIA_NOT_FOUND`. Auditoría sin PII: `product.media_detached` (`productId`, `assetId`). Responde 204. `no-store`.
+      tags: [media]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - $ref: '#/components/parameters/ProductMediaId'
+      responses:
+        '204':
+          description: 'Imagen desvinculada. Sin cuerpo.'
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+        '400':
+          description: 'UUID mal formado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 'Token ausente, inválido o expirado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.update` (con alcance global si es escritura) o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`PRODUCT_NOT_FOUND` o `PRODUCT_MEDIA_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`PRODUCTS_BUSY` (reintentable)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   parameters:
     StaffId:
@@ -3949,6 +4508,18 @@ components:
       in: path
       required: true
       description: UUID de la opción (`modifiers.id`).
+      schema: { type: string, format: uuid }
+    MediaAssetId:
+      name: id
+      in: path
+      required: true
+      description: UUID del asset de medios (`media_assets.id`, F14).
+      schema: { type: string, format: uuid }
+    ProductMediaId:
+      name: mediaId
+      in: path
+      required: true
+      description: UUID de la fila de imagen del producto (`product_media.id`, F14).
       schema: { type: string, format: uuid }
     BranchProductId:
       name: productId
@@ -4516,7 +5087,7 @@ components:
           type: string
           description: |
             Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
+            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable)). Los clientes deben ramificar por `code`, nunca por `message`.
         violations:
           type: array
           description: Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09).
@@ -6024,7 +6595,7 @@ components:
             type: string,
             format: uri,
             maxLength: 2048,
-            description: 'URL https ya existente (F14 aportará la subida).',
+            description: 'URL https estable (R2 detrás del dominio configurado en F14, o una URL externa previa).',
           }
         altText: { type: string, nullable: true, maxLength: 200 }
     PublicProduct:
@@ -6095,6 +6666,11 @@ components:
         url: { type: string, format: uri, maxLength: 2048 }
         altText: { type: string, nullable: true, maxLength: 200 }
         sortOrder: { type: integer, minimum: 0, maximum: 7 }
+        assetId:
+          type: string
+          format: uuid
+          nullable: true
+          description: 'F14. Asset de `media_assets` del que proviene la imagen; `null` = URL externa previa a F14 (o referenciada con el PATCH `media` de F11 sin asset).'
     AdminProduct:
       type: object
       required:
@@ -6529,6 +7105,171 @@ components:
       properties:
         branchId: { type: string, format: uuid }
         available: { type: boolean }
+    MediaKind:
+      type: string
+      enum: [PRODUCT_IMAGE]
+      description: Tipo de medio. Hoy solo imágenes de producto; ampliar exige migración y ADR (F16 banners).
+    MediaStatus:
+      type: string
+      enum: [PENDING, READY]
+      description: '`PENDING` = intent emitido, objeto sin confirmar (caduca); `READY` = objeto verificado en R2 y publicable.'
+    MediaStorageMode:
+      type: string
+      enum: [R2, MOCK]
+      description: '`R2` = adaptador real S3 de Cloudflare; `MOCK` = en memoria, solo desarrollo/pruebas (nunca prueba una integración real). Sin almacenamiento configurado las operaciones de subida responden 503.'
+    CreateMediaUploadIntentRequest:
+      type: object
+      required: [kind, mimeType, sizeBytes, checksumSha256]
+      additionalProperties: false
+      properties:
+        kind: { $ref: '#/components/schemas/MediaKind' }
+        mimeType:
+          type: string
+          maxLength: 100
+          description: '`image/jpeg`, `image/png`, `image/webp` o `image/avif`. Cualquier otro valor => 422 `MEDIA_TYPE_NOT_ALLOWED` (no 400). La extensión del objeto se deriva de este MIME, no de un nombre de archivo.'
+        sizeBytes:
+          type: integer
+          format: int64
+          minimum: 1
+          description: 'Bytes exactos del archivo. Más de `MEDIA_MAX_BYTES` (5 MiB por defecto) => 422 `MEDIA_TOO_LARGE` (no 400).'
+        checksumSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: SHA-256 del archivo en hexadecimal minúsculas. Se firma como `x-amz-checksum-sha256` (base64) para que R2 lo verifique al recibir los bytes.
+    AdminMediaAsset:
+      type: object
+      required:
+        [
+          id,
+          kind,
+          status,
+          url,
+          mimeType,
+          sizeBytes,
+          checksumSha256,
+          createdAt,
+          confirmedAt,
+          expiresAt,
+          usageCount,
+          storageMode,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: '#/components/schemas/MediaKind' }
+        status: { $ref: '#/components/schemas/MediaStatus' }
+        url:
+          type: string
+          format: uri
+          nullable: true
+          maxLength: 2048
+          description: URL pública HTTPS estable (`R2_PUBLIC_BASE_URL` + clave de objeto). `null` mientras el asset está PENDING. NUNCA es una URL firmada.
+        mimeType: { type: string }
+        sizeBytes: { type: integer, format: int64, minimum: 1 }
+        checksumSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        createdAt: { type: string, format: date-time }
+        confirmedAt: { type: string, format: date-time, nullable: true }
+        expiresAt:
+          {
+            type: string,
+            format: date-time,
+            nullable: true,
+            description: 'Solo PENDING: caducidad del intent.',
+          }
+        usageCount:
+          { type: integer, minimum: 0, description: 'Filas de `product_media` que lo referencian.' }
+        storageMode: { $ref: '#/components/schemas/MediaStorageMode' }
+    AdminMediaUsage:
+      type: object
+      required: [productId, productName, productMediaId]
+      properties:
+        productId: { type: string, format: uuid }
+        productName: { type: string }
+        productMediaId: { type: string, format: uuid }
+    AdminMediaAssetDetail:
+      allOf:
+        - $ref: '#/components/schemas/AdminMediaAsset'
+        - type: object
+          required: [usages]
+          properties:
+            usages:
+              type: array
+              items: { $ref: '#/components/schemas/AdminMediaUsage' }
+    AdminMediaAssetPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminMediaAsset' }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0 }
+    AdminMediaUploadIntent:
+      type: object
+      description: Resultado de `createAdminMediaUpload`. Con `deduplicated=true` no hay subida (`uploadUrl`, `headers` y `expiresAt` son `null`).
+      required: [assetId, deduplicated, uploadUrl, headers, expiresAt, storageMode, asset]
+      properties:
+        assetId: { type: string, format: uuid }
+        deduplicated: { type: boolean }
+        uploadUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: 'URL PUT firmada (SigV4) contra el endpoint S3 de R2. Secreto de corta vida: solo existe en esta respuesta; no guardarla, registrarla ni cachearla.'
+        headers:
+          type: object
+          nullable: true
+          additionalProperties: { type: string }
+          description: 'Cabeceras firmadas del PUT: `Content-Type`, `Cache-Control` y `x-amz-checksum-sha256` se envían EXACTAMENTE; `Content-Length` (= `sizeBytes`, también firmado) lo fija el navegador solo al enviar el cuerpo: NO se envía manualmente (con XHR no llamar a `setRequestHeader` para él). El cuerpo debe ser exactamente el archivo declarado.'
+        expiresAt: { type: string, format: date-time, nullable: true }
+        storageMode: { $ref: '#/components/schemas/MediaStorageMode' }
+        asset: { $ref: '#/components/schemas/AdminMediaAsset' }
+    CompleteMediaUploadRequest:
+      type: object
+      required: [assetId]
+      additionalProperties: false
+      properties:
+        assetId: { type: string, format: uuid }
+    AttachProductMediaRequest:
+      type: object
+      required: [assetId]
+      additionalProperties: false
+      properties:
+        assetId: { type: string, format: uuid }
+        altText:
+          {
+            type: string,
+            nullable: true,
+            description: '<= 200 caracteres; si no => 422 `PRODUCT_MEDIA_INVALID` (no 400).',
+          }
+    UpdateProductMediaRequest:
+      type: object
+      required: [altText]
+      additionalProperties: false
+      properties:
+        altText:
+          {
+            type: string,
+            nullable: true,
+            description: '`null` o vacío lo borra; <= 200 caracteres; si no => 422 `PRODUCT_MEDIA_INVALID`.',
+          }
+    ReorderProductMediaRequest:
+      type: object
+      required: [orderedIds]
+      additionalProperties: false
+      properties:
+        orderedIds:
+          type: array
+          maxItems: 8
+          items: { type: string, format: uuid }
+          description: Ids de `product_media` (no de assets), exactamente todos los del producto.
+    AdminProductMediaList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminProductMedia' }
   securitySchemes:
     bearer:
       type: http

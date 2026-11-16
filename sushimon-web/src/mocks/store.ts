@@ -28,7 +28,7 @@ import type { MockScenario } from './scenarios';
  * el historial de días anteriores lo genera `factories/history.ts` de forma determinista.
  * NUNCA contiene PAN completo, CVV ni PIN: de una tarjeta solo marca, últimos 4 y referencia.
  */
-export const MOCK_STORE_VERSION = 10;
+export const MOCK_STORE_VERSION = 11;
 
 /**
  * Producto del mock. Los campos F11 (`id`…`updatedAt`) reproducen `app.products` + `app.product_media`; el bloque «SIMULADO»
@@ -54,6 +54,32 @@ export interface ProductRecord {
   illustration: string;
   featured: boolean;
   food: boolean;
+}
+
+/**
+ * F14: asset de la biblioteca (`app.media_assets`). La URL pública NO se guarda: se deriva de `objectKey` (host simulado
+ * `*.invalid`). `READY` = confirmado; `PENDING` caduca en `expiresAt`. Sin `original_name` (no se guarda).
+ */
+export interface MediaAssetRecord {
+  id: string;
+  kind: 'PRODUCT_IMAGE';
+  status: 'PENDING' | 'READY';
+  mimeType: string;
+  sizeBytes: number;
+  checksumSha256: string;
+  objectKey: string;
+  createdAt: string;
+  confirmedAt: string | null;
+  expiresAt: string | null;
+  /** Empleado que lo creó (para el tope de PENDING). */
+  createdById: string | null;
+}
+
+/** F14: objeto que el almacén SIMULADO recibió con el PUT (lo que `HeadObject` vería en R2). Sin bytes. */
+export interface SimulatedMediaObjectRecord {
+  sizeBytes: number;
+  contentType: string;
+  checksumSha256: string;
 }
 
 /**
@@ -172,6 +198,13 @@ export interface MockStore {
    */
   branchProductsBusy?: number;
   /**
+   * F14: simula que el almacenamiento de imágenes NO está configurado (adaptador `unavailable` de la API ⇒ 503
+   * `MEDIA_STORAGE_UNAVAILABLE` en intents, complete y borrado). Opcional: ausente/false = disponible. Solo existe en el mock.
+   */
+  mediaStorageUnavailable?: boolean;
+  /** F14: simulación DETERMINISTA de `MEDIA_BUSY`: nº de escrituras de medios que fallarán con 503 antes de que una funcione. */
+  mediaBusy?: number;
+  /**
    * F12: simulación DETERMINISTA de `MODIFIERS_BUSY` (bloqueo no disponible o transacción agotada): nº de escrituras de
    * modificadores (grupos, opciones, reordenar, asociar a producto) que fallarán con 503 antes de que una funcione.
    */
@@ -185,6 +218,9 @@ export interface MockStore {
   /** F10: categorías del menú (jerarquía). Los productos mock se unen a ellas por `slug` hasta F11. */
   menuCategories: CategoryRecord[];
   products: ProductRecord[];
+  /** F14: biblioteca de medios y objetos recibidos por el almacén simulado (assetId → objeto). */
+  mediaAssets: MediaAssetRecord[];
+  mediaObjects: Record<string, SimulatedMediaObjectRecord>;
   /** F13: excepciones de precio/disponibilidad por sucursal (solo filas no por defecto). */
   branchProducts: BranchProductRecord[];
   /** F12: grupos y opciones de modificadores (globales, compartibles entre productos). */
@@ -217,6 +253,7 @@ export interface MockStore {
     address: number;
     product: number;
     media: number;
+    mediaAsset: number;
     modifierGroup: number;
     modifier: number;
     category: number;

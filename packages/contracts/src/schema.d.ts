@@ -1529,6 +1529,178 @@ export interface paths {
         patch: operations["setAdminProductAvailability"];
         trace?: never;
     };
+    "/v1/admin/media/upload-intents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Autoriza una subida directa a R2 (URL PUT firmada de corta vida)
+         * @description F14. Exige `catalog.update` con alcance GLOBAL y `aal2`. Valida `kind` (`PRODUCT_IMAGE`), `mimeType` (solo `image/jpeg`, `image/png`, `image/webp`, `image/avif`; otro => 422
+         *     `MEDIA_TYPE_NOT_ALLOWED`; SVG y GIF se rechazan a propósito), `sizeBytes` (> 0 y <= `MEDIA_MAX_BYTES`, por defecto 5 MiB; si no => 422 `MEDIA_TOO_LARGE`) y `checksumSha256` (SHA-256 del archivo
+         *     en hexadecimal minúsculas, 64 caracteres). Si ya existe un asset READY del mismo `kind` y checksum => 200 con `deduplicated=true`, ese asset y SIN `uploadUrl` (no hay nada que subir).
+         *     Si no => 201: crea un asset `PENDING` con clave de objeto inmutable `products/<yyyy>/<uuid>.<ext>` (extensión derivada del MIME aceptado, nunca del nombre del cliente) y devuelve `uploadUrl`
+         *     (PUT SigV4 contra el endpoint S3 de R2, vigencia <= `MEDIA_UPLOAD_TTL_SECONDS`, por defecto 300 s), los `headers` que el navegador DEBE enviar tal cual (`Content-Type`, `Cache-Control`
+         *     `public, max-age=31536000, immutable`, `x-amz-checksum-sha256` en base64) y `expiresAt`. Los bytes viajan del navegador a R2: nunca por la API. La URL firmada solo existe en esta respuesta (no se
+         *     persiste ni se registra) y la respuesta es `no-store`. Cada empleado puede tener como máximo 50 intents `PENDING` vigentes (si no => 422 `MEDIA_PENDING_LIMIT_REACHED`); al crear un intent se purgan de
+         *     forma perezosa los `PENDING` caducados. Sin almacenamiento configurado => 503 `MEDIA_STORAGE_UNAVAILABLE` (el resto de la API sigue funcionando). `storageMode=MOCK` marca el adaptador en memoria
+         *     (solo desarrollo/pruebas; nunca prueba nada real). Auditoría sin PII: `media.upload_intent_created` (`assetId`, `mimeType`, `sizeBytes`).
+         */
+        post: operations["createAdminMediaUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/media/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirma una subida: verifica el objeto en R2 y deja el asset READY
+         * @description F14. Exige `catalog.update` con alcance GLOBAL y `aal2`. Con el `assetId` de un intent: si ya es READY responde 200 sin tocar nada (idempotente). Si es PENDING y el intent expiró => 410
+         *     `MEDIA_UPLOAD_EXPIRED` (hay que pedir otro intent). Si no, la API consulta R2 con `HeadObject` (existencia, tamaño, `Content-Type`, checksum SHA-256) y lee los primeros ~32 bytes (GET con rango)
+         *     para comprobar la FIRMA REAL del archivo (JPEG, PNG, WebP o AVIF) frente al MIME declarado. Objeto ausente => 422 `MEDIA_OBJECT_MISSING` (el asset sigue PENDING y se puede reintentar dentro de la vigencia).
+         *     Tamaño, tipo, checksum o firma que no coinciden => se BORRA el objeto y el asset y se responde 422 `MEDIA_CONTENT_MISMATCH` (hay que pedir otro intent). Si es correcto, el asset pasa a READY y la respuesta
+         *     incluye su `url` pública HTTPS estable (`R2_PUBLIC_BASE_URL` + clave). Si otro asset READY con el mismo checksum ganó la carrera, el objeto propio se elimina y se responde 200 con ESE asset (el `id` puede
+         *     diferir del enviado). Auditoría sin PII: `media.confirmed` o `media.rejected`. Respuesta `no-store`.
+         */
+        post: operations["completeAdminMediaUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/media": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Biblioteca de medios (paginada)
+         * @description F14. Exige `catalog.read` (cualquier alcance: el catálogo es global) y `aal2`. Filtros `kind`, `status` y `unreferenced`; orden `createdAt` descendente y `id`. Cada elemento trae `usageCount`
+         *     (cuántas filas de `product_media` lo referencian) y `url` (null mientras esté PENDING). Una consulta para la página + una para los conteos (sin N+1). No toca R2. Respuesta `no-store`.
+         */
+        get: operations["listAdminMedia"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/media/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detalle de un asset y dónde se usa
+         * @description F14. Exige `catalog.read` y `aal2`. Devuelve el asset y la lista `usages` (producto y fila de `product_media`). 404 `MEDIA_NOT_FOUND` si no existe. No consulta R2. Respuesta `no-store`.
+         */
+        get: operations["getAdminMedia"];
+        put?: never;
+        post?: never;
+        /**
+         * Elimina un asset que ningún producto usa (y su objeto en R2)
+         * @description F14. Exige `catalog.update` con alcance GLOBAL y `aal2`. Si algún `product_media` lo referencia => 409 `MEDIA_IN_USE` (la FK `ON DELETE RESTRICT` es el respaldo ante carreras). Si no, elimina la
+         *     fila en una transacción (con auditoría `media.deleted`, sin PII) y DESPUÉS borra el objeto en R2; si ese borrado falla la fila ya no existe (nunca queda una referencia colgante) y se registra una
+         *     advertencia con la clave del objeto para su limpieza; el endpoint responde igualmente 204. Sin almacenamiento configurado => 503 `MEDIA_STORAGE_UNAVAILABLE` sin tocar la fila. Repetir la llamada tras el
+         *     éxito responde 404 `MEDIA_NOT_FOUND` sin efectos. Respuesta `no-store`.
+         */
+        delete: operations["deleteAdminMedia"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/products/{id}/media": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Adjunta un asset READY a un producto
+         * @description F14. Exige `catalog.update` con alcance GLOBAL y `aal2`. Añade el asset al FINAL de la lista del producto (`sortOrder` = tamaño actual). Reglas: producto inexistente => 404 `PRODUCT_NOT_FOUND`; asset
+         *     inexistente => 404 `MEDIA_NOT_FOUND`; asset PENDING => 422 `MEDIA_ASSET_NOT_READY`; ya adjunto al mismo producto => 409 `MEDIA_ALREADY_ATTACHED`; más de 8 imágenes => 422 `PRODUCT_MEDIA_INVALID` (mismo tope y
+         *     código que F11). `altText` opcional (<= 200; si no => 422 `PRODUCT_MEDIA_INVALID`). `media_url` se deriva del asset (URL pública estable). Un mismo asset puede usarse en varios productos. Auditoría sin PII:
+         *     `product.media_attached` (`productId`, `assetId`). Responde 201 con el elemento creado. `no-store`.
+         */
+        post: operations["attachAdminProductMedia"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/products/{id}/media/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reordena las imágenes de un producto
+         * @description F14. Exige `catalog.update` con alcance GLOBAL y `aal2`. `orderedIds` (ids de `product_media`, no de assets) debe contener EXACTAMENTE todas las imágenes actuales del producto, sin duplicados ni ajenas; si no =>
+         *     422 `MEDIA_REORDER_MISMATCH` sin escribir. Asigna `sortOrder` 0..n-1 en una transacción bajo bloqueo de la fila del producto. Idempotente: repetir el mismo orden responde 200 sin escribir ni auditar; un
+         *     cambio real audita `product.media_reordered`. Producto inexistente => 404 `PRODUCT_NOT_FOUND`. Responde 200 con la lista ordenada. `no-store`.
+         */
+        put: operations["reorderAdminProductMedia"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/products/{id}/media/{mediaId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Desvincula una imagen del producto (no borra el asset)
+         * @description F14. Exige `catalog.update` con alcance GLOBAL y `aal2`. Elimina la fila de `product_media` y renumera `sortOrder` de las restantes (0..n-1) en la misma transacción. NO borra el asset ni el objeto
+         *     en R2 (se gestionan en la biblioteca de medios). 404 `PRODUCT_NOT_FOUND` o `PRODUCT_MEDIA_NOT_FOUND`. Auditoría sin PII: `product.media_detached` (`productId`, `assetId`). Responde 204. `no-store`.
+         */
+        delete: operations["detachAdminProductMedia"];
+        options?: never;
+        head?: never;
+        /**
+         * Edita el texto alternativo de una imagen del producto
+         * @description F14. Exige `catalog.update` con alcance GLOBAL y `aal2`. Solo `altText` (`null` o cadena vacía lo borra; <= 200 => si no 422 `PRODUCT_MEDIA_INVALID`). No cambia el orden ni el asset. 404 `PRODUCT_NOT_FOUND`
+         *     o `PRODUCT_MEDIA_NOT_FOUND` (la imagen no pertenece a ese producto). Idempotente: sin cambio => 200 sin auditar. Responde 200 con el elemento. `no-store`.
+         */
+        patch: operations["updateAdminProductMedia"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1924,7 +2096,7 @@ export interface components {
             details?: string[];
             /**
              * @description Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
+             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable)). Los clientes deben ramificar por `code`, nunca por `message`.
              */
             code?: string;
             /** @description Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09). */
@@ -2956,7 +3128,7 @@ export interface components {
         PublicProductMedia: {
             /**
              * Format: uri
-             * @description URL https ya existente (F14 aportará la subida).
+             * @description URL https estable (R2 detrás del dominio configurado en F14, o una URL externa previa).
              */
             url: string;
             altText: string | null;
@@ -3007,6 +3179,11 @@ export interface components {
             url: string;
             altText: string | null;
             sortOrder: number;
+            /**
+             * Format: uuid
+             * @description F14. Asset de `media_assets` del que proviene la imagen; `null` = URL externa previa a F14 (o referenciada con el PATCH `media` de F11 sin asset).
+             */
+            assetId?: string | null;
         };
         AdminProduct: {
             /** Format: uuid */
@@ -3269,6 +3446,116 @@ export interface components {
             branchId: string;
             available: boolean;
         };
+        /**
+         * @description Tipo de medio. Hoy solo imágenes de producto; ampliar exige migración y ADR (F16 banners).
+         * @enum {string}
+         */
+        MediaKind: "PRODUCT_IMAGE";
+        /**
+         * @description `PENDING` = intent emitido, objeto sin confirmar (caduca); `READY` = objeto verificado en R2 y publicable.
+         * @enum {string}
+         */
+        MediaStatus: "PENDING" | "READY";
+        /**
+         * @description `R2` = adaptador real S3 de Cloudflare; `MOCK` = en memoria, solo desarrollo/pruebas (nunca prueba una integración real). Sin almacenamiento configurado las operaciones de subida responden 503.
+         * @enum {string}
+         */
+        MediaStorageMode: "R2" | "MOCK";
+        CreateMediaUploadIntentRequest: {
+            kind: components["schemas"]["MediaKind"];
+            /** @description `image/jpeg`, `image/png`, `image/webp` o `image/avif`. Cualquier otro valor => 422 `MEDIA_TYPE_NOT_ALLOWED` (no 400). La extensión del objeto se deriva de este MIME, no de un nombre de archivo. */
+            mimeType: string;
+            /**
+             * Format: int64
+             * @description Bytes exactos del archivo. Más de `MEDIA_MAX_BYTES` (5 MiB por defecto) => 422 `MEDIA_TOO_LARGE` (no 400).
+             */
+            sizeBytes: number;
+            /** @description SHA-256 del archivo en hexadecimal minúsculas. Se firma como `x-amz-checksum-sha256` (base64) para que R2 lo verifique al recibir los bytes. */
+            checksumSha256: string;
+        };
+        AdminMediaAsset: {
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["MediaKind"];
+            status: components["schemas"]["MediaStatus"];
+            /**
+             * Format: uri
+             * @description URL pública HTTPS estable (`R2_PUBLIC_BASE_URL` + clave de objeto). `null` mientras el asset está PENDING. NUNCA es una URL firmada.
+             */
+            url: string | null;
+            mimeType: string;
+            /** Format: int64 */
+            sizeBytes: number;
+            checksumSha256: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            confirmedAt: string | null;
+            /**
+             * Format: date-time
+             * @description Solo PENDING: caducidad del intent.
+             */
+            expiresAt: string | null;
+            /** @description Filas de `product_media` que lo referencian. */
+            usageCount: number;
+            storageMode: components["schemas"]["MediaStorageMode"];
+        };
+        AdminMediaUsage: {
+            /** Format: uuid */
+            productId: string;
+            productName: string;
+            /** Format: uuid */
+            productMediaId: string;
+        };
+        AdminMediaAssetDetail: components["schemas"]["AdminMediaAsset"] & {
+            usages: components["schemas"]["AdminMediaUsage"][];
+        };
+        AdminMediaAssetPage: {
+            items: components["schemas"]["AdminMediaAsset"][];
+            page: number;
+            pageSize: number;
+            total: number;
+        };
+        /** @description Resultado de `createAdminMediaUpload`. Con `deduplicated=true` no hay subida (`uploadUrl`, `headers` y `expiresAt` son `null`). */
+        AdminMediaUploadIntent: {
+            /** Format: uuid */
+            assetId: string;
+            deduplicated: boolean;
+            /**
+             * Format: uri
+             * @description URL PUT firmada (SigV4) contra el endpoint S3 de R2. Secreto de corta vida: solo existe en esta respuesta; no guardarla, registrarla ni cachearla.
+             */
+            uploadUrl: string | null;
+            /** @description Cabeceras firmadas del PUT: `Content-Type`, `Cache-Control` y `x-amz-checksum-sha256` se envían EXACTAMENTE; `Content-Length` (= `sizeBytes`, también firmado) lo fija el navegador solo al enviar el cuerpo: NO se envía manualmente (con XHR no llamar a `setRequestHeader` para él). El cuerpo debe ser exactamente el archivo declarado. */
+            headers: {
+                [key: string]: string;
+            } | null;
+            /** Format: date-time */
+            expiresAt: string | null;
+            storageMode: components["schemas"]["MediaStorageMode"];
+            asset: components["schemas"]["AdminMediaAsset"];
+        };
+        CompleteMediaUploadRequest: {
+            /** Format: uuid */
+            assetId: string;
+        };
+        AttachProductMediaRequest: {
+            /** Format: uuid */
+            assetId: string;
+            /** @description <= 200 caracteres; si no => 422 `PRODUCT_MEDIA_INVALID` (no 400). */
+            altText?: string | null;
+        };
+        UpdateProductMediaRequest: {
+            /** @description `null` o vacío lo borra; <= 200 caracteres; si no => 422 `PRODUCT_MEDIA_INVALID`. */
+            altText: string | null;
+        };
+        ReorderProductMediaRequest: {
+            /** @description Ids de `product_media` (no de assets), exactamente todos los del producto. */
+            orderedIds: string[];
+        };
+        AdminProductMediaList: {
+            items: components["schemas"]["AdminProductMedia"][];
+        };
     };
     responses: never;
     parameters: {
@@ -3294,6 +3581,10 @@ export interface components {
         ModifierGroupId: string;
         /** @description UUID de la opción (`modifiers.id`). */
         ModifierId: string;
+        /** @description UUID del asset de medios (`media_assets.id`, F14). */
+        MediaAssetId: string;
+        /** @description UUID de la fila de imagen del producto (`product_media.id`, F14). */
+        ProductMediaId: string;
         /** @description UUID del producto (`products.id`) cuyo precio de sucursal se gestiona (F13). */
         BranchProductId: string;
     };
@@ -7883,6 +8174,701 @@ export interface operations {
                 };
             };
             /** @description `BRANCH_PRODUCTS_BUSY`: la transacción agotó su tiempo; reintentable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAdminMediaUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateMediaUploadIntentRequest"];
+            };
+        };
+        responses: {
+            /** @description Deduplicado: ya existe un asset READY con el mismo contenido; no hay URL de subida */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMediaUploadIntent"];
+                };
+            };
+            /** @description Intent creado; el asset queda PENDING */
+            201: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMediaUploadIntent"];
+                };
+            };
+            /** @description Forma inválida (`kind` fuera del enum, `sizeBytes` no entero o < 1, `checksumSha256` fuera de forma, propiedades desconocidas o faltantes) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.update` (con alcance global si es escritura) o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE` o `MEDIA_PENDING_LIMIT_REACHED` (con `violations`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MEDIA_STORAGE_UNAVAILABLE` (R2 sin configurar o inaccesible) o `MEDIA_BUSY` (la transacción agotó su tiempo; reintentable) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    completeAdminMediaUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompleteMediaUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Asset READY con su URL pública */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMediaAsset"];
+                };
+            };
+            /** @description Forma inválida (`assetId` no es UUID, propiedades desconocidas o faltantes) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.update` (con alcance global si es escritura) o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MEDIA_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MEDIA_UPLOAD_EXPIRED`: el intent PENDING caducó */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MEDIA_OBJECT_MISSING` o `MEDIA_CONTENT_MISMATCH` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MEDIA_STORAGE_UNAVAILABLE` o `MEDIA_BUSY` (reintentable) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAdminMedia: {
+        parameters: {
+            query?: {
+                kind?: components["schemas"]["MediaKind"];
+                status?: components["schemas"]["MediaStatus"];
+                /** @description `true` = solo assets que ningún producto usa (candidatos a borrar); `false` = solo los usados; sin valor = todos. */
+                unreferenced?: boolean;
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de assets */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMediaAssetPage"];
+                };
+            };
+            /** @description Parámetros de consulta inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.read` (con alcance global si es escritura) o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAdminMedia: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del asset de medios (`media_assets.id`, F14). */
+                id: components["parameters"]["MediaAssetId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Asset con sus usos */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMediaAssetDetail"];
+                };
+            };
+            /** @description `id` no es un UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.read` (con alcance global si es escritura) o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MEDIA_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAdminMedia: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del asset de medios (`media_assets.id`, F14). */
+                id: components["parameters"]["MediaAssetId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Asset eliminado. Sin cuerpo. */
+            204: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `id` no es un UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.update` (con alcance global si es escritura) o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MEDIA_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MEDIA_IN_USE`: algún producto lo referencia */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MEDIA_STORAGE_UNAVAILABLE` o `MEDIA_BUSY` (reintentable) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    attachAdminProductMedia: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del producto (`products.id`). */
+                id: components["parameters"]["ProductId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttachProductMediaRequest"];
+            };
+        };
+        responses: {
+            /** @description Imagen adjuntada */
+            201: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminProductMedia"];
+                };
+            };
+            /** @description Forma inválida (UUID mal formado, propiedades desconocidas o `assetId` ausente) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.update` (con alcance global si es escritura) o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCT_NOT_FOUND` o `MEDIA_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MEDIA_ALREADY_ATTACHED` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MEDIA_ASSET_NOT_READY` o `PRODUCT_MEDIA_INVALID` (más de 8 imágenes o `altText` inválido) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCTS_BUSY`: la transacción agotó su tiempo; reintentable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reorderAdminProductMedia: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del producto (`products.id`). */
+                id: components["parameters"]["ProductId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderProductMediaRequest"];
+            };
+        };
+        responses: {
+            /** @description Imágenes con su nuevo orden */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminProductMediaList"];
+                };
+            };
+            /** @description Forma inválida (UUID mal formado, más de 8 elementos, propiedades desconocidas) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.update` (con alcance global si es escritura) o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCT_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MEDIA_REORDER_MISMATCH` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCTS_BUSY` (reintentable) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    detachAdminProductMedia: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del producto (`products.id`). */
+                id: components["parameters"]["ProductId"];
+                /** @description UUID de la fila de imagen del producto (`product_media.id`, F14). */
+                mediaId: components["parameters"]["ProductMediaId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Imagen desvinculada. Sin cuerpo. */
+            204: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description UUID mal formado */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.update` (con alcance global si es escritura) o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCT_NOT_FOUND` o `PRODUCT_MEDIA_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCTS_BUSY` (reintentable) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAdminProductMedia: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del producto (`products.id`). */
+                id: components["parameters"]["ProductId"];
+                /** @description UUID de la fila de imagen del producto (`product_media.id`, F14). */
+                mediaId: components["parameters"]["ProductMediaId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProductMediaRequest"];
+            };
+        };
+        responses: {
+            /** @description Imagen actualizada */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminProductMedia"];
+                };
+            };
+            /** @description Forma inválida (UUID mal formado, propiedades desconocidas o `altText` ausente) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.update` (con alcance global si es escritura) o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCT_NOT_FOUND` o `PRODUCT_MEDIA_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCT_MEDIA_INVALID` (`altText` > 200) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCTS_BUSY` (reintentable) */
             503: {
                 headers: {
                     [name: string]: unknown;

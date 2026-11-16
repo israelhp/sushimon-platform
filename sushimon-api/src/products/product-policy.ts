@@ -41,7 +41,7 @@ export const categoryInvalid = (message: string) =>
 export const notFound = () =>
   codedException(HttpStatus.NOT_FOUND, 'PRODUCT_NOT_FOUND', 'Producto no encontrado');
 
-const mediaInvalid = (path: string, message: string) =>
+export const mediaInvalid = (path: string, message: string) =>
   codedException(HttpStatus.UNPROCESSABLE_ENTITY, 'PRODUCT_MEDIA_INVALID', message, [
     { path, code: 'PRODUCT_MEDIA_INVALID', message },
   ]);
@@ -136,6 +136,16 @@ export function hostAllowed(host: string, allowed: readonly string[]): boolean {
   );
 }
 
+/** `altText` opcional: cadena (≤ 200, sin control, espacios colapsados), vacío/null/undefined = sin texto. */
+export function normalizeAltText(raw: unknown, path = 'altText'): string | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== 'string') throw mediaInvalid(path, 'altText inválido');
+  const alt = raw.normalize('NFC').replace(CONTROL_CHARS, ' ').replace(/\s+/g, ' ').trim();
+  if (alt.length > MEDIA_ALT_MAX)
+    throw mediaInvalid(path, `altText no puede superar ${MEDIA_ALT_MAX} caracteres`);
+  return alt === '' ? null : alt;
+}
+
 function normalizeMediaItem(
   item: { url: unknown; altText?: unknown },
   index: number,
@@ -168,18 +178,7 @@ function normalizeMediaItem(
       `${at}.url`,
       'La URL debe ser https, sin espacios y de hasta 2048 caracteres',
     );
-  let altText: string | null = null;
-  if (item.altText !== undefined && item.altText !== null) {
-    if (typeof item.altText !== 'string') throw mediaInvalid(`${at}.altText`, 'altText inválido');
-    const alt = item.altText
-      .normalize('NFC')
-      .replace(CONTROL_CHARS, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (alt.length > MEDIA_ALT_MAX)
-      throw mediaInvalid(`${at}.altText`, `altText no puede superar ${MEDIA_ALT_MAX} caracteres`);
-    altText = alt === '' ? null : alt;
-  }
+  const altText = normalizeAltText(item.altText, `${at}.altText`);
   return { url, altText };
 }
 
@@ -341,7 +340,13 @@ export function toAdminView(
     publiclyVisible: row.active && category.effectivelyVisible,
     media: [...media]
       .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((m) => ({ id: m.id, url: m.url, altText: m.altText, sortOrder: m.sortOrder })),
+      .map((m) => ({
+        id: m.id,
+        url: m.url,
+        altText: m.altText,
+        sortOrder: m.sortOrder,
+        assetId: m.assetId ?? null,
+      })),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

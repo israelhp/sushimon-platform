@@ -15,6 +15,7 @@ import {
 } from './fixtures/schedule';
 import { DELIVERY_SETTINGS_SEEDS, DELIVERY_ZONE_SEEDS, seedDeliveryFee } from './fixtures/delivery';
 import { HIDDEN_DEMO_SEEDS, PRODUCT_SEEDS } from './fixtures/products';
+import { MEDIA_ASSET_SEEDS, seedAssetUrl } from './fixtures/media';
 import { MODIFIER_GROUP_SEEDS, PRODUCT_MODIFIER_GROUP_SEEDS } from './fixtures/modifiers';
 import { PROMOTION_SEEDS } from './fixtures/promotions';
 import { ROLE_SEEDS } from './fixtures/rbac';
@@ -28,6 +29,7 @@ import type { MockScenario } from './scenarios';
 import {
   MOCK_STORE_VERSION,
   type BranchProductRecord,
+  type MediaAssetRecord,
   type MockStore,
   type ProductRecord,
 } from './store';
@@ -86,6 +88,39 @@ function buildProducts(scenario: MockScenario): ProductRecord[] {
       updatedAt: PRODUCT_SEED_AT,
     }),
   );
+}
+
+/** F14: la biblioteca sembrada y el vínculo del primer asset con su producto (sin bytes: ver `fixtures/media.ts`). */
+function applySeedMedia(
+  scenario: MockScenario,
+  products: ProductRecord[],
+): Pick<MockStore, 'mediaAssets' | 'mediaObjects'> {
+  if (scenario === 'empty') return { mediaAssets: [], mediaObjects: {} };
+  const mediaAssets: MediaAssetRecord[] = MEDIA_ASSET_SEEDS.map((s) => ({
+    id: s.id,
+    kind: 'PRODUCT_IMAGE',
+    status: 'READY',
+    mimeType: s.mimeType,
+    sizeBytes: s.sizeBytes,
+    checksumSha256: s.checksumSha256,
+    objectKey: s.objectKey,
+    createdAt: s.createdAt,
+    confirmedAt: s.confirmedAt,
+    expiresAt: null,
+    createdById: null,
+  }));
+  for (const s of MEDIA_ASSET_SEEDS) {
+    const product = products.find((p) => p.id === s.attachedTo);
+    if (!product) continue;
+    product.media.push({
+      id: `media-seed-pm-${s.id.slice(-1)}`,
+      url: seedAssetUrl(s),
+      altText: s.altText,
+      sortOrder: product.media.length,
+      assetId: s.id,
+    });
+  }
+  return { mediaAssets, mediaObjects: {} };
 }
 
 /** F13: excepciones de sucursal (solo filas no por defecto) a partir de los agotados y precios especiales sembrados. */
@@ -340,6 +375,7 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
     menuCategories: empty ? [] : structuredClone([...MENU_CATEGORY_SEEDS]),
     products,
     branchProducts: buildBranchProducts(scenario, products),
+    ...applySeedMedia(scenario, products),
     ...buildModifiers(scenario),
     promotions,
     orders,
@@ -370,6 +406,7 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
       address: 1,
       product: 1,
       media: 1,
+      mediaAsset: 4,
       modifierGroup: 1,
       modifier: 1,
       category: 1,

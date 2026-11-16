@@ -42,6 +42,9 @@ export type PedidosYaMockScenario = (typeof PEDIDOSYA_MOCK_SCENARIOS)[number];
 const blankToUndefined = (v: unknown): unknown =>
   typeof v === 'string' && v.trim() === '' ? undefined : v;
 
+/** Tope duro de tamaño por archivo (5 MiB): igual que `media_assets_size_chk` de la migración 0015. */
+export const MEDIA_MAX_BYTES_HARD = 5_242_880;
+
 /**
  * Esquema de variables de entorno. Falla al arrancar si la configuración es inválida.
  * Los secretos (DATABASE_URL, DIRECT_URL, HEALTH_READY_TOKEN) solo viven en el entorno.
@@ -139,6 +142,47 @@ export const envSchema = z
         ),
     ),
 
+    /**
+     * Medios en Cloudflare R2 (F14). SOLO SERVIDOR: nunca `NEXT_PUBLIC_`, nunca en el cliente, logs, errores ni auditoría.
+     * Grupo todo-o-nada: (`R2_ACCOUNT_ID` o `R2_ENDPOINT`) + `R2_BUCKET` + `R2_ACCESS_KEY_ID` + `R2_SECRET_ACCESS_KEY` +
+     * `R2_PUBLIC_BASE_URL`. Definir algunas pero no todas impide arrancar (el mensaje solo nombra las que faltan).
+     * Ninguna definida = adaptador `unavailable` (503 `MEDIA_STORAGE_UNAVAILABLE`); el resto de la API funciona.
+     */
+    R2_ACCOUNT_ID: optional(z.string().regex(/^[A-Za-z0-9]{8,64}$/, 'formato inválido')),
+    /** Endpoint S3 https alternativo a `R2_ACCOUNT_ID` (p. ej. entornos de prueba). */
+    R2_ENDPOINT: optional(z.url({ protocol: /^https$/ })),
+    /** Bucket PÚBLICO de medios (nombre válido DNS, 3-63). */
+    R2_BUCKET: optional(
+      z.string().regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/, 'nombre de bucket inválido (3-63)'),
+    ),
+    R2_ACCESS_KEY_ID: optional(z.string().min(8, 'mínimo 8 caracteres').max(128)),
+    /** Secreto S3. Nunca se registra ni se devuelve. */
+    R2_SECRET_ACCESS_KEY: optional(z.string().min(20, 'mínimo 20 caracteres').max(256)),
+    /** https, sin barra final, sin query/hash (host del dominio personalizado/CDN). No se inventa un dominio. */
+    R2_PUBLIC_BASE_URL: optional(z.string().max(2048)),
+    R2_REGION: z.preprocess(
+      blankToUndefined,
+      z
+        .string()
+        .regex(/^[a-z0-9-]{1,32}$/, 'región inválida')
+        .default('auto'),
+    ),
+    /** Tope por archivo (1..5 MiB). 5 MiB es también un CHECK de la migración 0015: subirlo exige migración. */
+    MEDIA_MAX_BYTES: z.preprocess(
+      blankToUndefined,
+      z.coerce.number().int().min(1).max(MEDIA_MAX_BYTES_HARD).default(MEDIA_MAX_BYTES_HARD),
+    ),
+    /** Vigencia de la URL de subida firmada (30..300 s). */
+    MEDIA_UPLOAD_TTL_SECONDS: z.preprocess(
+      blankToUndefined,
+      z.coerce.number().int().min(30).max(300).default(300),
+    ),
+    /**
+     * Adaptador de almacenamiento. Sin valor: R2 completo => `r2`; sin variables R2 => `unavailable`. `mock` (memoria,
+     * solo desarrollo/pruebas) no arranca en producción ni junto a credenciales R2.
+     */
+    MEDIA_STORAGE_ADAPTER: optional(z.enum(['r2', 'mock'])),
+
     /** Token de `GET /v1/health/ready` (cabecera `x-health-token`). Obligatorio en producción. */
     HEALTH_READY_TOKEN: optional(z.string().min(16, 'mínimo 16 caracteres')),
   })
@@ -157,6 +201,7 @@ export const envSchema = z
         message: 'el adaptador simulado no se permite en producción',
       });
     }
+    mediaIssues(env).forEach((issue) => ctx.addIssue({ code: 'custom', ...issue }));
     if (env.NODE_ENV !== 'production') return;
     if (env.SUPABASE_URL) {
       const problem = supabaseUrlProblem(env.SUPABASE_URL);
@@ -194,6 +239,97 @@ export const envSchema = z
     }
   });
 
+type MediaEnv = Pick<
+  Env,
+  | 'NODE_ENV'
+  | 'R2_ACCOUNT_ID'
+  | 'R2_ENDPOINT'
+  | 'R2_BUCKET'
+  | 'R2_ACCESS_KEY_ID'
+  | 'R2_SECRET_ACCESS_KEY'
+  | 'R2_PUBLIC_BASE_URL'
+  | 'MEDIA_STORAGE_ADAPTER'
+>;
+
+/** Variables R2 del grupo todo-o-nada (nombre -> definida). `R2_ACCOUNT_ID`/`R2_ENDPOINT` cuentan como una sola. */
+export function r2GroupState(env: MediaEnv): {
+  anyDefined: boolean;
+  missing: string[];
+} {
+  const present = {
+    'R2_ACCOUNT_ID o R2_ENDPOINT': Boolean(env.R2_ACCOUNT_ID || env.R2_ENDPOINT),
+    R2_BUCKET: Boolean(env.R2_BUCKET),
+    R2_ACCESS_KEY_ID: Boolean(env.R2_ACCESS_KEY_ID),
+    R2_SECRET_ACCESS_KEY: Boolean(env.R2_SECRET_ACCESS_KEY),
+    R2_PUBLIC_BASE_URL: Boolean(env.R2_PUBLIC_BASE_URL),
+  };
+  const entries = Object.entries(present);
+  return {
+    anyDefined: entries.some(([, v]) => v),
+    missing: entries.filter(([, v]) => !v).map(([k]) => k),
+  };
+}
+
+/** Problemas de la configuración de medios (F14). Solo nombres de variable y motivo: jamás valores. */
+function mediaIssues(env: MediaEnv): { path: string[]; message: string }[] {
+  const issues: { path: string[]; message: string }[] = [];
+  const group = r2GroupState(env);
+  if (group.anyDefined && group.missing.length > 0) {
+    issues.push({
+      path: ['R2_BUCKET'],
+      message: `configuración R2 incompleta: faltan ${group.missing.join(', ')} (todo o nada)`,
+    });
+  }
+  if (env.R2_PUBLIC_BASE_URL) {
+    const problem = publicBaseUrlProblem(env.R2_PUBLIC_BASE_URL);
+    if (problem) issues.push({ path: ['R2_PUBLIC_BASE_URL'], message: problem });
+  }
+  if (env.MEDIA_STORAGE_ADAPTER === 'r2' && (!group.anyDefined || group.missing.length > 0)) {
+    issues.push({
+      path: ['MEDIA_STORAGE_ADAPTER'],
+      message: 'r2 exige el grupo completo de variables R2',
+    });
+  }
+  if (env.MEDIA_STORAGE_ADAPTER === 'mock') {
+    if (env.NODE_ENV === 'production') {
+      issues.push({
+        path: ['MEDIA_STORAGE_ADAPTER'],
+        message: 'el almacenamiento simulado no se permite en producción',
+      });
+    }
+    if (group.anyDefined) {
+      issues.push({
+        path: ['MEDIA_STORAGE_ADAPTER'],
+        message: 'mock no puede combinarse con variables R2 (evita mezclar entornos)',
+      });
+    }
+  }
+  return issues;
+}
+
+/** `R2_PUBLIC_BASE_URL`: https, sin credenciales, sin query/hash, sin barra final, host con punto y no IP/localhost. */
+function publicBaseUrlProblem(raw: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return 'URL inválida';
+  }
+  if (url.protocol !== 'https:') return 'debe usar https';
+  if (url.username || url.password) return 'no debe incluir credenciales';
+  if (raw.includes('?') || raw.includes('#')) return 'no debe incluir query ni fragmento';
+  if (raw.endsWith('/')) return 'no debe terminar en barra';
+  const host = url.hostname;
+  if (
+    !host.includes('.') ||
+    host.startsWith('[') ||
+    /^[0-9.]+$/.test(host) ||
+    host.endsWith('.localhost')
+  )
+    return 'el host debe ser un nombre de dominio público';
+  return null;
+}
+
 /** En producción SUPABASE_URL debe ser https, sin credenciales, sin query ni fragmento (nunca se imprime el valor). */
 function supabaseUrlProblem(raw: string): string | null {
   let url: URL;
@@ -222,6 +358,12 @@ export function validateEnv(raw: Record<string, unknown>): Env {
   if (parsed.data.PEDIDOSYA_COVERAGE_ADAPTER === 'mock' && !isMockAllowedNodeEnv(raw['NODE_ENV'])) {
     throw new Error(
       'Configuración de entorno inválida: PEDIDOSYA_COVERAGE_ADAPTER: el adaptador simulado solo se permite con NODE_ENV=development o test explícito',
+    );
+  }
+  // Igual para el almacenamiento simulado de medios (F14).
+  if (parsed.data.MEDIA_STORAGE_ADAPTER === 'mock' && !isMockAllowedNodeEnv(raw['NODE_ENV'])) {
+    throw new Error(
+      'Configuración de entorno inválida: MEDIA_STORAGE_ADAPTER: el almacenamiento simulado solo se permite con NODE_ENV=development o test explícito',
     );
   }
   // Un NODE_ENV ausente se resuelve a `development` y se SALTARÍA las comprobaciones de producción: si hay señales

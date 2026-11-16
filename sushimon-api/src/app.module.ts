@@ -17,6 +17,7 @@ import { BranchScheduleModule } from './branch-schedule/branch-schedule.module.j
 import { DeliveryCoverageModule } from './delivery-coverage/delivery-coverage.module.js';
 import { LocationsModule } from './locations/locations.module.js';
 import { CategoriesModule } from './categories/categories.module.js';
+import { MediaModule } from './media/media.module.js';
 import { ProductsModule } from './products/products.module.js';
 import { ModifiersModule } from './modifiers/modifiers.module.js';
 import { BranchProductsModule } from './branch-products/branch-products.module.js';
@@ -58,6 +59,7 @@ import { HealthTokenGuard } from './health/health-token.guard.js';
     AuthModule,
     BranchesModule,
     CategoriesModule,
+    MediaModule,
     ProductsModule,
     ModifiersModule,
     BranchProductsModule,

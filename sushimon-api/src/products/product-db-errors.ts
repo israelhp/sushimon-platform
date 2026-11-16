@@ -1,6 +1,7 @@
 import { BadRequestException, HttpStatus } from '@nestjs/common';
 import { dbErrorCodes as codes, uniqueTarget } from '../common/db/db-error-codes.js';
 import { codedException } from '../common/errors/coded-exception.js';
+import { mediaNotFound } from '../media/media-policy.js';
 import { categoryInvalid, skuTaken, slugTaken } from './product-policy.js';
 
 const messageOf = (error: unknown): string => {
@@ -21,14 +22,19 @@ const messageOf = (error: unknown): string => {
  * - UNIQUE (P2002/23505): 409 `PRODUCT_SLUG_TAKEN` / `PRODUCT_SKU_TAKEN` según el OBJETIVO (columna o
  *   `products_slug_key` / `products_sku_key`); otro objetivo (p. ej. `product_media_product_sort_key`) o
  *   desconocido => 500.
- * - P2028/55P03: 503 `PRODUCTS_BUSY` (mensaje fijo, reintentable).
+ * - P2028/55P03/40P01/40001: 503 `PRODUCTS_BUSY` (mensaje fijo, reintentable).
  * - FK de categoría (P2003/23503, `products_category_id_fkey`): 422 `PRODUCT_CATEGORY_INVALID`.
  * - Trigger `product_media_max_items` (23514): 422 `PRODUCT_MEDIA_INVALID`. Otro CHECK (P2004/23514): 400 genérico.
  */
 export function translateProductDbError(error: unknown): unknown {
   if (typeof error !== 'object' || error === null) return error;
   const found = codes(error);
-  if (found.includes('55P03') || found.includes('P2028')) {
+  if (
+    found.includes('55P03') ||
+    found.includes('P2028') ||
+    found.includes('40P01') ||
+    found.includes('40001')
+  ) {
     return codedException(
       HttpStatus.SERVICE_UNAVAILABLE,
       'PRODUCTS_BUSY',
@@ -42,6 +48,8 @@ export function translateProductDbError(error: unknown): unknown {
     return error;
   }
   if (found.includes('P2003') || found.includes('23503')) {
+    // F14: el asset se borró entre la lectura y el INSERT de `product_media` (carrera con `DELETE /media/{id}`).
+    if (/product_media_asset_id_fkey|asset_id/.test(messageOf(error))) return mediaNotFound();
     return /products_category_id_fkey|category_id/.test(messageOf(error))
       ? categoryInvalid('La categoría no existe o no está activa')
       : error;

@@ -93,6 +93,18 @@ export type AdminProductPage = S['AdminProductPage'];
 export type AdminProductCategory = S['AdminProductCategory'];
 export type AdminProductMedia = S['AdminProductMedia'];
 export type ProductMediaInput = S['ProductMediaInput'];
+/** F14: medios (biblioteca `media_assets`, intents de subida y vínculo con productos). */
+export type MediaKind = S['MediaKind'];
+export type MediaStatus = S['MediaStatus'];
+export type MediaStorageMode = S['MediaStorageMode'];
+export type CreateMediaUploadIntentRequest = S['CreateMediaUploadIntentRequest'];
+export type AdminMediaUploadIntent = S['AdminMediaUploadIntent'];
+export type AdminMediaAsset = S['AdminMediaAsset'];
+export type AdminMediaAssetDetail = S['AdminMediaAssetDetail'];
+export type AdminMediaAssetPage = S['AdminMediaAssetPage'];
+export type AdminMediaUsage = S['AdminMediaUsage'];
+export type AttachProductMediaRequest = S['AttachProductMediaRequest'];
+export type AdminProductMediaList = S['AdminProductMediaList'];
 export type CreateProductRequest = S['CreateProductRequest'];
 export type UpdateProductRequest = S['UpdateProductRequest'];
 /** F12: modificadores (grupos y opciones). Los importes extra son CADENAS decimales (`"5.00"`). */

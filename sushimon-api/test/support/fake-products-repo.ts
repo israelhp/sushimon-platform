@@ -45,20 +45,31 @@ export class FakeProductsRepo {
   /** Si se define, la siguiente escritura (insert/update/replaceMedia) lanza este error. */
   failNextWriteWith: unknown = null;
   failTransactionWith: unknown = null;
+  /** F14: assets (`media_assets`) visibles para adjuntar y para enlazar URL de R2. */
+  assetSource: () => Iterable<{ id: string; status: string; objectKey: string }> = () => [];
   private counter = 1000;
+
+  /** Ids con forma de UUID: las rutas de F14 validan `:mediaId` con ParseUUIDPipe. */
+  private nextMediaId(): string {
+    return `00000000-0000-4000-9000-${String(++this.counter).padStart(12, '0')}`;
+  }
 
   count = (name: string) => this.calls.filter((c) => c === name).length;
 
-  seed(row: ProductRow, media: Array<{ url: string; altText?: string | null }> = []): void {
+  seed(
+    row: ProductRow,
+    media: Array<{ url: string; altText?: string | null; assetId?: string | null }> = [],
+  ): void {
     this.products.set(row.id, { ...row });
     this.media.set(
       row.id,
       media.map((m, i) => ({
-        id: `media-${row.id}-${i}`,
+        id: this.nextMediaId(),
         productId: row.id,
         url: m.url,
         altText: m.altText ?? null,
         sortOrder: i,
+        assetId: m.assetId ?? null,
       })),
     );
   }
@@ -226,13 +237,107 @@ export class FakeProductsRepo {
     this.calls.push('replaceMedia');
     this.maybeFail();
     const rows = items.map((m, i) => ({
-      id: `media-${productId}-${++this.counter}`,
+      id: this.nextMediaId(),
       productId,
       url: m.url,
       altText: m.altText,
       sortOrder: i,
+      assetId: m.assetId ?? null,
     }));
     this.media.set(productId, rows);
     return Promise.resolve(rows.map((r) => ({ ...r })));
+  }
+
+  // ---------- F14 ----------
+
+  findAsset(
+    _tx: ProductTx,
+    id: string,
+  ): Promise<{ id: string; status: string; objectKey: string } | null> {
+    this.calls.push('findAsset');
+    const found = [...this.assetSource()].find((a) => a.id === id);
+    return Promise.resolve(found ? { ...found } : null);
+  }
+
+  findReadyAssetsByKeys(
+    _tx: ProductTx,
+    keys: readonly string[],
+  ): Promise<{ id: string; objectKey: string }[]> {
+    this.calls.push('findReadyAssetsByKeys');
+    return Promise.resolve(
+      [...this.assetSource()]
+        .filter((a) => a.status === 'READY' && keys.includes(a.objectKey))
+        .map((a) => ({ id: a.id, objectKey: a.objectKey })),
+    );
+  }
+
+  insertMedia(
+    _tx: ProductTx,
+    data: {
+      productId: string;
+      mediaUrl: string;
+      altText: string | null;
+      sortOrder: number;
+      assetId: string;
+    },
+  ): Promise<MediaRow> {
+    this.calls.push('insertMedia');
+    this.maybeFail();
+    const list = this.media.get(data.productId) ?? [];
+    if (list.some((m) => m.sortOrder === data.sortOrder))
+      throw uniqueViolation('product_media_product_sort_key');
+    const row: MediaRow = {
+      id: this.nextMediaId(),
+      productId: data.productId,
+      url: data.mediaUrl,
+      altText: data.altText,
+      sortOrder: data.sortOrder,
+      assetId: data.assetId,
+    };
+    this.media.set(data.productId, [...list, row]);
+    return Promise.resolve({ ...row });
+  }
+
+  updateMediaAlt(_tx: ProductTx, id: string, altText: string | null): Promise<MediaRow> {
+    this.calls.push('updateMediaAlt');
+    this.maybeFail();
+    for (const [productId, list] of this.media) {
+      const found = list.find((m) => m.id === id);
+      if (found) {
+        found.altText = altText;
+        this.media.set(productId, list);
+        return Promise.resolve({ ...found });
+      }
+    }
+    return Promise.reject(new Error('media inexistente'));
+  }
+
+  deleteMedia(_tx: ProductTx, id: string): Promise<void> {
+    this.calls.push('deleteMedia');
+    this.maybeFail();
+    for (const [productId, list] of this.media) {
+      if (list.some((m) => m.id === id)) {
+        this.media.set(
+          productId,
+          list.filter((m) => m.id !== id),
+        );
+      }
+    }
+    return Promise.resolve();
+  }
+
+  setMediaOrder(_tx: ProductTx, productId: string, orderedIds: readonly string[]): Promise<void> {
+    this.calls.push('setMediaOrder');
+    this.maybeFail();
+    const list = this.media.get(productId) ?? [];
+    orderedIds.forEach((id, index) => {
+      const found = list.find((m) => m.id === id);
+      if (found) found.sortOrder = index;
+    });
+    this.media.set(
+      productId,
+      [...list].sort((a, b) => a.sortOrder - b.sortOrder),
+    );
+    return Promise.resolve();
   }
 }

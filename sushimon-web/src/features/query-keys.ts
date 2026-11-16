@@ -9,6 +9,7 @@ import type { AdminStaffFilters } from '@/services/staff';
 import type { CategoryFilters } from '@/services/categories';
 import type { ModifierGroupFilters } from '@/services/modifiers';
 import type { BranchProductFilters } from '@/services/branch-products';
+import type { MediaFilters } from '@/services/media';
 
 /**
  * Claves de TanStack Query centralizadas. Jerárquicas para invalidar por prefijo
@@ -119,6 +120,15 @@ export const queryKeys = {
     byBranch: (branchId: string, filters: BranchProductFilters = {}) =>
       ['branch-products', 'branch', branchId, filters] as const,
     byProduct: (productId: string) => ['branch-products', 'product', productId] as const,
+  },
+  /**
+   * F14 (spec 015): biblioteca de medios (admin). `libraryLists` = prefijo de las páginas filtradas. Toda mutación de medios o
+   * de imágenes de producto invalida `all`, `products.all` (admin + fichas públicas) y `catalog.all` (menú/lista pública).
+   */
+  media: {
+    all: ['media'] as const,
+    libraryLists: ['media', 'library'] as const,
+    library: (filters: MediaFilters = {}) => ['media', 'library', filters] as const,
   },
   catalog: {
     all: ['catalog'] as const,

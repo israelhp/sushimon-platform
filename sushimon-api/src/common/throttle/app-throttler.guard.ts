@@ -25,6 +25,24 @@ export const MFA_RESET_THROTTLE = {
   actor: { limit: 5, ttl: 60_000 },
 };
 
+/**
+ * Medios (F14): por ACTOR autenticado y, además, por IP (varios empleados pueden compartir NAT). Mismo patrón que
+ * `MFA_RESET_THROTTLE`. Intents: 20/min por actor (cada uno crea una fila y firma una URL de escritura); confirmar:
+ * 60/min (consulta R2); borrar: 30/min.
+ */
+export const MEDIA_INTENT_THROTTLE = {
+  default: { limit: 60, ttl: 60_000 },
+  actor: { limit: 20, ttl: 60_000 },
+};
+export const MEDIA_COMPLETE_THROTTLE = {
+  default: { limit: 120, ttl: 60_000 },
+  actor: { limit: 60, ttl: 60_000 },
+};
+export const MEDIA_DELETE_THROTTLE = {
+  default: { limit: 60, ttl: 60_000 },
+  actor: { limit: 30, ttl: 60_000 },
+};
+
 /** Throttler adicional «por actor»: solo cuenta en las rutas que declaran un límite `actor`. */
 export const ACTOR_THROTTLER = 'actor';
 

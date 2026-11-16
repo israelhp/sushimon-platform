@@ -173,6 +173,21 @@ describe('AllExceptionsFilter', () => {
     });
   });
 
+  it('5xx: MEDIA_BUSY y MEDIA_STORAGE_UNAVAILABLE son públicos (F14) con su mensaje fijo y sin fugas', () => {
+    for (const code of ['MEDIA_BUSY', 'MEDIA_STORAGE_UNAVAILABLE']) {
+      const res = fakeRes();
+      new AllExceptionsFilter().catch(codedException(503, code, 'mensaje fijo'), hostWith(res));
+      expect(res.json.mock.calls[0]?.[0]).toMatchObject({ code, message: 'mensaje fijo' });
+    }
+  });
+
+  it('5xx: un error del proveedor NO codificado nunca expone su mensaje (URL firmada, credenciales)', () => {
+    const res = fakeRes();
+    const leak = 'https://acct.r2.cloudflarestorage.com/b/k?X-Amz-Signature=abcdef&secret=XYZ';
+    new AllExceptionsFilter().catch(new Error(`fallo ${leak}`), hostWith(res));
+    expect(JSON.stringify(res.json.mock.calls[0]?.[0])).not.toMatch(/Signature|secret|XYZ|r2\./);
+  });
+
   it('5xx: MODIFIERS_BUSY es público (F12)', () => {
     const res = fakeRes();
     new AllExceptionsFilter().catch(

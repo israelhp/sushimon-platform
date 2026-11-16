@@ -46,7 +46,12 @@ export function ProductListItem({
             !product.available && 'opacity-50 grayscale',
           )}
         >
-          <ProductArt product={product} artClassName="h-[56px] w-[56px]" />
+          <ProductArt
+            product={product}
+            sizing={{ width: 72, height: 72, sizes: '72px' }}
+            altFallback={name}
+            artClassName="h-[56px] w-[56px]"
+          />
           {quantity > 0 ? (
             <span
               className="absolute -right-0.5 -top-0.5 inline-flex h-6 min-w-6 items-center justify-center rounded-bl-lg rounded-tr-lg bg-deep px-1.5 text-[12px] font-extrabold text-ondeep"
