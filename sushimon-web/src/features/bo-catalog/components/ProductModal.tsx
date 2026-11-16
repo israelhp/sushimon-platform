@@ -33,6 +33,7 @@ import {
   type ProductFormErrors,
   type ProductFormValues,
 } from '../products-view';
+import { ProductBranchesSection } from './ProductBranchesSection';
 import { ProductModifiersSection } from './ProductModifiersSection';
 
 interface ProductModalProps {
@@ -423,6 +424,7 @@ export function ProductModal({ product, categories, onClose }: ProductModalProps
         </fieldset>
 
         {product ? <ProductModifiersSection productId={product.id} /> : null}
+        {product ? <ProductBranchesSection productId={product.id} /> : null}
 
         {!editing ? (
           <label className="row gap8 span-2">

@@ -1,12 +1,8 @@
 import type { BoProductArtKind } from '@/components/icons/bo';
-import type {
-  ProductBranchAvailability,
-  Promotion,
-  PromotionInput,
-} from '@/lib/data-access/models';
+import type { Promotion, PromotionInput } from '@/lib/data-access/models';
 
 /**
- * Lógica pura del catálogo del backoffice: arte por categoría, disponibilidad por sucursal SIMULADA (F13) y formulario de
+ * Lógica pura del catálogo del backoffice: arte por categoría, y formulario de
  * promociones (el de productos F11 vive en `products-view`). Sin React ni red: se prueba aparte.
  * Los textos viajan como códigos de error; la traducción vive en los mensajes (`backoffice.*`).
  */
@@ -31,38 +27,6 @@ export function categoryLook(slugs: readonly string[]): { art: BoProductArtKind;
     if (found) return found;
   }
   return { art: 'roll', tile: 'tile-beige' };
-}
-
-// ── Disponibilidad por sucursal ─────────────────────────────────────────────────────────────
-
-export type AvailabilityKind = 'on' | 'off' | 'partial';
-
-export interface AvailabilityState {
-  kind: AvailabilityKind;
-  /** Sucursales del alcance donde está disponible. */
-  on: number;
-  total: number;
-}
-
-/** Estado del producto en las sucursales del alcance (una sucursal, o todas las activas). */
-export function availabilityState(
-  product: { availability: readonly ProductBranchAvailability[] },
-  scope: readonly string[],
-): AvailabilityState {
-  const on = scope.filter(
-    (id) => product.availability.find((a) => a.branchId === id)?.available === true,
-  ).length;
-  const kind: AvailabilityKind =
-    scope.length > 0 && on === scope.length ? 'on' : on === 0 ? 'off' : 'partial';
-  return { kind, on, total: scope.length };
-}
-
-/** Cuerpo del PATCH para fijar la disponibilidad en el alcance (solo esas sucursales). */
-export function availabilityPatch(
-  scope: readonly string[],
-  value: boolean,
-): ProductBranchAvailability[] {
-  return scope.map((branchId) => ({ branchId, available: value }));
 }
 
 // ── Promociones ─────────────────────────────────────────────────────────────────────────────

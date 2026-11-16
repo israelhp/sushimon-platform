@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  availabilityPatch,
-  availabilityState,
   categoryLook,
   discountLabel,
   emptyPromotionForm,
@@ -10,31 +8,6 @@ import {
   promotionInput,
   validatePromotionForm,
 } from './catalog-view';
-
-const avail = (...flags: [string, boolean][]) => ({
-  availability: flags.map(([branchId, available]) => ({ branchId, available })),
-});
-
-describe('disponibilidad por sucursal', () => {
-  it('distingue disponible, agotado y parcial en el alcance', () => {
-    const p = avail(['a', true], ['b', false], ['c', true]);
-    expect(availabilityState(p, ['a'])).toEqual({ kind: 'on', on: 1, total: 1 });
-    expect(availabilityState(p, ['b'])).toEqual({ kind: 'off', on: 0, total: 1 });
-    expect(availabilityState(p, ['a', 'b', 'c'])).toEqual({ kind: 'partial', on: 2, total: 3 });
-    expect(availabilityState(p, ['a', 'c']).kind).toBe('on');
-  });
-
-  it('un alcance vacío no cuenta como disponible', () => {
-    expect(availabilityState(avail(['a', true]), []).kind).toBe('off');
-  });
-
-  it('el parche solo toca las sucursales del alcance', () => {
-    expect(availabilityPatch(['a', 'c'], false)).toEqual([
-      { branchId: 'a', available: false },
-      { branchId: 'c', available: false },
-    ]);
-  });
-});
 
 describe('arte por categoría', () => {
   it('usa el primer slug conocido de la cadena (categoría y ancestros) y roll por defecto', () => {

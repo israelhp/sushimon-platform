@@ -80,7 +80,7 @@ const SORT_COLUMN = {
 } as const;
 
 /** `lower(translate(col, …))`: contiene sin mayúsculas ni acentos usando solo funciones del núcleo de PostgreSQL. */
-const folded = (column: string): Prisma.Sql =>
+export const folded = (column: string): Prisma.Sql =>
   Prisma.sql`lower(translate(${Prisma.raw(column)}, ${SQL_ACCENTS_FROM}::text, ${SQL_ACCENTS_TO}::text))`;
 
 /** Único punto de acceso a datos de productos: una consulta por lectura, selects mínimos. */

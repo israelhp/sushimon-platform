@@ -5,6 +5,7 @@ import type {
   PublicProductCategoryRef,
   PublicProductMedia,
   SimulatedProductExtras,
+  StoreBranchMenu,
 } from '@/lib/data-access/models';
 import { artForCategorySlugs, isFoodArt } from '@/lib/product-decor';
 import { priceToNumber } from '@/lib/product-rules';
@@ -18,21 +19,29 @@ import { listAllStoreProducts, listSimulatedProductExtras } from '@/services/pro
  */
 export interface CatalogProduct extends Product {
   slug: string;
-  /** Precio base canónico (`"85.00"`). */
+  /**
+   * Precio base GLOBAL canónico (`"85.00"`) del catálogo F11. `price`/`effectivePrice` son el de la SUCURSAL elegida cuando el
+   * overlay F13 está aplicado; sin sucursal (o si el overlay falló) coinciden con el base.
+   */
   basePrice: string;
+  /** F13: precio EFECTIVO (override o base) de la sucursal seleccionada, como cadena canónica. */
+  effectivePrice: string;
   category: PublicProductCategoryRef;
   /** Imágenes referenciadas (vacía = placeholder). */
   media: PublicProductMedia[];
 }
 
 export interface ProductFilters {
-  /** Sucursal para `available` (SIMULADO hasta F13; solo el mock lo resuelve). */
-  branchId?: string;
+  /**
+   * Sucursal cuyo overlay F13 se aplica. `undefined` = la seleccionada en el modo de pedido; `null` = ninguna (precios base).
+   * La lista base (F11) NO depende de la sucursal: solo el overlay.
+   */
+  branchId?: string | null;
 }
 
 /**
- * Lo SIMULADO que F11 no trae (F12/F13/F15 y textos por idioma). Con `extras` (solo en el mock) se usan sus valores; sin ellos
- * (api real) se derivan valores neutros: ilustración por categoría, sin destacado, siempre disponible.
+ * Lo SIMULADO que F11 no trae (F15 y textos por idioma). Con `extras` (solo en el mock) se usan sus valores; sin ellos
+ * (api real) se derivan valores neutros: ilustración por categoría, sin destacado, siempre disponible (la disponibilidad real es el overlay F13).
  */
 export function toCatalogProduct(
   product: PublicProduct,
@@ -48,29 +57,50 @@ export function toCatalogProduct(
     descriptionEn: extras?.descriptionEn,
     basePrice: product.basePrice,
     price: priceToNumber(product.basePrice),
+    effectivePrice: product.basePrice,
     categoryId: product.category.id,
     category: product.category,
     media: product.media,
     illustration: extras?.illustration ?? art,
     featured: extras?.featured ?? false,
     food: extras?.food ?? isFoodArt(art),
-    available: extras?.available ?? true,
-    availability: extras?.availability ?? [],
+    available: true,
+    availability: [],
   };
+}
+
+/**
+ * F13: combina el catálogo F11 con el overlay de UNA sucursal. Precio EFECTIVO y `available` salen del overlay; un producto que
+ * el overlay NO trae (no visible, o aún no publicado en esa sucursal) NO se oferta. Nunca se usa el precio de otra sucursal.
+ */
+export function applyBranchMenu(
+  products: readonly CatalogProduct[],
+  menu: StoreBranchMenu,
+): CatalogProduct[] {
+  const byId = new Map(menu.items.map((item) => [item.productId, item]));
+  return products.flatMap((product) => {
+    const item = byId.get(product.id);
+    if (!item) return [];
+    return [
+      {
+        ...product,
+        effectivePrice: item.price,
+        price: priceToNumber(item.price),
+        available: item.available,
+      },
+    ];
+  });
 }
 
 /**
  * Catálogo completo: TODA la lista pública de F11 (`GET /v1/store/products`, páginas de 100) unida por id con los extras
  * simulados cuando el cliente es el mock. Si los extras fallan, el menú sigue con valores neutros (no son contrato).
  */
-export async function loadCatalog(
-  client: DataClient,
-  filters: ProductFilters = {},
-): Promise<CatalogProduct[]> {
+export async function loadCatalog(client: DataClient): Promise<CatalogProduct[]> {
   const [products, extras] = await Promise.all([
     listAllStoreProducts(client),
     client.kind === 'mock'
-      ? listSimulatedProductExtras(client, filters.branchId).then(
+      ? listSimulatedProductExtras(client).then(
           (r) => new Map(r.items.map((e) => [e.productId, e])),
           () => new Map<string, SimulatedProductExtras>(),
         )

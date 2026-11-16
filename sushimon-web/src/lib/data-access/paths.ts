@@ -23,6 +23,8 @@ export const paths = {
   /** F11 (contrato): productos visibles del menú (paginado, `q`, `categorySlug`) y ficha por slug. Sin autenticación. */
   storeProducts: () => '/v1/store/products',
   storeProduct: (slug: string) => `/v1/store/products/${seg(slug)}`,
+  /** F13: overlay público de precio efectivo y disponibilidad de UNA sucursal (`?branchId=`). */
+  storeMenu: () => '/v1/store/menu',
   /** LEGACY (mock previo a F10): categorías planas del catálogo simulado (Happy Hour y reportes). */
   categories: () => '/v1/catalog/categories',
   promotions: () => '/v1/promotions',
@@ -79,6 +81,13 @@ export const paths = {
   adminCategoriesReorder: () => '/v1/admin/categories/reorder',
   /** F11 (contrato): productos del backoffice (`catalog.read|create|update` + aal2; escrituras con alcance global). */
   adminProducts: () => '/v1/admin/products',
+  /** F13: matriz por sucursal, matriz por producto y escrituras de precio/disponibilidad. */
+  adminBranchProducts: (branchId: string) => `/v1/admin/branches/${seg(branchId)}/products`,
+  adminBranchProductPricing: (branchId: string, productId: string) =>
+    `/v1/admin/branches/${seg(branchId)}/products/${seg(productId)}/pricing`,
+  adminProductBranches: (productId: string) => `/v1/admin/products/${seg(productId)}/branches`,
+  adminProductAvailability: (productId: string) =>
+    `/v1/admin/products/${seg(productId)}/availability`,
   adminProduct: (id: string) => `/v1/admin/products/${seg(id)}`,
   /**
    * F12 (contrato): grupos y opciones de modificadores y su asociación a productos (`catalog.read|create|update` + aal2;
@@ -117,9 +126,8 @@ export const paths = {
    * disponibilidad ya son contrato (F08: `branchHours`, `branchAvailability`). La identidad y el estado administrativo (F07) viven en `branches`/`adminBranches`.
    */
   demoBranchOperations: () => '/v1/demo/branches/operations',
-  /** F12/F13/F15 SIMULADOS: ilustración, destacado, textos en inglés y disponibilidad por sucursal de cada producto (F11 no los provee). */
+  /** F15/otros SIMULADOS: ilustración, destacado y textos en inglés de cada producto (F11 no los provee). */
   demoProductExtras: () => '/v1/demo/catalog/product-extras',
-  demoProductAvailability: (id: string) => `/v1/demo/catalog/products/${seg(id)}/availability`,
   /** Escenario SIMULADO de PedidosYa para la cobertura (solo mock; nunca existe en la API real). */
   demoPedidosyaCoverage: () => '/v1/demo/delivery/pedidosya-coverage',
   demoAdvanceOrder: (id: string) => `/v1/demo/orders/${seg(id)}/advance`,

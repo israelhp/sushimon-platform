@@ -9,8 +9,12 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
-async function openCart(lines: { id: string; qty: number; note?: string }[], scenario?: 'error') {
-  const view = await renderStore(<CartDrawer />, { scenario });
+async function openCart(
+  lines: { id: string; qty: number; note?: string }[],
+  scenario?: 'error',
+  branchId?: string,
+) {
+  const view = await renderStore(<CartDrawer />, { scenario, branchId });
   await act(async () => {
     for (const l of lines) view.api().cart.add(l.id, l.qty, l.note);
     view.api().shell.openCart();
@@ -29,6 +33,13 @@ describe('CartDrawer', () => {
     );
     expect(within(dialog).queryByText('Total de tu pedido')).not.toBeInTheDocument();
     view.unmount();
+  });
+
+  it('F13: usa el precio EFECTIVO de la sucursal elegida (no el de otra) para líneas y total', async () => {
+    await openCart([{ id: 'dynamita-roll', qty: 2 }], undefined, 'sucursal-2');
+    const dialog = await screen.findByRole('dialog', { name: 'Tu pedido' });
+    expect(await within(dialog).findByText('Q86 × 2 = Q172')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/Q82/)).not.toBeInTheDocument();
   });
 
   it('lista las líneas con precio × cantidad, nota y subtotal', async () => {

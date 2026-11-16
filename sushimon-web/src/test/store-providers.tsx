@@ -8,6 +8,7 @@ import { ProductSheetProvider } from '@/features/catalog/product-sheet-context';
 import {
   OrderModeProvider,
   useOrderMode,
+  writeOrderModeForTests,
   type OrderModeApi,
 } from '@/features/order-mode/order-mode-context';
 import { FavoritesProvider } from '@/features/favorites/favorites-provider';
@@ -45,6 +46,8 @@ export interface RenderStoreOptions {
   locale?: 'es' | 'en';
   /** Ajusta el store mock antes de montar (p. ej., desactivar sucursales). */
   prepareStore?: (store: MockStore) => void;
+  /** F13: sucursal elegida en el modo de pedido (recoger) antes de montar; sin ella no hay overlay (precios base). */
+  branchId?: string;
   /** Envuelve el DataClient (p. ej., para contar solicitudes o retener respuestas). */
   wrapClient?: (client: DataClient) => DataClient;
 }
@@ -56,7 +59,13 @@ export interface RenderStoreOptions {
  */
 export async function renderStore(
   ui: ReactElement,
-  { scenario = 'default', locale = 'es', prepareStore, wrapClient }: RenderStoreOptions = {},
+  {
+    scenario = 'default',
+    locale = 'es',
+    prepareStore,
+    wrapClient,
+    branchId,
+  }: RenderStoreOptions = {},
 ): Promise<RenderResult & { api: () => StoreTestApi; queryClient: QueryClient }> {
   let current: StoreTestApi | null = null;
   function Probe() {
@@ -69,6 +78,11 @@ export async function renderStore(
     return null;
   }
 
+  writeOrderModeForTests(
+    branchId
+      ? { type: 'pickup', when: { kind: 'now' }, branchId, address: null }
+      : { type: null, when: { kind: 'now' }, branchId: null, address: null },
+  );
   const seeded = createSeedStore(scenario);
   prepareStore?.(seeded);
   const mockClient = createMockDataClient({
@@ -118,6 +132,9 @@ export async function renderStore(
     api().cart.clear();
     api().mode.reset();
     api().session.signOutCustomer();
+    if (branchId) {
+      api().mode.setMode({ type: 'pickup', when: { kind: 'now' }, branchId, address: null });
+    }
   });
   return Object.assign(result, { api, queryClient });
 }

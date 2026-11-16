@@ -3,7 +3,6 @@ import type {
   AdminProduct,
   AdminProductPage,
   CreateProductRequest,
-  ProductBranchAvailability,
   PublicProduct,
   PublicProductDetail,
   PublicProductPage,
@@ -117,15 +116,6 @@ export const updateAdminProduct = (client: DataClient, id: string, input: Update
 
 // ── SIMULADO (solo mock): lo que F11 no provee ────────────────────────────────────────────────
 
-/** Ilustración, destacado, textos en inglés y disponibilidad por sucursal (F12/F13/F15 pendientes). Solo existe en el mock. */
-export const listSimulatedProductExtras = (client: DataClient, branchId?: string) =>
-  client.get<{ items: SimulatedProductExtras[] }>(paths.demoProductExtras(), {
-    query: { branchId },
-  });
-
-/** Disponibilidad por sucursal (F13 SIMULADA): permiso de encargado (su sucursal) o admin. Solo existe en el mock. */
-export const setSimulatedProductAvailability = (
-  client: DataClient,
-  id: string,
-  availability: ProductBranchAvailability[],
-) => client.patch<SimulatedProductExtras>(paths.demoProductAvailability(id), { availability });
+/** Ilustración, destacado y textos en inglés (F15/otros pendientes). Solo existe en el mock; la disponibilidad ya es contrato (F13). */
+export const listSimulatedProductExtras = (client: DataClient) =>
+  client.get<{ items: SimulatedProductExtras[] }>(paths.demoProductExtras());

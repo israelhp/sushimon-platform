@@ -7,6 +7,7 @@ import type {
   OrderStatusEvent,
   Promotion,
 } from '@/lib/data-access/models';
+import { effectivePrice } from '@/lib/branch-pricing-rules';
 import { localDate, localIsoWeekday, localMinutes, hmToMinutes } from '@/lib/time';
 import type { BranchSeed } from './fixtures/branches';
 import type { PromotionSeed } from './fixtures/promotions';
@@ -93,9 +94,37 @@ export function assertAddress(store: MockStore, address: Partial<OrderAddress> |
 
 // ── Catálogo ──────────────────────────────────────────────────────────────────────────────
 
-export function availableAt(product: ProductRecord, branchId: string | undefined): boolean {
-  if (!branchId) return product.availability.some((a) => a.available);
-  return product.availability.find((a) => a.branchId === branchId)?.available ?? false;
+/** F13: fila de excepción (o `undefined` = disponible al precio base). */
+export function branchRowOf(store: MockStore, branchId: string, productId: string) {
+  return store.branchProducts.find((r) => r.branchId === branchId && r.productId === productId);
+}
+
+/**
+ * F13: ¿disponible en la sucursal? Sin fila = sí. Sin sucursal: disponible en ALGUNA sucursal activa (vista global).
+ */
+export function availableAt(
+  store: MockStore,
+  product: Pick<ProductRecord, 'id'>,
+  branchId: string | undefined,
+): boolean {
+  if (!branchId) {
+    return store.branches
+      .filter((b) => b.status === 'active')
+      .some((b) => branchRowOf(store, b.id, product.id)?.available !== false);
+  }
+  return branchRowOf(store, branchId, product.id)?.available !== false;
+}
+
+/** F13: precio EFECTIVO (cadena canónica) del producto en la sucursal: override o base. */
+export function effectivePriceAt(
+  store: MockStore,
+  product: Pick<ProductRecord, 'id' | 'basePrice'>,
+  branchId: string,
+): string {
+  return effectivePrice(
+    product.basePrice,
+    branchRowOf(store, branchId, product.id)?.priceOverride ?? null,
+  );
 }
 
 export function promotionView(seed: PromotionSeed, now: Date): Promotion {

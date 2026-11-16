@@ -33,6 +33,7 @@ model Branch {
   closures         BranchClosure[]
   deliveryZones    DeliveryZone[]
   deliverySettings BranchDeliverySettings?
+  branchProducts   BranchProduct[]
 
   @@map("branches")
   @@schema("app")
@@ -197,6 +198,7 @@ model Product {
   media          ProductMedia[]
   favorites      CustomerFavorite[]
   modifierGroups ProductModifierGroup[]
+  branchProducts BranchProduct[]
 
   @@index([categoryId, active, name, id], map: "products_category_active_name_idx")
   @@index([active, name, id], map: "products_active_name_idx")
@@ -392,5 +394,24 @@ model CustomerAddress {
   @@index([customerId, createdAt, id], map: "customer_addresses_customer_created_idx")
   @@index([municipalityId], map: "customer_addresses_municipality_id_idx")
   @@map("customer_addresses")
+  @@schema("app")
+}
+
+/// F13 (migración 0014). Excepciones por sucursal: AUSENCIA de fila = disponible al precio base (la API borra la fila al
+/// volver al estado por defecto). CHECK de price_override en la migración (NULL o 0 < p <= 999999.99). Sin stock numérico.
+model BranchProduct {
+  branchId      String   @map("branch_id") @db.Uuid
+  productId     String   @map("product_id") @db.Uuid
+  priceOverride Decimal? @map("price_override") @db.Decimal(12, 2)
+  available     Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// La mantiene la API en el UPDATE (sin trigger).
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  branch        Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@id([branchId, productId])
+  @@index([productId], map: "branch_products_product_idx")
+  @@map("branch_products")
   @@schema("app")
 }

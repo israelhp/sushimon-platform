@@ -19,6 +19,7 @@ export const isBranchAvailable = (branchId: string | null, list: readonly { id: 
 export function invalidateBranchScopedQueries(queryClient: QueryClient) {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.catalog.all }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.storeMenu.all }),
     queryClient.invalidateQueries({ queryKey: queryKeys.deliveryCoverage.all }),
   ]);
 }

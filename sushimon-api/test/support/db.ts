@@ -82,6 +82,16 @@ export async function cleanupTestData(
         [authIds],
       );
       await c.query('DELETE FROM app.customers WHERE auth_user_id = ANY($1::uuid[])', [authIds]);
+      // F13: precios/disponibilidad por sucursal de la prueba (FK RESTRICT hacia branches y products; van ANTES).
+      const bp = await c.query<{ oid: string | null }>(
+        `SELECT to_regclass('app.branch_products') AS oid`,
+      );
+      if (bp.rows[0]?.oid) {
+        await c.query(
+          'DELETE FROM app.branch_products WHERE branch_id = ANY($1::uuid[]) OR product_id = ANY($2::uuid[])',
+          [branchIds, productIds],
+        );
+      }
       // F11: productos y categorías de la prueba (solo si la migración 0012/0011 está aplicada). Los favoritos y las
       // imágenes caen en cascada; las categorías tienen FK RESTRICT desde products, por eso van después.
       const catalog = await c.query<{ products: string | null; categories: string | null }>(

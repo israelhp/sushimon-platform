@@ -24,7 +24,6 @@ const renderScreen = (
     : never,
 ) => renderBackoffice(<BackofficeShell>{ui}</BackofficeShell>, { role, scenario, prepareStore });
 
-const dumplingsSwitch = () => screen.getByRole('switch', { name: 'Disponible: Dumplings' });
 const card = (name: string) => screen.getByText(name).closest('.pcard') as HTMLElement;
 
 async function openNew() {
@@ -38,9 +37,7 @@ describe('Productos F11: lista del servidor y permisos', () => {
     expect(await screen.findByText('Dumplings')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Nuevo producto' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Editar Dumplings' })).toBeEnabled();
-    expect(
-      screen.getByText(/31 productos · disponibilidad para Todas las sucursales/),
-    ).toBeVisible();
+    expect(screen.getByText('31 productos')).toBeVisible();
     expect(screen.getByText('Página 1 de 2 · 31 productos')).toBeVisible();
     expect(within(card('Dumplings')).getByText('Q53.00')).toBeVisible();
     await userEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
@@ -62,17 +59,28 @@ describe('Productos F11: lista del servidor y permisos', () => {
     ).toBeVisible();
   });
 
-  it('el encargado: solo lectura con aviso, sin alta ni edición; la disponibilidad simulada sigue', async () => {
+  it('el encargado: solo lectura con aviso, sin alta ni edición; marca agotado en SU sucursal desde «Sucursales»', async () => {
     await renderScreen(<ProductsScreen />, 'manager');
     expect(await screen.findByText('Dumplings')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Nuevo producto' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Editar Dumplings' })).toBeDisabled();
     expect(screen.getByText('Tienes acceso de solo lectura al catálogo.')).toBeVisible();
-    expect(dumplingsSwitch()).toBeEnabled();
-    await userEvent.click(dumplingsSwitch());
-    expect(await screen.findByText('Dumplings marcado como agotado')).toBeVisible();
-    await waitFor(() => expect(dumplingsSwitch()).toHaveAttribute('aria-checked', 'false'));
-    expect(within(card('Dumplings')).getByText('Agotado')).toBeVisible();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Sucursales de Dumplings: precio y disponibilidad' }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Sucursales · Dumplings' });
+    const toggle = await within(dialog).findByRole('switch', { name: 'Disponible: Sucursal 1' });
+    expect(toggle).toBeEnabled();
+    // Sin `catalog.update` el precio queda de solo lectura con aviso (la API devolvería 403).
+    expect(within(dialog).getByLabelText('Sucursal 1: precio especial')).toBeDisabled();
+    expect(within(dialog).getByText(/No tienes permiso para fijar precios/)).toBeVisible();
+    await userEvent.click(toggle);
+    expect(await screen.findByText('Sucursal 1 marcado como agotado')).toBeVisible();
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole('switch', { name: 'Disponible: Sucursal 1' }),
+      ).toHaveAttribute('aria-checked', 'false'),
+    );
   });
 
   it('con permiso de escritura pero solo por sucursal: aviso de alcance y acciones deshabilitadas', async () => {
@@ -102,14 +110,18 @@ describe('Productos F11: lista del servidor y permisos', () => {
     expect(await screen.findByText('Joselito Roll')).toBeVisible();
   });
 
-  it('la vista Tabla conserva los datos y el interruptor', async () => {
+  it('la vista Tabla conserva los datos y el acceso a «Sucursales»', async () => {
     await renderScreen(<ProductsScreen />, 'admin');
     await screen.findByText('Dumplings');
     await userEvent.click(screen.getByRole('button', { name: 'Tabla' }));
     const table = screen.getByRole('table');
     expect(within(table).getByRole('columnheader', { name: 'Estado' })).toBeVisible();
     expect(within(table).getByText('Q53.00')).toBeVisible();
-    expect(within(table).getByRole('switch', { name: 'Disponible: Dumplings' })).toBeVisible();
+    expect(
+      within(table).getByRole('button', {
+        name: 'Sucursales de Dumplings: precio y disponibilidad',
+      }),
+    ).toBeVisible();
   });
 
   it('estados: vacío sin catálogo y error con reintento', async () => {

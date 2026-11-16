@@ -114,6 +114,16 @@ export type ReorderModifiersRequest = S['ReorderModifiersRequest'];
 export type ReplaceProductModifierGroupsRequest = S['ReplaceProductModifierGroupsRequest'];
 /** Disponibilidad de un PRODUCTO por sucursal (borrador del catálogo; no confundir con `BranchAvailability`, F08). */
 export type ProductBranchAvailability = S['DraftBranchAvailability'];
+/** F13: precio y disponibilidad por sucursal (overlay público, matrices administrativas y escrituras). */
+export type StoreBranchMenu = S['StoreBranchMenu'];
+export type StoreBranchMenuItem = S['StoreBranchMenuItem'];
+export type AdminBranchProductState = S['AdminBranchProductState'];
+export type AdminBranchProductRow = S['AdminBranchProductRow'];
+export type AdminBranchProductPage = S['AdminBranchProductPage'];
+export type AdminProductBranchRow = S['AdminProductBranchRow'];
+export type AdminProductBranches = S['AdminProductBranches'];
+export type SetBranchProductPricingRequest = S['SetBranchProductPricingRequest'];
+export type SetProductAvailabilityRequest = S['SetProductAvailabilityRequest'];
 export type Promotion = S['Promotion'];
 export type PromotionInput = S['PromotionInput'];
 export type HappyHourItem = S['HappyHourItem'];
@@ -256,7 +266,7 @@ export type FavoriteProductStatus = S['FavoriteProductStatus'];
 
 /**
  * SIMULADO (solo mock, `/v1/demo/catalog/product-extras`): lo que F11 NO provee y la tienda sigue necesitando hasta que
- * lleguen F13 (disponibilidad/precio por sucursal), F15 (insignias) y los textos por idioma. Nunca existe
+ * lleguen F15 (insignias) y los textos por idioma. Nunca existe
  * en la API real: en http la UI usa valores por defecto.
  */
 export interface SimulatedProductExtras {
@@ -266,7 +276,4 @@ export interface SimulatedProductExtras {
   illustration: string;
   featured: boolean;
   food: boolean;
-  /** Disponible en la sucursal pedida (o en alguna activa si no se indica). */
-  available: boolean;
-  availability: ProductBranchAvailability[];
 }

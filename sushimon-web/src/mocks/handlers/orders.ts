@@ -14,6 +14,7 @@ import { isScheduleValid } from '@/lib/schedule';
 import {
   assertAddress,
   availableAt,
+  effectivePriceAt,
   digits,
   event,
   fail,
@@ -149,8 +150,10 @@ export const createOrder: Handler = (req): Order => {
     if (!product || !isProductVisible(req.store, product)) {
       fail(422, `Producto inexistente: ${l.productId}`);
     }
-    if (!availableAt(product, branch.id)) fail(409, `${product.name} no está disponible`);
-    const unitPrice = priceToNumber(product.basePrice);
+    if (!availableAt(req.store, product, branch.id))
+      fail(409, `${product.name} no está disponible`);
+    // F13: el precio lo fija el servidor con el precio EFECTIVO de ESA sucursal (override o base), nunca el del cliente.
+    const unitPrice = priceToNumber(effectivePriceAt(req.store, product, branch.id));
     return {
       productId: product.id,
       name: product.name,
@@ -433,7 +436,7 @@ export const demoSimulateOrder: Handler = (req) => {
   const branch = req.store.branches.find((x) => x.id === branchId && x.status === 'active');
   if (!branch) fail(409, 'No hay sucursales abiertas');
   const pool = req.store.products.filter(
-    (p) => p.food && isProductVisible(req.store, p) && availableAt(p, branch.id),
+    (p) => p.food && isProductVisible(req.store, p) && availableAt(req.store, p, branch.id),
   );
   if (pool.length === 0) fail(409, 'No hay productos disponibles');
   const delivery = n % 3 !== 1;

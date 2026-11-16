@@ -88,6 +88,7 @@ describe('repetir pedido', () => {
     description: p.description ?? '',
     price: priceToNumber(p.basePrice),
     available: true,
+    availability: [],
   }));
   const old = store.orders.find((o) => o.id === 'MON-479850') as Order;
 

@@ -36,7 +36,7 @@ src/mocks/
   store.ts             tipo MockStore + persistencia en sessionStorage (clave sushimon-mock-store-v1:<escenario>)
   domain.ts            reglas puras (totales, validaciones, fail(), failCode()/badRequest() con `code`/`violations`)
   coverage.ts          motor de cobertura F09 (OWN, PedidosYa simulado, elegibilidad A–G): réplica de la API
-  handlers/            public · orders · account · backoffice · backoffice-admin · logistics · schedule · delivery (F09) · categories (F10) · products (F11) · modifiers (F12) · favorites (F06) · index (mockRoutes)
+  handlers/            public · orders · account · backoffice · backoffice-admin · logistics · schedule · delivery (F09) · categories (F10) · products (F11) · modifiers (F12) · branch-products (F13) · favorites (F06) · index (mockRoutes)
   index.ts             createMockDataClient({ scenario, latencyMs?, store?, clock?, session?, persist? })
   testing.ts           createHarness() para pruebas
 src/services/          store · orders · account · favorites (F06) · backoffice-orders · backoffice-admin
@@ -261,7 +261,7 @@ paralelo; no se ha probado la web contra ella).
 | Backoffice Productos: lista paginada, filtros, alta, edición, activar/desactivar, `media`          | **Contrato F11** (`/v1/admin/products`), errores por `code`, permisos `catalog.*` con alcance global para escribir                                                                       |
 | Precio                                                                                             | Cadena `"85.00"` (`lib/product-rules`, céntimos enteros); `price: number` solo en el modelo UI `Product` para sumar/mostrar; precio = `basePrice` global (sin precio por sucursal)       |
 | Ilustración, destacado, `food`, nombre/descripción en inglés                                       | **SIMULADO** (mock: `GET /v1/demo/catalog/product-extras`). En http: ilustración por categoría (`lib/product-decor`), sin destacado, sin inglés (el contrato no tiene textos por idioma) |
-| `available` / disponibilidad por sucursal, interruptor del backoffice                              | **SIMULADO** (F13): `PATCH /v1/demo/catalog/products/:id/availability`. En http la UI no ofrece el interruptor y todo figura disponible                                                  |
+| `available` / disponibilidad por sucursal, interruptor del backoffice                              | **Contrato F13** (ver sección F13): ya no es simulada; la ruta demo `/v1/demo/catalog/products/:id/availability` y `available`/`availability` de `product-extras` se **retiraron**       |
 | Modificadores (F12), promociones/insignias (F15), agregados de tienda (F17), subida de fotos (F14) | Sin cambios / pendientes: las imágenes solo se **referencian** por URL https (≤ 8, reordenables)                                                                                         |
 
 Notas del mock:
@@ -306,6 +306,36 @@ Notas del mock:
 - La ficha pública omite grupos no ofrecibles (inactivos o sin opciones activas suficientes) sin ocultar el producto, como el servidor (D9).
 - Invalidación TanStack Query: toda mutación invalida `modifiers.*` y las fichas públicas (`products.storeDetails`); la lista pública y el catálogo no cambian.
 - `MOCK_STORE_VERSION` = 9 (`modifierGroups`, `modifiers`, `productModifierGroups`, `sequences.modifierGroup|modifier`, `modifiersBusy`): un store persistido de otra versión se descarta.
+
+## F13 — Precio y disponibilidad por sucursal (spec 014, ADR-0019)
+
+Estado: **web conectada al contrato (mock fiel a las reglas del servidor); integración http real NO verificada** (la API se implementa en
+paralelo; no se ha probado la web contra ella). El checkout/cotización que rechaza agotados en el servidor es F19; los agregados de tienda son F17.
+
+| Qué                                                                                                                            | Estado                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Menú, búsqueda, ficha, favoritos, carrito y reorden con precio y disponibilidad de la sucursal elegida                         | **Contrato F13** (`GET /v1/store/menu?branchId=`, `getStoreBranchMenu`) combinado con `GET /v1/store/products` (F11) en `useProducts` (`features/catalog/hooks`). Clave TanStack `['store-menu', branchId]`, `staleTime` 15 s, refetch al volver al foco y al cambiar de sucursal |
+| «Agotado» (producto visible, `available=false`): atenuado, texto «Agotado», botón «Agregar» deshabilitado con nombre accesible | **Contrato F13**. Sin cantidades: nunca se promete stock numérico                                                                                                                                                                                                                 |
+| Producto que el overlay no trae                                                                                                | No se oferta (el overlay solo incluye productos visibles de una sucursal activa)                                                                                                                                                                                                  |
+| Fallo del overlay                                                                                                              | El menú sigue con precios BASE y un aviso con «Reintentar» (`overlayFailed`); el precio definitivo lo recalcula el servidor (F19)                                                                                                                                                 |
+| Backoffice: sección «Sucursales» (editor de producto, solo editar, y hoja «Sucursales» de cada tarjeta)                        | **Contrato F13** (`GET /v1/admin/products/{id}/branches`, `PUT …/pricing`, `PATCH …/availability`): base, precio especial editable, interruptor, efectivo, `updatedAt`. Errores por `code`                                                                                        |
+| Backoffice: vista «Por sucursal» (matriz)                                                                                      | **Contrato F13** (`GET /v1/admin/branches/{id}/products`): q, categoría, disponibilidad, solo con precio especial, paginada, edición en línea; reutiliza el selector de sucursal del shell                                                                                        |
+| Permisos en la UI (solo cosmético; la API decide)                                                                              | Sin `catalog.update` el precio queda de solo lectura con aviso; sin `catalog.manage_availability` el interruptor se deshabilita; un empleado acotado solo ve sus sucursales                                                                                                       |
+| Ilustración, destacado, `food`, textos en inglés                                                                               | Siguen **SIMULADOS** (`/v1/demo/catalog/product-extras`, sin `available`/`availability`); promociones/insignias (F15) y agregados (F17) pendientes                                                                                                                                |
+| Pedido mock (`POST /v1/orders`)                                                                                                | **SIMULADO**: el mock usa el precio EFECTIVO de la sucursal del pedido y responde 409 si está agotado allí; la API real aún no tiene pedidos (F19/F20)                                                                                                                            |
+
+Notas del mock:
+
+- Estado en `store.branchProducts` (solo excepciones: ausencia de fila = disponible al precio base; la fila se ELIMINA al volver al defecto, D2). Semillas:
+  `dynamita-roll` Q86.00 en Sucursal 2 (base Q82.00), `cerveza-nacional` Q35.00 en Sucursal 3 (base Q33.00); agotados `joselito-roll` (Sucursal 3) y `gaseosas`
+  (Sucursal 2); el escenario `product-unavailable` agota Calientito y Platanito en todas las sucursales activas.
+- Reglas emuladas: overlay solo de la sucursal pedida (400 sin `branchId`; 404 `BRANCH_NOT_FOUND` si no existe o está inactiva), alcance POR SUCURSAL con 404 para ajena
+  (el encargado de A no ve ni modifica B), el encargado marca agotado pero NO fija precio (403: no tiene `catalog.update`), orden 400 → 404 sucursal → 404 producto → 422
+  (`"0.00"` = 422 `BRANCH_PRICE_INVALID`; cualquier otra forma, incluida 85 o `1000000.00`, es 400), idempotencia (sin cambio = 200 sin escribir ni consumir el fallo simulado),
+  503 `BRANCH_PRODUCTS_BUSY` determinista (`store.branchProductsBusy`). No simula auditoría, `Cache-Control: max-age=15`, throttling ni UUID.
+- Invalidación: toda mutación invalida `branch-products.*`, `store-menu.*` (todas las sucursales) y las fichas públicas (`products.storeDetails`); el cambio de sucursal invalida `store-menu`.
+  La caché HTTP real no se puede invalidar: la ventana máxima de obsolescencia es 15 s (ADR-0019 D5).
+- `MOCK_STORE_VERSION` = 10 (`branchProducts`, `branchProductsBusy`; `ProductRecord.availability` retirado): un store persistido de otra versión se descarta.
 
 ## Corrección de la auditoría F00–F09 (web)
 

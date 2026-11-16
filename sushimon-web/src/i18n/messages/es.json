@@ -209,7 +209,9 @@
       "loading": "Cargando extras…",
       "loadError": "No se pudieron cargar los extras de este producto.",
       "retry": "Reintentar"
-    }
+    },
+    "soldOut": "Agotado",
+    "soldOutAria": "{a}: agotado, no se puede agregar"
   },
   "cart": {
     "title": "Tu pedido",
@@ -303,7 +305,8 @@
     "searchCount": "Mostrando {shown} de {total}",
     "searchEmptyTitle": "Sin resultados para «{q}»",
     "searchEmptySub": "Prueba con otro nombre o ingrediente.",
-    "searchMore": "Ver más"
+    "searchMore": "Ver más",
+    "overlayFailed": "No pudimos cargar los precios y la disponibilidad de tu sucursal. Mostramos los precios base; el precio final lo confirma el servidor al pedir."
   },
   "promos": {
     "daysRange": "{a} a {b}",
@@ -1051,7 +1054,6 @@
   "backoffice": {
     "products": {
       "title": "Productos",
-      "subtitle": "{count} productos · disponibilidad para {branch}",
       "viewLabel": "Vista",
       "viewGrid": "Cuadrícula",
       "viewTable": "Tabla",
@@ -1061,19 +1063,9 @@
       "categoriesLabel": "Filtrar por categoría",
       "all": "Todas",
       "noCategory": "Sin categoría",
-      "stateOn": "Disponible",
-      "stateOff": "Agotado",
-      "statePartial": "Parcial {on}/{total}",
-      "switchLabel": "Disponible: {name}",
-      "switchTitle": "Disponible / Agotado",
       "edit": "Editar",
       "editLabel": "Editar {name}",
       "error": "No se pudo cargar el catálogo.",
-      "availabilityError": "No se pudo cambiar la disponibilidad: {message}",
-      "toast": {
-        "available": "{name} disponible",
-        "soldOut": "{name} marcado como agotado"
-      },
       "empty": {
         "title": "Sin productos",
         "description": "Ningún producto coincide con la búsqueda o la categoría.",
@@ -1156,7 +1148,13 @@
         "prev": "Anterior",
         "next": "Siguiente",
         "status": "Página {page} de {pages} · {total} productos"
-      }
+      },
+      "branches": "Sucursales",
+      "branchesLabel": "Sucursales de {name}: precio y disponibilidad",
+      "modeLabel": "Vista del catálogo",
+      "modeCatalog": "Catálogo",
+      "modeBranch": "Por sucursal",
+      "subtitleBranch": "Precio especial y disponibilidad de una sucursal"
     },
     "categories": {
       "title": "Categorías",
@@ -2686,6 +2684,56 @@
         "removed": "Grupo {name} quitado (sin guardar)",
         "moved": "{name} movido a la posición {position} de {total} (sin guardar)"
       }
+    },
+    "branchProducts": {
+      "sectionTitle": "Sucursales",
+      "sectionHelp": "Precio especial por sucursal y disponibilidad (agotado/disponible). Sin precio especial se usa el precio base. No se maneja stock numérico.",
+      "sectionEmpty": "No tienes sucursales dentro de tu alcance.",
+      "notVisible": "Este producto no es visible en la tienda (inactivo o categoría oculta), aunque esté marcado como disponible.",
+      "branchInactive": "Sucursal inactiva",
+      "modalTitle": "Sucursales · {name}",
+      "basePrice": "Precio base",
+      "effectivePrice": "Precio efectivo",
+      "updatedAt": "Última modificación",
+      "neverUpdated": "Sin cambios (valores por defecto)",
+      "offered": "Ofertado al público",
+      "offeredYes": "Ofertado",
+      "offeredNo": "No ofertado",
+      "override": "Especial (Q)",
+      "overrideLabel": "{name}: precio especial",
+      "overridePlaceholder": "Sin precio especial",
+      "save": "Guardar precio",
+      "saveLabel": "{name}: guardar precio especial",
+      "clear": "Quitar precio especial",
+      "clearLabel": "{name}: quitar precio especial",
+      "groupLabel": "{name}: precio y disponibilidad",
+      "switchLabel": "Disponible: {name}",
+      "switchTitle": "Disponible / Agotado",
+      "stateAvailable": "Disponible",
+      "stateSoldOut": "Agotado",
+      "noPricePermission": "No tienes permiso para fijar precios (catalog.update): el precio queda de solo lectura.",
+      "noAvailabilityPermission": "No tienes permiso para cambiar la disponibilidad en esta sucursal",
+      "toastPriceSaved": "Precio especial guardado: {name}",
+      "toastCleared": "Precio especial quitado: {name}",
+      "toastAvailable": "{name} disponible",
+      "toastSoldOut": "{name} marcado como agotado",
+      "matrixTitle": "Productos de la sucursal",
+      "branch": "Sucursal",
+      "searchLabel": "Buscar producto en la sucursal",
+      "searchPlaceholder": "Buscar por nombre, slug o SKU",
+      "categoryFilter": "Categoría",
+      "allCategories": "Todas las categorías",
+      "availabilityFilter": "Disponibilidad",
+      "filterAll": "Todos",
+      "onlyOverride": "Solo con precio especial",
+      "noBranches": "No hay sucursales dentro de tu alcance",
+      "matrixEmpty": "No hay productos con estos filtros",
+      "matrixEmptyFiltered": "Prueba quitando algún filtro.",
+      "notVisibleShort": "No visible en la tienda",
+      "pagerLabel": "Paginación",
+      "prev": "Anterior",
+      "next": "Siguiente",
+      "pagerStatus": "Página {page} de {pages} · {total} productos"
     }
   }
 }

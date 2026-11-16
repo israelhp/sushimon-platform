@@ -445,25 +445,25 @@ describe('F11 mock · pedidos, favoritos y extras simulados', () => {
     expect(created.lines[0]).toMatchObject({ unitPrice: 53, subtotal: 106 });
   });
 
-  it('extras simulados: ilustración y disponibilidad por sucursal; un producto nuevo trae valores por defecto', async () => {
+  it('extras simulados: ilustración y destacado; un producto nuevo trae valores por defecto (sin disponibilidad: es F13)', async () => {
     const h = createHarness();
     h.asStaff('admin');
     const created = await products.createAdminProduct(h.client, {
       ...ok,
       categoryId: 'cat-postres',
     });
-    const extras = (await products.listSimulatedProductExtras(h.client, 'sucursal-1')).items;
+    const extras = (await products.listSimulatedProductExtras(h.client)).items;
     expect(extras.find((e) => e.productId === 'dumplings')).toMatchObject({
       illustration: 'dumpling',
-      available: true,
     });
     expect(extras.find((e) => e.productId === created.id)).toMatchObject({
       illustration: 'icecream',
       featured: false,
-      available: true,
     });
+    expect(extras.find((e) => e.productId === 'dumplings')).not.toHaveProperty('available');
+    // F13: la ruta demo de disponibilidad se retiró (la sustituye PATCH /v1/admin/products/:id/availability).
     expect(
-      await failure(products.setSimulatedProductAvailability(h.client, 'no-existe', [])),
+      await failure(h.client.patch('/v1/demo/catalog/products/dumplings/availability', {})),
     ).toMatchObject({ status: 404 });
   });
 });

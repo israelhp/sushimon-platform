@@ -6,7 +6,6 @@ import type {
   JobApplication,
   Order,
   AdminProductMedia,
-  ProductBranchAvailability,
   ModifierExtraPrice,
   ProductPrice,
   StaffRole,
@@ -29,7 +28,7 @@ import type { MockScenario } from './scenarios';
  * el historial de días anteriores lo genera `factories/history.ts` de forma determinista.
  * NUNCA contiene PAN completo, CVV ni PIN: de una tarjeta solo marca, últimos 4 y referencia.
  */
-export const MOCK_STORE_VERSION = 9;
+export const MOCK_STORE_VERSION = 10;
 
 /**
  * Producto del mock. Los campos F11 (`id`…`updatedAt`) reproducen `app.products` + `app.product_media`; el bloque «SIMULADO»
@@ -55,7 +54,18 @@ export interface ProductRecord {
   illustration: string;
   featured: boolean;
   food: boolean;
-  availability: ProductBranchAvailability[];
+}
+
+/**
+ * F13: excepción por sucursal (`app.branch_products`). AUSENCIA de fila = disponible al precio base; la fila existe solo si hay
+ * override o `available=false` y se ELIMINA al volver al estado por defecto (ADR-0019 D2).
+ */
+export interface BranchProductRecord {
+  branchId: string;
+  productId: string;
+  priceOverride: ProductPrice | null;
+  available: boolean;
+  updatedAt: string;
 }
 
 /** F12: grupo de modificadores (`app.modifier_groups`). Sin borrado físico: solo `active=false`. */
@@ -157,6 +167,11 @@ export interface MockStore {
    */
   productsBusy?: number;
   /**
+   * F13: simulación DETERMINISTA de `BRANCH_PRODUCTS_BUSY` (la transacción de escritura agotó su tiempo): nº de escrituras de
+   * precio/disponibilidad por sucursal que fallarán con 503 antes de que una funcione. Opcional: ausente = 0.
+   */
+  branchProductsBusy?: number;
+  /**
    * F12: simulación DETERMINISTA de `MODIFIERS_BUSY` (bloqueo no disponible o transacción agotada): nº de escrituras de
    * modificadores (grupos, opciones, reordenar, asociar a producto) que fallarán con 503 antes de que una funcione.
    */
@@ -170,6 +185,8 @@ export interface MockStore {
   /** F10: categorías del menú (jerarquía). Los productos mock se unen a ellas por `slug` hasta F11. */
   menuCategories: CategoryRecord[];
   products: ProductRecord[];
+  /** F13: excepciones de precio/disponibilidad por sucursal (solo filas no por defecto). */
+  branchProducts: BranchProductRecord[];
   /** F12: grupos y opciones de modificadores (globales, compartibles entre productos). */
   modifierGroups: ModifierGroupRecord[];
   modifiers: ModifierRecord[];

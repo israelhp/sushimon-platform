@@ -2,7 +2,6 @@ import type {
   AdminProduct,
   AdminProductMedia,
   AdminProductPage,
-  ProductBranchAvailability,
   PublicProduct,
   PublicProductCategoryRef,
   PublicProductDetail,
@@ -30,11 +29,11 @@ import {
   slugifyProductName,
   uniqueSlug,
 } from '@/lib/product-rules';
-import { availableAt, badRequest, fail, failCode } from '../domain';
+import { badRequest, fail, failCode } from '../domain';
 import type { CategoryRecord } from '../fixtures/categories';
 import type { MockStore, ProductRecord } from '../store';
 import { offerableGroupsOf } from './modifiers';
-import { now, requireStaff, staffBranchIds, type Handler, type Req } from './shared';
+import { now, requireStaff, type Handler, type Req } from './shared';
 
 /**
  * F11 — Productos y fichas (spec 012). El mock EMULA al servidor: lectura pública solo de productos ACTIVOS cuya categoría es
@@ -47,7 +46,7 @@ import { now, requireStaff, staffBranchIds, type Handler, type Req } from './sha
  * reemplaza la lista. NO simula auditoría, cabeceras de caché, throttling ni la forma UUID (los ids del mock son legibles).
  * Sin DELETE: solo se desactiva.
  *
- * Al final del archivo, lo SIMULADO que F11 no provee (ilustración, disponibilidad por sucursal…): solo `/v1/demo/*`.
+ * Al final del archivo, lo SIMULADO que F11 no provee (ilustración, destacado, textos en inglés): solo `/v1/demo/*`.
  */
 
 // ── Visibilidad ────────────────────────────────────────────────────────────────────────────
@@ -505,9 +504,6 @@ export const createAdminProduct: Handler = (req): AdminProduct => {
     illustration: art,
     featured: false,
     food: isFoodArt(art),
-    availability: store.branches
-      .filter((b) => b.status === 'active')
-      .map((b) => ({ branchId: b.id, available: true })),
   };
   store.sequences.product++;
   store.products.push(record);
@@ -577,7 +573,7 @@ export const updateAdminProduct: Handler = (req): AdminProduct => {
 
 // ── SIMULADO: lo que F11 no provee (solo /v1/demo/*; nunca existe en la API real) ─────────────
 
-function extrasOf(p: ProductRecord, branchId: string | undefined): SimulatedProductExtras {
+function extrasOf(p: ProductRecord): SimulatedProductExtras {
   return {
     productId: p.id,
     nameEn: p.nameEn,
@@ -585,55 +581,10 @@ function extrasOf(p: ProductRecord, branchId: string | undefined): SimulatedProd
     illustration: p.illustration,
     featured: p.featured,
     food: p.food,
-    available: availableAt(p, branchId),
-    availability: p.availability.map((a) => ({ ...a })),
   };
 }
 
-/** GET /v1/demo/catalog/product-extras?branchId — ilustración, destacado, textos en inglés y disponibilidad (F12/F13/F15). */
-export const listProductExtras: Handler = (req): { items: SimulatedProductExtras[] } => {
-  const branchId = req.query.get('branchId') ?? undefined;
-  if (branchId && !req.store.branches.some((b) => b.id === branchId)) {
-    fail(404, 'Sucursal no encontrada');
-  }
-  return { items: req.store.products.map((p) => extrasOf(p, branchId)) };
-};
-
-function parseAvailability(req: Req, value: unknown): ProductBranchAvailability[] {
-  if (!Array.isArray(value)) fail(400, 'availability inválido');
-  const known = new Set(req.store.branches.map((b) => b.id));
-  return value.map((a: Partial<ProductBranchAvailability>) => {
-    if (
-      !a ||
-      typeof a.branchId !== 'string' ||
-      !known.has(a.branchId) ||
-      typeof a.available !== 'boolean'
-    ) {
-      fail(400, 'availability inválido');
-    }
-    return { branchId: a.branchId, available: a.available };
-  });
-}
-
-/**
- * PATCH /v1/demo/catalog/products/:id/availability — { availability } (F13 SIMULADA). Permiso de encargado
- * (`catalog.manage_availability`: solo su sucursal) o administrador.
- */
-export const setProductAvailability: Handler = (req): SimulatedProductExtras => {
-  const user = requireStaff(req, 'catalog.manage_availability');
-  const raw = rawBody(req);
-  const product = req.store.products.find((p) => p.id === req.params.id);
-  if (!product) failCode(404, 'PRODUCT_NOT_FOUND', 'Producto no encontrado');
-  const incoming = parseAvailability(req, raw.availability);
-  const allowed = new Set(staffBranchIds(req.store, user));
-  for (const a of incoming) {
-    const prev = product.availability.find((x) => x.branchId === a.branchId);
-    if (prev?.available !== a.available && !allowed.has(a.branchId)) {
-      fail(403, 'Sin acceso a esa sucursal');
-    }
-  }
-  product.availability = product.availability.map(
-    (a) => incoming.find((x) => x.branchId === a.branchId) ?? a,
-  );
-  return extrasOf(product, undefined);
-};
+/** GET /v1/demo/catalog/product-extras — ilustración, destacado y textos en inglés (la disponibilidad ya es F13, contrato). */
+export const listProductExtras: Handler = (req): { items: SimulatedProductExtras[] } => ({
+  items: req.store.products.map((p) => extrasOf(p)),
+});

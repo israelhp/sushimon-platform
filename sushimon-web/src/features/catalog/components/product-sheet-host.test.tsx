@@ -110,13 +110,22 @@ describe('ProductSheet', () => {
   });
 
   it('producto no disponible: aviso y no se puede agregar', async () => {
-    const { view } = await openSheet('calientito-roll', { scenario: 'product-unavailable' });
+    const { view } = await openSheet('calientito-roll', {
+      scenario: 'product-unavailable',
+      branchId: 'sucursal-1',
+    });
     expect(screen.getByText(/no está disponible por ahora/)).toBeInTheDocument();
     const add = screen.getByRole('button', { name: /^Agregar\s*Q/ });
     expect(add).toBeDisabled();
     expect(increase()).toBeDisabled();
     fireEvent.click(add);
     expect(view.api().cart.lines).toEqual([]);
+  });
+
+  it('F13: la ficha muestra el precio EFECTIVO de la sucursal elegida', async () => {
+    const { dialog } = await openSheet('dynamita-roll', { branchId: 'sucursal-2' });
+    expect(within(dialog).getAllByText('Q86').length).toBeGreaterThan(0);
+    expect(within(dialog).queryByText('Q82')).not.toBeInTheDocument();
   });
 
   it('en inglés usa nombre y descripción traducidos', async () => {

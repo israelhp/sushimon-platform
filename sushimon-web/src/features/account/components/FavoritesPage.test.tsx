@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { MockStore } from '@/mocks/store';
+import { markSoldOutEverywhere } from '@/mocks/testing';
 import { createSpyClient } from '@/test/spy-client';
 import { renderStore } from '@/test/store-providers';
 import { FavoritesPage } from './FavoritesPage';
@@ -143,8 +144,7 @@ describe('Mis favoritos (F06)', () => {
           { productId: 'fantasma-removido', addedAt: '2026-11-10T00:00:00.000Z' },
           { productId: 'platanito-roll', addedAt: '2026-11-09T00:00:00.000Z' },
         );
-        const roll = store.products.find((p) => p.id === 'platanito-roll')!;
-        roll.availability = roll.availability.map((a) => ({ ...a, available: false }));
+        markSoldOutEverywhere(store, 'platanito-roll');
       },
     });
     await signIn(view);

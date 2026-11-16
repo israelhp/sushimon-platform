@@ -152,6 +152,24 @@ describe('Arquitectura: toda ruta /v1/admin exige StaffGuard y MfaGuard', () => 
     }
   });
 
+  it('las 4 rutas admin de precio y disponibilidad por sucursal (F13) están registradas y protegidas', async () => {
+    const { moduleRef, controllers, StaffGuard, MfaGuard } = await loadApp();
+    try {
+      const routes = adminRoutes(controllers).filter((r) =>
+        r.label.startsWith('AdminBranchProductsController.'),
+      );
+      expect(routes.map((r) => r.label).sort()).toEqual([
+        'AdminBranchProductsController.listForBranch (/admin/branches/:id/products)',
+        'AdminBranchProductsController.listForProduct (/admin/products/:id/branches)',
+        'AdminBranchProductsController.setAvailability (/admin/products/:id/availability)',
+        'AdminBranchProductsController.setPricing (/admin/branches/:id/products/:productId/pricing)',
+      ]);
+      expect(violations(routes, StaffGuard, MfaGuard)).toEqual([]);
+    } finally {
+      await moduleRef.close();
+    }
+  });
+
   it('prueba negativa: una ruta admin sin @RequireStaff se detecta', async () => {
     const { moduleRef, StaffGuard, MfaGuard } = await loadApp();
     try {
