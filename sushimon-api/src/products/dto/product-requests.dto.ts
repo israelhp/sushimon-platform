@@ -156,7 +156,7 @@ export class UpdateProductRequest {
 const toStrictInt = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' && /^\d{1,9}$/.test(value) ? Number(value) : value;
 
-const toBoolean = ({ value }: { value: unknown }): unknown =>
+export const toBoolean = ({ value }: { value: unknown }): unknown =>
   value === 'true' ? true : value === 'false' ? false : value;
 
 export const DEFAULT_PAGE_SIZE = 20;
