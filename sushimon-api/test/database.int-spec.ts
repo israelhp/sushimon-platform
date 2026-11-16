@@ -75,7 +75,7 @@ describe.skipIf(!url)('PrismaService y migraciones contra PostgreSQL real', () =
     expect(rows.every((r) => r.rls)).toBe(true);
   });
 
-  it('0005: siembra 4 roles y 43 permisos granulares; la matriz remapeada coincide con la spec 006', async () => {
+  it('0005: siembra 4 roles y 46 permisos granulares (43 de 0005 + banners.* de 0017); la matriz remapeada coincide con la spec 006', async () => {
     const roles = await prisma.role.findMany({ select: { code: true, isSystem: true } });
     expect(roles.map((r) => r.code).sort()).toEqual(['admin', 'kitchen', 'manager', 'staff']);
     expect(roles.filter((r) => r.isSystem).map((r) => r.code)).toEqual(['admin']);

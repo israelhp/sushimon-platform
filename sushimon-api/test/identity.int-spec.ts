@@ -115,7 +115,7 @@ describe.skipIf(!url)('Identidad contra PostgreSQL real', () => {
 
       const ctx = await identity.getStaffContext(p);
       expect(ctx).toMatchObject({ staffId: row.id, allBranches: true, branchIds: [] });
-      expect(ctx?.permissions).toHaveLength(43);
+      expect(ctx?.permissions).toHaveLength(46);
       expect(ctx?.grants['staff.assign_roles']).toEqual({ allBranches: true, branchIds: [] });
       const linked = await prisma.staffUser.findUniqueOrThrow({ where: { id: row.id } });
       expect(linked.authUserId).toBe(p.authUserId);
