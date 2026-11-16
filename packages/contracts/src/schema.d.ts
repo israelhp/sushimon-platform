@@ -1221,6 +1221,188 @@ export interface paths {
         patch: operations["updateAdminProduct"];
         trace?: never;
     };
+    "/v1/admin/modifier-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Grupos de modificadores (paginado, activos e inactivos)
+         * @description F12. Exige JWT -> personal activo con `catalog.read` (cualquier alcance: el catálogo es global) -> `aal2`. Filtros: `q` (nombre del grupo;
+         *     contiene, sin distinguir mayúsculas ni acentos; `%`, `_` y `\` literales; máx. 80) y `active` (sin valor = todos). Orden fijo `name`, `id`. Paginado
+         *     (`pageSize` <= 100, por defecto 20): el editor de productos pide `active=true&pageSize=100`. Cada elemento es un RESUMEN (sin opciones) con
+         *     `optionCount`, `activeOptionCount` y `productCount` calculados en una sola consulta agregada (sin N+1); el detalle con opciones es
+         *     `getAdminModifierGroup`. `required` es derivado (`minSelect >= 1`), no se almacena. Respuesta `Cache-Control: no-store`.
+         */
+        get: operations["listAdminModifierGroups"];
+        put?: never;
+        /**
+         * Crea un grupo de modificadores (opcionalmente con sus opciones)
+         * @description F12. Exige `catalog.create` con alcance GLOBAL y `aal2`. `name` se normaliza (NFC, recorte, colapso de espacios; 1-80) y es único sin distinguir
+         *     mayúsculas => 409 `MODIFIER_GROUP_NAME_TAKEN`. `minSelect` (por defecto 0) y `maxSelect` (por defecto 1) deben ser enteros con
+         *     0 <= minSelect <= maxSelect, 1 <= maxSelect <= 20; el DTO solo valida el TIPO entero (400) y el rango/relación responde 422
+         *     `MODIFIER_LIMITS_INVALID`. `options` opcional (máx. 30; más => 422 `MODIFIER_LIMIT_REACHED`; el orden del arreglo define `sortOrder`; nombres
+         *     únicos dentro del grupo => 409 `MODIFIER_NAME_TAKEN`): permite crear un grupo obligatorio ya con opciones. Si el grupo se crea
+         *     activo (por defecto) y `minSelect` > nº de opciones activas => 422 `MODIFIER_LIMITS_INVALID` (inalcanzable); un grupo inactivo no tiene esa restricción. Se audita
+         *     `modifier_group.created` (y `modifier.created` por cada opción) en la misma transacción. Respuesta `no-store`.
+         */
+        post: operations["createAdminModifierGroup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/modifier-groups/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detalle de un grupo con todas sus opciones
+         * @description F12. Exige `catalog.read` y `aal2`. Incluye opciones activas e inactivas ordenadas por `sortOrder`, `optionCount`, `activeOptionCount` y
+         *     `productCount`. Respuesta `Cache-Control: no-store`.
+         */
+        get: operations["getAdminModifierGroup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edita un grupo (nombre, límites, activar/desactivar)
+         * @description F12. Exige `catalog.update` con alcance GLOBAL y `aal2`. Parcial: `name`, `minSelect`, `maxSelect`, `active`; al menos un campo (si no, 400);
+         *     cualquier otro => 400. Bajo bloqueo de la fila del grupo (`FOR NO KEY UPDATE`). Invariante: un grupo ACTIVO debe tener al menos `minSelect` opciones activas.
+         *     Se valida con los valores resultantes: `minSelect > maxSelect`, `maxSelect` fuera de 1-20, `minSelect` < 0 o un grupo activo con `minSelect` mayor que sus
+         *     opciones activas (incluida la REACTIVACIÓN) => 422 `MODIFIER_LIMITS_INVALID`. Nombre repetido => 409 `MODIFIER_GROUP_NAME_TAKEN`. Desactivar un
+         *     grupo es siempre posible y lo oculta de la tienda; no se borra ni se desasocia de los productos. Sin borrado físico (los pedidos de F20 guardan snapshots).
+         *     Si ningún valor cambia => 200 sin escribir ni auditar. Se audita `modifier_group.updated` (old/new solo de lo cambiado) y `modifier_group.activated|deactivated`. Respuesta `no-store`.
+         */
+        patch: operations["updateAdminModifierGroup"];
+        trace?: never;
+    };
+    "/v1/admin/modifier-groups/{id}/modifiers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Crea una opción en un grupo
+         * @description F12. Exige `catalog.create` con alcance GLOBAL y `aal2`. Bajo bloqueo de la fila del grupo. `name` normalizado (1-80), único dentro del grupo sin
+         *     distinguir mayúsculas => 409 `MODIFIER_NAME_TAKEN`. `extraPrice` cadena decimal `"0.00"`-`"9999.99"` (0.00 permitido; nunca `number`); fuera de
+         *     forma/rango => 400. Máx. 30 opciones por grupo (activas e inactivas) => 422 `MODIFIER_LIMIT_REACHED`. `active` por defecto `true`. Se agrega al final (`sortOrder` = max + 1).
+         *     Cada opción se elige 0 o 1 vez (sin cantidad por opción). Se audita `modifier.created`. Respuesta `no-store`.
+         */
+        post: operations["createAdminModifier"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/modifier-groups/{id}/modifiers/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reordena las opciones de un grupo
+         * @description F12. Exige `catalog.update` con alcance GLOBAL y `aal2`. `orderedIds` debe contener EXACTAMENTE todas las opciones del grupo (activas e inactivas), sin
+         *     duplicados ni ajenas; si no => 422 `MODIFIER_REORDER_MISMATCH` sin escribir. Asigna `sortOrder` 0..n-1 bajo bloqueo de la fila del grupo. Idempotente: repetir el
+         *     mismo orden responde 200 sin escribir ni auditar; un cambio real audita `modifier.reordered`. Responde 200 con la lista ya ordenada. Respuesta `no-store`.
+         */
+        put: operations["reorderAdminModifiers"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/modifiers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edita una opción (nombre, precio extra, activar/desactivar)
+         * @description F12. Exige `catalog.update` con alcance GLOBAL y `aal2`. Parcial: `name`, `extraPrice`, `active`; al menos un campo (si no, 400); cualquier otro => 400.
+         *     Bajo bloqueo de la fila de su grupo. Nombre repetido en el grupo => 409 `MODIFIER_NAME_TAKEN`. Desactivar una opción que dejaría un grupo ACTIVO con menos
+         *     opciones activas que `minSelect` => 422 `MODIFIER_GROUP_UNSATISFIABLE` (el administrador baja `minSelect` o desactiva el grupo primero). Sin borrado físico: los pedidos
+         *     de F20 conservan snapshot de nombre y precio. Cambiar `extraPrice` NO afecta pedidos ya creados. Sin cambios => 200 sin escribir ni auditar. Se audita `modifier.updated` y
+         *     `modifier.activated|deactivated`. Respuesta `no-store`.
+         */
+        patch: operations["updateAdminModifier"];
+        trace?: never;
+    };
+    "/v1/admin/products/{id}/modifiers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Grupos de modificadores asociados a un producto (con opciones)
+         * @description F12. Exige `catalog.read` y `aal2`. Devuelve, en el orden de asociación, los grupos del producto (activos e inactivos) con todas sus opciones
+         *     (activas e inactivas), para el editor. Es la vista ADMINISTRATIVA: no representa lo que ve el público (ver `getStoreProduct`). Dos consultas como máximo
+         *     (sin N+1). 404 `PRODUCT_NOT_FOUND` si el producto no existe (un producto inactivo SÍ se consulta). Respuesta `no-store`.
+         */
+        get: operations["getAdminProductModifiers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/products/{id}/modifier-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reemplaza la lista de grupos asociados a un producto
+         * @description F12. Exige `catalog.update` con alcance GLOBAL y `aal2`. `groupIds` es la lista COMPLETA y ORDENADA de grupos del producto (`[]` los quita todos); el orden
+         *     define `sortOrder`. Sin duplicados y como máximo 10 (11-50 => 422 `MODIFIER_LIMIT_REACHED`; más de 50 elementos => 400). Bajo bloqueo de la fila del producto
+         *     (`FOR NO KEY UPDATE`), en una transacción: se insertan los grupos nuevos, se actualiza el orden y se ELIMINAN las asociaciones que ya no figuran (única operación de
+         *     borrado de F12: solo la fila de asociación, nunca grupos ni opciones). Cada grupo NUEVO debe existir y estar ACTIVO; un duplicado, uno inexistente o uno
+         *     inactivo recién añadido => 422 `MODIFIER_GROUP_INVALID` (un grupo ya asociado que luego se desactivó puede permanecer en la lista). Un producto cuyo
+         *     grupo no se ofrece (inactivo o sin opciones suficientes) sigue visible en la tienda sin ese grupo. Si la lista y el orden no cambian => 200 sin escribir ni
+         *     auditar; un cambio real audita `product.modifier_groups_replaced` (ids antes/después). Responde 200 con el resultado (misma forma que `getAdminProductModifiers`).
+         *     Respuesta `no-store`.
+         */
+        put: operations["replaceAdminProductModifierGroups"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1616,7 +1798,7 @@ export interface components {
             details?: string[];
             /**
              * @description Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
+             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
              */
             code?: string;
             /** @description Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09). */
@@ -2665,8 +2847,14 @@ export interface components {
             category: components["schemas"]["PublicProductCategoryRef"];
             media: components["schemas"]["PublicProductMedia"][];
         };
-        /** @description Ficha pública, igual que `PublicProduct` más los ancestros visibles de la categoría para el breadcrumb. */
+        /** @description Ficha pública, igual que `PublicProduct` más los ancestros visibles de la categoría para el breadcrumb y los grupos de modificadores ofrecibles (F12). */
         PublicProductDetail: components["schemas"]["PublicProduct"] & {
+            /**
+             * @description F12. Solo grupos ACTIVOS asociados al producto que se pueden ofrecer (con al menos `max(minSelect, 1)` opciones activas), en el orden
+             *     de asociación, con SOLO sus opciones activas (orden de `sortOrder`). Vacío si no hay. Los precios extra son INFORMATIVOS: el servidor
+             *     recalcula y valida la selección al cotizar (F19) y nunca confía en el cliente. No existe en la lista pública (`PublicProduct`).
+             */
+            modifierGroups: components["schemas"]["PublicModifierGroup"][];
             /** @description Ancestros de `category`, de la raíz al padre (vacío si es raíz). */
             categoryAncestors: components["schemas"]["PublicProductCategoryRef"][];
         };
@@ -2761,6 +2949,124 @@ export interface components {
             /** @description REEMPLAZA la lista completa (`[]` la vacía); omitir = no tocar. Máx. 8 (más => 422 `PRODUCT_MEDIA_INVALID`). */
             media?: components["schemas"]["ProductMediaInput"][];
         };
+        /**
+         * @description Importe extra decimal en GTQ como CADENA con 2 decimales (nunca `number`). `0.00` permitido; <= 9999.99.
+         * @example 5.00
+         */
+        ModifierExtraPrice: string;
+        PublicModifierOption: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            extraPrice: components["schemas"]["ModifierExtraPrice"];
+        };
+        /** @description Grupo ofrecible de una ficha (F12). Cada opción se elige 0 o 1 vez; se debe elegir entre `minSelect` y `maxSelect` opciones del grupo. */
+        PublicModifierGroup: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            minSelect: number;
+            maxSelect: number;
+            /** @description Derivado: `minSelect >= 1`. */
+            required: boolean;
+            options: components["schemas"]["PublicModifierOption"][];
+        };
+        AdminModifier: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            groupId: string;
+            name: string;
+            extraPrice: components["schemas"]["ModifierExtraPrice"];
+            active: boolean;
+            sortOrder: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AdminModifierList: {
+            items: components["schemas"]["AdminModifier"][];
+        };
+        AdminModifierGroupSummary: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            minSelect: number;
+            maxSelect: number;
+            /** @description Derivado: `minSelect >= 1` (no se almacena). */
+            required: boolean;
+            active: boolean;
+            /** @description Opciones totales (activas e inactivas). */
+            optionCount: number;
+            activeOptionCount: number;
+            /** @description Productos a los que está asociado. */
+            productCount: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        /** @description Grupo con todas sus opciones (activas e inactivas) ordenadas por `sortOrder`. */
+        AdminModifierGroup: components["schemas"]["AdminModifierGroupSummary"] & {
+            options: components["schemas"]["AdminModifier"][];
+        };
+        AdminModifierGroupPage: {
+            items: components["schemas"]["AdminModifierGroupSummary"][];
+            page: number;
+            pageSize: number;
+            total: number;
+        };
+        AdminProductModifiers: {
+            /** Format: uuid */
+            productId: string;
+            /** @description Grupos asociados (activos e inactivos) en el orden de asociación, con todas sus opciones. */
+            groups: components["schemas"]["AdminModifierGroup"][];
+        };
+        ModifierOptionInput: {
+            name: string;
+            /** @description Opcional; por defecto `"0.00"`. */
+            extraPrice?: components["schemas"]["ModifierExtraPrice"];
+        };
+        CreateModifierGroupRequest: {
+            name: string;
+            /** @description Opcional, por defecto 0. Rango y relación (0 <= min <= max) => 422 `MODIFIER_LIMITS_INVALID` (no 400). */
+            minSelect?: number;
+            /** @description Opcional, por defecto 1. Debe estar en 1-20 => 422 `MODIFIER_LIMITS_INVALID` (no 400). */
+            maxSelect?: number;
+            /** @description Opcional; por defecto `true`. */
+            active?: boolean;
+            /** @description Opcional. Máx. 30 (31-100 => 422 `MODIFIER_LIMIT_REACHED`). El orden define `sortOrder`. */
+            options?: components["schemas"]["ModifierOptionInput"][];
+        };
+        UpdateModifierGroupRequest: {
+            name?: string;
+            /** @description Rango y relación => 422 `MODIFIER_LIMITS_INVALID`. */
+            minSelect?: number;
+            /** @description 1-20 => si no, 422 `MODIFIER_LIMITS_INVALID`. */
+            maxSelect?: number;
+            active?: boolean;
+        };
+        CreateModifierRequest: {
+            name: string;
+            /** @description Opcional; por defecto `"0.00"`. */
+            extraPrice?: components["schemas"]["ModifierExtraPrice"];
+            /** @description Opcional; por defecto `true`. */
+            active?: boolean;
+        };
+        UpdateModifierRequest: {
+            name?: string;
+            extraPrice?: components["schemas"]["ModifierExtraPrice"];
+            active?: boolean;
+        };
+        ReorderModifiersRequest: {
+            /** @description TODAS las opciones actuales del grupo, en el orden deseado, sin duplicados ni ajenas (si no => 422 `MODIFIER_REORDER_MISMATCH`). */
+            orderedIds: string[];
+        };
+        ReplaceProductModifierGroupsRequest: {
+            /** @description Lista completa y ordenada (`[]` quita todos). Máx. 10 (11-50 => 422 `MODIFIER_LIMIT_REACHED`); duplicados/inexistentes/inactivos nuevos => 422 `MODIFIER_GROUP_INVALID`. */
+            groupIds: string[];
+        };
     };
     responses: never;
     parameters: {
@@ -2782,6 +3088,10 @@ export interface components {
         ProductId: string;
         /** @description Slug público del producto (`products.slug`). */
         ProductSlug: string;
+        /** @description UUID del grupo de modificadores (`modifier_groups.id`). */
+        ModifierGroupId: string;
+        /** @description UUID de la opción (`modifiers.id`). */
+        ModifierId: string;
     };
     requestBodies: never;
     headers: never;
@@ -6336,6 +6646,705 @@ export interface operations {
                 };
             };
             /** @description `PRODUCTS_BUSY`: la transacción agotó su tiempo; reintentable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAdminModifierGroups: {
+        parameters: {
+            query?: {
+                q?: string;
+                /** @description Sin valor = todos. */
+                active?: boolean;
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de grupos (resumen) */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminModifierGroupPage"];
+                };
+            };
+            /** @description Parámetros de consulta inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.read` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAdminModifierGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateModifierGroupRequest"];
+            };
+        };
+        responses: {
+            /** @description Grupo creado (con opciones) */
+            201: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminModifierGroup"];
+                };
+            };
+            /** @description Forma inválida (nombre, tipos, UUID, propiedades desconocidas) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.create` con alcance global o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIER_GROUP_NAME_TAKEN` o `MODIFIER_NAME_TAKEN` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIER_LIMITS_INVALID` o `MODIFIER_LIMIT_REACHED` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIERS_BUSY`: bloqueo no disponible o la transacción agotó su tiempo; reintentable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAdminModifierGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del grupo de modificadores (`modifier_groups.id`). */
+                id: components["parameters"]["ModifierGroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Grupo con opciones */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminModifierGroup"];
+                };
+            };
+            /** @description UUID inválido */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.read` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIER_GROUP_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAdminModifierGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del grupo de modificadores (`modifier_groups.id`). */
+                id: components["parameters"]["ModifierGroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateModifierGroupRequest"];
+            };
+        };
+        responses: {
+            /** @description Grupo actualizado (o sin cambios) */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminModifierGroup"];
+                };
+            };
+            /** @description Forma inválida, cuerpo vacío o campos no permitidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.update` con alcance global o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIER_GROUP_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIER_GROUP_NAME_TAKEN` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIER_LIMITS_INVALID` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIERS_BUSY`: bloqueo no disponible o la transacción agotó su tiempo; reintentable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAdminModifier: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del grupo de modificadores (`modifier_groups.id`). */
+                id: components["parameters"]["ModifierGroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateModifierRequest"];
+            };
+        };
+        responses: {
+            /** @description Opción creada */
+            201: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminModifier"];
+                };
+            };
+            /** @description Forma inválida (nombre, precio, UUID, propiedades desconocidas) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.create` con alcance global o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIER_GROUP_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIER_NAME_TAKEN` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIER_LIMIT_REACHED` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIERS_BUSY`: bloqueo no disponible o la transacción agotó su tiempo; reintentable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reorderAdminModifiers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del grupo de modificadores (`modifier_groups.id`). */
+                id: components["parameters"]["ModifierGroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderModifiersRequest"];
+            };
+        };
+        responses: {
+            /** @description Opciones con su nuevo orden */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminModifierList"];
+                };
+            };
+            /** @description Forma inválida (UUID mal formado, más de 30 elementos, propiedades desconocidas) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.update` con alcance global o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIER_GROUP_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIER_REORDER_MISMATCH` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIERS_BUSY`: bloqueo no disponible o la transacción agotó su tiempo; reintentable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAdminModifier: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la opción (`modifiers.id`). */
+                id: components["parameters"]["ModifierId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateModifierRequest"];
+            };
+        };
+        responses: {
+            /** @description Opción actualizada (o sin cambios) */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminModifier"];
+                };
+            };
+            /** @description Forma inválida, cuerpo vacío o campos no permitidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.update` con alcance global o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIER_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIER_NAME_TAKEN` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIER_GROUP_UNSATISFIABLE` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIERS_BUSY`: bloqueo no disponible o la transacción agotó su tiempo; reintentable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAdminProductModifiers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del producto (`products.id`). */
+                id: components["parameters"]["ProductId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Grupos del producto */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminProductModifiers"];
+                };
+            };
+            /** @description UUID inválido */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.read` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCT_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    replaceAdminProductModifierGroups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del producto (`products.id`). */
+                id: components["parameters"]["ProductId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceProductModifierGroupsRequest"];
+            };
+        };
+        responses: {
+            /** @description Grupos del producto tras el reemplazo */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminProductModifiers"];
+                };
+            };
+            /** @description Forma inválida (UUID mal formado, más de 50 elementos, propiedades desconocidas) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.update` con alcance global o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCT_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIER_GROUP_INVALID` o `MODIFIER_LIMIT_REACHED` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `MODIFIERS_BUSY`: bloqueo no disponible o la transacción agotó su tiempo; reintentable */
             503: {
                 headers: {
                     [name: string]: unknown;

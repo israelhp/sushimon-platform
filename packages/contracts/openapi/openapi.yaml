@@ -1,6 +1,6 @@
 # Contrato HTTP canónico de Sushi Mon (Contract First).
 # Se diseña ANTES de implementar cada slice y se verifica contra NestJS con `pnpm contracts:check`.
-# Estado: F11 (productos y fichas de catálogo: /v1/store/products, /v1/admin/products) + F10 (categorías y jerarquía del menú: /v1/store/categories, /v1/admin/categories, /v1/admin/categories/reorder) + F09 (geografía, cobertura y zonas propias: /v1/locations/*, /v1/admin/delivery-zones, /v1/admin/branches/{id}/delivery-settings, /v1/delivery-coverage/check) + F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
+# Estado: F12 (modificadores de producto: /v1/admin/modifier-groups, /v1/admin/modifiers, /v1/admin/products/{id}/modifiers|modifier-groups; modifierGroups en la ficha pública) + F11 (productos y fichas de catálogo: /v1/store/products, /v1/admin/products) + F10 (categorías y jerarquía del menú: /v1/store/categories, /v1/admin/categories, /v1/admin/categories/reorder) + F09 (geografía, cobertura y zonas propias: /v1/locations/*, /v1/admin/delivery-zones, /v1/admin/branches/{id}/delivery-settings, /v1/delivery-coverage/check) + F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
 # Seguridad por defecto: Bearer JWT de Supabase Auth en todo salvo operaciones con `security: []` (health).
 # Transversal a TODAS las respuestas: cabecera `X-Request-Id`; errores con `ErrorResponse`; 429 cuando
 # se excede el rate limit global (no se repite por operación).
@@ -3007,6 +3007,582 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/modifier-groups:
+    get:
+      operationId: listAdminModifierGroups
+      summary: Grupos de modificadores (paginado, activos e inactivos)
+      description: |
+        F12. Exige JWT -> personal activo con `catalog.read` (cualquier alcance: el catálogo es global) -> `aal2`. Filtros: `q` (nombre del grupo;
+        contiene, sin distinguir mayúsculas ni acentos; `%`, `_` y `\` literales; máx. 80) y `active` (sin valor = todos). Orden fijo `name`, `id`. Paginado
+        (`pageSize` <= 100, por defecto 20): el editor de productos pide `active=true&pageSize=100`. Cada elemento es un RESUMEN (sin opciones) con
+        `optionCount`, `activeOptionCount` y `productCount` calculados en una sola consulta agregada (sin N+1); el detalle con opciones es
+        `getAdminModifierGroup`. `required` es derivado (`minSelect >= 1`), no se almacena. Respuesta `Cache-Control: no-store`.
+      tags: [modifiers]
+      security:
+        - bearer: []
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 80 }
+        - name: active
+          in: query
+          description: Sin valor = todos.
+          schema: { type: boolean }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Página de grupos (resumen)
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminModifierGroupPage'
+        '400':
+          description: Parámetros de consulta inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.read` o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      operationId: createAdminModifierGroup
+      summary: Crea un grupo de modificadores (opcionalmente con sus opciones)
+      description: |
+        F12. Exige `catalog.create` con alcance GLOBAL y `aal2`. `name` se normaliza (NFC, recorte, colapso de espacios; 1-80) y es único sin distinguir
+        mayúsculas => 409 `MODIFIER_GROUP_NAME_TAKEN`. `minSelect` (por defecto 0) y `maxSelect` (por defecto 1) deben ser enteros con
+        0 <= minSelect <= maxSelect, 1 <= maxSelect <= 20; el DTO solo valida el TIPO entero (400) y el rango/relación responde 422
+        `MODIFIER_LIMITS_INVALID`. `options` opcional (máx. 30; más => 422 `MODIFIER_LIMIT_REACHED`; el orden del arreglo define `sortOrder`; nombres
+        únicos dentro del grupo => 409 `MODIFIER_NAME_TAKEN`): permite crear un grupo obligatorio ya con opciones. Si el grupo se crea
+        activo (por defecto) y `minSelect` > nº de opciones activas => 422 `MODIFIER_LIMITS_INVALID` (inalcanzable); un grupo inactivo no tiene esa restricción. Se audita
+        `modifier_group.created` (y `modifier.created` por cada opción) en la misma transacción. Respuesta `no-store`.
+      tags: [modifiers]
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateModifierGroupRequest'
+      responses:
+        '201':
+          description: Grupo creado (con opciones)
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminModifierGroup'
+        '400':
+          description: Forma inválida (nombre, tipos, UUID, propiedades desconocidas)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.create` con alcance global o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`MODIFIER_GROUP_NAME_TAKEN` o `MODIFIER_NAME_TAKEN`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`MODIFIER_LIMITS_INVALID` o `MODIFIER_LIMIT_REACHED`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`MODIFIERS_BUSY`: bloqueo no disponible o la transacción agotó su tiempo; reintentable'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/modifier-groups/{id}:
+    get:
+      operationId: getAdminModifierGroup
+      summary: Detalle de un grupo con todas sus opciones
+      description: |
+        F12. Exige `catalog.read` y `aal2`. Incluye opciones activas e inactivas ordenadas por `sortOrder`, `optionCount`, `activeOptionCount` y
+        `productCount`. Respuesta `Cache-Control: no-store`.
+      tags: [modifiers]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/ModifierGroupId'
+      responses:
+        '200':
+          description: Grupo con opciones
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminModifierGroup'
+        '400':
+          description: UUID inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.read` o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`MODIFIER_GROUP_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      operationId: updateAdminModifierGroup
+      summary: Edita un grupo (nombre, límites, activar/desactivar)
+      description: |
+        F12. Exige `catalog.update` con alcance GLOBAL y `aal2`. Parcial: `name`, `minSelect`, `maxSelect`, `active`; al menos un campo (si no, 400);
+        cualquier otro => 400. Bajo bloqueo de la fila del grupo (`FOR NO KEY UPDATE`). Invariante: un grupo ACTIVO debe tener al menos `minSelect` opciones activas.
+        Se valida con los valores resultantes: `minSelect > maxSelect`, `maxSelect` fuera de 1-20, `minSelect` < 0 o un grupo activo con `minSelect` mayor que sus
+        opciones activas (incluida la REACTIVACIÓN) => 422 `MODIFIER_LIMITS_INVALID`. Nombre repetido => 409 `MODIFIER_GROUP_NAME_TAKEN`. Desactivar un
+        grupo es siempre posible y lo oculta de la tienda; no se borra ni se desasocia de los productos. Sin borrado físico (los pedidos de F20 guardan snapshots).
+        Si ningún valor cambia => 200 sin escribir ni auditar. Se audita `modifier_group.updated` (old/new solo de lo cambiado) y `modifier_group.activated|deactivated`. Respuesta `no-store`.
+      tags: [modifiers]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/ModifierGroupId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateModifierGroupRequest'
+      responses:
+        '200':
+          description: Grupo actualizado (o sin cambios)
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminModifierGroup'
+        '400':
+          description: Forma inválida, cuerpo vacío o campos no permitidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.update` con alcance global o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`MODIFIER_GROUP_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`MODIFIER_GROUP_NAME_TAKEN`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`MODIFIER_LIMITS_INVALID`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`MODIFIERS_BUSY`: bloqueo no disponible o la transacción agotó su tiempo; reintentable'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/modifier-groups/{id}/modifiers:
+    post:
+      operationId: createAdminModifier
+      summary: Crea una opción en un grupo
+      description: |
+        F12. Exige `catalog.create` con alcance GLOBAL y `aal2`. Bajo bloqueo de la fila del grupo. `name` normalizado (1-80), único dentro del grupo sin
+        distinguir mayúsculas => 409 `MODIFIER_NAME_TAKEN`. `extraPrice` cadena decimal `"0.00"`-`"9999.99"` (0.00 permitido; nunca `number`); fuera de
+        forma/rango => 400. Máx. 30 opciones por grupo (activas e inactivas) => 422 `MODIFIER_LIMIT_REACHED`. `active` por defecto `true`. Se agrega al final (`sortOrder` = max + 1).
+        Cada opción se elige 0 o 1 vez (sin cantidad por opción). Se audita `modifier.created`. Respuesta `no-store`.
+      tags: [modifiers]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/ModifierGroupId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateModifierRequest'
+      responses:
+        '201':
+          description: Opción creada
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminModifier'
+        '400':
+          description: Forma inválida (nombre, precio, UUID, propiedades desconocidas)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.create` con alcance global o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`MODIFIER_GROUP_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`MODIFIER_NAME_TAKEN`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`MODIFIER_LIMIT_REACHED`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`MODIFIERS_BUSY`: bloqueo no disponible o la transacción agotó su tiempo; reintentable'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/modifier-groups/{id}/modifiers/reorder:
+    put:
+      operationId: reorderAdminModifiers
+      summary: Reordena las opciones de un grupo
+      description: |
+        F12. Exige `catalog.update` con alcance GLOBAL y `aal2`. `orderedIds` debe contener EXACTAMENTE todas las opciones del grupo (activas e inactivas), sin
+        duplicados ni ajenas; si no => 422 `MODIFIER_REORDER_MISMATCH` sin escribir. Asigna `sortOrder` 0..n-1 bajo bloqueo de la fila del grupo. Idempotente: repetir el
+        mismo orden responde 200 sin escribir ni auditar; un cambio real audita `modifier.reordered`. Responde 200 con la lista ya ordenada. Respuesta `no-store`.
+      tags: [modifiers]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/ModifierGroupId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReorderModifiersRequest'
+      responses:
+        '200':
+          description: Opciones con su nuevo orden
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminModifierList'
+        '400':
+          description: Forma inválida (UUID mal formado, más de 30 elementos, propiedades desconocidas)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.update` con alcance global o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`MODIFIER_GROUP_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`MODIFIER_REORDER_MISMATCH`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`MODIFIERS_BUSY`: bloqueo no disponible o la transacción agotó su tiempo; reintentable'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/modifiers/{id}:
+    patch:
+      operationId: updateAdminModifier
+      summary: Edita una opción (nombre, precio extra, activar/desactivar)
+      description: |
+        F12. Exige `catalog.update` con alcance GLOBAL y `aal2`. Parcial: `name`, `extraPrice`, `active`; al menos un campo (si no, 400); cualquier otro => 400.
+        Bajo bloqueo de la fila de su grupo. Nombre repetido en el grupo => 409 `MODIFIER_NAME_TAKEN`. Desactivar una opción que dejaría un grupo ACTIVO con menos
+        opciones activas que `minSelect` => 422 `MODIFIER_GROUP_UNSATISFIABLE` (el administrador baja `minSelect` o desactiva el grupo primero). Sin borrado físico: los pedidos
+        de F20 conservan snapshot de nombre y precio. Cambiar `extraPrice` NO afecta pedidos ya creados. Sin cambios => 200 sin escribir ni auditar. Se audita `modifier.updated` y
+        `modifier.activated|deactivated`. Respuesta `no-store`.
+      tags: [modifiers]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/ModifierId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateModifierRequest'
+      responses:
+        '200':
+          description: Opción actualizada (o sin cambios)
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminModifier'
+        '400':
+          description: Forma inválida, cuerpo vacío o campos no permitidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.update` con alcance global o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`MODIFIER_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`MODIFIER_NAME_TAKEN`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`MODIFIER_GROUP_UNSATISFIABLE`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`MODIFIERS_BUSY`: bloqueo no disponible o la transacción agotó su tiempo; reintentable'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/products/{id}/modifiers:
+    get:
+      operationId: getAdminProductModifiers
+      summary: Grupos de modificadores asociados a un producto (con opciones)
+      description: |
+        F12. Exige `catalog.read` y `aal2`. Devuelve, en el orden de asociación, los grupos del producto (activos e inactivos) con todas sus opciones
+        (activas e inactivas), para el editor. Es la vista ADMINISTRATIVA: no representa lo que ve el público (ver `getStoreProduct`). Dos consultas como máximo
+        (sin N+1). 404 `PRODUCT_NOT_FOUND` si el producto no existe (un producto inactivo SÍ se consulta). Respuesta `no-store`.
+      tags: [modifiers]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '200':
+          description: Grupos del producto
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProductModifiers'
+        '400':
+          description: UUID inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.read` o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`PRODUCT_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/products/{id}/modifier-groups:
+    put:
+      operationId: replaceAdminProductModifierGroups
+      summary: Reemplaza la lista de grupos asociados a un producto
+      description: |
+        F12. Exige `catalog.update` con alcance GLOBAL y `aal2`. `groupIds` es la lista COMPLETA y ORDENADA de grupos del producto (`[]` los quita todos); el orden
+        define `sortOrder`. Sin duplicados y como máximo 10 (11-50 => 422 `MODIFIER_LIMIT_REACHED`; más de 50 elementos => 400). Bajo bloqueo de la fila del producto
+        (`FOR NO KEY UPDATE`), en una transacción: se insertan los grupos nuevos, se actualiza el orden y se ELIMINAN las asociaciones que ya no figuran (única operación de
+        borrado de F12: solo la fila de asociación, nunca grupos ni opciones). Cada grupo NUEVO debe existir y estar ACTIVO; un duplicado, uno inexistente o uno
+        inactivo recién añadido => 422 `MODIFIER_GROUP_INVALID` (un grupo ya asociado que luego se desactivó puede permanecer en la lista). Un producto cuyo
+        grupo no se ofrece (inactivo o sin opciones suficientes) sigue visible en la tienda sin ese grupo. Si la lista y el orden no cambian => 200 sin escribir ni
+        auditar; un cambio real audita `product.modifier_groups_replaced` (ids antes/después). Responde 200 con el resultado (misma forma que `getAdminProductModifiers`).
+        Respuesta `no-store`.
+      tags: [modifiers]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplaceProductModifierGroupsRequest'
+      responses:
+        '200':
+          description: Grupos del producto tras el reemplazo
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProductModifiers'
+        '400':
+          description: Forma inválida (UUID mal formado, más de 50 elementos, propiedades desconocidas)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.update` con alcance global o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`PRODUCT_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`MODIFIER_GROUP_INVALID` o `MODIFIER_LIMIT_REACHED`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`MODIFIERS_BUSY`: bloqueo no disponible o la transacción agotó su tiempo; reintentable'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   parameters:
     StaffId:
@@ -3063,6 +3639,18 @@ components:
       required: true
       description: Slug público del producto (`products.slug`).
       schema: { type: string, maxLength: 80, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+    ModifierGroupId:
+      name: id
+      in: path
+      required: true
+      description: UUID del grupo de modificadores (`modifier_groups.id`).
+      schema: { type: string, format: uuid }
+    ModifierId:
+      name: id
+      in: path
+      required: true
+      description: UUID de la opción (`modifiers.id`).
+      schema: { type: string, format: uuid }
   schemas:
     PublicBranch:
       type: object
@@ -3623,7 +4211,7 @@ components:
           type: string
           description: |
             Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
+            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
         violations:
           type: array
           description: Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09).
@@ -5150,12 +5738,20 @@ components:
           maxItems: 8
           items: { $ref: '#/components/schemas/PublicProductMedia' }
     PublicProductDetail:
-      description: 'Ficha pública, igual que `PublicProduct` más los ancestros visibles de la categoría para el breadcrumb.'
+      description: 'Ficha pública, igual que `PublicProduct` más los ancestros visibles de la categoría para el breadcrumb y los grupos de modificadores ofrecibles (F12).'
       allOf:
         - $ref: '#/components/schemas/PublicProduct'
         - type: object
-          required: [categoryAncestors]
+          required: [categoryAncestors, modifierGroups]
           properties:
+            modifierGroups:
+              type: array
+              maxItems: 10
+              description: |
+                F12. Solo grupos ACTIVOS asociados al producto que se pueden ofrecer (con al menos `max(minSelect, 1)` opciones activas), en el orden
+                de asociación, con SOLO sus opciones activas (orden de `sortOrder`). Vacío si no hay. Los precios extra son INFORMATIVOS: el servidor
+                recalcula y valida la selección al cotizar (F19) y nunca confía en el cliente. No existe en la lista pública (`PublicProduct`).
+              items: { $ref: '#/components/schemas/PublicModifierGroup' }
             categoryAncestors:
               type: array
               maxItems: 2
@@ -5319,6 +5915,195 @@ components:
           type: array
           description: 'REEMPLAZA la lista completa (`[]` la vacía); omitir = no tocar. Máx. 8 (más => 422 `PRODUCT_MEDIA_INVALID`).'
           items: { $ref: '#/components/schemas/ProductMediaInput' }
+    ModifierExtraPrice:
+      type: string
+      pattern: '^[0-9]{1,4}\.[0-9]{2}$'
+      example: '5.00'
+      description: Importe extra decimal en GTQ como CADENA con 2 decimales (nunca `number`). `0.00` permitido; <= 9999.99.
+    PublicModifierOption:
+      type: object
+      required: [id, name, extraPrice]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        extraPrice: { $ref: '#/components/schemas/ModifierExtraPrice' }
+    PublicModifierGroup:
+      type: object
+      description: Grupo ofrecible de una ficha (F12). Cada opción se elige 0 o 1 vez; se debe elegir entre `minSelect` y `maxSelect` opciones del grupo.
+      required: [id, name, minSelect, maxSelect, required, options]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        minSelect: { type: integer, minimum: 0, maximum: 20 }
+        maxSelect: { type: integer, minimum: 1, maximum: 20 }
+        required: { type: boolean, description: 'Derivado: `minSelect >= 1`.' }
+        options:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items: { $ref: '#/components/schemas/PublicModifierOption' }
+    AdminModifier:
+      type: object
+      required: [id, groupId, name, extraPrice, active, sortOrder, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        groupId: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        extraPrice: { $ref: '#/components/schemas/ModifierExtraPrice' }
+        active: { type: boolean }
+        sortOrder: { type: integer, minimum: 0, maximum: 29 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AdminModifierList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 30
+          items: { $ref: '#/components/schemas/AdminModifier' }
+    AdminModifierGroupSummary:
+      type: object
+      required:
+        [
+          id,
+          name,
+          minSelect,
+          maxSelect,
+          required,
+          active,
+          optionCount,
+          activeOptionCount,
+          productCount,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        minSelect: { type: integer, minimum: 0, maximum: 20 }
+        maxSelect: { type: integer, minimum: 1, maximum: 20 }
+        required: { type: boolean, description: 'Derivado: `minSelect >= 1` (no se almacena).' }
+        active: { type: boolean }
+        optionCount:
+          {
+            type: integer,
+            minimum: 0,
+            maximum: 30,
+            description: Opciones totales (activas e inactivas).,
+          }
+        activeOptionCount: { type: integer, minimum: 0, maximum: 30 }
+        productCount: { type: integer, minimum: 0, description: Productos a los que está asociado. }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AdminModifierGroup:
+      description: Grupo con todas sus opciones (activas e inactivas) ordenadas por `sortOrder`.
+      allOf:
+        - $ref: '#/components/schemas/AdminModifierGroupSummary'
+        - type: object
+          required: [options]
+          properties:
+            options:
+              type: array
+              maxItems: 30
+              items: { $ref: '#/components/schemas/AdminModifier' }
+    AdminModifierGroupPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminModifierGroupSummary' }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0 }
+    AdminProductModifiers:
+      type: object
+      required: [productId, groups]
+      properties:
+        productId: { type: string, format: uuid }
+        groups:
+          type: array
+          maxItems: 10
+          description: Grupos asociados (activos e inactivos) en el orden de asociación, con todas sus opciones.
+          items: { $ref: '#/components/schemas/AdminModifierGroup' }
+    ModifierOptionInput:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        extraPrice:
+          allOf:
+            - $ref: '#/components/schemas/ModifierExtraPrice'
+          description: Opcional; por defecto `"0.00"`.
+    CreateModifierGroupRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        minSelect:
+          type: integer
+          description: 'Opcional, por defecto 0. Rango y relación (0 <= min <= max) => 422 `MODIFIER_LIMITS_INVALID` (no 400).'
+        maxSelect:
+          type: integer
+          description: 'Opcional, por defecto 1. Debe estar en 1-20 => 422 `MODIFIER_LIMITS_INVALID` (no 400).'
+        active: { type: boolean, description: 'Opcional; por defecto `true`.' }
+        options:
+          type: array
+          maxItems: 100
+          description: 'Opcional. Máx. 30 (31-100 => 422 `MODIFIER_LIMIT_REACHED`). El orden define `sortOrder`.'
+          items: { $ref: '#/components/schemas/ModifierOptionInput' }
+    UpdateModifierGroupRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        minSelect:
+          { type: integer, description: 'Rango y relación => 422 `MODIFIER_LIMITS_INVALID`.' }
+        maxSelect: { type: integer, description: '1-20 => si no, 422 `MODIFIER_LIMITS_INVALID`.' }
+        active: { type: boolean }
+    CreateModifierRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        extraPrice:
+          allOf:
+            - $ref: '#/components/schemas/ModifierExtraPrice'
+          description: Opcional; por defecto `"0.00"`.
+        active: { type: boolean, description: 'Opcional; por defecto `true`.' }
+    UpdateModifierRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        extraPrice: { $ref: '#/components/schemas/ModifierExtraPrice' }
+        active: { type: boolean }
+    ReorderModifiersRequest:
+      type: object
+      required: [orderedIds]
+      additionalProperties: false
+      properties:
+        orderedIds:
+          type: array
+          maxItems: 30
+          description: TODAS las opciones actuales del grupo, en el orden deseado, sin duplicados ni ajenas (si no => 422 `MODIFIER_REORDER_MISMATCH`).
+          items: { type: string, format: uuid }
+    ReplaceProductModifierGroupsRequest:
+      type: object
+      required: [groupIds]
+      additionalProperties: false
+      properties:
+        groupIds:
+          type: array
+          maxItems: 50
+          description: 'Lista completa y ordenada (`[]` quita todos). Máx. 10 (11-50 => 422 `MODIFIER_LIMIT_REACHED`); duplicados/inexistentes/inactivos nuevos => 422 `MODIFIER_GROUP_INVALID`.'
+          items: { type: string, format: uuid }
   securitySchemes:
     bearer:
       type: http

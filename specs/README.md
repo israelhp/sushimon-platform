@@ -22,6 +22,7 @@ feature lo fija el backlog tras la auditoría F00–F09 (`docs/AUDITORIA_F00_F09
 | `010-customer-favorites`        | F06 Favoritos de clientes                | `API_IMPLEMENTED` (web `MOCK_ONLY`; catálogo real: `BLOCKED` por F11) |
 | `011-categories-menu-hierarchy` | F10 Categorías y jerarquía del menú      | `IN_PROGRESS` (contrato `CONTRACT_DEFINED`)                           |
 | `012-products-catalog`          | F11 Productos y fichas de catálogo       | `IN_PROGRESS` (contrato `CONTRACT_DEFINED`)                           |
+| `013-product-modifiers`         | F12 Grupos y opciones modificadoras      | `IN_PROGRESS` (contrato `CONTRACT_DEFINED`)                           |
 
 Sin carpeta de spec en este índice: **F04** (perfil de cliente; ver ADR-0012) y **F05** (direcciones; el código cita `specs/009-customer-addresses`, que
-no existe en `develop`; ver ADR-0014). El número `009` quedó libre; la siguiente spec nueva usa `013`.
+no existe en `develop`; ver ADR-0014). El número `009` quedó libre; la siguiente spec nueva usa `014`.
