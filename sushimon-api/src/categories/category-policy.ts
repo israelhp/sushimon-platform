@@ -1,6 +1,7 @@
 import { BadRequestException, HttpStatus } from '@nestjs/common';
 import type { AuditValues } from '../audit/audit.service.js';
 import { codedException } from '../common/errors/coded-exception.js';
+import { SLUG_MAX, SLUG_PATTERN, slugifyText, uniqueSlug } from '../common/text/slug.js';
 import type {
   AdminCategoryFilter,
   AdminCategoryView,
@@ -15,8 +16,7 @@ export const MAX_DEPTH = 3;
 export const MAX_CATEGORIES = 500;
 export const NAME_MAX = 80;
 export const DESCRIPTION_MAX = 500;
-export const SLUG_MAX = 80;
-export const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+export { SLUG_MAX, SLUG_PATTERN, uniqueSlug };
 /** `audit_events.entity_id` es uuid NOT NULL: el reorden de raíces (sin padre) usa el UUID nulo. */
 export const ROOT_AUDIT_ENTITY_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -70,27 +70,7 @@ export function normalizeSlug(raw: string): string {
 }
 
 /** Minúsculas, sin acentos, kebab, ≤ 80. Nombre sin caracteres útiles => `categoria`. */
-export function slugify(name: string): string {
-  const base = name
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, SLUG_MAX)
-    .replace(/-+$/g, '');
-  return base === '' ? 'categoria' : base;
-}
-
-/** `base`, `base-2`, `base-3`… el primero libre (respeta el máximo de 80 recortando la base). */
-export function uniqueSlug(base: string, taken: ReadonlySet<string>): string {
-  if (!taken.has(base)) return base;
-  for (let n = 2; ; n += 1) {
-    const suffix = `-${n}`;
-    const candidate = `${base.slice(0, SLUG_MAX - suffix.length).replace(/-+$/g, '')}${suffix}`;
-    if (!taken.has(candidate)) return candidate;
-  }
-}
+export const slugify = (name: string): string => slugifyText(name, 'categoria');
 
 export function assertSlugFree(slug: string, rows: readonly CategoryNode[], selfId?: string): void {
   if (rows.some((r) => r.slug === slug && r.id !== selfId)) throw slugTaken();

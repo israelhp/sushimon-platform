@@ -17,6 +17,7 @@ import { BranchScheduleModule } from './branch-schedule/branch-schedule.module.j
 import { DeliveryCoverageModule } from './delivery-coverage/delivery-coverage.module.js';
 import { LocationsModule } from './locations/locations.module.js';
 import { CategoriesModule } from './categories/categories.module.js';
+import { ProductsModule } from './products/products.module.js';
 import { BranchesModule } from './branches/branches.module.js';
 import { StaffModule } from './staff/staff.module.js';
 import { CustomersModule } from './customers/customers.module.js';
@@ -55,6 +56,7 @@ import { HealthTokenGuard } from './health/health-token.guard.js';
     AuthModule,
     BranchesModule,
     CategoriesModule,
+    ProductsModule,
     BranchScheduleModule,
     LocationsModule,
     DeliveryCoverageModule,

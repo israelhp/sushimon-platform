@@ -1,4 +1,4 @@
-/** Token de inyección del puerto de catálogo (F11 aportará el adaptador real). */
+/** Token de inyección del puerto de catálogo (adaptador real: `ProductsCatalogAdapter`, F11). */
 export const CATALOG_PRODUCTS_PORT = Symbol('CATALOG_PRODUCTS_PORT');
 
 /** Estado de publicación de un producto según el catálogo. Cualquier otro valor se trata como `UNKNOWN`. */

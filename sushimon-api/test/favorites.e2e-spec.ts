@@ -385,10 +385,8 @@ describe('F06 · favoritos del cliente (e2e)', () => {
       expect(repo.rows).toHaveLength(0);
     });
 
-    it('con el adaptador por defecto (sin catálogo, F11 pendiente) PUT => 503 y GET degrada', async () => {
-      const { UnavailableCatalogAdapter } =
-        await import('../src/favorites/unavailable-catalog.adapter.js');
-      const { CATALOG_PRODUCTS_PORT } = await import('../src/favorites/catalog-products.port.js');
+    /** Arranca la app SIN sobrescribir el puerto de catálogo: usa el adaptador real de F11 (`ProductsCatalogAdapter`). */
+    async function appWithRealCatalog(db: Record<string, unknown>) {
       await app.close();
       const { AppModule } = await import('../src/app.module.js');
       const { configureApp } = await import('../src/app.setup.js');
@@ -397,7 +395,7 @@ describe('F06 · favoritos del cliente (e2e)', () => {
       const { FavoritesRepository } = await import('../src/favorites/favorites.repository.js');
       const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
         .overrideProvider(PrismaService)
-        .useValue(fakeDb())
+        .useValue(db)
         .overrideProvider(JWKS_RESOLVER)
         .useValue(keys.jwks)
         .overrideProvider(FavoritesRepository)
@@ -406,11 +404,99 @@ describe('F06 · favoritos del cliente (e2e)', () => {
       app = moduleRef.createNestApplication<NestExpressApplication>();
       configureApp(app, { corsOrigins: [] });
       await app.init();
-      expect(moduleRef.get(CATALOG_PRODUCTS_PORT)).toBeInstanceOf(UnavailableCatalogAdapter);
+      return moduleRef;
+    }
+
+    it('con el adaptador REAL de F11 y la base fallando => PUT 503 CATALOG_UNAVAILABLE y GET degrada (sin filtrar la causa)', async () => {
+      const { ProductsCatalogAdapter } =
+        await import('../src/favorites/products-catalog.adapter.js');
+      const { CATALOG_PRODUCTS_PORT } = await import('../src/favorites/catalog-products.port.js');
+      // fakeDb() no tiene delegados `category`/`product`: toda consulta del catálogo falla.
+      const moduleRef = await appWithRealCatalog(fakeDb());
+      expect(moduleRef.get(CATALOG_PRODUCTS_PORT)).toBeInstanceOf(ProductsCatalogAdapter);
       const auth = await as(USER_ID);
       const res = await http().put(`${COLLECTION}/${P1}`).set('Authorization', auth).expect(503);
       expect(res.body).toMatchObject({ code: 'CATALOG_UNAVAILABLE' });
+      expect(JSON.stringify(res.body)).not.toMatch(/product|prisma|undefined/i);
+      expect(repo.rows).toHaveLength(0);
       await http().get(COLLECTION).set('Authorization', auth).expect(200);
+    });
+
+    it('con el adaptador REAL de F11: PUT de un producto visible => 204; inactivo, inexistente u oculto => 404 PRODUCT_NOT_FOUND', async () => {
+      const CAT_OK = '00000000-0000-4000-8000-0000000000a1';
+      const CAT_OFF = '00000000-0000-4000-8000-0000000000a2';
+      const category = (id: string, slug: string, active: boolean) => ({
+        id,
+        parentId: null,
+        slug,
+        name: slug,
+        description: null,
+        sortOrder: 0,
+        active,
+      });
+      const cats = [category(CAT_OK, 'rolls', true), category(CAT_OFF, 'ocultas', false)];
+      const products = [
+        { id: P1, name: 'Roll', categoryId: CAT_OK, active: true },
+        { id: P2, name: 'Inactivo', categoryId: CAT_OK, active: false },
+        { id: P3, name: 'En oculta', categoryId: CAT_OFF, active: true },
+      ];
+      const db = {
+        ...fakeDb(),
+        category: { findMany: vi.fn(() => Promise.resolve(cats)) },
+        product: {
+          findMany: vi.fn(
+            (a: {
+              where: { id: { in: string[] }; active: boolean; categoryId: { in: string[] } };
+            }) =>
+              Promise.resolve(
+                products.filter(
+                  (p) =>
+                    a.where.id.in.includes(p.id) &&
+                    p.active === a.where.active &&
+                    a.where.categoryId.in.includes(p.categoryId),
+                ),
+              ),
+          ),
+        },
+        productMedia: {
+          findMany: vi.fn(() =>
+            Promise.resolve([
+              {
+                id: 'm1',
+                productId: P1,
+                mediaUrl: 'https://cdn.x.io/roll.jpg',
+                altText: null,
+                sortOrder: 0,
+              },
+            ]),
+          ),
+        },
+      };
+      await appWithRealCatalog(db);
+      const auth = await as(USER_ID);
+      await http().put(`${COLLECTION}/${P1}`).set('Authorization', auth).expect(204);
+      for (const id of [P2, P3, P_MISSING]) {
+        const res = await http().put(`${COLLECTION}/${id}`).set('Authorization', auth).expect(404);
+        expect(res.body).toMatchObject({ code: 'PRODUCT_NOT_FOUND' });
+      }
+      const list = await http().get(COLLECTION).set('Authorization', auth).expect(200);
+      expect(list.body).toMatchObject({
+        catalogStatus: 'AVAILABLE',
+        favoriteProductIds: [P1],
+        items: [
+          {
+            productId: P1,
+            status: 'ACTIVE',
+            product: {
+              id: P1,
+              name: 'Roll',
+              nameEn: null,
+              imageUrl: 'https://cdn.x.io/roll.jpg',
+              categoryId: CAT_OK,
+            },
+          },
+        ],
+      });
     });
 
     it('un 500 genérico NO expone code', async () => {

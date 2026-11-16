@@ -117,7 +117,7 @@ describe('FavoritesService', () => {
       expect(h.repo.queries.add).toBe(0);
     });
 
-    it('UnavailableCatalogAdapter (defecto) => 503', async () => {
+    it('UnavailableCatalogAdapter (doble de prueba, ya no enlazado) => 503', async () => {
       const h = harness();
       const service = new FavoritesService(
         h.repo as unknown as FavoritesRepository,

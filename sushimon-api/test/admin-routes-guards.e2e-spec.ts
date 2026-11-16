@@ -111,6 +111,22 @@ describe('Arquitectura: toda ruta /v1/admin exige StaffGuard y MfaGuard', () => 
     }
   });
 
+  it('las 4 rutas admin de productos (F11) están registradas y protegidas', async () => {
+    const { moduleRef, controllers, StaffGuard, MfaGuard } = await loadApp();
+    try {
+      const routes = adminRoutes(controllers).filter((r) => r.label.includes('/admin/products'));
+      expect(routes.map((r) => r.label).sort()).toEqual([
+        'AdminProductsController.create (/admin/products)',
+        'AdminProductsController.get (/admin/products/:id)',
+        'AdminProductsController.list (/admin/products)',
+        'AdminProductsController.update (/admin/products/:id)',
+      ]);
+      expect(violations(routes, StaffGuard, MfaGuard)).toEqual([]);
+    } finally {
+      await moduleRef.close();
+    }
+  });
+
   it('prueba negativa: una ruta admin sin @RequireStaff se detecta', async () => {
     const { moduleRef, StaffGuard, MfaGuard } = await loadApp();
     try {

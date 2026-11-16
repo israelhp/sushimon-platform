@@ -116,6 +116,29 @@ export const envSchema = z
       z.coerce.number().int().min(100).max(10_000).default(3_000),
     ),
 
+    /**
+     * Hosts permitidos para las URL de imágenes de productos (F11, lista separada por comas). Entrada `cdn.ejemplo.com` =
+     * coincidencia exacta; `.ejemplo.com` = cualquier subdominio. Vacía o ausente = cualquier host https público (las IP
+     * literales, `localhost` y los hostnames sin punto se rechazan siempre). F14 fijará el host de R2/CDN.
+     */
+    PRODUCT_MEDIA_ALLOWED_HOSTS: z.preprocess(
+      blankToUndefined,
+      z
+        .string()
+        .default('')
+        .transform((v) =>
+          v
+            .split(',')
+            .map((s) => s.trim().toLowerCase())
+            .filter(Boolean),
+        )
+        .refine(
+          (list) =>
+            list.every((h) => /^\.?[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(h) && h.includes('.')),
+          'cada host debe ser un nombre de dominio con punto (p. ej. cdn.ejemplo.com o .ejemplo.com)',
+        ),
+    ),
+
     /** Token de `GET /v1/health/ready` (cabecera `x-health-token`). Obligatorio en producción. */
     HEALTH_READY_TOKEN: optional(z.string().min(16, 'mínimo 16 caracteres')),
   })
