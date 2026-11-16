@@ -53,6 +53,17 @@ export class AdminProductMediaDto {
   @ApiProperty({ type: String, format: 'uri' }) url!: string;
   @ApiProperty({ type: String, nullable: true }) altText!: string | null;
   @ApiProperty({ type: Number, minimum: 0 }) sortOrder!: number;
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'F14: asset de la biblioteca de medios; null = URL externa.',
+  })
+  assetId!: string | null;
+}
+
+export class AdminProductMediaListDto {
+  @ApiProperty({ type: () => [AdminProductMediaDto] }) items!: AdminProductMediaDto[];
 }
 
 export class AdminProductDto {

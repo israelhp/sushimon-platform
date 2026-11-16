@@ -5,10 +5,12 @@ import { AuthorizationService } from '../auth/authorization.service.js';
 import { CategoriesQueryService } from '../categories/categories-query.service.js';
 import type { Env } from '../config/env.js';
 import type { StaffContext } from '../identity/identity.types.js';
+import { MediaUrlService } from '../media/media-url.service.js';
 import { translateProductDbError } from './product-db-errors.js';
 import {
   categoryInvalid,
   diffProduct,
+  mediaInvalid,
   normalizeDescription,
   normalizeMedia,
   normalizeName,
@@ -25,7 +27,13 @@ import {
 } from './product-policy.js';
 import { toAdminCategory } from './products-query.service.js';
 import { ProductsRepository, type ProductTx } from './products.repository.js';
-import type { AdminProductView, MediaRow, ProductPatch, ProductRow } from './products.types.js';
+import type {
+  AdminProductView,
+  MediaInput,
+  MediaRow,
+  ProductPatch,
+  ProductRow,
+} from './products.types.js';
 
 const ENTITY = 'product';
 
@@ -58,11 +66,47 @@ export class AdminProductsService {
     @Inject(AuthorizationService) private readonly authorization: AuthorizationService,
     @Inject(CategoriesQueryService) private readonly categories: CategoriesQueryService,
     @Inject(ConfigService) private readonly config: ConfigService<Env, true>,
+    /** F14. Opcional en construcción manual (pruebas de F11): sin él no hay enlace de URL de R2 con assets. */
+    @Inject(MediaUrlService) private readonly mediaUrls?: MediaUrlService,
   ) {}
 
-  /** Hosts de imagen permitidos (`PRODUCT_MEDIA_ALLOWED_HOSTS`); vacío = cualquier host https público. */
+  /**
+   * Hosts de imagen permitidos (`PRODUCT_MEDIA_ALLOWED_HOSTS`); vacío = cualquier host https público. Si no está vacía
+   * se añade el host de `R2_PUBLIC_BASE_URL` (F14).
+   */
   private get allowedHosts(): readonly string[] {
-    return this.config.get('PRODUCT_MEDIA_ALLOWED_HOSTS', { infer: true }) ?? [];
+    const configured = this.config.get('PRODUCT_MEDIA_ALLOWED_HOSTS', { infer: true }) ?? [];
+    return this.mediaUrls ? this.mediaUrls.effectiveAllowedHosts(configured) : configured;
+  }
+
+  /**
+   * F14: una URL bajo el host de medios (R2) debe ser EXACTAMENTE la URL pública de un asset READY y se enlaza por
+   * `asset_id`; si no => 422 `PRODUCT_MEDIA_INVALID` (evita saltarse las validaciones de la biblioteca). Las URL de
+   * otros hosts quedan como en F11 (`asset_id` NULL). Una consulta, solo si hay URL de R2.
+   */
+  private async linkAssets(tx: ProductTx, media: readonly MediaInput[]): Promise<MediaInput[]> {
+    const urls = this.mediaUrls;
+    if (!urls?.configured) return [...media];
+    const classes = media.map((m) => urls.classify(m.url));
+    if (classes.every((c) => c.kind === 'external')) return [...media]; // sin consulta
+    const keys = classes.flatMap((c) => (c.kind === 'media' && c.objectKey ? [c.objectKey] : []));
+    const assets = new Map(
+      (await this.repo.findReadyAssetsByKeys(tx, [...new Set(keys)])).map((a) => [
+        a.objectKey,
+        a.id,
+      ]),
+    );
+    return media.map((item, index) => {
+      const cls = classes[index];
+      if (cls?.kind !== 'media') return { ...item };
+      const assetId = cls.objectKey ? assets.get(cls.objectKey) : undefined;
+      if (!assetId)
+        throw mediaInvalid(
+          `media[${index}].url`,
+          'La URL pertenece al almacenamiento de imágenes y no corresponde a un medio confirmado',
+        );
+      return { ...item, assetId };
+    });
   }
 
   async create(staff: StaffContext, input: CreateProductInput): Promise<AdminProductView> {
@@ -96,7 +140,10 @@ export class AdminProductsService {
           basePrice,
           active,
         });
-        const mediaRows = media.length > 0 ? await this.repo.replaceMedia(tx, row.id, media) : [];
+        const mediaRows =
+          media.length > 0
+            ? await this.repo.replaceMedia(tx, row.id, await this.linkAssets(tx, media))
+            : [];
         await this.audit.record(tx, {
           actorId: staff.staffId,
           entityType: ENTITY,
@@ -140,7 +187,10 @@ export class AdminProductsService {
       const current = await this.repo.findById(id, tx);
       if (!current) throw notFound();
       const currentMedia = await this.repo.findMediaInTx(tx, id);
-      const diff = diffProduct(current, currentMedia, patch);
+      const linked = patch.media
+        ? { ...patch, media: await this.linkAssets(tx, patch.media) }
+        : patch;
+      const diff = diffProduct(current, currentMedia, linked);
       if (!diff) return { row: current, media: currentMedia, changed: false }; // ni escritura ni auditoría
 
       // Solo exige categoría ACTIVA si cambia; editar con categoría inactiva sin moverla se permite.

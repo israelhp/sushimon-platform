@@ -20,11 +20,15 @@ export interface MediaRow {
   url: string;
   altText: string | null;
   sortOrder: number;
+  /** F14: asset de `media_assets` (null/ausente = URL externa). */
+  assetId?: string | null;
 }
 
 export interface MediaInput {
   url: string;
   altText: string | null;
+  /** F14: se asigna al enlazar una URL de R2 con un asset READY. */
+  assetId?: string | null;
 }
 
 export interface CategoryRef {
@@ -71,6 +75,7 @@ export interface AdminProductMediaView {
   url: string;
   altText: string | null;
   sortOrder: number;
+  assetId: string | null;
 }
 
 export interface AdminProductView {

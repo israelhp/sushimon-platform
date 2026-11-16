@@ -80,6 +80,21 @@ describe('translateProductDbError', () => {
     const other = { code: '23503', message: 'otra' };
     expect(translateProductDbError(other)).toBe(other);
   });
+  it('F14: deadlock (40P01) y fallo de serialización (40001) => 503 PRODUCTS_BUSY', () => {
+    for (const code of ['40P01', '40001']) {
+      const out = translateProductDbError({ code });
+      expect(status(out)).toBe(503);
+      expect(payload(out)['code']).toBe('PRODUCTS_BUSY');
+    }
+  });
+  it('F14: FK del asset (carrera con el borrado) => 404 MEDIA_NOT_FOUND', () => {
+    const out = translateProductDbError({
+      code: '23503',
+      message: 'violates foreign key constraint "product_media_asset_id_fkey"',
+    });
+    expect(status(out)).toBe(404);
+    expect(payload(out)['code']).toBe('MEDIA_NOT_FOUND');
+  });
   it('errores desconocidos o no objeto pasan intactos', () => {
     const generic = new Error('boom');
     expect(translateProductDbError(generic)).toBe(generic);

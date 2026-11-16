@@ -32,6 +32,7 @@ const MEDIA_SELECT = {
   mediaUrl: true,
   altText: true,
   sortOrder: true,
+  assetId: true,
 } satisfies Prisma.ProductMediaSelect;
 
 type DbProduct = Prisma.ProductGetPayload<{ select: typeof PRODUCT_SELECT }>;
@@ -44,6 +45,7 @@ const toMedia = (m: DbMedia): MediaRow => ({
   url: m.mediaUrl,
   altText: m.altText,
   sortOrder: m.sortOrder,
+  assetId: m.assetId,
 });
 
 interface RawProduct {
@@ -220,9 +222,72 @@ export class ProductsRepository {
         mediaUrl: m.url,
         altText: m.altText,
         sortOrder: i,
+        assetId: m.assetId ?? null,
       })),
       select: MEDIA_SELECT,
     });
     return rows.map(toMedia).sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  // ---------- F14: imágenes individuales (asociar, editar, ordenar, desvincular) ----------
+
+  /** Asset para adjuntar (la fila de `media_assets` solo se lee: su ciclo de vida es de `src/media`). */
+  async findAsset(
+    tx: ProductTx,
+    id: string,
+  ): Promise<{ id: string; status: string; objectKey: string } | null> {
+    return tx.mediaAsset.findUnique({
+      where: { id },
+      select: { id: true, status: true, objectKey: true },
+    });
+  }
+
+  /** Assets READY por clave de objeto (una consulta): enlace automático de URL de R2 en `PATCH media`. */
+  findReadyAssetsByKeys(
+    tx: ProductTx,
+    keys: readonly string[],
+  ): Promise<{ id: string; objectKey: string }[]> {
+    if (keys.length === 0) return Promise.resolve([]);
+    return tx.mediaAsset.findMany({
+      where: { objectKey: { in: [...keys] }, status: 'READY' },
+      select: { id: true, objectKey: true },
+    });
+  }
+
+  async insertMedia(
+    tx: ProductTx,
+    data: {
+      productId: string;
+      mediaUrl: string;
+      altText: string | null;
+      sortOrder: number;
+      assetId: string;
+    },
+  ): Promise<MediaRow> {
+    return toMedia(await tx.productMedia.create({ data, select: MEDIA_SELECT }));
+  }
+
+  async updateMediaAlt(tx: ProductTx, id: string, altText: string | null): Promise<MediaRow> {
+    return toMedia(
+      await tx.productMedia.update({ where: { id }, data: { altText }, select: MEDIA_SELECT }),
+    );
+  }
+
+  async deleteMedia(tx: ProductTx, id: string): Promise<void> {
+    await tx.productMedia.delete({ where: { id } });
+  }
+
+  /**
+   * Asigna `sort_order = índice` a cada id (UPDATE por fila, sin upsert/ON CONFLICT). `UNIQUE (product_id, sort_order)`
+   * es DEFERRABLE INITIALLY DEFERRED (0012): se comprueba al COMMIT, así que los pasos intermedios no chocan.
+   */
+  async setMediaOrder(
+    tx: ProductTx,
+    productId: string,
+    orderedIds: readonly string[],
+  ): Promise<void> {
+    for (const [index, id] of orderedIds.entries()) {
+      await tx.productMedia.updateMany({ where: { id, productId }, data: { sortOrder: index } });
+    }
   }
 }
