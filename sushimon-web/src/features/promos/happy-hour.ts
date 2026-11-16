@@ -1,59 +1,33 @@
-import type { HappyHourItem, Promotion } from '@/lib/data-access/models';
+import type { PromotionScheduleSlot, StorePromotion } from '@/lib/data-access/models';
 import { formatClock, formatDate } from '@/lib/format';
-import {
-  addDaysISO,
-  fromLocal,
-  hmToMinutes,
-  localDate,
-  localDayOfWeek,
-  localMinutes,
-} from '@/lib/time';
+import { addDaysISO, fromLocal, localDate, localTime } from '@/lib/time';
 
 /**
- * Lógica pura del Happy Hour. Recibe la hora (`StoreConfig.serverTime`), nunca lee el reloj.
- * Días ISO (1 = lunes … 7 = domingo), como el contrato.
+ * Lógica PURA de presentación de promociones y Happy Hour de la tienda (F15). NO calcula vigencia ni precios: la API decide qué está
+ * `live`/`upcoming`, cuándo termina (`nextEndsAt`) o vuelve (`nextStartsAt`) y los precios indicativos (`items`). Aquí solo se
+ * agrupan tramos por día, se formatean instantes en hora de Guatemala y se ordena lo recibido. Días ISO (1 = lunes … 7 = domingo).
  */
 export type HappyHourPhase =
-  | { kind: 'live'; endsAt: string }
-  | { kind: 'today'; startsAt: string }
-  | { kind: 'upcoming'; date: string; startsAt: string }
-  | { kind: 'scheduled'; date: string }
-  | { kind: 'expired'; on: string }
-  | { kind: 'inactive' };
+  /** `endsAt` = fin del tramo actual (instante del servidor), `null` si no vino. */
+  { kind: 'live'; endsAt: string | null } | { kind: 'upcoming'; startsAt: string };
 
-/** Promoción que se presenta como "Happy Hour": la de la tienda, con ítems por grupos. */
-export function pickHappyHour(promotions: readonly Promotion[]): Promotion | undefined {
+/** Happy Hour a destacar: el vigente; si no, el que empieza antes. */
+export function pickHappyHour(
+  live: readonly StorePromotion[],
+  upcoming: readonly StorePromotion[],
+): StorePromotion | undefined {
   return (
-    promotions.find((p) => p.id === 'happy-hour') ?? promotions.find((p) => p.items.length > 0)
+    live.find((p) => p.isHappyHour) ??
+    [...upcoming]
+      .filter((p) => p.isHappyHour)
+      .sort((a, b) => (a.nextStartsAt ?? '9999').localeCompare(b.nextStartsAt ?? '9999'))[0]
   );
 }
 
-function isoDayOf(date: Date): number {
-  const d = localDayOfWeek(date);
-  return d === 0 ? 7 : d;
-}
-
-export function happyHourPhase(promotion: Promotion, now: Date): HappyHourPhase {
-  if (promotion.status === 'expired') return { kind: 'expired', on: promotion.validTo };
-  if (promotion.status === 'inactive' || !promotion.active) return { kind: 'inactive' };
-  if (promotion.status === 'scheduled') return { kind: 'scheduled', date: promotion.validFrom };
-
-  const minutes = localMinutes(now);
-  const start = hmToMinutes(promotion.startTime);
-  const end = hmToMinutes(promotion.endTime);
-  if (promotion.daysOfWeek.includes(isoDayOf(now))) {
-    if (minutes >= start && minutes < end) return { kind: 'live', endsAt: promotion.endTime };
-    if (minutes < start) return { kind: 'today', startsAt: promotion.startTime };
-  }
-  const today = localDate(now);
-  for (let i = 1; i <= 7; i++) {
-    const date = addDaysISO(today, i);
-    if (date > promotion.validTo) break;
-    if (promotion.daysOfWeek.includes(isoDayOf(fromLocal(date, '12:00')))) {
-      return { kind: 'upcoming', date, startsAt: promotion.startTime };
-    }
-  }
-  return { kind: 'expired', on: promotion.validTo };
+/** Fase según lo que dijo el servidor (`state`, `nextEndsAt`, `nextStartsAt`); `null` si una próxima no trae fecha. */
+export function happyHourPhase(p: StorePromotion): HappyHourPhase | null {
+  if (p.state === 'live') return { kind: 'live', endsAt: p.nextEndsAt ?? null };
+  return p.nextStartsAt ? { kind: 'upcoming', startsAt: p.nextStartsAt } : null;
 }
 
 /** Un lunes cualquiera: sirve para obtener el nombre de un día ISO con `Intl`. */
@@ -93,33 +67,86 @@ export function daysLabel(
   return capitalize(list);
 }
 
+/** Hora `HH:mm` o `24:00` (medianoche) → "3:00 p. m." / "12:00 a. m.". */
+export const clockLabel = (hm: string, locale: string): string =>
+  formatClock(hm === '24:00' ? '00:00' : hm, locale);
+
 /** "3:00 p. m. – 6:00 p. m." */
 export function hoursLabel(start: string, end: string, locale: string): string {
-  return `${formatClock(start, locale)} – ${formatClock(end, locale)}`;
+  return `${clockLabel(start, locale)} – ${clockLabel(end, locale)}`;
 }
 
 /** "3:00–6:00 p. m." (un solo sufijo si ambas horas son del mismo periodo). */
 export function shortHoursLabel(start: string, end: string, locale: string): string {
-  const a = formatClock(start, locale);
-  const b = formatClock(end, locale);
+  const a = clockLabel(start, locale);
+  const b = clockLabel(end, locale);
   const [timeA = '', ...suffixA] = a.split(' ');
   const [, ...suffixB] = b.split(' ');
   return suffixA.join(' ') === suffixB.join(' ') ? `${timeA}–${b}` : `${a}–${b}`;
 }
 
-/** Grupos de la promoción en orden estable: los conocidos primero, luego los que aparezcan. */
-export const HAPPY_HOUR_GROUP_ORDER = ['Entradas', 'Rolls', 'Cervezas'] as const;
-
-export function groupHappyHourItems(
-  items: readonly HappyHourItem[],
-): { group: string; items: HappyHourItem[] }[] {
-  const groups = [
-    ...HAPPY_HOUR_GROUP_ORDER.filter((g) => items.some((i) => i.group === g)),
-    ...new Set(
-      items
-        .map((i) => i.group)
-        .filter((g) => !(HAPPY_HOUR_GROUP_ORDER as readonly string[]).includes(g)),
-    ),
-  ];
-  return groups.map((group) => ({ group, items: items.filter((i) => i.group === group) }));
+export interface ScheduleGroup {
+  /** Días ISO con exactamente los mismos tramos, ascendentes. */
+  days: number[];
+  /** Tramos del día `[inicio, fin)` en hora local, ascendentes (los contiguos se fusionan: 22:00–24:00 + 00:00–02:00 no, son días distintos). */
+  ranges: { startsAt: string; endsAt: string }[];
 }
+
+/**
+ * Agrupa los días con los mismos tramos («Lunes a jueves · 3:00–6:00 p. m.»). Dentro de un día fusiona tramos contiguos.
+ * Vacío = sin restricción semanal (todos los días y todo el día).
+ */
+export function groupSchedule(schedule: readonly PromotionScheduleSlot[]): ScheduleGroup[] {
+  const byDay = new Map<number, { startsAt: string; endsAt: string }[]>();
+  const sorted = [...schedule].sort(
+    (a, b) => a.weekday - b.weekday || a.startsAt.localeCompare(b.startsAt),
+  );
+  for (const s of sorted) {
+    const list = byDay.get(s.weekday) ?? [];
+    const prev = list[list.length - 1];
+    if (prev && prev.endsAt === s.startsAt) prev.endsAt = s.endsAt;
+    else list.push({ startsAt: s.startsAt, endsAt: s.endsAt });
+    byDay.set(s.weekday, list);
+  }
+  const groups = new Map<string, ScheduleGroup>();
+  for (const [day, ranges] of [...byDay].sort((a, b) => a[0] - b[0])) {
+    const key = JSON.stringify(ranges);
+    const group = groups.get(key);
+    if (group) group.days.push(day);
+    else groups.set(key, { days: [day], ranges });
+  }
+  return [...groups.values()];
+}
+
+/** Hora local `HH:mm` de un instante del servidor (zona de Guatemala). */
+export const instantClock = (instant: string): string => localTime(new Date(instant));
+
+/** ¿Son el mismo día local de Guatemala? */
+export const sameLocalDay = (a: string, b: string): boolean =>
+  localDate(new Date(a)) === localDate(new Date(b));
+
+/** Fin de vigencia a mostrar: `validUntil` es EXCLUSIVO, así que el último día incluido es el del instante anterior. */
+export const lastIncludedInstant = (validUntil: string): Date =>
+  new Date(Date.parse(validUntil) - 60_000);
+
+export interface ItemGroup<T> {
+  category: string;
+  items: T[];
+}
+
+/** Agrupa por categoría del producto conservando el orden de primera aparición. */
+export function groupByCategory<T>(
+  entries: readonly T[],
+  categoryOf: (entry: T) => string,
+): ItemGroup<T>[] {
+  const groups = new Map<string, T[]>();
+  for (const entry of entries) {
+    const key = categoryOf(entry);
+    groups.set(key, [...(groups.get(key) ?? []), entry]);
+  }
+  return [...groups].map(([category, items]) => ({ category, items }));
+}
+
+/** `"25.00"` → `"25"`, `"12.50"` → `"12.5"` (solo para MOSTRAR el porcentaje que dio la API). */
+export const percentText = (value: string): string =>
+  value.replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');

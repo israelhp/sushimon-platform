@@ -1,15 +1,11 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
-import type { PromotionInput } from '@/lib/data-access/models';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDataClient } from '@/lib/data-access/provider';
 import {
-  createPromotion,
   getReportHistory,
   getReportSummary,
   listBoCategories,
-  listBoPromotions,
-  updatePromotion,
   type ReportFilters,
 } from '@/services/backoffice-admin';
 import {
@@ -144,19 +140,6 @@ export function useRiders(branchId?: string) {
 
 // ── Catálogo ──────────────────────────────────────────────────────────────────────────────
 
-function useInvalidatingMutation<TArgs, TResult>(
-  fn: (args: TArgs) => Promise<TResult>,
-  keys: QueryKey[],
-) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: fn,
-    // Se espera el refetch: mientras tanto la mutación sigue «pendiente» y la UI no ofrece de nuevo la
-    // misma acción sobre datos obsoletos (p. ej. «Agregar sucursal» sobre el mismo hueco).
-    onSuccess: () => Promise.all(keys.map((queryKey) => qc.invalidateQueries({ queryKey }))),
-  });
-}
-
 export function useBoCategories() {
   const client = useDataClient();
   const enabled = useStaffEnabled();
@@ -165,26 +148,6 @@ export function useBoCategories() {
     queryFn: () => listBoCategories(client),
     enabled,
   });
-}
-
-export function useBoPromotions() {
-  const client = useDataClient();
-  const enabled = useStaffEnabled();
-  return useQuery({
-    queryKey: queryKeys.backoffice.promotions,
-    queryFn: () => listBoPromotions(client),
-    enabled,
-  });
-}
-
-/** Crear (sin `id`) o editar/activar (con `id`, campos parciales) una promoción. */
-export function useSavePromotion() {
-  const client = useDataClient();
-  return useInvalidatingMutation(
-    ({ id, input }: { id?: string; input: Partial<PromotionInput> }) =>
-      id ? updatePromotion(client, id, input) : createPromotion(client, input as PromotionInput),
-    [queryKeys.catalog.all],
-  );
 }
 
 // ── Reportes ────────────────────────────────────────────────────────────────────────

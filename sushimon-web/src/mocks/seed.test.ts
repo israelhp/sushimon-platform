@@ -54,8 +54,8 @@ describe('createSeedStore', () => {
       'sucursal-3',
     ]);
     expect(s.branches).toHaveLength(5);
-    expect(s.promotions).toHaveLength(3);
-    expect(s.promotions[0]?.items).toHaveLength(8);
+    expect(s.promotions).toHaveLength(6);
+    expect(s.promotions.find((p) => p.id === 'happy-hour')?.productIds).toHaveLength(7);
     expect(s.staff).toHaveLength(11);
     expect(s.roles.map((r) => r.code)).toEqual(['admin', 'manager', 'kitchen', 'staff']);
     expect(s.riders).toHaveLength(6);
@@ -110,7 +110,9 @@ describe('createSeedStore', () => {
     }
 
     const expired = createSeedStore('promotion-expired');
-    expect(expired.promotions.every((p) => p.validTo < '2026-11-11')).toBe(true);
+    expect(
+      expired.promotions.every((p) => Date.parse(p.endsAt) <= Date.parse('2026-11-11T06:00:00Z')),
+    ).toBe(true);
 
     const unavailable = createSeedStore('product-unavailable');
     const soldOut = unavailable.branchProducts.filter((r) => r.productId === 'calientito-roll');

@@ -55,7 +55,7 @@ for (const theme of ['light', 'dark'] as const) {
         await page.addInitScript((value) => localStorage.setItem('monsushi-theme', value), theme);
         await page.goto(`${BASE}${path}`);
         if (name === 'promos') {
-          await page.getByText('Papas Mon Locas').first().waitFor();
+          await page.getByRole('region', { name: 'Happy Hour' }).waitFor();
           await page.waitForTimeout(300);
         } else {
           await menuReady(page);

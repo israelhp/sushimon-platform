@@ -1,80 +1,66 @@
 import { describe, expect, it } from 'vitest';
-import type { Promotion } from '@/lib/data-access/models';
-import { PROMOTION_SEEDS } from '@/mocks/fixtures/promotions';
-import { fromLocal } from '@/lib/time';
+import type { PromotionScheduleSlot, StorePromotion } from '@/lib/data-access/models';
 import {
+  clockLabel,
   daysLabel,
-  groupHappyHourItems,
+  groupByCategory,
+  groupSchedule,
   happyHourPhase,
   hoursLabel,
+  instantClock,
+  lastIncludedInstant,
+  percentText,
   pickHappyHour,
+  sameLocalDay,
   shortHoursLabel,
 } from './happy-hour';
 
-const seed = PROMOTION_SEEDS.find((p) => p.id === 'happy-hour')!;
-const happy: Promotion = { ...seed, status: 'current' };
-const at = (date: string, time: string) => fromLocal(date, time);
 const range = (a: string, b: string) => `${a} to ${b}`;
+const slot = (weekday: number, startsAt: string, endsAt: string): PromotionScheduleSlot => ({
+  weekday,
+  startsAt,
+  endsAt,
+});
 
-describe('happyHourPhase (lunes a jueves, 15:00–18:00)', () => {
-  it('antes de abrir el miércoles: "hoy a partir de las 15:00" (reloj de la demo 14:25)', () => {
-    expect(happyHourPhase(happy, at('2026-11-11', '14:25'))).toEqual({
-      kind: 'today',
-      startsAt: '15:00',
-    });
+function promo(overrides: Partial<StorePromotion> = {}): StorePromotion {
+  return {
+    id: 'p1',
+    name: 'Happy Hour',
+    description: null,
+    requiresCode: false,
+    isHappyHour: true,
+    dineInOnly: true,
+    state: 'live',
+    validFrom: '2026-10-01T06:00:00.000Z',
+    validUntil: '2027-01-01T06:00:00.000Z',
+    schedule: [1, 2, 3, 4].map((d) => slot(d, '15:00', '18:00')),
+    nextStartsAt: null,
+    nextEndsAt: null,
+    productScope: 'ALL',
+    ...overrides,
+  };
+}
+
+describe('fase del Happy Hour (la decide el servidor, no el dispositivo)', () => {
+  it('vigente: usa `nextEndsAt` del servidor; próxima: `nextStartsAt`', () => {
+    expect(
+      happyHourPhase(promo({ state: 'live', nextEndsAt: '2026-11-11T00:00:00.000Z' })),
+    ).toEqual({ kind: 'live', endsAt: '2026-11-11T00:00:00.000Z' });
+    expect(happyHourPhase(promo({ state: 'live' }))).toEqual({ kind: 'live', endsAt: null });
+    expect(
+      happyHourPhase(promo({ state: 'upcoming', nextStartsAt: '2026-11-11T21:00:00.000Z' })),
+    ).toEqual({ kind: 'upcoming', startsAt: '2026-11-11T21:00:00.000Z' });
+    expect(happyHourPhase(promo({ state: 'upcoming' }))).toBeNull();
   });
 
-  it('en curso entre 15:00 y 18:00 (el cierre es exclusivo)', () => {
-    expect(happyHourPhase(happy, at('2026-11-11', '15:00'))).toEqual({
-      kind: 'live',
-      endsAt: '18:00',
-    });
-    expect(happyHourPhase(happy, at('2026-11-11', '17:59')).kind).toBe('live');
-    expect(happyHourPhase(happy, at('2026-11-11', '18:00')).kind).toBe('upcoming');
-  });
-
-  it('terminado el miércoles, la próxima es el jueves', () => {
-    expect(happyHourPhase(happy, at('2026-11-11', '19:00'))).toEqual({
-      kind: 'upcoming',
-      date: '2026-11-12',
-      startsAt: '15:00',
-    });
-  });
-
-  it('jueves tarde, viernes y fin de semana: la próxima es el lunes', () => {
-    for (const [date, time] of [
-      ['2026-11-12', '18:30'],
-      ['2026-11-13', '16:00'],
-      ['2026-11-14', '10:00'],
-      ['2026-11-15', '16:00'],
-    ] as const) {
-      expect(happyHourPhase(happy, at(date, time))).toEqual({
-        kind: 'upcoming',
-        date: '2026-11-16',
-        startsAt: '15:00',
-      });
-    }
-  });
-
-  it('sin más días antes de que venza, la promoción se considera finalizada', () => {
-    const ending = { ...happy, validTo: '2026-11-12' };
-    expect(happyHourPhase(ending, at('2026-11-12', '19:00'))).toEqual({
-      kind: 'expired',
-      on: '2026-11-12',
-    });
-  });
-
-  it('respeta el estado calculado por el servidor', () => {
-    expect(happyHourPhase({ ...happy, status: 'expired' }, at('2026-11-11', '16:00')).kind).toBe(
-      'expired',
-    );
-    expect(happyHourPhase({ ...happy, status: 'inactive' }, at('2026-11-11', '16:00')).kind).toBe(
-      'inactive',
-    );
-    expect(happyHourPhase({ ...happy, status: 'scheduled' }, at('2026-11-11', '16:00'))).toEqual({
-      kind: 'scheduled',
-      date: happy.validFrom,
-    });
+  it('pickHappyHour: la vigente gana; si no, la próxima que empieza antes; ignora las que no son Happy Hour', () => {
+    const live = promo({ id: 'live' });
+    const early = promo({ id: 'early', state: 'upcoming', nextStartsAt: '2026-11-12T21:00:00Z' });
+    const late = promo({ id: 'late', state: 'upcoming', nextStartsAt: '2026-11-14T21:00:00Z' });
+    const plain = promo({ id: 'plain', isHappyHour: false });
+    expect(pickHappyHour([plain, live], [early])?.id).toBe('live');
+    expect(pickHappyHour([plain], [late, early])?.id).toBe('early');
+    expect(pickHappyHour([plain], [plain])).toBeUndefined();
   });
 });
 
@@ -84,43 +70,68 @@ describe('textos de días y horas', () => {
     expect(daysLabel([1, 2, 3, 4], 'en', 'long', range)).toBe('Monday to Thursday');
     expect(daysLabel([1, 2, 3, 4], 'es', 'short', range)).toBe('Lun–Jue');
     expect(daysLabel([1, 2, 3, 4], 'en', 'short', range)).toBe('Mon–Thu');
-  });
-
-  it('días no contiguos se listan', () => {
     expect(daysLabel([2, 5], 'en', 'long', range)).toBe('Tuesday and Friday');
   });
 
-  it('horas con el formato del prototipo', () => {
+  it('horas con el formato del prototipo; 24:00 se lee como medianoche', () => {
     expect(hoursLabel('15:00', '18:00', 'es')).toBe('3:00 p. m. – 6:00 p. m.');
     expect(hoursLabel('15:00', '18:00', 'en')).toBe('3:00 p.m. – 6:00 p.m.');
     expect(shortHoursLabel('15:00', '18:00', 'es')).toBe('3:00–6:00 p. m.');
     expect(shortHoursLabel('11:00', '15:00', 'en')).toBe('11:00 a.m.–3:00 p.m.');
+    expect(clockLabel('24:00', 'es')).toBe('12:00 a. m.');
+    expect(hoursLabel('22:00', '24:00', 'es')).toBe('10:00 p. m. – 12:00 a. m.');
+  });
+
+  it('instantes del servidor en hora de Guatemala (no la del dispositivo)', () => {
+    expect(instantClock('2026-11-11T21:00:00.000Z')).toBe('15:00');
+    expect(sameLocalDay('2026-11-11T20:25:00.000Z', '2026-11-11T21:00:00.000Z')).toBe(true);
+    // 2026-11-12T03:00Z = miércoles 21:00 local; 2026-11-12T06:00Z = jueves 00:00 local.
+    expect(sameLocalDay('2026-11-12T03:00:00.000Z', '2026-11-12T06:00:00.000Z')).toBe(false);
+  });
+
+  it('`validUntil` es exclusivo: el último día incluido es el del instante anterior', () => {
+    expect(lastIncludedInstant('2027-01-01T06:00:00.000Z').toISOString()).toBe(
+      '2027-01-01T05:59:00.000Z',
+    );
+  });
+
+  it('muestra el porcentaje que dio la API sin ceros sobrantes', () => {
+    expect(percentText('25.00')).toBe('25');
+    expect(percentText('12.50')).toBe('12.5');
+    expect(percentText('33.33')).toBe('33.33');
   });
 });
 
-describe('selección y grupos', () => {
-  it('pickHappyHour prefiere la promoción "happy-hour" y, si no, la que trae ítems', () => {
-    const other: Promotion = { ...happy, id: 'otra', items: [] };
-    expect(pickHappyHour([other, happy])?.id).toBe('happy-hour');
-    expect(pickHappyHour([other])).toBeUndefined();
-    expect(pickHappyHour([other, { ...happy, id: 'x' }])?.id).toBe('x');
+describe('agrupación del horario y de los ítems', () => {
+  it('agrupa los días con los mismos tramos y deja los distintos aparte', () => {
+    const groups = groupSchedule([
+      slot(1, '15:00', '18:00'),
+      slot(2, '15:00', '18:00'),
+      slot(5, '12:00', '14:00'),
+      slot(3, '15:00', '18:00'),
+    ]);
+    expect(groups).toEqual([
+      { days: [1, 2, 3], ranges: [{ startsAt: '15:00', endsAt: '18:00' }] },
+      { days: [5], ranges: [{ startsAt: '12:00', endsAt: '14:00' }] },
+    ]);
+    expect(groupSchedule([])).toEqual([]);
   });
 
-  it('agrupa en orden Entradas, Rolls, Cervezas y deja al final los grupos nuevos', () => {
-    const items = [
-      { id: '1', name: 'a', priceLabel: 'Q1', group: 'Cervezas', illustration: 'beer' },
-      { id: '2', name: 'b', priceLabel: 'Q1', group: 'Postres', illustration: 'icecream' },
-      { id: '3', name: 'c', priceLabel: 'Q1', group: 'Entradas', illustration: 'fries' },
-    ];
-    expect(groupHappyHourItems(items).map((g) => g.group)).toEqual([
-      'Entradas',
-      'Cervezas',
-      'Postres',
+  it('fusiona los tramos contiguos del mismo día', () => {
+    expect(groupSchedule([slot(1, '12:00', '15:00'), slot(1, '15:00', '18:00')])).toEqual([
+      { days: [1], ranges: [{ startsAt: '12:00', endsAt: '18:00' }] },
     ]);
-    expect(groupHappyHourItems(happy.items).map((g) => [g.group, g.items.length])).toEqual([
+  });
+
+  it('agrupa por categoría conservando el orden de aparición', () => {
+    const entries = [
+      { n: 'a', c: 'Entradas' },
+      { n: 'b', c: 'Rolls' },
+      { n: 'c', c: 'Entradas' },
+    ];
+    expect(groupByCategory(entries, (e) => e.c).map((g) => [g.category, g.items.length])).toEqual([
       ['Entradas', 2],
-      ['Rolls', 5],
-      ['Cervezas', 1],
+      ['Rolls', 1],
     ]);
   });
 });

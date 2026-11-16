@@ -60,8 +60,14 @@ describe('MenuScreen · categorías y URL', () => {
     expect(screen.getByRole('link', { name: 'Todo' })).toHaveAttribute('aria-current', 'true');
   });
 
-  it('en "Todo" muestra el acceso a Happy Hour con los días y las horas', async () => {
+  it('sin sucursal elegida no hay Happy Hour que mostrar (la API lo informa por sucursal)', async () => {
     await renderStore(<MenuScreen />);
+    await screen.findByRole('heading', { name: /^Entradas/ });
+    expect(screen.queryByRole('link', { name: /Happy Hour/ })).not.toBeInTheDocument();
+  });
+
+  it('en "Todo" muestra el acceso a Happy Hour con los días y las horas', async () => {
+    await renderStore(<MenuScreen />, { branchId: 'sucursal-1' });
     const banner = await screen.findByRole('link', { name: /Happy Hour/ });
     expect(banner).toHaveAttribute('href', '/promociones');
     expect(banner).toHaveTextContent(
@@ -70,7 +76,7 @@ describe('MenuScreen · categorías y URL', () => {
   });
 
   it('en inglés traduce nombres, descripciones y textos', async () => {
-    await renderStore(<MenuScreen />, { locale: 'en' });
+    await renderStore(<MenuScreen />, { locale: 'en', branchId: 'sucursal-1' });
     await screen.findByRole('heading', { name: /^Starters/ });
     expect(await screen.findByRole('link', { name: /Happy Hour/ })).toHaveTextContent(
       'Monday to Thursday · 3:00 p.m. – 6:00 p.m. · Dine-in only',

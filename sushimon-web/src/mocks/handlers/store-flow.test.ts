@@ -82,14 +82,6 @@ describe('datos públicos', () => {
     expect((await apiError(branchProducts.getStoreBranchMenu(client, 'zzz'))).status).toBe(404);
   });
 
-  it('promociones con estado calculado; promotion-expired las vence', async () => {
-    const def = await store.listPromotions(createHarness().client);
-    expect(def.map((p) => p.id)).toEqual(['happy-hour', 'martes-tempura']);
-    expect(def.every((p) => p.status === 'current')).toBe(true);
-    const exp = await store.listPromotions(createHarness('promotion-expired').client);
-    expect(exp.every((p) => p.status === 'expired')).toBe(true);
-  });
-
   it('postulación válida y errores de validación', async () => {
     const { client } = createHarness();
     const ok = await store.submitJobApplication(client, {

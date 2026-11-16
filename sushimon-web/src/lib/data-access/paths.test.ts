@@ -32,6 +32,17 @@ describe('paths', () => {
     expect(paths.adminCategoriesReorder()).toBe('/v1/admin/categories/reorder');
   });
 
+  it('F15: rutas de promociones (público y admin); las rutas mock previas quedaron retiradas', () => {
+    expect(paths.storePromotions()).toBe('/v1/store/promotions');
+    expect(paths.adminPromotions()).toBe('/v1/admin/promotions');
+    expect(paths.adminPromotion('p 1')).toBe('/v1/admin/promotions/p%201');
+    expect(paths.adminPromotionStatus('p1')).toBe('/v1/admin/promotions/p1/status');
+    expect(Object.keys(paths)).not.toContain('promotions');
+    expect(Object.keys(paths)).not.toContain('boPromotions');
+    expect(Object.keys(mockRoutes)).not.toContain('GET /v1/promotions');
+    expect(Object.keys(mockRoutes)).not.toContain('GET /v1/backoffice/promotions');
+  });
+
   it('F12: rutas de modificadores (grupos, opciones y asociación a productos)', () => {
     expect(paths.adminModifierGroups()).toBe('/v1/admin/modifier-groups');
     expect(paths.adminModifierGroup('g 1')).toBe('/v1/admin/modifier-groups/g%201');
@@ -137,6 +148,9 @@ describe('paths', () => {
       // F13: la sustituyen `GET /v1/store/menu`, `/v1/admin/branches/{id}/products`, `/v1/admin/products/{id}/branches`,
       // `PUT …/pricing` y `PATCH /v1/admin/products/{id}/availability`; la ruta demo se RETIRÓ del mock.
       '/v1/demo/catalog/products/:id/availability',
+      // F15: las sustituyen `GET /v1/store/promotions` y `/v1/admin/promotions[/{id}[/status]]`; las rutas mock previas se RETIRARON.
+      '/v1/promotions',
+      '/v1/backoffice/promotions',
     ]);
     const documented = [...doc.matchAll(/`(\/v1\/[^`?\s[]+)/g)]
       .map((m) => (m[1] ?? '').replace(/\{(\w+)\}/g, 'X'))

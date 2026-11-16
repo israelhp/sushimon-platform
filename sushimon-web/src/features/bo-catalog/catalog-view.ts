@@ -1,9 +1,7 @@
 import type { BoProductArtKind } from '@/components/icons/bo';
-import type { Promotion, PromotionInput } from '@/lib/data-access/models';
 
 /**
- * Lógica pura del catálogo del backoffice: arte por categoría, y formulario de
- * promociones (el de productos F11 vive en `products-view`). Sin React ni red: se prueba aparte.
+ * Lógica pura del catálogo del backoffice: arte por categoría (el de productos F11 vive en `products-view` y el de promociones F15 en `promotions-view`). Sin React ni red: se prueba aparte.
  * Los textos viajan como códigos de error; la traducción vive en los mensajes (`backoffice.*`).
  */
 
@@ -29,111 +27,10 @@ export function categoryLook(slugs: readonly string[]): { art: BoProductArtKind;
   return { art: 'roll', tile: 'tile-beige' };
 }
 
-// ── Promociones ─────────────────────────────────────────────────────────────────────────────
+// ── Promociones (F15) ───────────────────────────────────────────────────────────────────────
 
-export type PromotionKind = Promotion['kind'];
-export const PROMOTION_KINDS: readonly PromotionKind[] = ['percent', 'fixed_price', '2x1'];
-/** Lunes a domingo, ISO (1 = lunes), en el orden de los botones. */
+/** Lunes a domingo, ISO (1 = lunes), en el orden de los botones. La lógica del formulario vive en `promotions-view`. */
 export const ISO_DAYS = [1, 2, 3, 4, 5, 6, 7] as const;
-
-/** Etiqueta del descuento de la tarjeta: `2x1`, `-20%` o `Q199`. */
-export function discountLabel(p: Pick<Promotion, 'kind' | 'value'>): string {
-  if (p.kind === '2x1') return '2x1';
-  return p.kind === 'percent' ? `-${p.value}%` : `Q${p.value}`;
-}
 
 /** Tono de la franja `.sg` por posición (coral, azul marino, ámbar). */
 export const PROMO_TONES = ['sg-coral', 'sg-navy', 'sg-amber'] as const;
-
-/** "1 oct – 31 dic 2026" (mes abreviado del idioma; el año es el de la fecha final). */
-export function formatRange(from: string, to: string, months: readonly string[]): string {
-  const part = (iso: string) => {
-    const [y, m, d] = iso.split('-').map(Number);
-    return { y: y ?? 0, label: `${d ?? 0} ${months[(m ?? 1) - 1] ?? ''}` };
-  };
-  const a = part(from);
-  const b = part(to);
-  return `${a.label} – ${b.label} ${b.y}`;
-}
-
-/** Una promoción solo puede estar "activa" para el cliente si no venció. */
-export function isRunning(p: Pick<Promotion, 'active' | 'status'>): boolean {
-  return p.active && p.status !== 'expired' && p.status !== 'inactive';
-}
-
-export interface PromotionFormValues {
-  name: string;
-  kind: PromotionKind;
-  value: string;
-  days: number[];
-  start: string;
-  end: string;
-  from: string;
-  to: string;
-}
-
-export type PromotionField = 'name' | 'value' | 'days' | 'start' | 'end' | 'from' | 'to';
-export type PromotionErrorCode =
-  | 'nameRequired'
-  | 'valueRequired'
-  | 'percentMax'
-  | 'daysRequired'
-  | 'timeRequired'
-  | 'timeOrder'
-  | 'dateRequired'
-  | 'dateOrder';
-export interface PromotionFormError {
-  field: PromotionField;
-  code: PromotionErrorCode;
-}
-
-const HM = /^\d{2}:\d{2}$/;
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-/** Mismas reglas que el servidor (nombre, valor, días, horas y vigencia) para avisar antes de enviar. */
-export function validatePromotionForm(v: PromotionFormValues): PromotionFormError[] {
-  const errors: PromotionFormError[] = [];
-  if (!v.name.trim()) errors.push({ field: 'name', code: 'nameRequired' });
-  if (v.kind !== '2x1') {
-    const value = Number(v.value);
-    if (!(value > 0)) errors.push({ field: 'value', code: 'valueRequired' });
-    else if (v.kind === 'percent' && value > 100)
-      errors.push({ field: 'value', code: 'percentMax' });
-  }
-  if (v.days.length === 0) errors.push({ field: 'days', code: 'daysRequired' });
-  if (!HM.test(v.start)) errors.push({ field: 'start', code: 'timeRequired' });
-  else if (!HM.test(v.end)) errors.push({ field: 'end', code: 'timeRequired' });
-  else if (v.start >= v.end) errors.push({ field: 'end', code: 'timeOrder' });
-  if (!ISO_DATE.test(v.from)) errors.push({ field: 'from', code: 'dateRequired' });
-  else if (!ISO_DATE.test(v.to)) errors.push({ field: 'to', code: 'dateRequired' });
-  else if (v.from > v.to) errors.push({ field: 'to', code: 'dateOrder' });
-  return errors;
-}
-
-/** Valores iniciales de "Nueva promoción" (como `newPromo` del prototipo): 15 %, vie y sáb, 12:00–16:00, 30 días. */
-export function emptyPromotionForm(today: string, inThirtyDays: string): PromotionFormValues {
-  return {
-    name: '',
-    kind: 'percent',
-    value: '15',
-    days: [5, 6],
-    start: '12:00',
-    end: '16:00',
-    from: today,
-    to: inThirtyDays,
-  };
-}
-
-export function promotionInput(v: PromotionFormValues): PromotionInput {
-  return {
-    name: v.name.trim(),
-    kind: v.kind,
-    value: v.kind === '2x1' ? 0 : Number(v.value),
-    daysOfWeek: [...v.days].sort((a, b) => a - b),
-    startTime: v.start,
-    endTime: v.end,
-    validFrom: v.from,
-    validTo: v.to,
-    active: true,
-  };
-}

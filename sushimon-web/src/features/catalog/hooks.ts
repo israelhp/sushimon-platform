@@ -5,7 +5,7 @@ import { useMemo } from 'react';
 import { useDataClient } from '@/lib/data-access/provider';
 import { isApiError } from '@/lib/data-access/errors';
 import { PRODUCT_SEARCH_MAX } from '@/lib/product-rules';
-import { listCategories, listPromotions } from '@/services/store';
+import { listCategories } from '@/services/store';
 import { getStoreProduct, listStoreProducts } from '@/services/products';
 import { queryKeys } from '../query-keys';
 import { useStoreBranchMenu } from '../branch-products/hooks';
@@ -95,14 +95,5 @@ export function useStoreProduct(slug: string | null) {
     enabled: Boolean(slug),
     staleTime: 30_000,
     retry: (count, error) => !(isApiError(error) && error.status === 404) && count < 2,
-  });
-}
-
-/** Promociones activas con `status` (current/scheduled/expired) e ítems de Happy Hour. */
-export function usePromotions() {
-  const client = useDataClient();
-  return useQuery({
-    queryKey: queryKeys.catalog.promotions,
-    queryFn: () => listPromotions(client),
   });
 }

@@ -178,38 +178,7 @@ test('tienda: las subcategorías aparecen bajo su categoría y la inactiva no se
   await expect(page.getByText('Temporada')).toHaveCount(0);
 });
 
-test('administrador: crea una promoción con validación del formulario', async ({ page }) => {
-  await enterAs(page, /Ana Lucía Pérez/);
-  await nav(page).getByRole('link', { name: 'Promociones' }).click();
-  await expect(page.getByRole('heading', { name: 'Promociones', level: 1 })).toBeVisible({
-    timeout: 90_000,
-  });
-  await expect(page.getByText('2 activas de 3')).toBeVisible();
-
-  await page.getByRole('button', { name: 'Nueva promoción' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Nueva promoción' });
-  await dialog.getByRole('button', { name: 'Crear promoción' }).click();
-  await expect(dialog.getByRole('alert')).toHaveText('Escribe el nombre de la promoción.');
-
-  await dialog.getByRole('textbox', { name: 'Nombre' }).fill('Jueves de sashimi');
-  await dialog.getByLabel('Hora fin').fill('11:00');
-  await dialog.getByRole('button', { name: 'Crear promoción' }).click();
-  await expect(dialog.getByRole('alert')).toHaveText(
-    'La hora de fin debe ser posterior a la de inicio.',
-  );
-  await dialog.getByLabel('Hora fin').fill('16:00');
-  await dialog.getByRole('button', { name: 'Crear promoción' }).click();
-
-  await expect(page.locator('.toast', { hasText: 'Promoción creada y activa' })).toBeVisible();
-  const created = page.locator('.promo').filter({ hasText: 'Jueves de sashimi' });
-  await expect(created).toContainText('-15%');
-  await expect(created).toContainText('Vigencia: 11 nov – 11 dic 2026');
-  await expect(page.getByText('3 activas de 4')).toBeVisible();
-
-  const combo = page.getByRole('switch', { name: 'Activar Combo Mon para 2' });
-  await combo.click();
-  await expect(combo).toHaveAttribute('aria-checked', 'true');
-});
+// Promociones (F15): ver `promotions.spec.ts`.
 
 test('encargado: sin botones de edición, pero cambia la disponibilidad de su sucursal', async ({
   page,

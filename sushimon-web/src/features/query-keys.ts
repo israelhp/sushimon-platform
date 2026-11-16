@@ -10,6 +10,7 @@ import type { CategoryFilters } from '@/services/categories';
 import type { ModifierGroupFilters } from '@/services/modifiers';
 import type { BranchProductFilters } from '@/services/branch-products';
 import type { MediaFilters } from '@/services/media';
+import type { AdminPromotionFilters } from '@/services/promotions';
 
 /**
  * Claves de TanStack Query centralizadas. Jerárquicas para invalidar por prefijo
@@ -134,7 +135,13 @@ export const queryKeys = {
     all: ['catalog'] as const,
     categories: ['catalog', 'categories'] as const,
     products: (filters: ProductFilters = {}) => ['catalog', 'products', filters] as const,
+    /**
+     * F15: promociones PÚBLICAS por sucursal y estado (`live|upcoming`). `promotions` es el prefijo de todas; la caché HTTP dura ≤ 30 s
+     * y el servidor da `nextChangeAt`: refetch en ese instante y al cambiar de sucursal.
+     */
     promotions: ['catalog', 'promotions'] as const,
+    storePromotions: (branchId: string, state: 'live' | 'upcoming') =>
+      ['catalog', 'promotions', branchId, state] as const,
   },
   orders: {
     all: ['orders'] as const,
@@ -177,7 +184,11 @@ export const queryKeys = {
     deliveries: (filters: DeliveryFilters = {}) => ['orders', 'deliveries', filters] as const,
     riders: (branchId?: string) => ['backoffice', 'riders', branchId ?? 'all'] as const,
     categories: ['catalog', 'backoffice', 'categories'] as const,
+    /** F15: promociones ADMIN. `promotions` = prefijo de listas y detalle; toda mutación lo invalida (y `catalog.promotions`). */
     promotions: ['catalog', 'backoffice', 'promotions'] as const,
+    promotionList: (filters: AdminPromotionFilters = {}) =>
+      ['catalog', 'backoffice', 'promotions', 'list', filters] as const,
+    promotion: (id: string) => ['catalog', 'backoffice', 'promotions', 'detail', id] as const,
     /** Prefijo de las consultas administrativas de sucursales (F07). */
     branches: ['backoffice', 'branches'] as const,
     adminBranchLists: ['backoffice', 'branches', 'list'] as const,

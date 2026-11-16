@@ -1,18 +1,10 @@
-import type {
-  Category,
-  Order,
-  PromotionInput,
-  ReportGroup,
-  ReportSummary,
-} from '@/lib/data-access/models';
+import type { Category, Order, ReportGroup, ReportSummary } from '@/lib/data-access/models';
 import { localMinutes } from '@/lib/time';
-import { fail, promotionView, round2 } from '../domain';
+import { fail, round2 } from '../domain';
 import { clampRange } from '../factories/history';
 import { isSale } from './backoffice';
 import {
   body,
-  now,
-  oneOf,
   ordersForDay,
   requireStaff,
   scopedBranchIds,
@@ -22,11 +14,7 @@ import {
   type Req,
 } from './shared';
 
-const HM = /^\d{2}:\d{2}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const MAX_PRICE = 100_000;
-const MAX_NAME = 120;
-const MAX_DESCRIPTION = 600;
 
 const slug = (s: string) =>
   s
@@ -90,89 +78,6 @@ export const updateCategory: Handler = (req): Category => {
   if (b.visible !== undefined) next.visible = b.visible === true;
   req.store.categories[index] = next;
   return next;
-};
-
-// ── Promociones ───────────────────────────────────────────────────────────────────────────
-
-function parsePromotion(input: Partial<PromotionInput>) {
-  if (!str(input.name).trim()) fail(400, 'Escribe el nombre de la promoción');
-  const kind = oneOf(input.kind, ['2x1', 'percent', 'fixed_price'] as const, 'kind');
-  const value = Number(input.value ?? 0);
-  if (str(input.name).length > MAX_NAME) fail(400, `El nombre admite hasta ${MAX_NAME} caracteres`);
-  if (str(input.description).length > MAX_DESCRIPTION) {
-    fail(400, `La descripción admite hasta ${MAX_DESCRIPTION} caracteres`);
-  }
-  if (kind !== '2x1' && !(Number.isFinite(value) && value > 0)) {
-    fail(400, 'Indica el descuento o precio especial');
-  }
-  if (kind === 'percent' && value > 100) fail(400, 'El porcentaje no puede superar 100');
-  if (kind === 'fixed_price' && value > MAX_PRICE) {
-    fail(400, `El precio especial no puede superar Q${MAX_PRICE}`);
-  }
-  const days = input.daysOfWeek;
-  if (!Array.isArray(days) || days.length === 0) fail(400, 'Elige al menos un día');
-  if (days.some((d) => !Number.isInteger(d) || d < 1 || d > 7)) fail(400, 'Día inválido');
-  const startTime = str(input.startTime);
-  const endTime = str(input.endTime);
-  if (!HM.test(startTime) || !HM.test(endTime) || startTime >= endTime) {
-    fail(400, 'Horario inválido');
-  }
-  const validFrom = str(input.validFrom);
-  const validTo = str(input.validTo);
-  if (!DATE_RE.test(validFrom) || !DATE_RE.test(validTo) || validFrom > validTo) {
-    fail(400, 'Vigencia inválida');
-  }
-  const description =
-    str(input.description).trim() ||
-    (kind === 'percent'
-      ? `${value} % de descuento.`
-      : kind === 'fixed_price'
-        ? 'Precio especial.'
-        : 'Lleva dos y paga uno.');
-  return {
-    name: str(input.name).trim(),
-    description,
-    kind,
-    value: kind === '2x1' ? 0 : value,
-    daysOfWeek: [...new Set(days)].sort(),
-    startTime,
-    endTime,
-    validFrom,
-    validTo,
-    active: input.active !== false,
-  };
-}
-
-/** GET /v1/backoffice/promotions */
-export const listBoPromotions: Handler = (req) => {
-  requireStaff(req, 'promotions.read');
-  return req.store.promotions.map((p) => promotionView(p, now(req)));
-};
-
-/** POST /v1/backoffice/promotions */
-export const createPromotion: Handler = (req) => {
-  requireStaff(req, 'promotions.create');
-  const data = parsePromotion(body<PromotionInput>(req));
-  const promo = {
-    ...data,
-    id: `promo-${req.store.sequences.promotion++}`,
-    dineInOnly: false,
-    items: [],
-  };
-  req.store.promotions.push(promo);
-  return promotionView(promo, now(req));
-};
-
-/** PATCH /v1/backoffice/promotions/:id (campos parciales; p. ej. { active }) */
-export const updatePromotion: Handler = (req) => {
-  requireStaff(req, 'promotions.update');
-  const index = req.store.promotions.findIndex((p) => p.id === req.params.id);
-  const current = req.store.promotions[index];
-  if (!current) fail(404, 'Promoción no encontrada');
-  const data = parsePromotion({ ...current, ...body<PromotionInput>(req) });
-  const next = { ...current, ...data };
-  req.store.promotions[index] = next;
-  return promotionView(next, now(req));
 };
 
 // ── Reportes ──────────────────────────────────────────────────────────────────────────────

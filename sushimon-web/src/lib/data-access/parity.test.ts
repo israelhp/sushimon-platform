@@ -12,6 +12,7 @@ import * as favorites from '@/services/favorites';
 import * as media from '@/services/media';
 import * as modifiers from '@/services/modifiers';
 import * as products from '@/services/products';
+import * as promotions from '@/services/promotions';
 import * as zones from '@/services/delivery-zones';
 import * as locations from '@/services/locations';
 import * as orders from '@/services/orders';
@@ -132,7 +133,9 @@ const storeSteps: ((c: DataClient) => Promise<unknown>)[] = [
   (c) => store.listCategories(c),
   (c) => products.listStoreProducts(c, { categorySlug: 'rolls', pageSize: 5 }),
   (c) => products.listSimulatedProductExtras(c),
-  (c) => store.listPromotions(c),
+  (c) => promotions.listStorePromotions(c, 'sucursal-1', 'live'),
+  (c) => promotions.listStorePromotions(c, 'sucursal-1', 'upcoming'),
+  (c) => promotions.listStorePromotions(c, 'sucursal-4', 'live'), // 404 BRANCH_NOT_FOUND (inactiva)
   (c) =>
     coverage.checkDeliveryCoverage(c, {
       branchId: 'sucursal-3',
@@ -473,6 +476,72 @@ describe('paridad mock ↔ http', () => {
           available: true,
         }), // la fila vuelve al defecto
       (c) => branchProducts.listAdminProductBranches(c, 'dumplings'),
+    ];
+    expect(await run(admin, p.http)).toEqual(await run(admin, p.mock.client));
+  });
+
+  it('F15: promociones (público, lista/detalle admin, alta, edición, estado; 400/401/403/404/409/422/503) producen los mismos resultados y errores', async () => {
+    const p = pair();
+    for (const h of [p.mock, p.backend]) h.store.promotionsBusy = 1;
+    const anon: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => promotions.listStorePromotions(c, 'sucursal-1'),
+      (c) => promotions.listStorePromotions(c, 'sucursal-2', 'upcoming'),
+      (c) => promotions.listStorePromotions(c, 'zzz'), // 404 BRANCH_NOT_FOUND
+      (c) => promotions.listAdminPromotions(c), // 401
+    ];
+    expect(await run(anon, p.http)).toEqual(await run(anon, p.mock.client));
+
+    p.asStaff('manager');
+    const manager: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => promotions.listAdminPromotions(c), // 403 sin promotions.read
+      (c) => promotions.getAdminPromotion(c, 'happy-hour'), // 403
+    ];
+    expect(await run(manager, p.http)).toEqual(await run(manager, p.mock.client));
+
+    p.asStaff('admin');
+    const valid = {
+      name: 'Jueves de sake',
+      kind: 'PERCENT' as const,
+      value: '15.00',
+      startsAt: '2026-11-01T06:00:00.000Z',
+      endsAt: '2026-12-01T06:00:00.000Z',
+      branchScope: 'SELECTED' as const,
+      branchIds: ['sucursal-1'],
+      productScope: 'ALL' as const,
+      schedule: [{ weekday: 4, startsAt: '18:00', endsAt: '22:00' }],
+    };
+    const admin: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => promotions.listAdminPromotions(c, { pageSize: 3, sort: 'name', order: 'asc' }),
+      (c) => promotions.listAdminPromotions(c, { status: 'running', kind: 'PERCENT', q: 'cupón' }),
+      (c) => promotions.listAdminPromotions(c, { branchId: 'sucursal-2' }),
+      (c) => promotions.listAdminPromotions(c, { branchId: 'zzz' }), // 404
+      (c) => promotions.listAdminPromotions(c, { pageSize: 101 }), // 400
+      (c) => promotions.getAdminPromotion(c, 'happy-hour'),
+      (c) => promotions.getAdminPromotion(c, 'no-existe'), // 404 PROMOTION_NOT_FOUND
+      (c) => promotions.createAdminPromotion(c, valid), // 503 PROMOTIONS_BUSY
+      (c) => promotions.createAdminPromotion(c, valid),
+      (c) => promotions.createAdminPromotion(c, { ...valid, code: 'bienvenido10' }), // 409 código
+      (c) => promotions.createAdminPromotion(c, { ...valid, value: '100.01' }), // 422 valor
+      (c) => promotions.createAdminPromotion(c, { ...valid, endsAt: valid.startsAt }), // 422 periodo
+      (c) =>
+        promotions.createAdminPromotion(c, {
+          ...valid,
+          schedule: [{ weekday: 4, startsAt: '18:00', endsAt: '15:00' }],
+        }), // 422 horario
+      (c) =>
+        promotions.createAdminPromotion(c, {
+          ...valid,
+          productScope: 'SELECTED',
+          productIds: ['no-existe'],
+        }), // 422 alcance
+      (c) => promotions.createAdminPromotion(c, { ...valid, value: '15' }), // 400
+      (c) => promotions.updateAdminPromotion(c, 'promo-1', { expectedVersion: 1, name: 'Nuevo' }),
+      (c) => promotions.updateAdminPromotion(c, 'promo-1', { expectedVersion: 1, name: 'Otro' }), // 409 versión
+      (c) => promotions.updateAdminPromotion(c, 'promo-1', { expectedVersion: 2, name: 'Nuevo' }), // sin cambios
+      (c) => promotions.updateAdminPromotionStatus(c, 'promo-1', { active: false }),
+      (c) => promotions.updateAdminPromotionStatus(c, 'promo-1', { active: false }), // idempotente
+      (c) => promotions.getAdminPromotion(c, 'promo-1'),
+      (c) => promotions.listStorePromotions(c, 'sucursal-1', 'upcoming'),
     ];
     expect(await run(admin, p.http)).toEqual(await run(admin, p.mock.client));
   });
