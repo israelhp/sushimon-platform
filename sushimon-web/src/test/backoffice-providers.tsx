@@ -25,6 +25,8 @@ export interface RenderBackofficeOptions {
   /** Rol de la sesión de demostración (null = sin sesión). Por defecto, encargado. */
   role?: StaffRole | null;
   locale?: 'es' | 'en';
+  /** Ajusta el store mock antes de montar (p. ej., conceder un permiso a un rol). */
+  prepareStore?: (store: MockStore) => void;
 }
 
 export interface BackofficeTestApi {
@@ -44,7 +46,12 @@ export interface BackofficeTestApi {
  */
 export async function renderBackoffice(
   ui: ReactElement,
-  { scenario = 'default', role = 'manager', locale = 'es' }: RenderBackofficeOptions = {},
+  {
+    scenario = 'default',
+    role = 'manager',
+    locale = 'es',
+    prepareStore,
+  }: RenderBackofficeOptions = {},
 ): Promise<RenderResult & { api: () => BackofficeTestApi }> {
   let current: BackofficeTestApi | null = null;
   const clock = createFixedClock();
@@ -64,6 +71,7 @@ export async function renderBackoffice(
   }
 
   const store = createSeedStore(scenario);
+  prepareStore?.(store);
   const client = createMockDataClient({
     scenario,
     latencyMs: 0,

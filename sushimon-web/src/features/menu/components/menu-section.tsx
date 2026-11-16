@@ -1,10 +1,9 @@
 'use client';
 
-import { useLocale } from 'next-intl';
 import { ProductCard } from '@/features/catalog/components/product-card';
-import { categoryName } from '@/features/catalog/localized';
 import type { Product } from '@/lib/data-access/models';
-import type { MenuSection as Section } from '../menu-model';
+import { useCategoryLabel } from '../category-label';
+import { categoryDecor, type MenuSection as Section } from '../menu-model';
 import { ProductListItem } from './product-list-item';
 
 /**
@@ -18,17 +17,22 @@ export function MenuSection({
   section: Section;
   catalog: readonly Product[];
 }) {
-  const locale = useLocale();
-  const { category, products } = section;
+  const label = useCategoryLabel();
+  const { category, products, path } = section;
+  const decor = categoryDecor(category, path);
+  const parent = path[path.length - 1];
   const headingId = `h-${category.id}`;
   return (
     <section className="mb-7" aria-labelledby={headingId}>
       <div className="mb-2.5 flex items-baseline justify-between gap-3 border-b border-line pb-1.5 lg:mb-1 lg:border-b-0 lg:pb-0">
         <h2 id={headingId} className="disp flex items-baseline gap-2 text-[22px] sm:text-[26px]">
-          {categoryName(category, locale)}
-          {category.jpLabel ? (
+          {label(category)}
+          {parent ? (
+            <span className="text-[13px] font-medium text-muted">· {label(parent)}</span>
+          ) : null}
+          {decor.jp && !parent ? (
             <span className="font-jp text-[12px] tracking-[0.15em] text-primary" lang="ja">
-              {category.jpLabel}
+              {decor.jp}
             </span>
           ) : null}
         </h2>

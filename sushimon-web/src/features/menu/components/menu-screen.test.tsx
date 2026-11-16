@@ -1,5 +1,7 @@
 import { act, fireEvent, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '@/lib/data-access/errors';
+import { createSpyClient } from '@/test/spy-client';
 import { renderStore } from '@/test/store-providers';
 import { MenuScreen } from './menu-screen';
 
@@ -139,5 +141,149 @@ describe('MenuScreen · estados', () => {
     await renderStore(<MenuScreen />, { scenario: 'error' });
     const alert = await screen.findByRole('alert');
     expect(within(alert).getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
+  });
+});
+
+describe('MenuScreen · categorías reales (F10)', () => {
+  const navLinks = () =>
+    within(screen.getByRole('navigation', { name: 'Categorías' }))
+      .getAllByRole('link')
+      .map((a) => a.textContent);
+
+  it('consume GET /v1/store/categories (no el listado legado) y publica solo raíces activas, en orden', async () => {
+    const spy = createSpyClient();
+    await renderStore(<MenuScreen />, { wrapClient: spy.wrap });
+    await screen.findByRole('heading', { name: /^Entradas/ });
+    expect(spy.count('GET', /^\/v1\/store\/categories$/)).toBe(1);
+    expect(spy.count('GET', /^\/v1\/catalog\/categories$/)).toBe(0);
+    // "Temporada" (inactiva, con un hijo activo) no existe para el público.
+    expect(navLinks()).toEqual([
+      'Todo',
+      'Entradas',
+      'Monchis',
+      'Sushi Rolls',
+      'Bebidas espirituosas',
+      'Bebidas relax',
+      'Postres',
+    ]);
+    expect(screen.queryByText(/Temporada|Edición limitada/)).not.toBeInTheDocument();
+  });
+
+  it('una categoría con subcategorías las muestra en una segunda navegación con "Todo en …"', async () => {
+    search = 'cat=rolls';
+    await renderStore(<MenuScreen />);
+    await screen.findByRole('heading', { name: /^Sushi Rolls/ });
+    const sub = screen.getByRole('navigation', { name: 'Subcategorías de Sushi Rolls' });
+    const links = within(sub).getAllByRole('link');
+    expect(links.map((a) => a.textContent)).toEqual([
+      'Todo en Sushi Rolls',
+      'Rolls fríos',
+      'Rolls tempura',
+    ]);
+    expect(links[0]).toHaveAttribute('aria-current', 'true');
+    expect(links[1]).toHaveAttribute('href', '/menu?cat=rolls-frios');
+    // La raíz queda marcada como activa en la cabecera.
+    const nav = screen.getByRole('navigation', { name: 'Categorías' });
+    expect(within(nav).getByRole('link', { name: 'Sushi Rolls' })).toHaveAttribute(
+      'aria-current',
+      'true',
+    );
+  });
+
+  it('una subcategoría sin productos (F11 pendiente) muestra aviso en lugar de romper; la raíz sigue marcada', async () => {
+    search = 'cat=rolls-frios';
+    await renderStore(<MenuScreen />);
+    expect(
+      await screen.findByText('Todavía no hay productos en esta categoría.'),
+    ).toBeInTheDocument();
+    const nav = screen.getByRole('navigation', { name: 'Categorías' });
+    expect(within(nav).getByRole('link', { name: 'Sushi Rolls' })).toHaveAttribute(
+      'aria-current',
+      'location',
+    );
+    expect(
+      within(screen.getByRole('navigation', { name: 'Subcategorías de Sushi Rolls' })).getByRole(
+        'link',
+        {
+          name: 'Rolls fríos',
+        },
+      ),
+    ).toHaveAttribute('aria-current', 'true');
+  });
+
+  it('categoría inactiva oculta: ni chip ni sección, y su ?cat= equivale a "Todo"', async () => {
+    search = 'cat=postres';
+    await renderStore(<MenuScreen />, {
+      prepareStore: (store) => {
+        store.menuCategories.find((c) => c.slug === 'postres')!.active = false;
+      },
+    });
+    await screen.findByRole('heading', { name: /^Entradas/ });
+    expect(navLinks()).not.toContain('Postres');
+    expect(screen.queryByRole('heading', { name: /^Postres/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Todo' })).toHaveAttribute('aria-current', 'true');
+  });
+
+  it('desactivar un padre oculta también a sus hijas activas', async () => {
+    search = 'cat=rolls-frios';
+    await renderStore(<MenuScreen />, {
+      prepareStore: (store) => {
+        store.menuCategories.find((c) => c.slug === 'rolls')!.active = false;
+      },
+    });
+    await screen.findByRole('heading', { name: /^Entradas/ });
+    expect(navLinks()).not.toContain('Sushi Rolls');
+    expect(screen.queryByRole('navigation', { name: /Subcategorías/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /^Sushi Rolls/ })).not.toBeInTheDocument();
+  });
+
+  it('en inglés usa la traducción puente por slug y, sin ella, el nombre del restaurante', async () => {
+    search = 'cat=rolls';
+    await renderStore(<MenuScreen />, { locale: 'en' });
+    await screen.findByRole('heading', { name: /^Sushi Rolls/ });
+    expect(screen.getByRole('link', { name: 'Starters' })).toBeInTheDocument();
+    const sub = screen.getByRole('navigation', { name: 'Subcategories of Sushi Rolls' });
+    expect(within(sub).getByRole('link', { name: 'Cold rolls' })).toBeInTheDocument();
+    expect(within(sub).getByRole('link', { name: 'All of Sushi Rolls' })).toBeInTheDocument();
+  });
+
+  it('carga: esqueleto mientras llegan las categorías', async () => {
+    const spy = createSpyClient();
+    const gate = spy.hold('GET', /^\/v1\/store\/categories$/);
+    await renderStore(<MenuScreen />, { wrapClient: spy.wrap });
+    expect(screen.getByLabelText('Cargando…')).toHaveAttribute('aria-busy', 'true');
+    expect(navLinks()).toEqual(['Todo']);
+    await act(async () => gate.release());
+    expect(await screen.findByRole('heading', { name: /^Entradas/ })).toBeInTheDocument();
+  });
+
+  it('error en las categorías: aviso con "Reintentar" que vuelve a pedirlas', async () => {
+    const spy = createSpyClient();
+    const gate = spy.hold('GET', /^\/v1\/store\/categories$/);
+    await renderStore(<MenuScreen />, { wrapClient: spy.wrap });
+    await act(async () => gate.fail(new ApiError(500, 'server_error', 'boom')));
+    const alert = await screen.findByRole('alert');
+    fireEvent.click(within(alert).getByRole('button', { name: 'Reintentar' }));
+    expect(await screen.findByRole('heading', { name: /^Entradas/ })).toBeInTheDocument();
+    expect(spy.count('GET', /^\/v1\/store\/categories$/)).toBe(2);
+  });
+
+  it('error solo en productos: las categorías siguen visibles y se ofrece reintentar', async () => {
+    const spy = createSpyClient();
+    const gate = spy.hold('GET', /^\/v1\/catalog\/products$/);
+    await renderStore(<MenuScreen />, { wrapClient: spy.wrap });
+    await act(async () => gate.fail(new ApiError(500, 'server_error', 'boom')));
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
+    expect(navLinks()).toContain('Sushi Rolls');
+  });
+
+  it('sin categorías visibles (empty) muestra el estado vacío', async () => {
+    await renderStore(<MenuScreen />, {
+      prepareStore: (store) => {
+        store.menuCategories.forEach((c) => (c.active = false));
+      },
+    });
+    expect(await screen.findByText('El menú no está disponible por ahora')).toBeInTheDocument();
   });
 });

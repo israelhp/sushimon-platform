@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/
 import type { ProductBranchAvailability, PromotionInput } from '@/lib/data-access/models';
 import { useDataClient } from '@/lib/data-access/provider';
 import {
-  createCategory,
   createProduct,
   createPromotion,
   getReportHistory,
@@ -13,10 +12,8 @@ import {
   listBoProducts,
   listBoPromotions,
   setProductAvailability,
-  updateCategory,
   updateProduct,
   updatePromotion,
-  type CategoryInput,
   type ProductInput,
   type ReportFilters,
 } from '@/services/backoffice-admin';
@@ -203,15 +200,6 @@ export function useBoCategories() {
     queryFn: () => listBoCategories(client),
     enabled,
   });
-}
-
-export function useSaveCategory() {
-  const client = useDataClient();
-  return useInvalidatingMutation(
-    ({ id, input }: { id?: string; input: Partial<CategoryInput> }) =>
-      id ? updateCategory(client, id, input) : createCategory(client, input as CategoryInput),
-    [queryKeys.catalog.all],
-  );
 }
 
 export function useBoPromotions() {

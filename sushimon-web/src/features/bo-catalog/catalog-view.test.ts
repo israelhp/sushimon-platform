@@ -8,8 +8,6 @@ import {
   filterProducts,
   formatRange,
   isRunning,
-  moveId,
-  orderChanges,
   parsePrice,
   promotionInput,
   sortCategories,
@@ -57,7 +55,7 @@ describe('búsqueda y filtros', () => {
   });
 });
 
-describe('orden de categorías', () => {
+describe('orden de categorías (selector de producto)', () => {
   const cat = (id: string, sortOrder: number): Category => ({
     id,
     name: id,
@@ -65,21 +63,11 @@ describe('orden de categorías', () => {
     visible: true,
     kind: 'products',
   });
-  const cats = [cat('c', 3), cat('a', 1), cat('b', 2)];
-
   it('ordena por sortOrder', () => {
-    expect(sortCategories(cats).map((c) => c.id)).toEqual(['a', 'b', 'c']);
-  });
-  it('mueve una posición y respeta los extremos', () => {
-    expect(moveId(['a', 'b', 'c'], 'b', -1)).toEqual(['b', 'a', 'c']);
-    expect(moveId(['a', 'b', 'c'], 'b', 1)).toEqual(['a', 'c', 'b']);
-    expect(moveId(['a', 'b', 'c'], 'a', -1)).toBeNull();
-    expect(moveId(['a', 'b', 'c'], 'c', 1)).toBeNull();
-  });
-  it('solo envía los sortOrder que cambian', () => {
-    expect(orderChanges(sortCategories(cats), ['b', 'a', 'c'])).toEqual([
-      { id: 'b', sortOrder: 1 },
-      { id: 'a', sortOrder: 2 },
+    expect(sortCategories([cat('c', 3), cat('a', 1), cat('b', 2)]).map((c) => c.id)).toEqual([
+      'a',
+      'b',
+      'c',
     ]);
   });
 });

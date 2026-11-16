@@ -18,6 +18,7 @@ import { PRODUCT_SEEDS } from './fixtures/products';
 import { PROMOTION_SEEDS } from './fixtures/promotions';
 import { ROLE_SEEDS } from './fixtures/rbac';
 import { RIDER_SEEDS, STAFF_SEEDS } from './fixtures/staff';
+import { MENU_CATEGORY_SEEDS } from './fixtures/categories';
 import { CATEGORY_SEEDS, STORE_CONFIG_SEED } from './fixtures/store';
 import { event, totals } from './domain';
 import { rngFor } from './factories/random';
@@ -255,6 +256,7 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
     pedidosyaCoverage: 'unknown',
     favoritesCatalog: 'available',
     categories: empty ? [] : structuredClone(CATEGORY_SEEDS),
+    menuCategories: empty ? [] : structuredClone([...MENU_CATEGORY_SEEDS]),
     products: buildProducts(scenario),
     promotions,
     orders,
@@ -285,6 +287,7 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
       address: 1,
       product: 1,
       category: 1,
+      menuCategory: 1,
       promotion: 1,
       user: 12,
       job: 1,

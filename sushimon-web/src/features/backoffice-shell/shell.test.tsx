@@ -35,11 +35,11 @@ describe('shell autenticado', () => {
     expect(menu().getAllByRole('link')).toHaveLength(10);
   });
 
-  it('el encargado ve su operación, Productos, Sucursales (solo lectura), Usuarios, Roles y Reportes; no Categorías ni Promociones', async () => {
+  it('el encargado ve su operación, Productos, Categorías (solo lectura), Sucursales (solo lectura), Usuarios, Roles y Reportes; no Promociones', async () => {
     await renderBackoffice(<BackofficeShell>contenido</BackofficeShell>, { role: 'manager' });
     await menu().findByRole('link', { name: /Entregas/ });
-    expect(menu().getAllByRole('link')).toHaveLength(8);
-    expect(menu().queryByRole('link', { name: /Categorías/ })).toBeNull();
+    expect(menu().getAllByRole('link')).toHaveLength(9);
+    expect(menu().getByRole('link', { name: /Categorías/ })).toBeVisible();
     expect(menu().queryByRole('link', { name: /Promociones/ })).toBeNull();
     expect(menu().getByRole('link', { name: /Usuarios/ })).toBeVisible();
   });

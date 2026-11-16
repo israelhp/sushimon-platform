@@ -18,6 +18,9 @@ export const paths = {
   locationDepartments: () => '/v1/locations/departments',
   locationMunicipalities: () => '/v1/locations/municipalities',
   deliveryCoverageCheck: () => '/v1/delivery-coverage/check',
+  /** F10 (contrato): árbol de categorías visibles del menú (público, sin autenticación). */
+  storeCategories: () => '/v1/store/categories',
+  /** LEGACY (mock previo a F10; productos hasta F11): categorías planas del catálogo simulado. */
   categories: () => '/v1/catalog/categories',
   products: () => '/v1/catalog/products',
   promotions: () => '/v1/promotions',
@@ -70,6 +73,10 @@ export const paths = {
   adminDeliveryZone: (id: string) => `/v1/admin/delivery-zones/${seg(id)}`,
   adminDeliveryZoneStatus: (id: string) => `/v1/admin/delivery-zones/${seg(id)}/status`,
   adminBranchDeliverySettings: (id: string) => `/v1/admin/branches/${seg(id)}/delivery-settings`,
+  /** F10 (contrato): categorías y jerarquía del menú (`catalog.read|create|update` + aal2; escrituras con alcance global). */
+  adminCategories: () => '/v1/admin/categories',
+  adminCategory: (id: string) => `/v1/admin/categories/${seg(id)}`,
+  adminCategoriesReorder: () => '/v1/admin/categories/reorder',
   /** F03 (contrato): empleados, asignaciones, roles y permisos granulares (JWT + `staff.*`/`roles.*` + aal2). */
   adminContext: () => '/v1/admin/me/context',
   adminStaff: () => '/v1/admin/staff',
