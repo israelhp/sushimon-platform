@@ -258,7 +258,7 @@ describe.skipIf(!url || !ready)('Productos contra PostgreSQL real', () => {
     expect(await find('_')).toEqual([fria.id]);
     expect(await find('\\')).toEqual([]);
     expect(await find(`te%${tag}`)).toEqual([]); // `%` no es comodín
-    expect(await find(`sk-${run}`)).toEqual([sku.id]);
+    expect(await find(`sk-${run}`)).toEqual([]); // el sku NO se busca en la tienda
     const admin = await queries.listAdmin({
       q: fria.slug,
       sort: 'name',
@@ -267,6 +267,14 @@ describe.skipIf(!url || !ready)('Productos contra PostgreSQL real', () => {
       pageSize: 20,
     });
     expect(admin.items.map((i) => i.id)).toEqual([fria.id]);
+    const bySku = await queries.listAdmin({
+      q: `sk-${run}`,
+      sort: 'name',
+      order: 'asc',
+      page: 1,
+      pageSize: 20,
+    });
+    expect(bySku.items.map((i) => i.id)).toEqual([sku.id]); // en admin sí
   });
 
   it('paginación y orden estables con empates; total real', async (ctx) => {

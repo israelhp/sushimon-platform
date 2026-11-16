@@ -213,7 +213,6 @@ describe.skipIf(!url)('Favoritos contra PostgreSQL real', () => {
     // 240 intentos simultáneos + reserva para completar y para la comprobación final del tope.
     const pool = await seedProducts(240 + 60);
     const attempts = pool.slice(0, 240);
-    const spare = pool.slice(240);
     const results = await settle(attempts.map((id) => service.add(p, id)));
     const outcomes = results.map(code);
     const ok = outcomes.filter((c) => c === 'OK').length;
@@ -222,15 +221,17 @@ describe.skipIf(!url)('Favoritos contra PostgreSQL real', () => {
     expect(rows.length).toBeLessThanOrEqual(MAX_FAVORITES_PER_CUSTOMER);
     expect(new Set(rows).size).toBe(rows.length);
     // Si hubo errores de infraestructura (plazos con el pool remoto), se completa hasta el tope en oleadas pequeñas.
-    for (let guard = 0; guard < 40; guard++) {
-      const missing = MAX_FAVORITES_PER_CUSTOMER - (await rowsOf(customer.id)).length;
+    // Se reintenta con productos del lote que aún NO son favoritos (los intentos fallidos se pueden repetir).
+    for (let guard = 0; guard < 80; guard++) {
+      const current = new Set(await rowsOf(customer.id));
+      const missing = MAX_FAVORITES_PER_CUSTOMER - current.size;
       if (missing <= 0) break;
-      await settle(
-        Array.from({ length: Math.min(missing, 5) }, () => service.add(p, spare.pop() as string)),
-      );
+      const candidates = pool.filter((id) => !current.has(id)).slice(0, Math.min(missing, 5));
+      await settle(candidates.map((id) => service.add(p, id)));
     }
     expect((await rowsOf(customer.id)).length).toBe(MAX_FAVORITES_PER_CUSTOMER);
-    await expect(service.add(p, spare.pop() as string)).rejects.toMatchObject({ status: 422 });
+    const overflow = (await seedProducts(1))[0] as string;
+    await expect(service.add(p, overflow)).rejects.toMatchObject({ status: 422 });
     // Ya favorito estando al tope: idempotente.
     const [existing] = await rowsOf(customer.id);
     await expect(service.add(p, existing as string)).resolves.toBeUndefined();
