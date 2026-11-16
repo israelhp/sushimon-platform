@@ -117,7 +117,7 @@ describe.skipIf(!url)('Personal y RBAC contra PostgreSQL real', () => {
     // Estas pruebas crean y desactivan administradores: NUNCA contra una base con administradores reales. Se falla
     // claramente (no se omite en silencio) para que nadie crea que pasaron en una base inadecuada.
     const probe = new PrismaService(
-      new ConfigService<Env, true>(validateEnv({ DATABASE_URL: url })),
+      new ConfigService<Env, true>(validateEnv({ DATABASE_URL: url, NODE_ENV: 'test' })),
     );
     const foreign = await probe.staffUser.count({
       where: {
@@ -134,7 +134,9 @@ describe.skipIf(!url)('Personal y RBAC contra PostgreSQL real', () => {
         'staff.int-spec: DATABASE_URL_TEST contiene empleados reales activos y vinculados. Estas pruebas exigen una base DESECHABLE o de pruebas; no se ejecutaron. Si es una base de pruebas del equipo, repite con STAFF_INT_ALLOW_EXISTING_STAFF=1.',
       );
     }
-    prisma = new PrismaService(new ConfigService<Env, true>(validateEnv({ DATABASE_URL: url })));
+    prisma = new PrismaService(
+      new ConfigService<Env, true>(validateEnv({ DATABASE_URL: url, NODE_ENV: 'test' })),
+    );
     repo = new StaffRepository(prisma);
     ({ commands, queries, roles } = buildServices());
     for (const r of await prisma.role.findMany()) roleId[r.code] = r.id;

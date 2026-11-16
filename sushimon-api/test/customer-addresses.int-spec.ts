@@ -59,7 +59,9 @@ describe.skipIf(!url)('Direcciones de cliente contra PostgreSQL real', () => {
     vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     await withClient(url as string, ensureAuthStub);
     migrate(url as string);
-    prisma = new PrismaService(new ConfigService<Env, true>(validateEnv({ DATABASE_URL: url })));
+    prisma = new PrismaService(
+      new ConfigService<Env, true>(validateEnv({ DATABASE_URL: url, NODE_ENV: 'test' })),
+    );
     identity = new IdentityService(prisma, new AuditService());
     addresses = new CustomerAddressesService(prisma, identity, new AuditService());
     // El seed de F09 (migración 0007) carga municipios; si no hay ninguno, la base de pruebas no está lista.

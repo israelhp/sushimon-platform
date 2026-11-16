@@ -45,7 +45,9 @@ describe.skipIf(!url)('Perfil de cliente contra PostgreSQL real', () => {
     vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     await withClient(url as string, ensureAuthStub);
     migrate(url as string);
-    prisma = new PrismaService(new ConfigService<Env, true>(validateEnv({ DATABASE_URL: url })));
+    prisma = new PrismaService(
+      new ConfigService<Env, true>(validateEnv({ DATABASE_URL: url, NODE_ENV: 'test' })),
+    );
     identity = new IdentityService(prisma, new AuditService());
     profiles = new CustomerProfileService(prisma, identity);
   });

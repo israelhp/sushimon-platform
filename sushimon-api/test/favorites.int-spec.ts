@@ -92,7 +92,9 @@ describe.skipIf(!url)('Favoritos contra PostgreSQL real', () => {
     }
     // Pool de 8: varias conexiones simultáneas reales sin pasar del tope de 15 clientes del pooler de Supabase en modo sesión (EMAXCONNSESSION).
     prisma = new PrismaService(
-      new ConfigService<Env, true>(validateEnv({ DATABASE_URL: url, DB_POOL_MAX: '8' })),
+      new ConfigService<Env, true>(
+        validateEnv({ DATABASE_URL: url, DB_POOL_MAX: '8', NODE_ENV: 'test' }),
+      ),
     );
     identity = new IdentityService(prisma, new AuditService());
     repo = new FavoritesRepository(prisma);

@@ -42,7 +42,9 @@ describe.skipIf(!url || !hasCategories)('Categorías contra PostgreSQL real', ()
 
   beforeAll(() => {
     vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
-    prisma = new PrismaService(new ConfigService<Env, true>(validateEnv({ DATABASE_URL: url })));
+    prisma = new PrismaService(
+      new ConfigService<Env, true>(validateEnv({ DATABASE_URL: url, NODE_ENV: 'test' })),
+    );
     const repo = new CategoriesRepository(prisma);
     commands = new AdminCategoriesService(
       repo,
