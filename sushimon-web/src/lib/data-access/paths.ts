@@ -20,9 +20,11 @@ export const paths = {
   deliveryCoverageCheck: () => '/v1/delivery-coverage/check',
   /** F10 (contrato): árbol de categorías visibles del menú (público, sin autenticación). */
   storeCategories: () => '/v1/store/categories',
-  /** LEGACY (mock previo a F10; productos hasta F11): categorías planas del catálogo simulado. */
+  /** F11 (contrato): productos visibles del menú (paginado, `q`, `categorySlug`) y ficha por slug. Sin autenticación. */
+  storeProducts: () => '/v1/store/products',
+  storeProduct: (slug: string) => `/v1/store/products/${seg(slug)}`,
+  /** LEGACY (mock previo a F10): categorías planas del catálogo simulado (Happy Hour y reportes). */
   categories: () => '/v1/catalog/categories',
-  products: () => '/v1/catalog/products',
   promotions: () => '/v1/promotions',
   orders: () => '/v1/orders',
   order: (id: string) => `/v1/orders/${seg(id)}`,
@@ -53,8 +55,6 @@ export const paths = {
   deliveryAdvance: (orderId: string) => `/v1/backoffice/deliveries/${seg(orderId)}/advance`,
   deliveries: () => '/v1/backoffice/deliveries',
   riders: () => '/v1/backoffice/riders',
-  boProducts: () => '/v1/backoffice/products',
-  boProduct: (id: string) => `/v1/backoffice/products/${seg(id)}`,
   boCategories: () => '/v1/backoffice/categories',
   boCategory: (id: string) => `/v1/backoffice/categories/${seg(id)}`,
   boPromotions: () => '/v1/backoffice/promotions',
@@ -77,6 +77,9 @@ export const paths = {
   adminCategories: () => '/v1/admin/categories',
   adminCategory: (id: string) => `/v1/admin/categories/${seg(id)}`,
   adminCategoriesReorder: () => '/v1/admin/categories/reorder',
+  /** F11 (contrato): productos del backoffice (`catalog.read|create|update` + aal2; escrituras con alcance global). */
+  adminProducts: () => '/v1/admin/products',
+  adminProduct: (id: string) => `/v1/admin/products/${seg(id)}`,
   /** F03 (contrato): empleados, asignaciones, roles y permisos granulares (JWT + `staff.*`/`roles.*` + aal2). */
   adminContext: () => '/v1/admin/me/context',
   adminStaff: () => '/v1/admin/staff',
@@ -101,6 +104,9 @@ export const paths = {
    * disponibilidad ya son contrato (F08: `branchHours`, `branchAvailability`). La identidad y el estado administrativo (F07) viven en `branches`/`adminBranches`.
    */
   demoBranchOperations: () => '/v1/demo/branches/operations',
+  /** F12/F13/F15 SIMULADOS: ilustración, destacado, textos en inglés y disponibilidad por sucursal de cada producto (F11 no los provee). */
+  demoProductExtras: () => '/v1/demo/catalog/product-extras',
+  demoProductAvailability: (id: string) => `/v1/demo/catalog/products/${seg(id)}/availability`,
   /** Escenario SIMULADO de PedidosYa para la cobertura (solo mock; nunca existe en la API real). */
   demoPedidosyaCoverage: () => '/v1/demo/delivery/pedidosya-coverage',
   demoAdvanceOrder: (id: string) => `/v1/demo/orders/${seg(id)}/advance`,

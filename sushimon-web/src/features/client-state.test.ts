@@ -12,6 +12,7 @@ import {
   removeOne,
   setNote,
 } from './cart/cart';
+import { priceToNumber } from '@/lib/product-rules';
 import { DEFAULT_ORDER_MODE, normalizeSchedule, parseOrderMode } from './order-mode/order-mode';
 
 describe('carrito', () => {
@@ -82,7 +83,12 @@ describe('modo de pedido', () => {
 
 describe('repetir pedido', () => {
   const store = createSeedStore();
-  const products: Product[] = store.products.map((p) => ({ ...p, available: true }));
+  const products: Product[] = store.products.map((p) => ({
+    ...p,
+    description: p.description ?? '',
+    price: priceToNumber(p.basePrice),
+    available: true,
+  }));
   const old = store.orders.find((o) => o.id === 'MON-479850') as Order;
 
   it('informa productos que no se agregarán y cambios de precio', () => {

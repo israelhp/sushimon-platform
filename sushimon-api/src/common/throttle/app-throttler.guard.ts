@@ -5,6 +5,8 @@ import { codedException } from '../errors/coded-exception.js';
 
 /** Límites por ruta de los endpoints públicos que tocan BD (F09). Por IP y por instancia (ver `TRUST_PROXY_HOPS`). */
 export const COVERAGE_CHECK_THROTTLE = { default: { limit: 30, ttl: 60_000 } };
+/** Lecturas públicas del catálogo (F11): lista y ficha de productos, 60/min por IP. */
+export const PRODUCTS_PUBLIC_THROTTLE = { default: { limit: 60, ttl: 60_000 } };
 export const LOCATIONS_THROTTLE = { default: { limit: 60, ttl: 60_000 } };
 
 /** Favoritos del cliente (F06 D13). Por IP; cada handler tiene su contador. */

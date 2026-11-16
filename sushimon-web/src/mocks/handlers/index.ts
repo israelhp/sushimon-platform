@@ -8,6 +8,7 @@ import * as categories from './categories';
 import * as delivery from './delivery';
 import * as favorites from './favorites';
 import * as orders from './orders';
+import * as products from './products';
 import * as pub from './public';
 import * as schedule from './schedule';
 import * as staff from './staff';
@@ -27,7 +28,9 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   // F10: árbol público de categorías visibles (contrato)
   'GET /v1/store/categories': categories.listStoreCategories,
   'GET /v1/catalog/categories': pub.listCategories,
-  'GET /v1/catalog/products': pub.listProducts,
+  // F11: productos visibles y ficha por slug (contrato)
+  'GET /v1/store/products': products.listStoreProducts,
+  'GET /v1/store/products/:slug': products.getStoreProduct,
   'GET /v1/promotions': pub.listPromotions,
   'POST /v1/orders': orders.createOrder,
   'POST /v1/orders/lookup': orders.lookupOrder,
@@ -64,9 +67,6 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'PATCH /v1/backoffice/deliveries/:orderId/advance': bo.advance,
   'GET /v1/backoffice/deliveries': bo.listDeliveries,
   'GET /v1/backoffice/riders': bo.listRiders,
-  'GET /v1/backoffice/products': admin.listBoProducts,
-  'POST /v1/backoffice/products': admin.createProduct,
-  'PATCH /v1/backoffice/products/:id': admin.updateProduct,
   'GET /v1/backoffice/categories': admin.listBoCategories,
   'POST /v1/backoffice/categories': admin.createCategory,
   'PATCH /v1/backoffice/categories/:id': admin.updateCategory,
@@ -102,6 +102,11 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'POST /v1/admin/categories': categories.createAdminCategory,
   'PUT /v1/admin/categories/reorder': categories.reorderAdminCategories,
   'PATCH /v1/admin/categories/:id': categories.updateAdminCategory,
+  // F11: productos y fichas (contrato)
+  'GET /v1/admin/products': products.listAdminProducts,
+  'POST /v1/admin/products': products.createAdminProduct,
+  'GET /v1/admin/products/:id': products.getAdminProduct,
+  'PATCH /v1/admin/products/:id': products.updateAdminProduct,
   // F03: empleados, roles y permisos (contrato)
   'GET /v1/admin/me/context': staff.getAdminContext,
   'GET /v1/admin/staff': staff.listAdminStaff,
@@ -120,6 +125,9 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
 
   // 🎭 Solo simulación
   'GET /v1/demo/branches/operations': branches.listBranchOperations,
+  // F12/F13/F15 SIMULADOS: lo que F11 no provee de cada producto
+  'GET /v1/demo/catalog/product-extras': products.listProductExtras,
+  'PATCH /v1/demo/catalog/products/:id/availability': products.setProductAvailability,
   'GET /v1/demo/delivery/pedidosya-coverage': delivery.getPedidosyaCoverageScenario,
   'PUT /v1/demo/delivery/pedidosya-coverage': delivery.setPedidosyaCoverageScenario,
   'POST /v1/demo/orders/:id/advance': orders.demoAdvanceOrder,

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { ApiError } from '@/lib/data-access/errors';
 import * as admin from '@/services/backoffice-admin';
 import * as bo from '@/services/backoffice-orders';
+import * as categories from '@/services/categories';
+import * as products from '@/services/products';
 import { createHarness } from '../testing';
 
 async function status(p: Promise<unknown>): Promise<number> {
@@ -244,49 +246,40 @@ describe('despacho y logística (simulados)', () => {
 });
 
 describe('catálogo y administración', () => {
-  it('admin edita productos; encargado solo disponibilidad de su sucursal', async () => {
+  it('F11: admin edita productos (global); encargado solo disponibilidad de su sucursal', async () => {
     const h = createHarness();
     h.asStaff('manager');
-    expect(await status(admin.updateProduct(h.client, 'dumplings', { price: 60 }))).toBe(403);
-    const p = await admin.setProductAvailability(h.client, 'dumplings', [
+    expect(
+      await status(products.updateAdminProduct(h.client, 'dumplings', { basePrice: '60.00' })),
+    ).toBe(403);
+    const p = await products.setSimulatedProductAvailability(h.client, 'dumplings', [
       { branchId: 'sucursal-1', available: false },
     ]);
     expect(p.availability.find((a) => a.branchId === 'sucursal-1')?.available).toBe(false);
     expect(
       await status(
-        admin.setProductAvailability(h.client, 'dumplings', [
+        products.setSimulatedProductAvailability(h.client, 'dumplings', [
           { branchId: 'sucursal-2', available: false },
         ]),
       ),
     ).toBe(403);
 
     h.asStaff('admin');
-    const edited = await admin.updateProduct(h.client, 'dumplings', { price: 60 });
-    expect(edited.price).toBe(60);
-    expect(await status(admin.updateProduct(h.client, 'dumplings', { price: 0 }))).toBe(400);
-    const created = await admin.createProduct(h.client, {
-      name: 'Gyoza Roll',
-      description: 'Nuevo',
-      price: 70,
-      categoryId: 'rolls',
-    });
-    expect(created).toMatchObject({ id: 'gyoza-roll', available: true });
-    expect(await status(admin.createProduct(h.client, { ...created, categoryId: 'happy' }))).toBe(
-      422,
-    );
+    const edited = await products.updateAdminProduct(h.client, 'dumplings', { basePrice: '60.00' });
+    expect(edited.basePrice).toBe('60.00');
+    expect(
+      await status(products.updateAdminProduct(h.client, 'dumplings', { basePrice: '0.00' })),
+    ).toBe(400);
   });
 
   it('la disponibilidad del backoffice se refleja en la tienda', async () => {
     const h = createHarness();
     h.asStaff('admin');
-    await admin.setProductAvailability(h.client, 'cangreburger', [
+    await products.setSimulatedProductAvailability(h.client, 'cangreburger', [
       { branchId: 'sucursal-2', available: false },
     ]);
-    const products = await h.client.get<{ id: string; available: boolean }[]>(
-      '/v1/catalog/products',
-      { query: { branchId: 'sucursal-2' } },
-    );
-    expect(products.find((p) => p.id === 'cangreburger')?.available).toBe(false);
+    const extras = await products.listSimulatedProductExtras(h.client, 'sucursal-2');
+    expect(extras.items.find((p) => p.productId === 'cangreburger')?.available).toBe(false);
   });
 
   it('categorías (orden/visibilidad) afectan el menú público', async () => {
@@ -295,8 +288,10 @@ describe('catálogo y administración', () => {
     await admin.updateCategory(h.client, 'postres', { visible: false });
     const cats = await h.client.get<{ id: string }[]>('/v1/catalog/categories');
     expect(cats.map((c) => c.id)).not.toContain('postres');
-    const products = await h.client.get<{ categoryId: string }[]>('/v1/catalog/products');
-    expect(products.some((p) => p.categoryId === 'postres')).toBe(false);
+    // F10/F11: la jerarquía del menú (F10) es la que decide la visibilidad de los productos públicos.
+    await categories.updateAdminCategory(h.client, 'cat-postres', { active: false });
+    const list = await products.listAllStoreProducts(h.client);
+    expect(list.some((p) => p.category.slug === 'postres')).toBe(false);
   });
 
   it('promociones: validación y alta', async () => {

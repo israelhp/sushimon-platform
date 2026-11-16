@@ -47,10 +47,19 @@ export async function hasRealSupabaseAuth(client: pg.Client): Promise<boolean> {
  */
 export async function cleanupTestData(
   url: string,
-  created: { authUserIds: Iterable<string>; branchIds: Iterable<string> },
+  created: {
+    authUserIds: Iterable<string>;
+    branchIds: Iterable<string>;
+    /** F11: productos sembrados por la prueba (sus imágenes y favoritos caen en cascada). */
+    productIds?: Iterable<string>;
+    /** F10/F11: categorías sembradas por la prueba (planas o ya sin hijas; se borran DESPUÉS de sus productos). */
+    categoryIds?: Iterable<string>;
+  },
 ): Promise<void> {
   const authIds = [...created.authUserIds];
   const branchIds = [...created.branchIds];
+  const productIds = [...(created.productIds ?? [])];
+  const categoryIds = [...(created.categoryIds ?? [])];
   await withClient(url, async (c) => {
     await c.query('BEGIN');
     try {
@@ -73,6 +82,30 @@ export async function cleanupTestData(
         [authIds],
       );
       await c.query('DELETE FROM app.customers WHERE auth_user_id = ANY($1::uuid[])', [authIds]);
+      // F11: productos y categorías de la prueba (solo si la migración 0012/0011 está aplicada). Los favoritos y las
+      // imágenes caen en cascada; las categorías tienen FK RESTRICT desde products, por eso van después.
+      const catalog = await c.query<{ products: string | null; categories: string | null }>(
+        `SELECT to_regclass('app.products') AS products, to_regclass('app.categories') AS categories`,
+      );
+      if (productIds.length > 0 && catalog.rows[0]?.products) {
+        await c.query('DELETE FROM app.audit_events WHERE entity_id = ANY($1::uuid[])', [
+          productIds,
+        ]);
+        await c.query('DELETE FROM app.products WHERE id = ANY($1::uuid[])', [productIds]);
+      }
+      if (categoryIds.length > 0 && catalog.rows[0]?.categories) {
+        await c.query('DELETE FROM app.audit_events WHERE entity_id = ANY($1::uuid[])', [
+          categoryIds,
+        ]);
+        // FK RESTRICT parent_id: hojas primero, repetido (máx. 3 niveles).
+        for (let level = 0; level < 4; level += 1) {
+          await c.query(
+            `DELETE FROM app.categories k WHERE k.id = ANY($1::uuid[])
+               AND NOT EXISTS (SELECT 1 FROM app.categories ch WHERE ch.parent_id = k.id)`,
+            [categoryIds],
+          );
+        }
+      }
       // F08: horarios y cierres de las sucursales de la prueba (FK RESTRICT hacia branches).
       await c.query('DELETE FROM app.branch_closures WHERE branch_id = ANY($1::uuid[])', [
         branchIds,

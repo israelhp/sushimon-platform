@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/data-access/errors';
 import { createSpyClient } from '@/test/spy-client';
@@ -270,7 +270,7 @@ describe('MenuScreen · categorías reales (F10)', () => {
 
   it('error solo en productos: las categorías siguen visibles y se ofrece reintentar', async () => {
     const spy = createSpyClient();
-    const gate = spy.hold('GET', /^\/v1\/catalog\/products$/);
+    const gate = spy.hold('GET', /^\/v1\/store\/products$/);
     await renderStore(<MenuScreen />, { wrapClient: spy.wrap });
     await act(async () => gate.fail(new ApiError(500, 'server_error', 'boom')));
     const alert = await screen.findByRole('alert');
@@ -285,5 +285,80 @@ describe('MenuScreen · categorías reales (F10)', () => {
       },
     });
     expect(await screen.findByText('El menú no está disponible por ahora')).toBeInTheDocument();
+  });
+});
+
+describe('MenuScreen · búsqueda en el servidor (F11)', () => {
+  const searchbox = () => screen.getByRole('searchbox', { name: 'Buscar en el menú' });
+  const productCalls = (
+    spy: ReturnType<typeof createSpyClient>,
+    pred: (q: Record<string, unknown>) => boolean,
+  ) =>
+    spy.calls.filter(
+      (c) => c.method === 'GET' && /^\/v1\/store\/products$/.test(c.path) && pred(c.query ?? {}),
+    ).length;
+
+  it('busca con debounce: una sola consulta `q` tras dejar de escribir y muestra los resultados', async () => {
+    const spy = createSpyClient();
+    await renderStore(<MenuScreen />, { wrapClient: spy.wrap });
+    await screen.findByRole('heading', { name: /^Entradas/ });
+    fireEvent.change(searchbox(), { target: { value: 'dum' } });
+    fireEvent.change(searchbox(), { target: { value: 'dump' } });
+    expect(productCalls(spy, (q) => Boolean(q.q))).toBe(0);
+    const results = await screen.findByRole('heading', { name: 'Resultados para «dump»' });
+    expect(results).toBeInTheDocument();
+    expect(screen.getByText(/Mostrando 2 de 2/)).toBeInTheDocument();
+    expect(productCalls(spy, (q) => q.q === 'dump')).toBe(1);
+    expect(productCalls(spy, (q) => q.q === 'dum')).toBe(0);
+    // Al borrar el texto vuelve el menú por secciones.
+    fireEvent.change(searchbox(), { target: { value: '' } });
+    expect(await screen.findByRole('heading', { name: /^Entradas/ })).toBeInTheDocument();
+  });
+
+  it('sin coincidencias: estado vacío; la búsqueda ignora acentos y mayúsculas', async () => {
+    await renderStore(<MenuScreen />);
+    await screen.findByRole('heading', { name: /^Entradas/ });
+    fireEvent.change(searchbox(), { target: { value: 'zzzz' } });
+    expect(await screen.findByText('Sin resultados para «zzzz»')).toBeInTheDocument();
+    fireEvent.change(searchbox(), { target: { value: 'CANGREBÚRGER' } });
+    expect(
+      await screen.findByRole('heading', { name: 'Resultados para «CANGREBÚRGER»' }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Cangreburger').length).toBeGreaterThan(0);
+  });
+
+  it('paginación «Ver más»: pide la página siguiente y acumula', async () => {
+    const spy = createSpyClient();
+    await renderStore(<MenuScreen />, { wrapClient: spy.wrap });
+    await screen.findByRole('heading', { name: /^Entradas/ });
+    fireEvent.change(searchbox(), { target: { value: 'a' } });
+    await screen.findByRole('heading', { name: 'Resultados para «a»' });
+    expect(screen.getByText(/Mostrando 20 de /)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ver más' }));
+    await waitFor(() => expect(productCalls(spy, (q) => q.q === 'a' && q.page === 2)).toBe(1));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Ver más' })).toBeNull());
+  });
+
+  it('error en la búsqueda: aviso con reintento', async () => {
+    const spy = createSpyClient();
+    await renderStore(<MenuScreen />, { wrapClient: spy.wrap });
+    await screen.findByRole('heading', { name: /^Entradas/ });
+    const gate = spy.hold('GET', /^\/v1\/store\/products$/);
+    fireEvent.change(searchbox(), { target: { value: 'roll' } });
+    await waitFor(() => expect(gate.held()).toBe(true));
+    await act(async () => gate.fail(new ApiError(500, 'server_error', 'boom')));
+    const alert = await screen.findByRole('alert');
+    fireEvent.click(within(alert).getByRole('button', { name: 'Reintentar' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Resultados para «roll»' }),
+    ).toBeInTheDocument();
+  });
+
+  it('productos del menú salen del contrato: precio base en GTQ y sin los no publicados', async () => {
+    await renderStore(<MenuScreen />);
+    await screen.findByRole('heading', { name: /^Entradas/ });
+    expect(screen.queryByText('Gyoza Vegetal')).toBeNull();
+    expect(screen.queryByText('Roll Edición Limitada')).toBeNull();
+    expect(screen.getAllByText('Q53').length).toBeGreaterThan(0);
   });
 });

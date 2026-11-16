@@ -183,7 +183,11 @@
     "addedQty": "{a} × {b} added to your order",
     "removed": "{a} removed",
     "unavailableNote": "This product isn’t available right now. Try another one from the menu.",
-    "maxQty": "Maximum {a} per order."
+    "maxQty": "Maximum {a} per order.",
+    "gallery": "Product images",
+    "imageN": "Image {a} of {b}",
+    "breadcrumb": "Product category",
+    "goneNote": "This product is no longer on the menu."
   },
   "cart": {
     "title": "Your order",
@@ -280,7 +284,14 @@
     },
     "categoryEmpty": "There are no products in this category yet.",
     "subcategoriesAria": "Subcategories of {name}",
-    "allOf": "All of {name}"
+    "allOf": "All of {name}",
+    "searchLabel": "Search the menu",
+    "searchPlaceholder": "Search the menu",
+    "searchResults": "Results for “{q}”",
+    "searchCount": "Showing {shown} of {total}",
+    "searchEmptyTitle": "No results for “{q}”",
+    "searchEmptySub": "Try another name or ingredient.",
+    "searchMore": "Show more"
   },
   "promos": {
     "daysRange": "{a} to {b}",
@@ -1049,9 +1060,7 @@
       "availabilityError": "No se pudo cambiar la disponibilidad: {message}",
       "toast": {
         "available": "{name} disponible",
-        "soldOut": "{name} marcado como agotado",
-        "created": "Producto creado",
-        "updated": "Producto actualizado"
+        "soldOut": "{name} marcado como agotado"
       },
       "empty": {
         "title": "Sin productos",
@@ -1064,32 +1073,77 @@
         "name": "Nombre",
         "category": "Categoría",
         "price": "Precio",
-        "availability": "Disponibilidad"
+        "availability": "Disponibilidad",
+        "status": "Estado"
       },
       "form": {
         "titleNew": "Nuevo producto",
         "titleEdit": "Editar producto",
-        "photo": "Foto del producto",
-        "photoHint": "JPG o PNG cuadrada, mínimo 800 × 800 px.",
-        "upload": "Subir foto",
-        "uploadToast": "Selecciona una imagen JPG o PNG (demo)",
         "name": "Nombre",
-        "nameEn": "Nombre en inglés (opcional)",
         "description": "Descripción",
-        "descriptionEn": "Descripción en inglés (opcional)",
         "category": "Categoría",
         "price": "Precio",
-        "featured": "Destacado en la tienda",
-        "featuredHint": "Aparece entre los favoritos de la página de inicio.",
-        "availability": "Disponibilidad por sucursal",
         "cancel": "Cancelar",
         "save": "Guardar producto",
         "saving": "Guardando…",
-        "errors": {
-          "nameRequired": "Escribe el nombre del producto.",
-          "priceInvalid": "Escribe un precio mayor a Q0.00.",
-          "categoryRequired": "Elige una categoría."
-        }
+        "slug": "Slug (opcional)",
+        "slugHintCreate": "Déjalo en blanco para generarlo desde el nombre.",
+        "slugHintEdit": "Cambiar el slug cambia la URL pública del producto.",
+        "sku": "SKU (opcional)",
+        "skuHint": "Código interno único; se guarda en mayúsculas.",
+        "categoryPlaceholder": "Elige una categoría",
+        "categoryInactive": "inactiva",
+        "categoryHint": "Solo categorías activas.",
+        "priceHint": "Precio base global en quetzales, p. ej. 85.00.",
+        "descriptionHint": "Texto plano, hasta {max} caracteres.",
+        "media": "Imágenes",
+        "mediaHint": "URL https de imágenes ya publicadas (máx. {max}); la primera es la principal. La subida de archivos llegará con F14.",
+        "mediaUrl": "URL de la imagen {n}",
+        "mediaAlt": "Texto alternativo de la imagen {n}",
+        "mediaAltPlaceholder": "Texto alternativo",
+        "mediaUp": "Subir la imagen {n}",
+        "mediaDown": "Bajar la imagen {n}",
+        "mediaRemove": "Quitar la imagen {n}",
+        "mediaRemoveShort": "Quitar",
+        "mediaAdd": "Agregar imagen",
+        "active": "Activo (visible en la tienda si su categoría lo está)",
+        "create": "Crear producto",
+        "toastCreated": "Producto «{name}» creado",
+        "toastUpdated": "Producto «{name}» actualizado",
+        "toastNoChanges": "No hay cambios que guardar"
+      },
+      "subtitleReal": "{count} productos",
+      "categoryFilter": "Filtrar por categoría",
+      "statusFilter": "Filtrar por estado",
+      "statusAll": "Todos",
+      "statusActive": "Activos",
+      "statusInactive": "Inactivos",
+      "noticeReadOnly": "Tienes acceso de solo lectura al catálogo.",
+      "noticeScope": "Para crear o editar productos necesitas acceso a todas las sucursales: los productos son globales.",
+      "visibility": {
+        "visible": "Visible en la tienda",
+        "inactive": "Inactivo",
+        "categoryHidden": "Oculto: categoría oculta"
+      },
+      "activate": "Activar",
+      "deactivate": "Desactivar",
+      "cancel": "Cancelar",
+      "saving": "Guardando…",
+      "activateLabel": "Activar {name}",
+      "deactivateLabel": "Desactivar {name}",
+      "activateTitle": "¿Activar {name}?",
+      "deactivateTitle": "¿Desactivar {name}?",
+      "statusNow": "Estado actual: {state}",
+      "deactivateBody": "{name} dejará de verse en la tienda. Los pedidos anteriores conservan su detalle.",
+      "activateBody": "{name} volverá a verse en la tienda.",
+      "activateHiddenBody": "{name} quedará activo, pero seguirá oculto mientras su categoría «{category}» (o una categoría superior) esté inactiva.",
+      "toastActivated": "{name} activado",
+      "toastDeactivated": "{name} desactivado",
+      "pager": {
+        "label": "Paginación de productos",
+        "prev": "Anterior",
+        "next": "Siguiente",
+        "status": "Página {page} de {pages} · {total} productos"
       }
     },
     "categories": {

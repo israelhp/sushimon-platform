@@ -6,8 +6,9 @@ import {
 } from './catalog-products.port.js';
 
 /**
- * Adaptador por defecto mientras no exista el catálogo real (F11): SIEMPRE "no disponible", sin red ni datos
- * inventados. Con él, `PUT` responde 503 `CATALOG_UNAVAILABLE` y `GET` degrada a `UNKNOWN`.
+ * Doble de prueba: SIEMPRE "no disponible", sin red ni datos inventados. Ya NO está enlazado en `FavoritesModule`
+ * (F11 aportó `ProductsCatalogAdapter`); se conserva para probar la degradación (`PUT` 503 `CATALOG_UNAVAILABLE`,
+ * `GET` => `UNKNOWN`).
  */
 @Injectable()
 export class UnavailableCatalogAdapter implements CatalogProductsPort {

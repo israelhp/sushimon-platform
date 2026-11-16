@@ -31,12 +31,12 @@ src/mocks/
   clock.ts             reloj inyectable (fecha base fija) — único lugar que lee la hora real
   factories/random.ts  mulberry32 + hash de semilla
   factories/history.ts historial determinista de 60 días (genDay del backoffice)
-  fixtures/            store · branches · products (29) · promotions · staff · orders · geography · delivery (F09) · categories (F10)
+  fixtures/            store · branches · products (29 + 2 de demostración F11) · promotions · staff · orders · geography · delivery (F09) · categories (F10)
   seed.ts              createSeedStore(scenario)
   store.ts             tipo MockStore + persistencia en sessionStorage (clave sushimon-mock-store-v1:<escenario>)
   domain.ts            reglas puras (totales, validaciones, fail(), failCode()/badRequest() con `code`/`violations`)
   coverage.ts          motor de cobertura F09 (OWN, PedidosYa simulado, elegibilidad A–G): réplica de la API
-  handlers/            public · orders · account · backoffice · backoffice-admin · logistics · schedule · delivery (F09) · categories (F10) · favorites (F06) · index (mockRoutes)
+  handlers/            public · orders · account · backoffice · backoffice-admin · logistics · schedule · delivery (F09) · categories (F10) · products (F11) · favorites (F06) · index (mockRoutes)
   index.ts             createMockDataClient({ scenario, latencyMs?, store?, clock?, session?, persist? })
   testing.ts           createHarness() para pruebas
 src/services/          store · orders · account · favorites (F06) · backoffice-orders · backoffice-admin
@@ -249,6 +249,32 @@ visibilidad efectiva (activa y con todos los ancestros activos), `CATEGORY_CYCLE
 Legado: `/v1/catalog/categories` y `/v1/backoffice/categories` (categorías planas del catálogo simulado) se conservan SOLO como soporte
 de los productos mock (selector de producto, ficha, favoritos) hasta F11; ya no gobiernan el menú ni la pantalla de Categorías. La
 pantalla de Categorías pasa de exigir `catalog.update` a `catalog.read` (el encargado la ve en solo lectura).
+
+## F11 — Productos y fichas (spec 012, ADR-0017)
+
+Estado: **web conectada al contrato (mock fiel a las reglas del servidor); integración http real NO verificada** (la API se implementa en
+paralelo; no se ha probado la web contra ella).
+
+| Qué                                                                                                | Estado                                                                                                                                                                                   |
+| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Menú, búsqueda (`q`, «Ver más») y ficha (`categoryAncestors`, imágenes o placeholder)              | **Contrato F11** (`GET /v1/store/products[/{slug}]`) vía `services/products` → `useProducts` (catálogo completo en páginas de 100, tope 10 páginas) y `useStoreProductSearch`            |
+| Backoffice Productos: lista paginada, filtros, alta, edición, activar/desactivar, `media`          | **Contrato F11** (`/v1/admin/products`), errores por `code`, permisos `catalog.*` con alcance global para escribir                                                                       |
+| Precio                                                                                             | Cadena `"85.00"` (`lib/product-rules`, céntimos enteros); `price: number` solo en el modelo UI `Product` para sumar/mostrar; precio = `basePrice` global (sin precio por sucursal)       |
+| Ilustración, destacado, `food`, nombre/descripción en inglés                                       | **SIMULADO** (mock: `GET /v1/demo/catalog/product-extras`). En http: ilustración por categoría (`lib/product-decor`), sin destacado, sin inglés (el contrato no tiene textos por idioma) |
+| `available` / disponibilidad por sucursal, interruptor del backoffice                              | **SIMULADO** (F13): `PATCH /v1/demo/catalog/products/:id/availability`. En http la UI no ofrece el interruptor y todo figura disponible                                                  |
+| Modificadores (F12), promociones/insignias (F15), agregados de tienda (F17), subida de fotos (F14) | Sin cambios / pendientes: las imágenes solo se **referencian** por URL https (≤ 8, reordenables)                                                                                         |
+
+Notas del mock:
+
+- Los ids de producto siguen siendo legibles (`dumplings`, igual al slug sembrado; no UUID) para no romper carritos, pedidos ni favoritos de la demo;
+  los productos creados reciben `prod-<slug>-<n>`. Hay dos productos de demostración de visibilidad: `gyoza-vegetal` (inactivo) y
+  `roll-edicion-limitada` (activo bajo una categoría oculta); no aparecen en la tienda y el backoffice los marca con el motivo.
+- `GET /v1/catalog/products` y `/v1/backoffice/products` se **retiraron** del mock (los sustituyen F11 y `/v1/demo/catalog/*`).
+- Reglas emuladas: visibilidad (activo + categoría efectivamente visible), `q` público solo en nombre y descripción (admin: también slug y SKU),
+  `categorySlug` con descendientes, `page ≤ 200`, `pageSize ≤ 100`, orden `name,id`, 400/401/403/404/409/422, media que reemplaza (https con dominio, sin IP
+  literales/localhost/credenciales), 503 `PRODUCTS_BUSY` determinista (`store.productsBusy`). No simula auditoría, caché ni UUID.
+- El pedido simulado solo acepta productos publicados y usa `basePrice`; los favoritos usan la misma visibilidad (`INACTIVE` si se despublica).
+- `MOCK_STORE_VERSION` = 8 (la forma de `products` cambió).
 
 ## Corrección de la auditoría F00–F09 (web)
 

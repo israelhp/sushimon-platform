@@ -1,18 +1,13 @@
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
-import { FoodArt } from '@/components/art/FoodArt';
 import { cn } from '@/lib/cn';
 import { formatMoney } from '@/lib/format';
 import type { Product } from '@/lib/data-access/models';
 import { useCart } from '@/features/cart/cart-context';
 import { FavoriteButton } from '@/features/catalog/components/favorite-button';
-import {
-  foodArtKind,
-  productDescription,
-  productName,
-  tileClass,
-} from '@/features/catalog/localized';
+import { ProductArt } from '@/features/catalog/components/product-art';
+import { productDescription, productName, tileClass } from '@/features/catalog/localized';
 import { useProductSheet } from '@/features/catalog/product-sheet-context';
 
 const money = (value: number) => formatMoney(value, 'es', { decimals: 'auto' });
@@ -51,7 +46,7 @@ export function ProductListItem({
             !product.available && 'opacity-50 grayscale',
           )}
         >
-          <FoodArt kind={foodArtKind(product.illustration)} className="h-[56px] w-[56px]" />
+          <ProductArt product={product} artClassName="h-[56px] w-[56px]" />
           {quantity > 0 ? (
             <span
               className="absolute -right-0.5 -top-0.5 inline-flex h-6 min-w-6 items-center justify-center rounded-bl-lg rounded-tr-lg bg-deep px-1.5 text-[12px] font-extrabold text-ondeep"

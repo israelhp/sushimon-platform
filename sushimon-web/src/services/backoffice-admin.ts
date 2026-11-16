@@ -1,9 +1,7 @@
 import type { DataClient } from '@/lib/data-access/types';
 import type {
-  ProductBranchAvailability,
   Category,
   Order,
-  Product,
   Promotion,
   PromotionInput,
   ReportSummary,
@@ -11,29 +9,6 @@ import type {
 import { paths } from '@/lib/data-access/paths';
 
 /** Catálogo, promociones y reportes del backoffice (las sucursales F07: `services/branches`). */
-
-export type ProductInput = Pick<Product, 'name' | 'description' | 'price' | 'categoryId'> &
-  Partial<
-    Pick<
-      Product,
-      'nameEn' | 'descriptionEn' | 'illustration' | 'featured' | 'food' | 'availability'
-    >
-  >;
-
-export const listBoProducts = (client: DataClient) => client.get<Product[]>(paths.boProducts());
-
-export const createProduct = (client: DataClient, input: ProductInput) =>
-  client.post<Product>(paths.boProducts(), input);
-
-export const updateProduct = (client: DataClient, id: string, input: Partial<ProductInput>) =>
-  client.patch<Product>(paths.boProduct(id), input);
-
-/** Cambio de disponibilidad por sucursal (permiso de encargado). */
-export const setProductAvailability = (
-  client: DataClient,
-  id: string,
-  availability: ProductBranchAvailability[],
-) => client.patch<Product>(paths.boProduct(id), { availability });
 
 export type CategoryInput = Pick<Category, 'name'> &
   Partial<Pick<Category, 'nameEn' | 'sortOrder' | 'visible' | 'illustration' | 'jpLabel'>>;

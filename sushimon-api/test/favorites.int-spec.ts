@@ -24,9 +24,11 @@ const everything: CatalogProductsPort = {
 /**
  * F06 contra PostgreSQL real: tope exacto bajo concurrencia, idempotencia con altas simultáneas, cascada y aislamiento.
  *
- * Esta prueba NO aplica migraciones (la 0009 requiere aprobación humana y NO se aplica a Supabase desde aquí): se
- * OMITE, con aviso, si `app.customer_favorites` no existe en `DATABASE_URL_TEST`. Ver también
- * `migration-0009.int-spec.ts` (estructura sobre una base desechable de PostgreSQL plano).
+ * Esta prueba NO aplica migraciones (la 0009 y la 0012 requieren aprobación humana y NO se aplican a Supabase desde
+ * aquí): se OMITE, con aviso, si `app.customer_favorites` o `app.products` no existen en `DATABASE_URL_TEST`.
+ * Desde la 0012 `customer_favorites.product_id` tiene FK a `app.products`: las pruebas siembran productos REALES
+ * (categoría + productos con prefijo propio) y los borran al terminar. Ver también `migration-0009.int-spec.ts` y
+ * `migration-0012.int-spec.ts` (estructura sobre bases desechables de PostgreSQL plano).
  */
 describe.skipIf(!url)('Favoritos contra PostgreSQL real', () => {
   let ready = false;
@@ -35,11 +37,16 @@ describe.skipIf(!url)('Favoritos contra PostgreSQL real', () => {
   let service: FavoritesService;
   let repo: FavoritesRepository;
   const createdAuthIds = new Set<string>();
+  const createdProductIds = new Set<string>();
+  const createdCategoryIds = new Set<string>();
+  const run = randomUUID().slice(0, 8);
+  let categoryId = '';
+  let slugCounter = 0;
 
   const skipUnlessReady = (ctx: TestContext) => {
     if (!ready)
       ctx.skip(
-        'app.customer_favorites no existe en DATABASE_URL_TEST (migración 0009 sin aplicar)',
+        'app.customer_favorites o app.products no existen en DATABASE_URL_TEST (migraciones 0009/0012 sin aplicar)',
       );
   };
 
@@ -62,13 +69,40 @@ describe.skipIf(!url)('Favoritos contra PostgreSQL real', () => {
       return res.rows.map((r) => r.product_id);
     });
 
-  const seedRows = (customerId: string, n: number) =>
-    withClient(url as string, (c) =>
+  /** Productos REALES (la FK de 0012 rechaza ids inventados). Una sola sentencia, con slug único por corrida. */
+  const seedProducts = async (n: number): Promise<string[]> => {
+    const offset = slugCounter;
+    slugCounter += n;
+    const ids = await withClient(url as string, async (c) => {
+      if (categoryId === '') {
+        const cat = await c.query<{ id: string }>(
+          'INSERT INTO app.categories (slug, name) VALUES ($1, $2) RETURNING id',
+          [`favt-${run}`, `Favt ${run}`],
+        );
+        categoryId = cat.rows[0]?.id as string;
+        createdCategoryIds.add(categoryId);
+      }
+      const res = await c.query<{ id: string }>(
+        `INSERT INTO app.products (slug, name, base_price, category_id)
+         SELECT $1 || '-' || (g + $2::int), 'Favt ' || g, 1.00, $3::uuid FROM generate_series(1, $4::int) g
+         RETURNING id`,
+        [`favt-${run}`, offset, categoryId, n],
+      );
+      return res.rows.map((r) => r.id);
+    });
+    for (const id of ids) createdProductIds.add(id);
+    return ids;
+  };
+
+  const seedRows = async (customerId: string, n: number) => {
+    const ids = await seedProducts(n);
+    await withClient(url as string, (c) =>
       c.query(
-        'INSERT INTO app.customer_favorites (customer_id, product_id) SELECT $1, gen_random_uuid() FROM generate_series(1, $2::int)',
-        [customerId, n],
+        'INSERT INTO app.customer_favorites (customer_id, product_id) SELECT $1, unnest($2::uuid[])',
+        [customerId, ids],
       ),
     );
+  };
 
   const settle = (calls: Promise<unknown>[]) => Promise.allSettled(calls);
   const code = (r: PromiseSettledResult<unknown>) =>
@@ -80,14 +114,14 @@ describe.skipIf(!url)('Favoritos contra PostgreSQL real', () => {
     vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     ready = await withClient(url as string, async (c) => {
-      const res = await c.query<{ t: string | null }>(
-        "SELECT to_regclass('app.customer_favorites') AS t",
+      const res = await c.query<{ t: string | null; p: string | null }>(
+        "SELECT to_regclass('app.customer_favorites') AS t, to_regclass('app.products') AS p",
       );
-      return res.rows[0]?.t != null;
+      return res.rows[0]?.t != null && res.rows[0]?.p != null;
     });
     if (!ready) {
       console.warn(
-        '[favorites.int-spec] OMITIDA: app.customer_favorites no existe en DATABASE_URL_TEST. La migración 0009 no está aplicada; la concurrencia y el SQL de F06 NO se probaron contra PostgreSQL real.',
+        '[favorites.int-spec] OMITIDA: app.customer_favorites o app.products no existen en DATABASE_URL_TEST. Las migraciones 0009/0012 no están aplicadas; la concurrencia y el SQL de F06 NO se probaron contra PostgreSQL real.',
       );
     }
     // Pool de 8: varias conexiones simultáneas reales sin pasar del tope de 15 clientes del pooler de Supabase en modo sesión (EMAXCONNSESSION).
@@ -104,14 +138,19 @@ describe.skipIf(!url)('Favoritos contra PostgreSQL real', () => {
   afterAll(async () => {
     await prisma.$disconnect();
     if (ready) {
-      await cleanupTestData(url as string, { authUserIds: createdAuthIds, branchIds: [] });
+      await cleanupTestData(url as string, {
+        authUserIds: createdAuthIds,
+        branchIds: [],
+        productIds: createdProductIds,
+        categoryIds: createdCategoryIds,
+      });
     }
   });
 
   it('alta feliz, repetida (sin duplicar ni cambiar created_at) y borrado idempotente', async (ctx) => {
     skipUnlessReady(ctx);
     const { p, customer } = await newCustomer();
-    const id = randomUUID();
+    const [id] = (await seedProducts(1)) as [string];
     await service.add(p, id);
     const first = await withClient(url as string, (c) =>
       c.query<{ created_at: Date }>(
@@ -136,7 +175,7 @@ describe.skipIf(!url)('Favoritos contra PostgreSQL real', () => {
   it('mismo producto, 20 altas simultáneas => exactamente 1 fila; solo OK o FAVORITES_BUSY (reintentable)', async (ctx) => {
     skipUnlessReady(ctx);
     const { p, customer } = await newCustomer();
-    const id = randomUUID();
+    const [id] = (await seedProducts(1)) as [string];
     const results = await settle(Array.from({ length: 20 }, () => service.add(p, id)));
     // Con el pooler remoto el candado por cliente serializa las altas y las últimas pueden agotar el
     // `lock_timeout` de 2 s: 503 FAVORITES_BUSY, reintentable. Nunca otro error, nunca filas duplicadas.
@@ -151,7 +190,8 @@ describe.skipIf(!url)('Favoritos contra PostgreSQL real', () => {
     const { p, customer } = await newCustomer();
     await seedRows(customer.id, MAX_FAVORITES_PER_CUSTOMER - 10);
     const N = 20;
-    const results = await settle(Array.from({ length: N }, () => service.add(p, randomUUID())));
+    const fresh = await seedProducts(N);
+    const results = await settle(fresh.map((id) => service.add(p, id)));
     const outcomes = results.map(code);
     const ok = outcomes.filter((c) => c === 'OK').length;
     const limited = outcomes.filter((c) => c === 'FAVORITES_LIMIT_REACHED').length;
@@ -170,7 +210,10 @@ describe.skipIf(!url)('Favoritos contra PostgreSQL real', () => {
   it('240 altas distintas simultáneas desde un cliente => nunca más de 200 filas; luego se completa y el siguiente es 422', async (ctx) => {
     skipUnlessReady(ctx);
     const { p, customer } = await newCustomer();
-    const results = await settle(Array.from({ length: 240 }, () => service.add(p, randomUUID())));
+    // 240 intentos simultáneos + reserva para completar y para la comprobación final del tope.
+    const pool = await seedProducts(240 + 60);
+    const attempts = pool.slice(0, 240);
+    const results = await settle(attempts.map((id) => service.add(p, id)));
     const outcomes = results.map(code);
     const ok = outcomes.filter((c) => c === 'OK').length;
     const rows = await rowsOf(customer.id);
@@ -178,15 +221,17 @@ describe.skipIf(!url)('Favoritos contra PostgreSQL real', () => {
     expect(rows.length).toBeLessThanOrEqual(MAX_FAVORITES_PER_CUSTOMER);
     expect(new Set(rows).size).toBe(rows.length);
     // Si hubo errores de infraestructura (plazos con el pool remoto), se completa hasta el tope en oleadas pequeñas.
-    for (let guard = 0; guard < 40; guard++) {
-      const missing = MAX_FAVORITES_PER_CUSTOMER - (await rowsOf(customer.id)).length;
+    // Se reintenta con productos del lote que aún NO son favoritos (los intentos fallidos se pueden repetir).
+    for (let guard = 0; guard < 80; guard++) {
+      const current = new Set(await rowsOf(customer.id));
+      const missing = MAX_FAVORITES_PER_CUSTOMER - current.size;
       if (missing <= 0) break;
-      await settle(
-        Array.from({ length: Math.min(missing, 5) }, () => service.add(p, randomUUID())),
-      );
+      const candidates = pool.filter((id) => !current.has(id)).slice(0, Math.min(missing, 5));
+      await settle(candidates.map((id) => service.add(p, id)));
     }
     expect((await rowsOf(customer.id)).length).toBe(MAX_FAVORITES_PER_CUSTOMER);
-    await expect(service.add(p, randomUUID())).rejects.toMatchObject({ status: 422 });
+    const overflow = (await seedProducts(1))[0] as string;
+    await expect(service.add(p, overflow)).rejects.toMatchObject({ status: 422 });
     // Ya favorito estando al tope: idempotente.
     const [existing] = await rowsOf(customer.id);
     await expect(service.add(p, existing as string)).resolves.toBeUndefined();
@@ -195,8 +240,9 @@ describe.skipIf(!url)('Favoritos contra PostgreSQL real', () => {
   it('cascada: borrar el cliente borra sus favoritos', async (ctx) => {
     skipUnlessReady(ctx);
     const { p, customer } = await newCustomer();
-    await service.add(p, randomUUID());
-    await service.add(p, randomUUID());
+    const [x, y] = (await seedProducts(2)) as [string, string];
+    await service.add(p, x);
+    await service.add(p, y);
     await withClient(url as string, (c) =>
       c.query('DELETE FROM app.customers WHERE id = $1', [customer.id]),
     );
@@ -207,8 +253,7 @@ describe.skipIf(!url)('Favoritos contra PostgreSQL real', () => {
     skipUnlessReady(ctx);
     const a = await newCustomer();
     const b = await newCustomer();
-    const shared = randomUUID();
-    const onlyA = randomUUID();
+    const [shared, onlyA] = (await seedProducts(2)) as [string, string];
     await service.add(a.p, shared);
     await service.add(a.p, onlyA);
     await service.add(b.p, shared);
@@ -228,7 +273,7 @@ describe.skipIf(!url)('Favoritos contra PostgreSQL real', () => {
   it('listado: orden created_at DESC y el lector de F17 devuelve los mismos ids', async (ctx) => {
     skipUnlessReady(ctx);
     const { p, customer } = await newCustomer();
-    const ids = [randomUUID(), randomUUID(), randomUUID()];
+    const ids = await seedProducts(3);
     for (const id of ids) {
       await service.add(p, id);
       await new Promise((r) => setTimeout(r, 15));
@@ -239,5 +284,19 @@ describe.skipIf(!url)('Favoritos contra PostgreSQL real', () => {
     expect(list.total).toBe(3);
     const reader = new PrismaCustomerFavoritesReader(repo);
     expect(await reader.getFavoriteProductIds(customer.id)).toEqual([...ids].reverse());
+  });
+
+  it('F11: la FK a products rechaza ids inexistentes (23503) y borrar un producto borra sus favoritos', async (ctx) => {
+    skipUnlessReady(ctx);
+    const { p, customer } = await newCustomer();
+    // El catálogo simulado "publica" cualquier id: la FK de 0012 es la que protege la integridad.
+    await expect(service.add(p, randomUUID())).rejects.toBeDefined();
+    expect(await rowsOf(customer.id)).toEqual([]);
+    const [x, y] = (await seedProducts(2)) as [string, string];
+    await service.add(p, x);
+    await service.add(p, y);
+    await withClient(url as string, (c) => c.query('DELETE FROM app.products WHERE id = $1', [x]));
+    createdProductIds.delete(x);
+    expect(await rowsOf(customer.id)).toEqual([y]);
   });
 });

@@ -3,25 +3,23 @@
 import { Minus, Plus, X } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useId, useState } from 'react';
-import { FoodArt } from '@/components/art/FoodArt';
 import { Portal } from '@/components/ui/Portal';
 import { useToast } from '@/components/ui/Toast';
 import { useDialog } from '@/components/ui/use-dialog';
 import { cn } from '@/lib/cn';
 import { formatMoney } from '@/lib/format';
-import type { Product } from '@/lib/data-access/models';
+import { isApiError } from '@/lib/data-access/errors';
+import type { Product, PublicProductMedia } from '@/lib/data-access/models';
+import { safeMediaUrl } from '@/lib/product-rules';
+import { useCategoryLabel } from '@/features/menu/category-label';
 import { MAX_NOTE_LENGTH, MAX_QUANTITY } from '@/features/cart/cart';
 import { useCart } from '@/features/cart/cart-context';
-import { useCategories, useProducts } from '../hooks';
-import {
-  categoryName,
-  foodArtKind,
-  productDescription,
-  productName,
-  tileClass,
-} from '../localized';
+import type { CatalogProduct } from '../catalog-product';
+import { useProducts, useStoreProduct } from '../hooks';
+import { productDescription, productName, tileClass } from '../localized';
 import { useProductSheet } from '../product-sheet-context';
 import { FavoriteButton } from './favorite-button';
+import { ProductArt } from './product-art';
 
 const money = (value: number) => formatMoney(value, 'es', { decimals: 'auto' });
 
@@ -45,6 +43,10 @@ export function ProductSheetHost() {
   );
 }
 
+/** Campos de `CatalogProduct` que la ficha aprovecha cuando existen (slug para la ficha del servidor, categoría e imágenes). */
+type ProductWithCatalogFields = Product &
+  Partial<Pick<CatalogProduct, 'slug' | 'category' | 'media'>>;
+
 /**
  * Ficha del producto: hoja inferior en móvil y modal centrado de dos columnas desde `md` (como el
  * prototipo). Cantidad 1–99, observaciones (no cambian el precio) y "Agregar" con el total, que es solo
@@ -63,7 +65,9 @@ export function ProductSheet({
   const locale = useLocale();
   const cart = useCart();
   const { notify } = useToast();
-  const categories = useCategories();
+  const categoryLabel = useCategoryLabel();
+  const detailSlug = (product as ProductWithCatalogFields).slug ?? null;
+  const detail = useStoreProduct(detailSlug);
   const ref = useDialog<HTMLDivElement>(true, onClose);
   const noteId = useId();
   const titleId = useId();
@@ -71,12 +75,20 @@ export function ProductSheet({
   const [note, setNote] = useState('');
 
   const name = productName(product, locale);
-  const category = categories.data?.find((c) => c.id === product.categoryId);
-  const categoryLabel = category ? categoryName(category, locale) : '';
+  const extra = product as ProductWithCatalogFields;
+  const category = extra.category;
+  const categoryText = category ? categoryLabel(category) : '';
+  const ancestors = detail.data?.categoryAncestors ?? [];
+  const gallery = (detail.data?.media ?? extra.media ?? []).filter((m) => safeMediaUrl(m.url));
+  const [imageIndex, setImageIndex] = useState(0);
+  const image: PublicProductMedia | null =
+    gallery[Math.min(imageIndex, gallery.length - 1)] ?? null;
   const description =
     productDescription(product, locale) ||
-    (product.food ? t('product.pendingIngredients') : `${categoryLabel}.`);
-  const available = product.available;
+    (product.food ? t('product.pendingIngredients') : `${categoryText}.`);
+  // 404 de la ficha (ya no está publicado: inactivo o categoría oculta): no se puede agregar al pedido.
+  const gone = isApiError(detail.error) && detail.error.status === 404;
+  const available = product.available && !gone;
 
   const submit = () => {
     if (!available) return;
@@ -115,10 +127,43 @@ export function ProductSheet({
             'relative flex min-h-[200px] items-center justify-center md:min-h-[340px]',
           )}
         >
-          <FoodArt
-            kind={foodArtKind(product.illustration)}
-            className={cn('w-[55%] max-w-[280px] md:w-[70%]', !available && 'opacity-60 grayscale')}
-          />
+          {image ? (
+            <ProductArt
+              product={product}
+              media={image}
+              className={cn(!available && 'opacity-60 grayscale')}
+            />
+          ) : (
+            <ProductArt
+              product={product}
+              media={null}
+              artClassName={cn(
+                'w-[55%] max-w-[280px] md:w-[70%]',
+                !available && 'opacity-60 grayscale',
+              )}
+            />
+          )}
+          {gallery.length > 1 ? (
+            <div
+              role="group"
+              aria-label={t('product.gallery')}
+              className="absolute inset-x-0 bottom-2 flex justify-center gap-1.5"
+            >
+              {gallery.map((m, i) => (
+                <button
+                  key={`${m.url}-${i}`}
+                  type="button"
+                  aria-label={t('product.imageN', { a: i + 1, b: gallery.length })}
+                  aria-pressed={i === imageIndex}
+                  onClick={() => setImageIndex(i)}
+                  className={cn(
+                    'h-3 w-3 rounded-full border border-white shadow-card',
+                    i === imageIndex ? 'bg-primary' : 'bg-white/70',
+                  )}
+                />
+              ))}
+            </div>
+          ) : null}
           {product.featured ? (
             <span className="absolute left-3 top-3 rounded-full bg-white px-2.5 py-1 text-xs font-extrabold uppercase text-neutral-900 shadow-card">
               {t('product.favoriteLong')}
@@ -127,7 +172,20 @@ export function ProductSheet({
         </div>
 
         <div className="flex min-h-0 flex-col gap-3.5 p-6 md:overflow-y-auto md:p-7">
-          {categoryLabel ? <p className="eyebrow text-secondary">{categoryLabel}</p> : null}
+          {category ? (
+            <nav aria-label={t('product.breadcrumb')}>
+              <ol className="eyebrow m-0 flex list-none flex-wrap items-center gap-x-1.5 p-0 text-secondary">
+                {[...ancestors, category].map((c, i, all) => (
+                  <li key={c.id} className="flex items-center gap-1.5">
+                    {i > 0 ? <span aria-hidden="true">›</span> : null}
+                    <span aria-current={i === all.length - 1 ? 'location' : undefined}>
+                      {categoryLabel(c)}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </nav>
+          ) : null}
           <div className="flex items-start justify-between gap-3">
             <h2 id={titleId} className="disp min-w-0 text-[30px] md:text-[40px]">
               {name}
@@ -141,7 +199,11 @@ export function ProductSheet({
           </div>
           <p className="m-0 leading-relaxed text-muted">{description}</p>
           <p className="m-0 font-display text-[32px]">{money(product.price)}</p>
-          {!available ? (
+          {gone ? (
+            <p role="status" className="notice notice-warn m-0">
+              {t('product.goneNote')}
+            </p>
+          ) : !available ? (
             <p role="status" className="notice notice-warn m-0">
               {t('product.unavailableNote')}
             </p>

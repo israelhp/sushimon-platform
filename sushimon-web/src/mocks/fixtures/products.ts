@@ -358,3 +358,39 @@ export const PRODUCT_SEEDS: readonly ProductSeed[] = [
     illustration: 'icecream',
   },
 ];
+
+/**
+ * F11 — Productos de DEMOSTRACIÓN de visibilidad (no vienen de la tienda original): uno ACTIVO bajo una categoría oculta
+ * (`temporada` está inactiva) y uno INACTIVO bajo una categoría visible. Ninguno aparece en la tienda; el backoffice los
+ * lista con `publiclyVisible=false`. `categoryId` es el slug de una categoría del menú (`fixtures/categories`).
+ */
+export interface DemoProductSeed extends ProductSeed {
+  active: boolean;
+}
+
+export const HIDDEN_DEMO_SEEDS: readonly DemoProductSeed[] = [
+  {
+    id: 'roll-edicion-limitada',
+    name: 'Roll Edición Limitada',
+    price: 88,
+    categoryId: 'edicion-limitada',
+    description: 'Edición limitada de la campaña de fin de año. Aún no está a la venta.',
+    descriptionEn: 'Limited edition from the year-end campaign. Not on sale yet.',
+    food: true,
+    featured: false,
+    illustration: 'roll',
+    active: true,
+  },
+  {
+    id: 'gyoza-vegetal',
+    name: 'Gyoza Vegetal',
+    price: 48,
+    categoryId: 'entradas',
+    description: 'Gyozas de vegetales salteados. Producto retirado del menú (inactivo).',
+    descriptionEn: 'Sautéed vegetable gyozas. Removed from the menu (inactive).',
+    food: true,
+    featured: false,
+    illustration: 'dumpling',
+    active: false,
+  },
+];

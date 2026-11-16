@@ -14,12 +14,13 @@ import {
   branchClosedScenarioClosures,
 } from './fixtures/schedule';
 import { DELIVERY_SETTINGS_SEEDS, DELIVERY_ZONE_SEEDS, seedDeliveryFee } from './fixtures/delivery';
-import { PRODUCT_SEEDS } from './fixtures/products';
+import { HIDDEN_DEMO_SEEDS, PRODUCT_SEEDS } from './fixtures/products';
 import { PROMOTION_SEEDS } from './fixtures/promotions';
 import { ROLE_SEEDS } from './fixtures/rbac';
 import { RIDER_SEEDS, STAFF_SEEDS } from './fixtures/staff';
 import { MENU_CATEGORY_SEEDS } from './fixtures/categories';
 import { CATEGORY_SEEDS, STORE_CONFIG_SEED } from './fixtures/store';
+import { centsToPrice } from '@/lib/product-rules';
 import { event, totals } from './domain';
 import { rngFor } from './factories/random';
 import type { MockScenario } from './scenarios';
@@ -54,17 +55,31 @@ const STATUS_OFFSETS: Record<string, number> = {
 };
 const FLOW = ['accepted', 'preparing', 'ready', 'on_the_way', 'delivered'] as const;
 
+const PRODUCT_SEED_AT = '2026-11-01T12:00:00.000Z';
+
 function buildProducts(scenario: MockScenario): ProductRecord[] {
   if (scenario === 'empty') return [];
-  return PRODUCT_SEEDS.map((p) => ({
-    ...p,
-    availability: BRANCH_SEEDS.filter((b) => b.status === 'active').map((b) => ({
-      branchId: b.id,
-      available:
-        !(UNAVAILABLE_AT[p.id] ?? []).includes(b.id) &&
-        !(scenario === 'product-unavailable' && UNAVAILABLE_IN_SCENARIO.includes(p.id)),
-    })),
-  }));
+  const categoryBySlug = new Map(MENU_CATEGORY_SEEDS.map((c) => [c.slug, c.id]));
+  return [...PRODUCT_SEEDS.map((p) => ({ ...p, active: true })), ...HIDDEN_DEMO_SEEDS].map(
+    ({ price, categoryId, active, ...p }) => ({
+      ...p,
+      slug: p.id,
+      sku: null,
+      description: p.description,
+      basePrice: centsToPrice(Math.round(price * 100)),
+      categoryId: categoryBySlug.get(categoryId) ?? categoryId,
+      active,
+      media: [],
+      createdAt: PRODUCT_SEED_AT,
+      updatedAt: PRODUCT_SEED_AT,
+      availability: BRANCH_SEEDS.filter((b) => b.status === 'active').map((b) => ({
+        branchId: b.id,
+        available:
+          !(UNAVAILABLE_AT[p.id] ?? []).includes(b.id) &&
+          !(scenario === 'product-unavailable' && UNAVAILABLE_IN_SCENARIO.includes(p.id)),
+      })),
+    }),
+  );
 }
 
 export function buildSeedOrder(seed: OrderSeed, base: Date, scenario: MockScenario): Order {
@@ -286,6 +301,7 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
       incident: 1043,
       address: 1,
       product: 1,
+      media: 1,
       category: 1,
       menuCategory: 1,
       promotion: 1,

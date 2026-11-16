@@ -1,16 +1,13 @@
 import type {
-  ProductBranchAvailability,
   Category,
   Order,
-  Product,
   PromotionInput,
   ReportGroup,
   ReportSummary,
 } from '@/lib/data-access/models';
 import { localMinutes } from '@/lib/time';
-import { fail, productView, promotionView, round2 } from '../domain';
+import { fail, promotionView, round2 } from '../domain';
 import { clampRange } from '../factories/history';
-import type { ProductRecord } from '../store';
 import { isSale } from './backoffice';
 import {
   body,
@@ -19,7 +16,6 @@ import {
   ordersForDay,
   requireStaff,
   scopedBranchIds,
-  staffBranchIds,
   str,
   today,
   type Handler,
@@ -39,115 +35,6 @@ const slug = (s: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
-
-// ── Productos ─────────────────────────────────────────────────────────────────────────────
-
-/** GET /v1/backoffice/products — todo el catálogo (incluye categorías ocultas). */
-export const listBoProducts: Handler = (req): Product[] => {
-  requireStaff(req);
-  return req.store.products.map((p) => productView(p));
-};
-
-function parseAvailability(req: Req, value: unknown): ProductBranchAvailability[] {
-  if (!Array.isArray(value)) fail(400, 'availability inválido');
-  const known = new Set(req.store.branches.map((b) => b.id));
-  return value.map((a: Partial<ProductBranchAvailability>) => {
-    if (!a || !known.has(str(a.branchId)) || typeof a.available !== 'boolean') {
-      fail(400, 'availability inválido');
-    }
-    return { branchId: str(a.branchId), available: a.available };
-  });
-}
-
-function validateProduct(req: Req, p: ProductRecord) {
-  if (!p.name.trim()) fail(400, 'Escribe el nombre del producto');
-  if (p.name.length > MAX_NAME) fail(400, `El nombre admite hasta ${MAX_NAME} caracteres`);
-  if (p.nameEn && p.nameEn.length > MAX_NAME)
-    fail(400, `El nombre admite hasta ${MAX_NAME} caracteres`);
-  if (p.description.length > MAX_DESCRIPTION || (p.descriptionEn?.length ?? 0) > MAX_DESCRIPTION) {
-    fail(400, `La descripción admite hasta ${MAX_DESCRIPTION} caracteres`);
-  }
-  if (!(typeof p.price === 'number' && Number.isFinite(p.price) && p.price > 0)) {
-    fail(400, 'Escribe un precio mayor a Q0.00');
-  }
-  if (p.price > MAX_PRICE) fail(400, `El precio no puede superar Q${MAX_PRICE}`);
-  if (!req.store.categories.some((c) => c.id === p.categoryId && c.kind === 'products')) {
-    fail(422, 'Categoría inválida');
-  }
-}
-
-/** POST /v1/backoffice/products (admin) */
-export const createProduct: Handler = (req): Product => {
-  requireStaff(req, 'catalog.create');
-  const b = body<Product>(req);
-  const id = slug(str(b.name)) || `producto-${req.store.sequences.product}`;
-  const record: ProductRecord = {
-    id: req.store.products.some((p) => p.id === id) ? `${id}-${req.store.sequences.product}` : id,
-    name: str(b.name).trim(),
-    nameEn: b.nameEn ? str(b.nameEn).trim() : undefined,
-    description: str(b.description).trim(),
-    descriptionEn: b.descriptionEn ? str(b.descriptionEn).trim() : undefined,
-    price: round2(Number(b.price)),
-    categoryId: str(b.categoryId),
-    illustration: str(b.illustration) || 'roll',
-    featured: b.featured === true,
-    food: b.food !== false,
-    availability:
-      b.availability !== undefined
-        ? parseAvailability(req, b.availability)
-        : req.store.branches
-            .filter((x) => x.status === 'active')
-            .map((x) => ({ branchId: x.id, available: true })),
-  };
-  validateProduct(req, record);
-  req.store.sequences.product++;
-  req.store.products.push(record);
-  return productView(record);
-};
-
-/**
- * PATCH /v1/backoffice/products/:id
- * - Solo `availability` → permiso products.availability (encargado: solo su sucursal).
- * - Cualquier otro campo → products.edit (admin).
- */
-export const updateProduct: Handler = (req): Product => {
-  const b = body<Product>(req);
-  const keys = Object.keys(b);
-  const onlyAvailability = keys.length > 0 && keys.every((k) => k === 'availability');
-  const user = requireStaff(
-    req,
-    onlyAvailability ? 'catalog.manage_availability' : 'catalog.update',
-  );
-  const index = req.store.products.findIndex((p) => p.id === req.params.id);
-  const current = req.store.products[index];
-  if (!current) fail(404, 'Producto no encontrado');
-  const next: ProductRecord = { ...current };
-  if (b.availability !== undefined) {
-    const incoming = parseAvailability(req, b.availability);
-    const allowed = new Set(staffBranchIds(req.store, user));
-    for (const a of incoming) {
-      const prev = current.availability.find((x) => x.branchId === a.branchId);
-      if (prev?.available !== a.available && !allowed.has(a.branchId)) {
-        fail(403, 'Sin acceso a esa sucursal');
-      }
-    }
-    next.availability = current.availability.map(
-      (a) => incoming.find((x) => x.branchId === a.branchId) ?? a,
-    );
-  }
-  if (b.name !== undefined) next.name = str(b.name).trim();
-  if (b.nameEn !== undefined) next.nameEn = str(b.nameEn).trim();
-  if (b.description !== undefined) next.description = str(b.description).trim();
-  if (b.descriptionEn !== undefined) next.descriptionEn = str(b.descriptionEn).trim();
-  if (b.price !== undefined) next.price = round2(Number(b.price));
-  if (b.categoryId !== undefined) next.categoryId = str(b.categoryId);
-  if (b.illustration !== undefined) next.illustration = str(b.illustration);
-  if (b.featured !== undefined) next.featured = b.featured === true;
-  if (b.food !== undefined) next.food = b.food === true;
-  validateProduct(req, next);
-  req.store.products[index] = next;
-  return productView(next);
-};
 
 // ── Categorías ────────────────────────────────────────────────────────────────────────────
 

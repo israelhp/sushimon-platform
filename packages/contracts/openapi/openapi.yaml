@@ -1,6 +1,6 @@
 # Contrato HTTP canónico de Sushi Mon (Contract First).
 # Se diseña ANTES de implementar cada slice y se verifica contra NestJS con `pnpm contracts:check`.
-# Estado: F10 (categorías y jerarquía del menú: /v1/store/categories, /v1/admin/categories, /v1/admin/categories/reorder) + F09 (geografía, cobertura y zonas propias: /v1/locations/*, /v1/admin/delivery-zones, /v1/admin/branches/{id}/delivery-settings, /v1/delivery-coverage/check) + F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
+# Estado: F11 (productos y fichas de catálogo: /v1/store/products, /v1/admin/products) + F10 (categorías y jerarquía del menú: /v1/store/categories, /v1/admin/categories, /v1/admin/categories/reorder) + F09 (geografía, cobertura y zonas propias: /v1/locations/*, /v1/admin/delivery-zones, /v1/admin/branches/{id}/delivery-settings, /v1/delivery-coverage/check) + F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
 # Seguridad por defecto: Bearer JWT de Supabase Auth en todo salvo operaciones con `security: []` (health).
 # Transversal a TODAS las respuestas: cabecera `X-Request-Id`; errores con `ErrorResponse`; 429 cuando
 # se excede el rate limit global (no se repite por operación).
@@ -2683,6 +2683,330 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /v1/store/products:
+    get:
+      operationId: listStoreProducts
+      summary: Productos públicos visibles (paginado, con búsqueda y filtro por categoría)
+      description: |
+        F11. Sin autenticación. Un producto es visible solo si está activo Y su categoría es efectivamente visible (F10: ella y
+        todos sus ancestros activos). `categorySlug` filtra por esa categoría y todas sus descendientes visibles; un slug
+        inexistente o no visible => lista vacía (200). `q` busca (contiene, sin distinguir mayúsculas ni acentos) SOLO en nombre
+        y descripción (el SKU no es buscable públicamente); los comodines `%`, `_` y `\` se tratan como texto literal; máx. 80 caracteres. Orden estable `name`, `id`.
+        Cada elemento trae precio base (`basePrice`, cadena decimal) y las imágenes referenciadas; NO trae SKU ni datos
+        administrativos. El precio por sucursal y la disponibilidad (F13), los modificadores (F12) y las promociones (F15) NO forman
+        parte de este contrato todavía. Caché compartida corta (`Cache-Control: public`); sin `ETag`. Límite de tasa propio (60/min por IP). `page` <= 200.
+      tags: [products]
+      security: []
+      parameters:
+        - name: categorySlug
+          in: query
+          description: Slug de una categoría visible (incluye sus descendientes visibles).
+          schema: { type: string, maxLength: 80, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        - name: q
+          in: query
+          description: Texto a buscar en nombre o descripción (no en SKU). Máx. 80 caracteres.
+          schema: { type: string, maxLength: 80 }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Página de productos visibles
+          headers:
+            Cache-Control:
+              description: public, max-age=60, stale-while-revalidate=300
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicProductPage'
+        '400':
+          description: Parámetros de consulta inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/store/products/{slug}:
+    get:
+      operationId: getStoreProduct
+      summary: Ficha pública de un producto visible
+      description: |
+        F11. Sin autenticación. Devuelve la ficha con imágenes ordenadas y la cadena de ancestros visibles de su categoría
+        (raíz -> padre) para el breadcrumb. 404 `PRODUCT_NOT_FOUND` si el slug no existe, el producto está inactivo o su
+        categoría no es visible (no se distingue el motivo). Sin SKU. Caché compartida corta (`Cache-Control: public`).
+      tags: [products]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductSlug'
+      responses:
+        '200':
+          description: Ficha del producto
+          headers:
+            Cache-Control:
+              description: public, max-age=60, stale-while-revalidate=300
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicProductDetail'
+        '400':
+          description: Slug con forma inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`PRODUCT_NOT_FOUND`: inexistente, inactivo o con categoría no visible'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/products:
+    get:
+      operationId: listAdminProducts
+      summary: Productos del backoffice (paginado, activos e inactivos)
+      description: |
+        F11. Exige JWT -> personal activo con `catalog.read` (cualquier alcance: los productos son globales) -> `aal2`. Filtros:
+        `q` (nombre, slug, descripción o SKU; contiene, sin distinguir mayúsculas ni acentos; comodines literales; máx. 80),
+        `categoryId` (solo esa categoría exacta, sin descendientes) y `active`. Orden por defecto `name`, `id`; `sort`/`order`
+        cambian el campo principal y `id` desempata siempre. Cada elemento trae `publiclyVisible` (activo y categoría visible) y la
+        categoría con su estado, aunque esté inactiva. Una consulta para la página + una para sus imágenes (sin N+1). Respuesta
+        `Cache-Control: no-store`.
+      tags: [products]
+      security:
+        - bearer: []
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 80 }
+        - name: categoryId
+          in: query
+          description: Inexistente => lista vacía.
+          schema: { type: string, format: uuid }
+        - name: active
+          in: query
+          description: Sin valor = todos.
+          schema: { type: boolean }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [name, basePrice, createdAt], default: name }
+        - name: order
+          in: query
+          schema: { type: string, enum: [asc, desc], default: asc }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Página de productos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProductPage'
+        '400':
+          description: Parámetros de consulta inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: No es personal activo, falta `catalog.read` o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      operationId: createAdminProduct
+      summary: Crea un producto
+      description: |
+        F11. Exige `catalog.create` con alcance GLOBAL (una asignación solo de sucursal => 403) y `aal2`. `name` se normaliza (NFC,
+        recorte, colapso de espacios; 1-120); `description` es texto plano (<= 2000). `basePrice` es una cadena decimal positiva
+        (`"85.00"`; hasta 6 enteros y 2 decimales; > 0 y <= 999999.99); fuera de forma/rango => 400. `slug` opcional: si falta se
+        genera desde el nombre y se desambigua con sufijo numérico; si se envía y existe => 409 `PRODUCT_SLUG_TAKEN`. `sku` opcional
+        y único (se normaliza a mayúsculas, 1-40, `A-Z0-9._-`); repetido => 409 `PRODUCT_SKU_TAKEN`. `categoryId` debe existir y
+        estar ACTIVA (no se exige visibilidad efectiva) => si no, 422 `PRODUCT_CATEGORY_INVALID`. `media` opcional (máx. 8; el orden del
+        arreglo define `sortOrder`): URL `https` <= 2048 caracteres; si no => 422 `PRODUCT_MEDIA_INVALID`. Las URL deben existir ya
+        (la subida de archivos es F14). La unicidad se garantiza con los índices únicos (409 también ante concurrencia). Se audita
+        `product.created` en la misma transacción. Respuesta `no-store`.
+      tags: [products]
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+      responses:
+        '201':
+          description: Producto creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProduct'
+        '400':
+          description: Forma inválida (nombre, precio, slug, sku, UUID, propiedades desconocidas)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Falta `catalog.create` con alcance global o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`PRODUCT_SLUG_TAKEN` o `PRODUCT_SKU_TAKEN`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`PRODUCT_CATEGORY_INVALID` o `PRODUCT_MEDIA_INVALID`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`PRODUCTS_BUSY`: la transacción agotó su tiempo; reintentable'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/products/{id}:
+    get:
+      operationId: getAdminProduct
+      summary: Detalle administrativo de un producto
+      description: |
+        F11. Exige `catalog.read` (cualquier alcance) y `aal2`. Incluye inactivos y productos con categoría inactiva. Respuesta
+        `Cache-Control: no-store`.
+      tags: [products]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '200':
+          description: Producto
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProduct'
+        '400':
+          description: UUID inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: No es personal activo, falta `catalog.read` o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`PRODUCT_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      operationId: updateAdminProduct
+      summary: Edita un producto (incluye activar/desactivar y reemplazar imágenes)
+      description: |
+        F11. Exige `catalog.update` con alcance GLOBAL y `aal2`. Parcial: acepta `name`, `slug`, `sku` (`null` lo borra),
+        `description` (`null` la borra), `basePrice`, `categoryId`, `active` y `media`; al menos un campo (si no, 400); cualquier otro
+        => 400. Si se envía `media` REEMPLAZA la lista completa (`[]` la vacía; orden del arreglo = `sortOrder`); si se omite no
+        se toca. No existe borrado físico: se desactiva con `active=false` (el histórico de pedidos conserva snapshots). Cambiar
+        `categoryId` exige categoría existente y ACTIVA => 422 `PRODUCT_CATEGORY_INVALID`; editar un producto que ya está en una
+        categoría inactiva SIN cambiar `categoryId` se permite. Slug/SKU repetidos => 409; imágenes inválidas => 422
+        `PRODUCT_MEDIA_INVALID`. Si ningún valor cambia responde 200 sin escribir ni auditar. Se audita `product.updated`
+        (old/new solo de lo cambiado) y, si cambia `active`, `product.activated` o `product.deactivated`. Respuesta `no-store`.
+      tags: [products]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProductRequest'
+      responses:
+        '200':
+          description: Producto actualizado (o sin cambios)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProduct'
+        '400':
+          description: Forma inválida, cuerpo vacío o campos no permitidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Falta `catalog.update` con alcance global o la sesión no es aal2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`PRODUCT_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`PRODUCT_SLUG_TAKEN` o `PRODUCT_SKU_TAKEN`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`PRODUCT_CATEGORY_INVALID` o `PRODUCT_MEDIA_INVALID`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`PRODUCTS_BUSY`: la transacción agotó su tiempo; reintentable'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   parameters:
     StaffId:
@@ -2727,6 +3051,18 @@ components:
       required: true
       description: UUID de la categoría (`categories.id`).
       schema: { type: string, format: uuid }
+    ProductId:
+      name: id
+      in: path
+      required: true
+      description: UUID del producto (`products.id`).
+      schema: { type: string, format: uuid }
+    ProductSlug:
+      name: slug
+      in: path
+      required: true
+      description: Slug público del producto (`products.slug`).
+      schema: { type: string, maxLength: 80, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
   schemas:
     PublicBranch:
       type: object
@@ -3287,7 +3623,7 @@ components:
           type: string
           description: |
             Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; 503 reintentable: `CATEGORIES_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
+            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
         violations:
           type: array
           description: Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09).
@@ -4774,6 +5110,215 @@ components:
           maxItems: 500
           description: Todos los hermanos actuales del padre, en el orden deseado, sin duplicados.
           items: { type: string, format: uuid }
+    ProductPrice:
+      type: string
+      pattern: '^[0-9]{1,6}\.[0-9]{2}$'
+      example: '85.00'
+      description: Importe decimal en GTQ como CADENA con 2 decimales (nunca `number`; evita errores de coma flotante). > 0 y <= 999999.99.
+    PublicProductCategoryRef:
+      type: object
+      required: [id, slug, name]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string, maxLength: 80, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        name: { type: string, minLength: 1, maxLength: 80 }
+    PublicProductMedia:
+      type: object
+      required: [url, altText]
+      properties:
+        url:
+          {
+            type: string,
+            format: uri,
+            maxLength: 2048,
+            description: 'URL https ya existente (F14 aportará la subida).',
+          }
+        altText: { type: string, nullable: true, maxLength: 200 }
+    PublicProduct:
+      type: object
+      description: Producto visible del menú (F11). Sin SKU ni campos internos. `media` ordenada (vacía = la web muestra un placeholder).
+      required: [id, slug, name, description, basePrice, category, media]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string, maxLength: 80, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, nullable: true, maxLength: 2000, description: Texto plano. }
+        basePrice: { $ref: '#/components/schemas/ProductPrice' }
+        category: { $ref: '#/components/schemas/PublicProductCategoryRef' }
+        media:
+          type: array
+          maxItems: 8
+          items: { $ref: '#/components/schemas/PublicProductMedia' }
+    PublicProductDetail:
+      description: 'Ficha pública, igual que `PublicProduct` más los ancestros visibles de la categoría para el breadcrumb.'
+      allOf:
+        - $ref: '#/components/schemas/PublicProduct'
+        - type: object
+          required: [categoryAncestors]
+          properties:
+            categoryAncestors:
+              type: array
+              maxItems: 2
+              description: Ancestros de `category`, de la raíz al padre (vacío si es raíz).
+              items: { $ref: '#/components/schemas/PublicProductCategoryRef' }
+    PublicProductPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PublicProduct' }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        total:
+          {
+            type: integer,
+            minimum: 0,
+            description: Total de productos que cumplen el filtro (todas las páginas).,
+          }
+    AdminProductCategory:
+      type: object
+      required: [id, slug, name, active, effectivelyVisible]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string, maxLength: 80 }
+        name: { type: string, maxLength: 80 }
+        active: { type: boolean }
+        effectivelyVisible:
+          { type: boolean, description: 'Categoría y todos sus ancestros activos (F10).' }
+    AdminProductMedia:
+      type: object
+      required: [id, url, altText, sortOrder]
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string, format: uri, maxLength: 2048 }
+        altText: { type: string, nullable: true, maxLength: 200 }
+        sortOrder: { type: integer, minimum: 0, maximum: 7 }
+    AdminProduct:
+      type: object
+      required:
+        [
+          id,
+          sku,
+          slug,
+          name,
+          description,
+          basePrice,
+          categoryId,
+          category,
+          active,
+          publiclyVisible,
+          media,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        sku: { type: string, nullable: true, maxLength: 40, pattern: '^[A-Z0-9][A-Z0-9._-]*$' }
+        slug: { type: string, maxLength: 80, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, nullable: true, maxLength: 2000 }
+        basePrice: { $ref: '#/components/schemas/ProductPrice' }
+        categoryId: { type: string, format: uuid }
+        category: { $ref: '#/components/schemas/AdminProductCategory' }
+        active: { type: boolean, description: Estado propio (administrativo). }
+        publiclyVisible:
+          {
+            type: boolean,
+            description: '`active` Y categoría efectivamente visible: lo que ve el público.',
+          }
+        media:
+          type: array
+          maxItems: 8
+          items: { $ref: '#/components/schemas/AdminProductMedia' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AdminProductPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminProduct' }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0 }
+    ProductMediaInput:
+      type: object
+      required: [url]
+      additionalProperties: false
+      properties:
+        url:
+          type: string
+          description: 'URL `https` absoluta, <= 2048 caracteres. Otro esquema (http, data, javascript…), longitud, IP literal, `localhost`, host sin punto o host fuera de la lista `PRODUCT_MEDIA_ALLOWED_HOSTS` (si está definida) => 422 `PRODUCT_MEDIA_INVALID` (no 400).'
+        altText:
+          {
+            type: string,
+            nullable: true,
+            description: '<= 200 caracteres; si no => 422 `PRODUCT_MEDIA_INVALID` (no 400).',
+          }
+    CreateProductRequest:
+      type: object
+      required: [name, basePrice, categoryId]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        slug:
+          type: string
+          maxLength: 80
+          pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+          description: Opcional. Si falta se genera desde `name` y se desambigua; si se envía y existe => 409 `PRODUCT_SLUG_TAKEN`.
+        sku:
+          {
+            type: string,
+            nullable: true,
+            minLength: 1,
+            maxLength: 40,
+            pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*$',
+            description: 'Opcional, único; se guarda en mayúsculas. Repetido => 409 `PRODUCT_SKU_TAKEN`.',
+          }
+        description: { type: string, nullable: true, maxLength: 2000 }
+        basePrice: { $ref: '#/components/schemas/ProductPrice' }
+        categoryId:
+          {
+            type: string,
+            format: uuid,
+            description: 'Categoría existente y activa; si no => 422 `PRODUCT_CATEGORY_INVALID`.',
+          }
+        active: { type: boolean, description: 'Opcional; por defecto `true` en el servidor.' }
+        media:
+          type: array
+          description: 'Opcional, máx. 8 (más => 422 `PRODUCT_MEDIA_INVALID`). El orden define `sortOrder`.'
+          items: { $ref: '#/components/schemas/ProductMediaInput' }
+    UpdateProductRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        slug: { type: string, maxLength: 80, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        sku:
+          {
+            type: string,
+            nullable: true,
+            minLength: 1,
+            maxLength: 40,
+            pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*$',
+            description: '`null` borra el SKU.',
+          }
+        description: { type: string, nullable: true, maxLength: 2000 }
+        basePrice: { $ref: '#/components/schemas/ProductPrice' }
+        categoryId:
+          {
+            type: string,
+            format: uuid,
+            description: 'Si cambia, la nueva debe existir y estar activa => 422 `PRODUCT_CATEGORY_INVALID`.',
+          }
+        active: { type: boolean }
+        media:
+          type: array
+          description: 'REEMPLAZA la lista completa (`[]` la vacía); omitir = no tocar. Máx. 8 (más => 422 `PRODUCT_MEDIA_INVALID`).'
+          items: { $ref: '#/components/schemas/ProductMediaInput' }
   securitySchemes:
     bearer:
       type: http

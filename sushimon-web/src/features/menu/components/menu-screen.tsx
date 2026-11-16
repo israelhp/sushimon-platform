@@ -2,16 +2,21 @@
 
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { useState } from 'react';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { SearchInput } from '@/components/ui/SearchInput';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useProducts } from '@/features/catalog/hooks';
 import { useStoreCategories } from '@/features/categories/hooks';
+import { PRODUCT_SEARCH_MAX } from '@/lib/product-rules';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { ErrorNotice } from '@/features/store-shell/components/ErrorNotice';
 import { ALL_CATEGORY, menuSections, resolveCategory, visibleSections } from '../menu-model';
 import { MenuCartAside } from './menu-cart-aside';
 import { MenuCartBar } from './menu-cart-bar';
 import { MenuHappyBanner } from './menu-happy-banner';
 import { MenuHeader } from './menu-header';
+import { MenuSearchResults } from './menu-search-results';
 import { MenuSection } from './menu-section';
 import { MenuSubnav } from './menu-subnav';
 
@@ -24,6 +29,10 @@ export function MenuScreen() {
   const params = useSearchParams();
   const categories = useStoreCategories();
   const products = useProducts();
+  const [search, setSearch] = useState('');
+  const debounced = useDebouncedValue(search, 300);
+  // Buscando = hay texto ahora Y ya pasó el debounce (al borrar el texto se vuelve al menú de inmediato).
+  const query = search.trim() ? debounced.trim() : '';
 
   const tree = categories.data?.items ?? [];
   const loading = categories.isPending || products.isPending;
@@ -62,22 +71,36 @@ export function MenuScreen() {
             <EmptyState title={t('menu.emptyTitle')} description={t('menu.emptySub')} />
           ) : (
             <>
-              <MenuSubnav tree={tree} active={active} />
-              {active === ALL_CATEGORY ? <MenuHappyBanner /> : null}
-              {shown.length === 0 ? (
-                <EmptyState compact title={t('menu.categoryEmpty')} />
+              <SearchInput
+                wrapperClassName="mb-4 max-w-[520px]"
+                label={t('menu.searchLabel')}
+                placeholder={t('menu.searchPlaceholder')}
+                maxLength={PRODUCT_SEARCH_MAX}
+                value={search}
+                onValueChange={setSearch}
+              />
+              {query ? (
+                <MenuSearchResults q={query} catalog={products.data ?? []} />
               ) : (
-                shown.map((section) => (
-                  <MenuSection
-                    key={section.category.id}
-                    section={section}
-                    catalog={products.data ?? []}
-                  />
-                ))
+                <>
+                  <MenuSubnav tree={tree} active={active} />
+                  {active === ALL_CATEGORY ? <MenuHappyBanner /> : null}
+                  {shown.length === 0 ? (
+                    <EmptyState compact title={t('menu.categoryEmpty')} />
+                  ) : (
+                    shown.map((section) => (
+                      <MenuSection
+                        key={section.category.id}
+                        section={section}
+                        catalog={products.data ?? []}
+                      />
+                    ))
+                  )}
+                  <p className="mt-2 text-center text-[13px] text-muted lg:hidden">
+                    {t('menu.tapHint')}
+                  </p>
+                </>
               )}
-              <p className="mt-2 text-center text-[13px] text-muted lg:hidden">
-                {t('menu.tapHint')}
-              </p>
             </>
           )}
         </div>

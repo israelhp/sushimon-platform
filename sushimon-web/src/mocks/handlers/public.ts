@@ -4,7 +4,7 @@ import type {
   JobApplicationRequest,
   StoreConfig,
 } from '@/lib/data-access/models';
-import { fail, isValidEmail, isValidPhone, productView, promotionView } from '../domain';
+import { fail, isValidEmail, isValidPhone, promotionView } from '../domain';
 import { body, now, oneOf, str, type Handler } from './shared';
 
 /** GET /v1/store/config */
@@ -16,20 +16,6 @@ export const getStoreConfig: Handler = (req): StoreConfig => ({
 /** GET /v1/catalog/categories — solo visibles, ordenadas. */
 export const listCategories: Handler = (req): Category[] =>
   req.store.categories.filter((c) => c.visible).sort((a, b) => a.sortOrder - b.sortOrder);
-
-/** GET /v1/catalog/products?branchId&categoryId */
-export const listProducts: Handler = (req) => {
-  const branchId = req.query.get('branchId') ?? undefined;
-  const categoryId = req.query.get('categoryId');
-  if (branchId && !req.store.branches.some((b) => b.id === branchId)) {
-    fail(404, 'Sucursal no encontrada');
-  }
-  const visible = new Set(req.store.categories.filter((c) => c.visible).map((c) => c.id));
-  return req.store.products
-    .filter((p) => visible.has(p.categoryId))
-    .filter((p) => !categoryId || p.categoryId === categoryId)
-    .map((p) => productView(p, branchId));
-};
 
 /** GET /v1/promotions — activas (vigentes, programadas o vencidas: la UI muestra el estado). */
 export const listPromotions: Handler = (req) =>

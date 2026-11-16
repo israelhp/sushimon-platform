@@ -44,16 +44,16 @@ const TREE: PublicCategory[] = [
   category('postres'),
 ];
 const PRODUCTS = [
-  product('a', 'rolls'),
-  product('b', 'entradas'),
+  product('a', 'id-rolls'),
+  product('b', 'id-entradas'),
   product('c', 'categoria-oculta'),
-  product('d', 'rolls'),
-  product('e', 'rolls-frios'),
+  product('d', 'id-rolls'),
+  product('e', 'id-rolls-frios'),
   product('f', 'id-especial'),
 ];
 
 describe('menuSections', () => {
-  it('recorre el árbol en orden, une productos por slug o id y descarta categorías sin productos', () => {
+  it('recorre el árbol en orden, une productos por id de categoría y descarta categorías sin productos', () => {
     const sections = menuSections(TREE, PRODUCTS);
     expect(sections.map((s) => s.category.slug)).toEqual([
       'entradas',

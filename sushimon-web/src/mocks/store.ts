@@ -5,7 +5,9 @@ import type {
   Customer,
   JobApplication,
   Order,
-  Product,
+  AdminProductMedia,
+  ProductBranchAvailability,
+  ProductPrice,
   StaffRole,
   StoreConfig,
 } from '@/lib/data-access/models';
@@ -26,9 +28,34 @@ import type { MockScenario } from './scenarios';
  * el historial de días anteriores lo genera `factories/history.ts` de forma determinista.
  * NUNCA contiene PAN completo, CVV ni PIN: de una tarjeta solo marca, últimos 4 y referencia.
  */
-export const MOCK_STORE_VERSION = 7;
+export const MOCK_STORE_VERSION = 8;
 
-export type ProductRecord = Omit<Product, 'available'>;
+/**
+ * Producto del mock. Los campos F11 (`id`…`updatedAt`) reproducen `app.products` + `app.product_media`; el bloque «SIMULADO»
+ * es lo que F11 NO provee (F12/F13/F15, textos por idioma) y solo sale por `/v1/demo/catalog/*`. El `id` del mock es
+ * legible (no UUID) y coincide con el slug sembrado: carritos, pedidos y favoritos de la demo lo referencian.
+ */
+export interface ProductRecord {
+  id: string;
+  slug: string;
+  sku: string | null;
+  name: string;
+  description: string | null;
+  basePrice: ProductPrice;
+  /** Id de una categoría del menú (`menuCategories`, F10). */
+  categoryId: string;
+  active: boolean;
+  media: AdminProductMedia[];
+  createdAt: string;
+  updatedAt: string;
+  // ── SIMULADO (F12/F13/F15 y textos por idioma) ──
+  nameEn?: string;
+  descriptionEn?: string;
+  illustration: string;
+  featured: boolean;
+  food: boolean;
+  availability: ProductBranchAvailability[];
+}
 
 /** F06: favorito del cliente (`customer_favorites`). Sin precios ni datos del producto: solo el id y cuándo se marcó. */
 export interface FavoriteRecord {
@@ -101,6 +128,11 @@ export interface MockStore {
    */
   favoritesBusy?: number;
   /**
+   * F11: simulación DETERMINISTA de `PRODUCTS_BUSY` (la transacción de escritura agotó su tiempo): nº de altas/ediciones de
+   * producto que fallarán con 503 antes de que una funcione. Opcional: ausente = 0.
+   */
+  productsBusy?: number;
+  /**
    * F02: simula que el reinicio de MFA no está disponible (falta la clave de servicio del servidor ⇒ 503
    * `MFA_RESET_UNAVAILABLE`). Opcional: ausente/false = disponible. Solo existe en el mock.
    */
@@ -133,6 +165,7 @@ export interface MockStore {
     incident: number;
     address: number;
     product: number;
+    media: number;
     category: number;
     menuCategory: number;
     promotion: number;
