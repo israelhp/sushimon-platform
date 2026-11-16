@@ -91,33 +91,10 @@ export function countByCategory(products: readonly Pick<Product, 'categoryId'>[]
   return counts;
 }
 
-// ── Orden de categorías ─────────────────────────────────────────────────────────────────────
+// ── Categorías del catálogo simulado (selector de producto; la jerarquía F10 vive en `categories-view`) ─────
 
 export function sortCategories(categories: readonly Category[]): Category[] {
   return [...categories].sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id));
-}
-
-/** Ids en el nuevo orden tras mover `id` una posición (`-1` sube, `1` baja); `null` si no se puede. */
-export function moveId(ids: readonly string[], id: string, dir: -1 | 1): string[] | null {
-  const i = ids.indexOf(id);
-  const j = i + dir;
-  if (i < 0 || j < 0 || j >= ids.length) return null;
-  const next = [...ids];
-  const a = next[i]!;
-  next[i] = next[j]!;
-  next[j] = a;
-  return next;
-}
-
-/** Cambios de `sortOrder` (1..n) necesarios para que el servidor refleje el orden de `ids`. */
-export function orderChanges(categories: readonly Category[], ids: readonly string[]) {
-  const byId = new Map(categories.map((c) => [c.id, c]));
-  const changes: { id: string; sortOrder: number }[] = [];
-  ids.forEach((id, index) => {
-    const current = byId.get(id);
-    if (current && current.sortOrder !== index + 1) changes.push({ id, sortOrder: index + 1 });
-  });
-  return changes;
 }
 
 // ── Formulario de producto ──────────────────────────────────────────────────────────────────

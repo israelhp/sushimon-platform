@@ -40,7 +40,7 @@ const click = async (p: Page, name: string) => {
 
 const products = (p: Page) =>
   p.getByRole('switch', { name: 'Disponible: Dumplings' }).waitFor({ timeout: 90_000 });
-const categories = (p: Page) => p.getByText('Orden del menú').first().waitFor({ timeout: 90_000 });
+const categories = (p: Page) => p.getByText('Árbol del menú').first().waitFor({ timeout: 90_000 });
 const promotions = (p: Page) => p.getByText('Happy Hour 2x1').waitFor({ timeout: 90_000 });
 
 const SCREEN_LIST: Record<string, Screen> = {

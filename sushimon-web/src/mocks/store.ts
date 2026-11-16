@@ -12,6 +12,7 @@ import type {
 import type { DemoSessionState } from '@/lib/demo-session';
 import type { BranchSeed } from './fixtures/branches';
 import type { BranchHoursDay } from '@/lib/data-access/models';
+import type { CategoryRecord } from './fixtures/categories';
 import type { ClosureRecord } from './fixtures/schedule';
 import type { DeliverySettingsRecord } from './fixtures/delivery';
 import type { PromotionSeed } from './fixtures/promotions';
@@ -25,7 +26,7 @@ import type { MockScenario } from './scenarios';
  * el historial de días anteriores lo genera `factories/history.ts` de forma determinista.
  * NUNCA contiene PAN completo, CVV ni PIN: de una tarjeta solo marca, últimos 4 y referencia.
  */
-export const MOCK_STORE_VERSION = 6;
+export const MOCK_STORE_VERSION = 7;
 
 export type ProductRecord = Omit<Product, 'available'>;
 
@@ -105,6 +106,8 @@ export interface MockStore {
    */
   mfaResetUnavailable?: boolean;
   categories: Category[];
+  /** F10: categorías del menú (jerarquía). Los productos mock se unen a ellas por `slug` hasta F11. */
+  menuCategories: CategoryRecord[];
   products: ProductRecord[];
   promotions: PromotionSeed[];
   orders: Order[];
@@ -131,6 +134,7 @@ export interface MockStore {
     address: number;
     product: number;
     category: number;
+    menuCategory: number;
     promotion: number;
     user: number;
     job: number;

@@ -29,6 +29,7 @@ export interface ErrorBody {
 const PUBLIC_5XX_CODES: ReadonlySet<string> = new Set([
   'CATALOG_UNAVAILABLE',
   'FAVORITES_BUSY',
+  'CATEGORIES_BUSY',
   'MFA_RESET_UNAVAILABLE',
   'MFA_RESET_FAILED',
 ]);

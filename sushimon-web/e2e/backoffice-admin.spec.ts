@@ -126,13 +126,15 @@ test('admin: crea una sucursal sin tope y rechaza un código duplicado', async (
   await expect(page.getByText('6 sucursales', { exact: true })).toBeVisible();
 });
 
-test('encargado: ve Reportes, Usuarios y Sucursales de su sucursal, sin crear sucursales', async ({
+test('encargado: ve Reportes, Usuarios, Categorías (lectura) y Sucursales de su sucursal, sin crear sucursales', async ({
   page,
 }) => {
   await enterAs(page, /Marco Antonio Gómez/);
   await expect(nav(page).getByRole('link', { name: /Reportes/ })).toBeVisible();
   await expect(nav(page).getByRole('link', { name: /Usuarios/ })).toBeVisible();
-  await expect(nav(page).getByRole('link', { name: /Categorías/ })).toHaveCount(0);
+  // Categorías: solo lectura (catalog.read, F10); no ve Promociones.
+  await expect(nav(page).getByRole('link', { name: /Categorías/ })).toBeVisible();
+  await expect(nav(page).getByRole('link', { name: /Promociones/ })).toHaveCount(0);
 
   await nav(page)
     .getByRole('link', { name: /Reportes/ })

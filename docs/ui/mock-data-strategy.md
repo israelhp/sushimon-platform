@@ -31,12 +31,12 @@ src/mocks/
   clock.ts             reloj inyectable (fecha base fija) — único lugar que lee la hora real
   factories/random.ts  mulberry32 + hash de semilla
   factories/history.ts historial determinista de 60 días (genDay del backoffice)
-  fixtures/            store · branches · products (29) · promotions · staff · orders · geography · delivery (F09)
+  fixtures/            store · branches · products (29) · promotions · staff · orders · geography · delivery (F09) · categories (F10)
   seed.ts              createSeedStore(scenario)
   store.ts             tipo MockStore + persistencia en sessionStorage (clave sushimon-mock-store-v1:<escenario>)
   domain.ts            reglas puras (totales, validaciones, fail(), failCode()/badRequest() con `code`/`violations`)
   coverage.ts          motor de cobertura F09 (OWN, PedidosYa simulado, elegibilidad A–G): réplica de la API
-  handlers/            public · orders · account · backoffice · backoffice-admin · logistics · schedule · delivery (F09) · favorites (F06) · index (mockRoutes)
+  handlers/            public · orders · account · backoffice · backoffice-admin · logistics · schedule · delivery (F09) · categories (F10) · favorites (F06) · index (mockRoutes)
   index.ts             createMockDataClient({ scenario, latencyMs?, store?, clock?, session?, persist? })
   testing.ts           createHarness() para pruebas
 src/services/          store · orders · account · favorites (F06) · backoffice-orders · backoffice-admin
@@ -225,6 +225,30 @@ de `ids` y listas solo al terminar la última mutación en vuelo. Errores por `c
 Retirado: `queryKeys.account.favorites`, `useFavorites`, los favoritos `string[]` del store/handler y el texto "se guardan en este
 dispositivo" (`fav.guestNote`). `MOCK_STORE_VERSION` sube a 6 (los favoritos pasan a `{ productId, addedAt }`; los stores persistidos
 anteriores se descartan y se vuelven a sembrar). `home/favorites-section.tsx` es una selección editorial (`featured`), NO los favoritos del cliente.
+
+## F10 — Categorías y jerarquía del menú (spec 011, ADR-0016)
+
+Estado: **web conectada al contrato; API de F10 implementada en la misma rama, integración http real NO verificada** (en la web el
+flujo es `MOCK_ONLY` mientras `NEXT_PUBLIC_DATA_SOURCE=mock`). Las 5 operaciones (`listStoreCategories`, `listAdminCategories`,
+`createAdminCategory`, `updateAdminCategory`, `reorderAdminCategories`) tienen servicio (`services/categories.ts`), hooks
+(`features/categories/hooks.ts`), rutas en `lib/data-access/paths.ts` y handlers mock (`mocks/handlers/categories.ts`, fixtures en
+`mocks/fixtures/categories.ts`, reglas puras compartidas en `lib/category-tree.ts`). El mock reproduce las reglas del contrato:
+visibilidad efectiva (activa y con todos los ancestros activos), `CATEGORY_CYCLE`, profundidad máx. 3, `CATEGORY_PARENT_INVALID`
+(padre inexistente, inactivo u oculto por un ancestro inactivo), `CATEGORY_SLUG_TAKEN` (slug autogenerado y desambiguado),
+`CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`, 403 en escrituras sin alcance global y `catalog.read|create|update`.
+`MOCK_STORE_VERSION` sube a 7 (`store.menuCategories`).
+
+| Pieza                                                                                                                                          | Estado                                                                                             |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Menú público: chips de raíces + subcategorías desde `GET /v1/store/categories` (solo visibles), estados carga/vacío/error                      | implementado (contra el mock; http tras verificar la API)                                          |
+| Backoffice `/backoffice/categorias`: árbol, alta/edición/mover, activar/desactivar con confirmación, reordenar con botones, errores por `code` | implementado (contra el mock)                                                                      |
+| Productos del menú por categoría                                                                                                               | **mock hasta F11**: `Product.categoryId` es texto y se une a la categoría real por `slug` (o `id`) |
+| Nombres en inglés (`menu.categoryNames.<slug>`)                                                                                                | puente solo para los slugs sembrados; el contrato no trae traducciones (spec 011)                  |
+| Ilustración y rótulo japonés por categoría                                                                                                     | decoración por slug en `features/menu/menu-model.ts` (sin imágenes hasta F14)                      |
+
+Legado: `/v1/catalog/categories` y `/v1/backoffice/categories` (categorías planas del catálogo simulado) se conservan SOLO como soporte
+de los productos mock (selector de producto, ficha, favoritos) hasta F11; ya no gobiernan el menú ni la pantalla de Categorías. La
+pantalla de Categorías pasa de exigir `catalog.update` a `catalog.read` (el encargado la ve en solo lectura).
 
 ## Corrección de la auditoría F00–F09 (web)
 

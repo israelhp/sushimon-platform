@@ -1,44 +1,123 @@
-import type { Category, Product } from '@/lib/data-access/models';
+import type { FoodArtKind } from '@/components/art/FoodArt';
+import { flattenPublic, type PublicNode } from '@/lib/category-tree';
+import type { Product, PublicCategory } from '@/lib/data-access/models';
 
-/** Valor de `?cat=` que representa "Todo" (sin parámetro). */
+/** Valor de `?cat=` que representa "Todo" (sin parámetro). Reservado: ninguna categoría se resuelve por ese slug. */
 export const ALL_CATEGORY = 'all';
 
+/**
+ * Sección del menú: una categoría VISIBLE del árbol público (F10) con SUS productos propios.
+ *
+ * LIMITACIÓN (hasta F11): los productos mock siguen en el catálogo simulado y referencian su categoría por un texto
+ * (`Product.categoryId`, p. ej. `rolls`). Se unen a la categoría real por `slug` (o por `id`, que será lo que traiga el
+ * catálogo real en F11). Una categoría sin productos propios no genera sección.
+ */
 export interface MenuSection {
-  category: Category;
+  category: PublicCategory;
+  /** Ancestros (de la raíz hacia la categoría); vacío en una raíz. */
+  path: readonly PublicCategory[];
   products: Product[];
 }
 
-/**
- * Categorías con productos, en el orden del catálogo (`sortOrder`). Excluye el acceso a Happy Hour
- * (`kind: 'happy_hour'`) y las ocultas; una categoría sin productos no se muestra.
- */
+const ownsProduct = (category: PublicCategory, product: Product) =>
+  product.categoryId === category.slug || product.categoryId === category.id;
+
+/** Secciones en el orden del árbol (depth-first): solo categorías visibles con productos. */
 export function menuSections(
-  categories: readonly Category[],
+  tree: readonly PublicCategory[],
   products: readonly Product[],
 ): MenuSection[] {
-  return [...categories]
-    .filter((c) => c.kind === 'products' && c.visible)
-    .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map((category) => ({
+  return flattenPublic(tree)
+    .map(({ category, path }) => ({
       category,
-      products: products.filter((p) => p.categoryId === category.id),
+      path,
+      products: products.filter((p) => ownsProduct(category, p)),
     }))
     .filter((s) => s.products.length > 0);
 }
 
-/** Categoría activa según `?cat=`: un id desconocido (o ausente) equivale a "Todo". */
-export function resolveCategory(param: string | null, sections: readonly MenuSection[]): string {
-  return sections.find((s) => s.category.id === param)?.category.id ?? ALL_CATEGORY;
+/** Nodo del árbol activo según `?cat=` (slug o id); desconocido, ausente o `all` => null ("Todo"). */
+export function activeNode(
+  tree: readonly PublicCategory[],
+  param: string | null,
+): PublicNode | null {
+  if (!param || param === ALL_CATEGORY) return null;
+  return (
+    flattenPublic(tree).find((n) => n.category.slug === param || n.category.id === param) ?? null
+  );
 }
 
+/** Slug de la categoría activa (`all` si ninguna). */
+export function resolveCategory(tree: readonly PublicCategory[], param: string | null): string {
+  return activeNode(tree, param)?.category.slug ?? ALL_CATEGORY;
+}
+
+/** Secciones de la categoría activa Y de todo su subárbol ("Todo" = todas). */
 export function visibleSections(
   sections: readonly MenuSection[],
+  tree: readonly PublicCategory[],
   active: string,
 ): readonly MenuSection[] {
-  return active === ALL_CATEGORY ? sections : sections.filter((s) => s.category.id === active);
+  const node = activeNode(tree, active);
+  if (!node) return sections;
+  const ids = new Set([
+    node.category.id,
+    ...flattenPublic(node.category.children).map((n) => n.category.id),
+  ]);
+  return sections.filter((s) => ids.has(s.category.id));
 }
 
-/** `/menu` o `/menu?cat=<id>`. */
+/**
+ * Filas de navegación: la 1.ª son las raíces; por cada nivel de la ruta activa (y por la propia activa) una fila con sus
+ * hijas visibles. Una fila sin categorías no se emite.
+ */
+export function chipRows(
+  tree: readonly PublicCategory[],
+  active: string,
+): { parent: PublicCategory | null; items: readonly PublicCategory[] }[] {
+  const rows: { parent: PublicCategory | null; items: readonly PublicCategory[] }[] = [
+    { parent: null, items: tree },
+  ];
+  const node = activeNode(tree, active);
+  if (node) {
+    for (const parent of [...node.path, node.category]) {
+      if (parent.children.length > 0) rows.push({ parent, items: parent.children });
+    }
+  }
+  return rows;
+}
+
+/** Slugs de la ruta activa (para marcar `aria-current` en cada nivel). */
+export function activeSlugs(tree: readonly PublicCategory[], active: string): ReadonlySet<string> {
+  const node = activeNode(tree, active);
+  return new Set(node ? [...node.path, node.category].map((c) => c.slug) : []);
+}
+
+/** `/menu` o `/menu?cat=<slug>`. */
 export function menuHref(category: string): string {
   return category === ALL_CATEGORY ? '/menu' : `/menu?cat=${encodeURIComponent(category)}`;
+}
+
+/**
+ * Decoración PRESENTACIONAL por slug (ilustración y rótulo japonés del prototipo). El contrato de categorías no la trae
+ * (sin imágenes hasta F14): una subcategoría hereda la de su raíz; sin dato se usa `roll`.
+ */
+const DECOR: Readonly<Record<string, { art: FoodArtKind; jp?: string }>> = {
+  entradas: { art: 'dumpling', jp: '前菜' },
+  monchis: { art: 'burger', jp: 'おつまみ' },
+  rolls: { art: 'roll', jp: '巻き寿司' },
+  espirituosas: { art: 'sake', jp: 'お酒' },
+  relax: { art: 'shake', jp: 'ソフトドリンク' },
+  postres: { art: 'icecream', jp: 'デザート' },
+};
+
+export function categoryDecor(
+  category: PublicCategory,
+  path: readonly PublicCategory[] = [],
+): { art: FoodArtKind; jp?: string } {
+  for (const c of [category, ...[...path].reverse()]) {
+    const found = DECOR[c.slug];
+    if (found) return found;
+  }
+  return { art: 'roll' };
 }

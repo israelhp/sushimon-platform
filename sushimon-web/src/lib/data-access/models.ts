@@ -67,6 +67,14 @@ export type DeliveryTierId = S['DeliveryTierId'];
 export type DeliveryTier = S['DeliveryTier'];
 export type DeliveryQuote = S['DeliveryQuote'];
 export type Category = S['Category'];
+/** F10: árbol público de categorías visibles y administración (`/v1/store/categories`, `/v1/admin/categories`). */
+export type PublicCategory = S['PublicCategory'];
+export type PublicCategoryTree = S['PublicCategoryTree'];
+export type AdminCategory = S['AdminCategory'];
+export type AdminCategoryList = S['AdminCategoryList'];
+export type CreateCategoryRequest = S['CreateCategoryRequest'];
+export type UpdateCategoryRequest = S['UpdateCategoryRequest'];
+export type ReorderCategoriesRequest = S['ReorderCategoriesRequest'];
 export type Product = S['Product'];
 /** Disponibilidad de un PRODUCTO por sucursal (borrador del catálogo; no confundir con `BranchAvailability`, F08). */
 export type ProductBranchAvailability = S['DraftBranchAvailability'];

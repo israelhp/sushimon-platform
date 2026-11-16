@@ -31,7 +31,7 @@ export const SCREEN_PERMISSION: Readonly<Record<BackofficeScreen, StaffPermissio
   pedidos: 'orders.read',
   entregas: 'deliveries.read',
   productos: 'catalog.read',
-  categorias: 'catalog.update',
+  categorias: 'catalog.read',
   promociones: 'promotions.read',
   sucursales: 'branches.read',
   usuarios: 'staff.read',

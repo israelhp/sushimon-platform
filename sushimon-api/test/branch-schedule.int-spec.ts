@@ -114,7 +114,9 @@ describe.skipIf(!url)('Horarios y cierres contra PostgreSQL real', () => {
     vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     await withClient(url as string, ensureAuthStub);
     migrate(url as string);
-    prisma = new PrismaService(new ConfigService<Env, true>(validateEnv({ DATABASE_URL: url })));
+    prisma = new PrismaService(
+      new ConfigService<Env, true>(validateEnv({ DATABASE_URL: url, NODE_ENV: 'test' })),
+    );
     repo = new BranchScheduleRepository(prisma);
     ({ hours, closures, availability } = services(repo));
     const admin = await prisma.role.findUniqueOrThrow({ where: { code: 'admin' } });

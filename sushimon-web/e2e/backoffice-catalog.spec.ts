@@ -77,7 +77,7 @@ test('administrador: edita un producto y crea otro con validación', async ({ pa
   await expect(card(page, 'Roll Mon especial')).toContainText('Q52.00');
 });
 
-test('administrador: crea una categoría, la reordena y la oculta de la tienda', async ({
+test('administrador: crea una subcategoría, la reordena con el teclado y desactiva un padre: la tienda deja de publicarlo', async ({
   page,
 }) => {
   await enterAs(page, /Ana Lucía Pérez/);
@@ -87,26 +87,59 @@ test('administrador: crea una categoría, la reordena y la oculta de la tienda',
   });
 
   const rows = page.locator('.crow .cname');
-  await page.getByRole('textbox', { name: 'Nombre de la nueva categoría' }).fill('Bowls');
-  await page.getByRole('button', { name: 'Agregar' }).click();
-  await expect(
-    page.locator('.toast', { hasText: 'Categoría “Bowls” agregada al final' }),
-  ).toBeVisible();
-  await expect(rows.last()).toHaveText('Bowls');
+  await expect(rows.first()).toHaveText('Entradas', { timeout: 60_000 });
 
-  // Orden con teclado: baja "Entradas" y conserva el foco.
-  const down = page.getByRole('button', { name: 'Bajar Entradas' });
+  // Alta de una subcategoría desde la fila del padre (slug autogenerado).
+  await page.getByRole('button', { name: 'Agregar subcategoría a Entradas' }).click();
+  const create = page.getByRole('dialog', { name: 'Nueva categoría' });
+  await create.getByLabel('Nombre').fill('Entradas frías');
+  await create.getByRole('button', { name: 'Crear' }).click();
+  await expect(
+    page.locator('.toast', { hasText: 'Categoría «Entradas frías» creada al final de su nivel' }),
+  ).toBeVisible();
+  await expect(rows.nth(1)).toHaveText('Entradas frías');
+
+  // Un slug repetido se explica sin cerrar el diálogo (409 CATEGORY_SLUG_TAKEN).
+  await page.getByRole('button', { name: 'Nueva categoría' }).click();
+  const dup = page.getByRole('dialog', { name: 'Nueva categoría' });
+  await dup.getByLabel('Nombre').fill('Otra');
+  await dup.getByLabel('Slug (URL)').fill('rolls');
+  await dup.getByRole('button', { name: 'Crear' }).click();
+  await expect(dup.getByText('Este slug ya está en uso.')).toBeVisible();
+  await dup.getByRole('button', { name: 'Cancelar' }).click();
+
+  // Orden con teclado entre hermanas: baja "Entradas" y conserva el foco.
+  const down = page.getByRole('button', { name: 'Bajar Entradas', exact: true });
   await down.focus();
   await page.keyboard.press('Enter');
-  await expect(rows.nth(1)).toHaveText('Entradas');
-  await expect(page.getByRole('button', { name: 'Bajar Entradas' })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Bajar Entradas', exact: true })).toBeFocused();
+  await expect(rows.first()).toHaveText('Monchis');
 
-  // Visibilidad en la web: la tienda deja de mostrar "Postres".
-  await page.getByRole('switch', { name: 'Visible en la web: Postres' }).click();
-  await expect(page.locator('.crow.off .cname')).toHaveText('Postres');
+  // Desactivar con confirmación: "Postres" deja de verse en la tienda.
+  await page.getByRole('button', { name: 'Desactivar Postres' }).click();
+  await page
+    .getByRole('dialog', { name: /Desactivar «Postres»/ })
+    .getByRole('button', { name: 'Desactivar' })
+    .click();
+  await expect(page.locator('.crow.off .cname', { hasText: 'Postres' })).toBeVisible();
   await page.goto('/menu');
   await expect(page.getByRole('heading', { name: /^Entradas/ })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('heading', { name: /^Postres/ })).toHaveCount(0);
+  await expect(
+    page.getByRole('navigation', { name: 'Categorías' }).getByRole('link', { name: 'Postres' }),
+  ).toHaveCount(0);
+});
+
+test('tienda: las subcategorías aparecen bajo su categoría y la inactiva no se publica', async ({
+  page,
+}) => {
+  await page.goto('/menu?cat=rolls');
+  await expect(page.getByRole('heading', { name: /^Sushi Rolls/ })).toBeVisible({
+    timeout: 90_000,
+  });
+  const sub = page.getByRole('navigation', { name: 'Subcategorías de Sushi Rolls' });
+  await expect(sub.getByRole('link', { name: 'Rolls fríos' })).toBeVisible();
+  await expect(page.getByText('Temporada')).toHaveCount(0);
 });
 
 test('administrador: crea una promoción con validación del formulario', async ({ page }) => {
@@ -158,8 +191,11 @@ test('encargado: sin botones de edición, pero cambia la disponibilidad de su su
   await expect(page.locator('.toast', { hasText: 'Dumplings marcado como agotado' })).toBeVisible();
   await expect(dumplings(page)).toHaveAttribute('aria-checked', 'false');
 
-  // Categorías y promociones no están en su menú.
-  await expect(nav(page).getByRole('link', { name: 'Categorías' })).toHaveCount(0);
+  // Categorías (solo lectura, catalog.read) sí; promociones no están en su menú.
+  await nav(page).getByRole('link', { name: 'Categorías' }).click();
+  await expect(page.getByText(/Solo lectura/)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole('button', { name: 'Nueva categoría' })).toBeDisabled();
+  await expect(nav(page).getByRole('link', { name: 'Promociones' })).toHaveCount(0);
   await page.goto('/backoffice/promociones');
   await expect(
     page.getByRole('heading', { name: 'No tienes permiso para ver esta pantalla' }),

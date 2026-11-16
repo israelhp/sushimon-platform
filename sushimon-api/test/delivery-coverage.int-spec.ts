@@ -71,7 +71,9 @@ describe.skipIf(!ready)('Zonas, settings y cobertura contra PostgreSQL real', ()
     vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     await withClient(url as string, ensureAuthStub);
-    prisma = new PrismaService(new ConfigService<Env, true>(validateEnv({ DATABASE_URL: url })));
+    prisma = new PrismaService(
+      new ConfigService<Env, true>(validateEnv({ DATABASE_URL: url, NODE_ENV: 'test' })),
+    );
     const repo = new DeliveryCoverageRepository(prisma);
     const authorization = new AuthorizationService({} as IdentityService);
     const branches = new BranchesQueryService(new BranchesRepository(prisma), authorization);

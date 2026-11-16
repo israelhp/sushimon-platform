@@ -4,6 +4,7 @@ import * as account from './account';
 import * as admin from './backoffice-admin';
 import * as bo from './backoffice';
 import * as branches from './branches';
+import * as categories from './categories';
 import * as delivery from './delivery';
 import * as favorites from './favorites';
 import * as orders from './orders';
@@ -23,6 +24,8 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   // F08: horario público y disponibilidad (calculada con el reloj del servidor)
   'GET /v1/branches/:id/hours': schedule.getPublicBranchHours,
   'GET /v1/branches/:id/availability': schedule.getPublicBranchAvailability,
+  // F10: árbol público de categorías visibles (contrato)
+  'GET /v1/store/categories': categories.listStoreCategories,
   'GET /v1/catalog/categories': pub.listCategories,
   'GET /v1/catalog/products': pub.listProducts,
   'GET /v1/promotions': pub.listPromotions,
@@ -94,6 +97,11 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'GET /v1/admin/branches/:id/delivery-settings': delivery.getAdminBranchDeliverySettings,
   'PATCH /v1/admin/branches/:id/delivery-settings': delivery.updateAdminBranchDeliverySettings,
   'POST /v1/delivery-coverage/check': delivery.checkDeliveryCoverage,
+  // F10: categorías y jerarquía del menú (contrato)
+  'GET /v1/admin/categories': categories.listAdminCategories,
+  'POST /v1/admin/categories': categories.createAdminCategory,
+  'PUT /v1/admin/categories/reorder': categories.reorderAdminCategories,
+  'PATCH /v1/admin/categories/:id': categories.updateAdminCategory,
   // F03: empleados, roles y permisos (contrato)
   'GET /v1/admin/me/context': staff.getAdminContext,
   'GET /v1/admin/staff': staff.listAdminStaff,

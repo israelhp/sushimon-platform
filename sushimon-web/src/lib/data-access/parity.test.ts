@@ -6,6 +6,7 @@ import * as account from '@/services/account';
 import * as admin from '@/services/backoffice-admin';
 import * as bo from '@/services/backoffice-orders';
 import * as coverage from '@/services/delivery-coverage';
+import * as categories from '@/services/categories';
 import * as favorites from '@/services/favorites';
 import * as zones from '@/services/delivery-zones';
 import * as locations from '@/services/locations';
@@ -240,6 +241,60 @@ describe('paridad mock ↔ http', () => {
       'DELIVERY_ZONE_VERSION_CONFLICT',
       'BRANCH_NOT_AVAILABLE',
     ]);
+  });
+
+  it('F10: categorías (árbol público, lista admin, alta, mover, ciclo y reorder) producen los mismos resultados y errores', async () => {
+    const p = pair();
+    p.asStaff('admin');
+    const steps: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => categories.listStoreCategories(c),
+      (c) => categories.listAdminCategories(c),
+      (c) => categories.listAdminCategories(c, { active: false, q: 'tempor' }),
+      (c) => categories.createAdminCategory(c, { name: 'Bowls Poke' }),
+      (c) => categories.createAdminCategory(c, { name: 'Otra', slug: 'rolls' }), // 409 CATEGORY_SLUG_TAKEN
+      (c) => categories.createAdminCategory(c, { name: 'Hija', parentId: 'cat-temporada' }), // 422 PARENT_INVALID
+      (c) => categories.updateAdminCategory(c, 'cat-rolls', { parentId: 'cat-rolls-frios' }), // 422 CYCLE
+      (c) => categories.updateAdminCategory(c, 'cat-relax', { parentId: 'cat-rolls-tempura' }),
+      (c) => categories.updateAdminCategory(c, 'cat-rolls', { parentId: 'cat-postres' }), // 422 DEPTH_EXCEEDED
+      (c) => categories.updateAdminCategory(c, 'cat-postres', { active: false }),
+      (c) => categories.updateAdminCategory(c, 'cat-postres', {}), // 400
+      (c) => categories.updateAdminCategory(c, 'cat-no-existe', { name: 'X' }), // 404
+      (c) =>
+        categories.reorderAdminCategories(c, {
+          parentId: 'cat-rolls',
+          orderedIds: ['cat-rolls-tempura', 'cat-rolls-frios'],
+        }),
+      (c) =>
+        categories.reorderAdminCategories(c, {
+          parentId: 'cat-rolls',
+          orderedIds: ['cat-rolls-frios'],
+        }), // 422
+      (c) => categories.listStoreCategories(c),
+    ];
+    const a = await run(steps, p.mock.client);
+    const b = await run(steps, p.http);
+    expect(b).toEqual(a);
+    expect(a.filter((x) => 'error' in x).length).toBeGreaterThanOrEqual(6);
+    expect(
+      a
+        .flatMap((x) => ('error' in x ? [x.error.businessCode] : []))
+        .filter(Boolean)
+        .sort(),
+    ).toEqual(
+      [
+        'CATEGORY_CYCLE',
+        'CATEGORY_DEPTH_EXCEEDED',
+        'CATEGORY_PARENT_INVALID',
+        'CATEGORY_REORDER_MISMATCH',
+        'CATEGORY_SLUG_TAKEN',
+      ].sort(),
+    );
+    // Sin sesión: la lista admin es 401 en ambos adaptadores.
+    const anon = pair();
+    const x = await run([(c) => categories.listAdminCategories(c)], anon.mock.client);
+    const y = await run([(c) => categories.listAdminCategories(c)], anon.http);
+    expect(y).toEqual(x);
+    expect(x[0]).toMatchObject({ error: { status: 401 } });
   });
 
   it('cuenta del cliente: sin sesión (401) y con sesión, incluido DELETE 204', async () => {

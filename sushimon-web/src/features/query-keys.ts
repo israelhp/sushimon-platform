@@ -5,6 +5,7 @@ import type { ReportFilters } from '@/services/backoffice-admin';
 import type { AdminBranchFilters } from '@/services/branches';
 import type { ClosureFilters } from '@/services/branch-schedule';
 import type { AdminStaffFilters } from '@/services/staff';
+import type { CategoryFilters } from '@/services/categories';
 
 /**
  * Claves de TanStack Query centralizadas. Jerárquicas para invalidar por prefijo
@@ -63,6 +64,16 @@ export const queryKeys = {
     branch: (branchId: string) => ['deliveryCoverage', branchId] as const,
     check: (branchId: string, municipalityId: string, zone: string | null) =>
       ['deliveryCoverage', branchId, municipalityId, zone ?? ''] as const,
+  },
+  /**
+   * F10 (spec 011): categorías del menú. `store` = árbol PÚBLICO (solo visibles); `admin` = lista plana del backoffice.
+   * Toda mutación invalida `all` (el árbol público y el admin dependen de la misma jerarquía).
+   */
+  categories: {
+    all: ['categories'] as const,
+    store: ['categories', 'store'] as const,
+    adminLists: ['categories', 'admin'] as const,
+    admin: (filters: CategoryFilters = {}) => ['categories', 'admin', filters] as const,
   },
   catalog: {
     all: ['catalog'] as const,

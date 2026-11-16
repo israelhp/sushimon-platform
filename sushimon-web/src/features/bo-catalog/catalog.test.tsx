@@ -7,7 +7,6 @@ import type { StaffRole } from '@/lib/data-access/models';
 import type { MockScenario } from '@/mocks/scenarios';
 import { renderBackoffice } from '@/test/backoffice-providers';
 import { resetNavigationMock } from '@/test/next-navigation-mock';
-import { CategoriesScreen } from './components/CategoriesScreen';
 import { ProductsScreen } from './components/ProductsScreen';
 import { PromotionsScreen } from './components/PromotionsScreen';
 
@@ -180,77 +179,6 @@ describe('Productos: estados', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('No se pudo cargar el catálogo.');
     expect(within(alert).getByRole('button', { name: 'Reintentar' })).toBeVisible();
-  });
-});
-
-const rowNames = () =>
-  screen
-    .getAllByRole('listitem')
-    .map((row) => row.querySelector('.cname')?.textContent)
-    .filter(Boolean);
-
-describe('Categorías', () => {
-  it('lista el orden del menú con el conteo de productos', async () => {
-    await renderScreen(<CategoriesScreen />, 'admin');
-    expect(await screen.findByText('Entradas')).toBeVisible();
-    expect(rowNames().slice(0, 3)).toEqual(['Entradas', 'Monchis', 'Sushi Rolls']);
-    expect(screen.getByText('Acceso a la promoción')).toBeVisible();
-    expect(
-      screen.getByText('El orden de esta lista es el orden del menú en la página web.'),
-    ).toBeVisible();
-  });
-
-  it('sube y baja con el teclado, anuncia el cambio y conserva el foco', async () => {
-    const user = userEvent.setup();
-    await renderScreen(<CategoriesScreen />, 'admin');
-    await screen.findByText('Entradas');
-    const up = screen.getByRole('button', { name: 'Subir Entradas' });
-    expect(up).toBeDisabled();
-
-    const down = screen.getByRole('button', { name: 'Bajar Entradas' });
-    down.focus();
-    await user.keyboard('{Enter}');
-    expect(rowNames().slice(0, 2)).toEqual(['Monchis', 'Entradas']);
-    expect(screen.getByText('Entradas ahora está en la posición 2 de 7')).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Bajar Entradas' })).toHaveFocus(),
-    );
-
-    // El orden persiste en el servidor tras sincronizar.
-    await waitFor(() => expect(rowNames().slice(0, 2)).toEqual(['Monchis', 'Entradas']));
-    await user.click(screen.getByRole('button', { name: 'Subir Entradas' }));
-    await waitFor(() => expect(rowNames().slice(0, 2)).toEqual(['Entradas', 'Monchis']));
-  });
-
-  it('oculta una categoría de la web y agrega una nueva al final', async () => {
-    await renderScreen(<CategoriesScreen />, 'admin');
-    await screen.findByText('Postres');
-    const sw = () => screen.getByRole('switch', { name: 'Visible en la web: Postres' });
-    await userEvent.click(sw());
-    expect(await screen.findByText('“Postres” oculta en la web')).toBeVisible();
-    await waitFor(() => expect(sw()).toHaveAttribute('aria-checked', 'false'));
-    expect(within(sw().closest('.crow') as HTMLElement).getByText('Oculta')).toBeVisible();
-
-    await userEvent.click(screen.getByRole('button', { name: 'Agregar' }));
-    // Error visible y asociado al campo (no solo toast).
-    const nameError = await screen.findByRole('alert');
-    expect(nameError).toHaveTextContent('Escribe el nombre de la categoría');
-    const nameInput = screen.getByRole('textbox', { name: 'Nombre de la nueva categoría' });
-    expect(nameInput).toHaveFocus();
-    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
-    expect(nameInput).toHaveAttribute('aria-describedby', nameError.id);
-
-    await userEvent.type(
-      screen.getByRole('textbox', { name: 'Nombre de la nueva categoría' }),
-      'Bowls{Enter}',
-    );
-    expect(await screen.findByText('Categoría “Bowls” agregada al final')).toBeVisible();
-    await waitFor(() => expect(rowNames().at(-1)).toBe('Bowls'));
-  });
-
-  it('muestra el estado vacío sin categorías', async () => {
-    await renderScreen(<CategoriesScreen />, 'admin', 'empty');
-    expect(await screen.findByText('Todavía no hay categorías.')).toBeVisible();
   });
 });
 

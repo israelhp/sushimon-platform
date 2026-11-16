@@ -28,12 +28,13 @@ describe('menú por permisos (grants del contexto administrativo)', () => {
     ]);
   });
 
-  it('encargado ve operación, productos, su sucursal, usuarios, roles (lectura) y reportes', () => {
+  it('encargado ve operación, productos, categorías (lectura, F10), su sucursal, usuarios, roles (lectura) y reportes', () => {
     expect(screensOf(grantsOf('u2'))).toEqual([
       'panel',
       'pedidos',
       'entregas',
       'productos',
+      'categorias',
       'sucursales',
       'usuarios',
       'roles',

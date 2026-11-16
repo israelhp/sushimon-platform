@@ -28,7 +28,9 @@ describe.skipIf(!url)('PrismaService y migraciones contra PostgreSQL real', () =
   beforeAll(async () => {
     await withClient(url as string, ensureAuthStub);
     migrate(url as string);
-    prisma = new PrismaService(new ConfigService<Env, true>(validateEnv({ DATABASE_URL: url })));
+    prisma = new PrismaService(
+      new ConfigService<Env, true>(validateEnv({ DATABASE_URL: url, NODE_ENV: 'test' })),
+    );
   });
 
   afterAll(async () => {
