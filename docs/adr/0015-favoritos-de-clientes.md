@@ -45,3 +45,7 @@ inventar un catálogo ni guardar ids no validados, y un contrato que sirva a la 
 - La web retira `queryKeys.account.favorites` y el contrato `string[]` de favoritos; los contadores usan `total`.
 - Pendientes: límite por cliente en el throttler, favoritos de invitado (no se hacen), intención pendiente tras el login, `favoritesCount` en F17.
 - Sin dependencias nuevas: ni Redis, ni colas, ni caché compartida, ni librerías.
+
+## Actualización F11
+
+El adaptador real del puerto lo aporta F11 (ADR-0017, D8): `ProductsCatalogAdapter` (`src/favorites/`) sobre `ProductsQueryService`; `UnavailableCatalogAdapter` deja de estar enlazado. La FK `customer_favorites.product_id → products` llega con la migración `0012` (pendiente de aplicar). El contrato de favoritos no cambia.

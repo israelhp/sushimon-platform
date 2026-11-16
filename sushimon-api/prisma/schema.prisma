@@ -148,9 +148,12 @@ model CustomerFavorite {
   productId  String   @map("product_id") @db.Uuid
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  /// FK añadida en 0012 (NOT VALID si había huérfanos al aplicarla).
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@id([customerId, productId], map: "customer_favorites_pkey")
   @@index([customerId, createdAt(sort: Desc), productId], map: "customer_favorites_customer_created_idx")
+  @@index([productId], map: "customer_favorites_product_idx")
   @@map("customer_favorites")
   @@schema("app")
 }
@@ -170,9 +173,48 @@ model Category {
   updatedAt   DateTime   @default(now()) @map("updated_at") @db.Timestamptz(6)
   parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   children    Category[] @relation("CategoryTree")
+  products    Product[]
 
   @@index([parentId, sortOrder, name, id], map: "categories_parent_sort_idx")
   @@map("categories")
+  @@schema("app")
+}
+
+/// F11 (0012). CHECK de sku/slug/nombre/longitudes/precio solo en SQL.
+model Product {
+  id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sku         String?            @unique
+  categoryId  String             @map("category_id") @db.Uuid
+  slug        String             @unique
+  name        String
+  description String?
+  basePrice   Decimal            @map("base_price") @db.Decimal(12, 2)
+  active      Boolean            @default(true)
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// La mantiene la API en el UPDATE (sin trigger).
+  updatedAt   DateTime           @default(now()) @map("updated_at") @db.Timestamptz(6)
+  category    Category           @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  media       ProductMedia[]
+  favorites   CustomerFavorite[]
+
+  @@index([categoryId, active, name, id], map: "products_category_active_name_idx")
+  @@index([active, name, id], map: "products_active_name_idx")
+  @@map("products")
+  @@schema("app")
+}
+
+/// F11 (0012). UNIQUE (product_id, sort_order) es DEFERRABLE INITIALLY DEFERRED en SQL (Prisma no lo expresa: no usar
+/// upsert/ON CONFLICT sobre él). Tope de 8 por producto: trigger product_media_limit_trg.
+model ProductMedia {
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId String  @map("product_id") @db.Uuid
+  mediaUrl  String  @map("media_url")
+  altText   String? @map("alt_text")
+  sortOrder Int     @default(0) @map("sort_order")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([productId, sortOrder], map: "product_media_product_sort_key")
+  @@map("product_media")
   @@schema("app")
 }
 

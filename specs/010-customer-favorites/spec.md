@@ -13,6 +13,8 @@ Que un cliente autenticado marque, quite y liste productos favoritos (`GET /v1/m
 estado de los corazones de todas las tarjetas sin N peticiones, y la pantalla Mis favoritos. Fuera: CRUD de productos/categorías, precios por
 sucursal (F13), modificadores, carrito (F18), checkout, pedidos, reordenar (F23), recomendaciones, F17 completa, PedidosYa, favoritos de invitado.
 
+> **Actualización F11 (API)**: el puerto de catálogo ya tiene adaptador real (`src/favorites/products-catalog.adapter.ts`, `FavoritesModule` importa `ProductsModule`; `UnavailableCatalogAdapter` ya no está enlazado y queda como doble de prueba). Con la migración `0012` aplicada (pendiente del usuario) `PUT` valida contra productos visibles reales (inexistente/inactivo/categoría oculta => 404 `PRODUCT_NOT_FOUND`) y `503 CATALOG_UNAVAILABLE`/`UNKNOWN` solo ocurren con catálogo caído o timeout. Lo descrito abajo como "hasta F11" es histórico. La web sigue `MOCK_ONLY` hasta integrarse.
+
 ## Estados por componente
 
 | Componente                                                                        | Estado                                                | Nota                                                                                                  |

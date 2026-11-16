@@ -1104,6 +1104,123 @@ export interface paths {
         patch: operations["updateAdminCategory"];
         trace?: never;
     };
+    "/v1/store/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Productos públicos visibles (paginado, con búsqueda y filtro por categoría)
+         * @description F11. Sin autenticación. Un producto es visible solo si está activo Y su categoría es efectivamente visible (F10: ella y
+         *     todos sus ancestros activos). `categorySlug` filtra por esa categoría y todas sus descendientes visibles; un slug
+         *     inexistente o no visible => lista vacía (200). `q` busca (contiene, sin distinguir mayúsculas ni acentos) SOLO en nombre
+         *     y descripción (el SKU no es buscable públicamente); los comodines `%`, `_` y `\` se tratan como texto literal; máx. 80 caracteres. Orden estable `name`, `id`.
+         *     Cada elemento trae precio base (`basePrice`, cadena decimal) y las imágenes referenciadas; NO trae SKU ni datos
+         *     administrativos. El precio por sucursal y la disponibilidad (F13), los modificadores (F12) y las promociones (F15) NO forman
+         *     parte de este contrato todavía. Caché compartida corta (`Cache-Control: public`); sin `ETag`. Límite de tasa propio (60/min por IP). `page` <= 200.
+         */
+        get: operations["listStoreProducts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/store/products/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ficha pública de un producto visible
+         * @description F11. Sin autenticación. Devuelve la ficha con imágenes ordenadas y la cadena de ancestros visibles de su categoría
+         *     (raíz -> padre) para el breadcrumb. 404 `PRODUCT_NOT_FOUND` si el slug no existe, el producto está inactivo o su
+         *     categoría no es visible (no se distingue el motivo). Sin SKU. Caché compartida corta (`Cache-Control: public`).
+         */
+        get: operations["getStoreProduct"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Productos del backoffice (paginado, activos e inactivos)
+         * @description F11. Exige JWT -> personal activo con `catalog.read` (cualquier alcance: los productos son globales) -> `aal2`. Filtros:
+         *     `q` (nombre, slug, descripción o SKU; contiene, sin distinguir mayúsculas ni acentos; comodines literales; máx. 80),
+         *     `categoryId` (solo esa categoría exacta, sin descendientes) y `active`. Orden por defecto `name`, `id`; `sort`/`order`
+         *     cambian el campo principal y `id` desempata siempre. Cada elemento trae `publiclyVisible` (activo y categoría visible) y la
+         *     categoría con su estado, aunque esté inactiva. Una consulta para la página + una para sus imágenes (sin N+1). Respuesta
+         *     `Cache-Control: no-store`.
+         */
+        get: operations["listAdminProducts"];
+        put?: never;
+        /**
+         * Crea un producto
+         * @description F11. Exige `catalog.create` con alcance GLOBAL (una asignación solo de sucursal => 403) y `aal2`. `name` se normaliza (NFC,
+         *     recorte, colapso de espacios; 1-120); `description` es texto plano (<= 2000). `basePrice` es una cadena decimal positiva
+         *     (`"85.00"`; hasta 6 enteros y 2 decimales; > 0 y <= 999999.99); fuera de forma/rango => 400. `slug` opcional: si falta se
+         *     genera desde el nombre y se desambigua con sufijo numérico; si se envía y existe => 409 `PRODUCT_SLUG_TAKEN`. `sku` opcional
+         *     y único (se normaliza a mayúsculas, 1-40, `A-Z0-9._-`); repetido => 409 `PRODUCT_SKU_TAKEN`. `categoryId` debe existir y
+         *     estar ACTIVA (no se exige visibilidad efectiva) => si no, 422 `PRODUCT_CATEGORY_INVALID`. `media` opcional (máx. 8; el orden del
+         *     arreglo define `sortOrder`): URL `https` <= 2048 caracteres; si no => 422 `PRODUCT_MEDIA_INVALID`. Las URL deben existir ya
+         *     (la subida de archivos es F14). La unicidad se garantiza con los índices únicos (409 también ante concurrencia). Se audita
+         *     `product.created` en la misma transacción. Respuesta `no-store`.
+         */
+        post: operations["createAdminProduct"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/products/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detalle administrativo de un producto
+         * @description F11. Exige `catalog.read` (cualquier alcance) y `aal2`. Incluye inactivos y productos con categoría inactiva. Respuesta
+         *     `Cache-Control: no-store`.
+         */
+        get: operations["getAdminProduct"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edita un producto (incluye activar/desactivar y reemplazar imágenes)
+         * @description F11. Exige `catalog.update` con alcance GLOBAL y `aal2`. Parcial: acepta `name`, `slug`, `sku` (`null` lo borra),
+         *     `description` (`null` la borra), `basePrice`, `categoryId`, `active` y `media`; al menos un campo (si no, 400); cualquier otro
+         *     => 400. Si se envía `media` REEMPLAZA la lista completa (`[]` la vacía; orden del arreglo = `sortOrder`); si se omite no
+         *     se toca. No existe borrado físico: se desactiva con `active=false` (el histórico de pedidos conserva snapshots). Cambiar
+         *     `categoryId` exige categoría existente y ACTIVA => 422 `PRODUCT_CATEGORY_INVALID`; editar un producto que ya está en una
+         *     categoría inactiva SIN cambiar `categoryId` se permite. Slug/SKU repetidos => 409; imágenes inválidas => 422
+         *     `PRODUCT_MEDIA_INVALID`. Si ningún valor cambia responde 200 sin escribir ni auditar. Se audita `product.updated`
+         *     (old/new solo de lo cambiado) y, si cambia `active`, `product.activated` o `product.deactivated`. Respuesta `no-store`.
+         */
+        patch: operations["updateAdminProduct"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1499,7 +1616,7 @@ export interface components {
             details?: string[];
             /**
              * @description Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; 503 reintentable: `CATEGORIES_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
+             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
              */
             code?: string;
             /** @description Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09). */
@@ -2517,6 +2634,133 @@ export interface components {
             /** @description Todos los hermanos actuales del padre, en el orden deseado, sin duplicados. */
             orderedIds: string[];
         };
+        /**
+         * @description Importe decimal en GTQ como CADENA con 2 decimales (nunca `number`; evita errores de coma flotante). > 0 y <= 999999.99.
+         * @example 85.00
+         */
+        ProductPrice: string;
+        PublicProductCategoryRef: {
+            /** Format: uuid */
+            id: string;
+            slug: string;
+            name: string;
+        };
+        PublicProductMedia: {
+            /**
+             * Format: uri
+             * @description URL https ya existente (F14 aportará la subida).
+             */
+            url: string;
+            altText: string | null;
+        };
+        /** @description Producto visible del menú (F11). Sin SKU ni campos internos. `media` ordenada (vacía = la web muestra un placeholder). */
+        PublicProduct: {
+            /** Format: uuid */
+            id: string;
+            slug: string;
+            name: string;
+            /** @description Texto plano. */
+            description: string | null;
+            basePrice: components["schemas"]["ProductPrice"];
+            category: components["schemas"]["PublicProductCategoryRef"];
+            media: components["schemas"]["PublicProductMedia"][];
+        };
+        /** @description Ficha pública, igual que `PublicProduct` más los ancestros visibles de la categoría para el breadcrumb. */
+        PublicProductDetail: components["schemas"]["PublicProduct"] & {
+            /** @description Ancestros de `category`, de la raíz al padre (vacío si es raíz). */
+            categoryAncestors: components["schemas"]["PublicProductCategoryRef"][];
+        };
+        PublicProductPage: {
+            items: components["schemas"]["PublicProduct"][];
+            page: number;
+            pageSize: number;
+            /** @description Total de productos que cumplen el filtro (todas las páginas). */
+            total: number;
+        };
+        AdminProductCategory: {
+            /** Format: uuid */
+            id: string;
+            slug: string;
+            name: string;
+            active: boolean;
+            /** @description Categoría y todos sus ancestros activos (F10). */
+            effectivelyVisible: boolean;
+        };
+        AdminProductMedia: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uri */
+            url: string;
+            altText: string | null;
+            sortOrder: number;
+        };
+        AdminProduct: {
+            /** Format: uuid */
+            id: string;
+            sku: string | null;
+            slug: string;
+            name: string;
+            description: string | null;
+            basePrice: components["schemas"]["ProductPrice"];
+            /** Format: uuid */
+            categoryId: string;
+            category: components["schemas"]["AdminProductCategory"];
+            /** @description Estado propio (administrativo). */
+            active: boolean;
+            /** @description `active` Y categoría efectivamente visible: lo que ve el público. */
+            publiclyVisible: boolean;
+            media: components["schemas"]["AdminProductMedia"][];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AdminProductPage: {
+            items: components["schemas"]["AdminProduct"][];
+            page: number;
+            pageSize: number;
+            total: number;
+        };
+        ProductMediaInput: {
+            /** @description URL `https` absoluta, <= 2048 caracteres. Otro esquema (http, data, javascript…), longitud, IP literal, `localhost`, host sin punto o host fuera de la lista `PRODUCT_MEDIA_ALLOWED_HOSTS` (si está definida) => 422 `PRODUCT_MEDIA_INVALID` (no 400). */
+            url: string;
+            /** @description <= 200 caracteres; si no => 422 `PRODUCT_MEDIA_INVALID` (no 400). */
+            altText?: string | null;
+        };
+        CreateProductRequest: {
+            name: string;
+            /** @description Opcional. Si falta se genera desde `name` y se desambigua; si se envía y existe => 409 `PRODUCT_SLUG_TAKEN`. */
+            slug?: string;
+            /** @description Opcional, único; se guarda en mayúsculas. Repetido => 409 `PRODUCT_SKU_TAKEN`. */
+            sku?: string | null;
+            description?: string | null;
+            basePrice: components["schemas"]["ProductPrice"];
+            /**
+             * Format: uuid
+             * @description Categoría existente y activa; si no => 422 `PRODUCT_CATEGORY_INVALID`.
+             */
+            categoryId: string;
+            /** @description Opcional; por defecto `true` en el servidor. */
+            active?: boolean;
+            /** @description Opcional, máx. 8 (más => 422 `PRODUCT_MEDIA_INVALID`). El orden define `sortOrder`. */
+            media?: components["schemas"]["ProductMediaInput"][];
+        };
+        UpdateProductRequest: {
+            name?: string;
+            slug?: string;
+            /** @description `null` borra el SKU. */
+            sku?: string | null;
+            description?: string | null;
+            basePrice?: components["schemas"]["ProductPrice"];
+            /**
+             * Format: uuid
+             * @description Si cambia, la nueva debe existir y estar activa => 422 `PRODUCT_CATEGORY_INVALID`.
+             */
+            categoryId?: string;
+            active?: boolean;
+            /** @description REEMPLAZA la lista completa (`[]` la vacía); omitir = no tocar. Máx. 8 (más => 422 `PRODUCT_MEDIA_INVALID`). */
+            media?: components["schemas"]["ProductMediaInput"][];
+        };
     };
     responses: never;
     parameters: {
@@ -2534,6 +2778,10 @@ export interface components {
         FavoriteProductId: string;
         /** @description UUID de la categoría (`categories.id`). */
         CategoryId: string;
+        /** @description UUID del producto (`products.id`). */
+        ProductId: string;
+        /** @description Slug público del producto (`products.slug`). */
+        ProductSlug: string;
     };
     requestBodies: never;
     headers: never;
@@ -5723,6 +5971,371 @@ export interface operations {
                 };
             };
             /** @description `CATEGORIES_BUSY`: otra modificación de categorías está en curso o la transacción agotó su tiempo; reintentable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listStoreProducts: {
+        parameters: {
+            query?: {
+                /** @description Slug de una categoría visible (incluye sus descendientes visibles). */
+                categorySlug?: string;
+                /** @description Texto a buscar en nombre o descripción (no en SKU). Máx. 80 caracteres. */
+                q?: string;
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de productos visibles */
+            200: {
+                headers: {
+                    /** @description public, max-age=60, stale-while-revalidate=300 */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicProductPage"];
+                };
+            };
+            /** @description Parámetros de consulta inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getStoreProduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Slug público del producto (`products.slug`). */
+                slug: components["parameters"]["ProductSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ficha del producto */
+            200: {
+                headers: {
+                    /** @description public, max-age=60, stale-while-revalidate=300 */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicProductDetail"];
+                };
+            };
+            /** @description Slug con forma inválida */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCT_NOT_FOUND`: inexistente, inactivo o con categoría no visible */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAdminProducts: {
+        parameters: {
+            query?: {
+                q?: string;
+                /** @description Inexistente => lista vacía. */
+                categoryId?: string;
+                /** @description Sin valor = todos. */
+                active?: boolean;
+                sort?: "name" | "basePrice" | "createdAt";
+                order?: "asc" | "desc";
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de productos */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminProductPage"];
+                };
+            };
+            /** @description Parámetros de consulta inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.read` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAdminProduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProductRequest"];
+            };
+        };
+        responses: {
+            /** @description Producto creado */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminProduct"];
+                };
+            };
+            /** @description Forma inválida (nombre, precio, slug, sku, UUID, propiedades desconocidas) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `catalog.create` con alcance global o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCT_SLUG_TAKEN` o `PRODUCT_SKU_TAKEN` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCT_CATEGORY_INVALID` o `PRODUCT_MEDIA_INVALID` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCTS_BUSY`: la transacción agotó su tiempo; reintentable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAdminProduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del producto (`products.id`). */
+                id: components["parameters"]["ProductId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Producto */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminProduct"];
+                };
+            };
+            /** @description UUID inválido */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.read` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCT_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAdminProduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del producto (`products.id`). */
+                id: components["parameters"]["ProductId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProductRequest"];
+            };
+        };
+        responses: {
+            /** @description Producto actualizado (o sin cambios) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminProduct"];
+                };
+            };
+            /** @description Forma inválida, cuerpo vacío o campos no permitidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `catalog.update` con alcance global o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCT_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCT_SLUG_TAKEN` o `PRODUCT_SKU_TAKEN` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCT_CATEGORY_INVALID` o `PRODUCT_MEDIA_INVALID` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCTS_BUSY`: la transacción agotó su tiempo; reintentable */
             503: {
                 headers: {
                     [name: string]: unknown;
