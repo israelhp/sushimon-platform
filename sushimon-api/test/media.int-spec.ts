@@ -344,7 +344,7 @@ describe.skipIf(!url || !ready)(
       storage.simulateUpload(row.objectKey, bytes, 'image/png');
       await prisma.mediaAsset.update({
         where: { id: intent.assetId },
-        data: { expiresAt: new Date(Date.now() - 60_000) },
+        data: { expiresAt: new Date(Date.now() - 10 * 60_000) },
       });
       expect(code(await failure(media.complete(staff, intent.assetId)))).toBe(
         'MEDIA_UPLOAD_EXPIRED',
