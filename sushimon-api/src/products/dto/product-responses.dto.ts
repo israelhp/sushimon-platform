@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { PublicModifierGroupDto } from '../../modifiers/dto/modifier-responses.dto.js';
 
 export class PublicProductCategoryRefDto {
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;
@@ -25,6 +26,11 @@ export class PublicProductDto {
 export class PublicProductDetailDto extends PublicProductDto {
   @ApiProperty({ type: () => [PublicProductCategoryRefDto], description: 'Raíz → padre.' })
   categoryAncestors!: PublicProductCategoryRefDto[];
+  @ApiProperty({
+    type: () => [PublicModifierGroupDto],
+    description: 'F12: grupos de modificadores ofrecibles (vacío si no hay).',
+  })
+  modifierGroups!: PublicModifierGroupDto[];
 }
 
 export class PublicProductPageDto {

@@ -12,6 +12,8 @@ import { PrismaService } from '../src/database/prisma.service.js';
 import { ProductsCatalogAdapter } from '../src/favorites/products-catalog.adapter.js';
 import type { IdentityService } from '../src/identity/identity.service.js';
 import { AdminProductsService } from '../src/products/admin-products.service.js';
+import { ModifiersQueryService } from '../src/modifiers/modifiers-query.service.js';
+import { ModifiersRepository } from '../src/modifiers/modifiers.repository.js';
 import { ProductsQueryService } from '../src/products/products-query.service.js';
 import { ProductsRepository } from '../src/products/products.repository.js';
 import { globalStaff } from './support/staff-context.js';
@@ -98,7 +100,11 @@ describe.skipIf(!url || !ready)('Productos contra PostgreSQL real', () => {
     commands = new AdminProductsService(repo, new AuditService(), authorization, catQuery, {
       get: () => [],
     } as unknown as ConfigService<Env, true>);
-    queries = new ProductsQueryService(repo, catQuery);
+    queries = new ProductsQueryService(
+      repo,
+      catQuery,
+      new ModifiersQueryService(new ModifiersRepository(prisma)),
+    );
     adapter = new ProductsCatalogAdapter(queries);
   });
   afterAll(async () => {

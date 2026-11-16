@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { FakeModifiersRepo } from './support/fake-modifiers-repo.js';
 import { FakeProductsRepo } from './support/fake-products-repo.js';
 import { CAT, categoryRow, pid, productRow, seedCategories } from './support/products-harness.js';
 import { createTestKeys, type TestKeys } from './support/tokens.js';
@@ -90,6 +91,7 @@ async function createApp(keys: TestKeys, db: ReturnType<typeof fakeDb>, repo: Fa
   const { PrismaService } = await import('../src/database/prisma.service.js');
   const { JWKS_RESOLVER } = await import('../src/auth/jwt-verifier.service.js');
   const { ProductsRepository } = await import('../src/products/products.repository.js');
+  const { ModifiersRepository } = await import('../src/modifiers/modifiers.repository.js');
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(PrismaService)
     .useValue(db)
@@ -97,6 +99,8 @@ async function createApp(keys: TestKeys, db: ReturnType<typeof fakeDb>, repo: Fa
     .useValue(keys.jwks)
     .overrideProvider(ProductsRepository)
     .useValue(repo)
+    .overrideProvider(ModifiersRepository)
+    .useValue(new FakeModifiersRepo())
     .compile();
   const app = moduleRef.createNestApplication<NestExpressApplication>();
   configureApp(app, { corsOrigins: ['http://localhost:3000'] });
@@ -289,6 +293,7 @@ describe('Productos (e2e)', () => {
           { id: CAT.frios, slug: 'frios', name: 'Frios' },
         ],
         media: [],
+        modifierGroups: [],
       });
       const detail = await http().get('/v1/store/products/roll-california').expect(200);
       expect((detail.body as { media: unknown[] }).media).toHaveLength(2);

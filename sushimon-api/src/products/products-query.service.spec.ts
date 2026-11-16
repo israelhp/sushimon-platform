@@ -1,12 +1,23 @@
 import { CAT, pid, productRow, productsHarness } from '../../test/support/products-harness.js';
+import {
+  FakeModifiersRepo,
+  G,
+  groupRow,
+  optionRow,
+  OPT,
+} from '../../test/support/fake-modifiers-repo.js';
+import { ModifiersQueryService } from '../modifiers/modifiers-query.service.js';
+import type { ModifiersRepository } from '../modifiers/modifiers.repository.js';
 import { ProductsQueryService } from './products-query.service.js';
 import type { ProductsRepository } from './products.repository.js';
 
 function setup() {
   const h = productsHarness();
+  const mods = new FakeModifiersRepo();
   const service = new ProductsQueryService(
     h.repo as unknown as ProductsRepository,
     h.categoriesQuery,
+    new ModifiersQueryService(mods as unknown as ModifiersRepository),
   );
   h.repo.seed(
     productRow(pid(1), {
@@ -52,7 +63,7 @@ function setup() {
     }),
   );
   h.repo.calls.length = 0;
-  return { service, ...h };
+  return { service, mods, ...h };
 }
 
 const names = (page: { items: { name: string }[] }) => page.items.map((i) => i.name);
@@ -145,6 +156,7 @@ describe('ProductsQueryService.getPublicList', () => {
     const service = new ProductsQueryService(
       h.repo as unknown as ProductsRepository,
       h.categoriesQuery,
+      new ModifiersQueryService(new FakeModifiersRepo() as unknown as ModifiersRepository),
     );
     expect(await service.getPublicList({ page: 1, pageSize: 20 })).toEqual({
       items: [],
@@ -283,5 +295,39 @@ describe('ProductsQueryService admin', () => {
       status: 404,
       response: { code: 'PRODUCT_NOT_FOUND' },
     });
+  });
+});
+
+describe('ProductsQueryService.findVisibleBySlug: modificadores (F12)', () => {
+  it('incluye solo grupos ofrecibles con opciones activas y lo obtiene en UNA consulta', async () => {
+    const { service, mods } = setup();
+    mods.seedGroup(groupRow(G.salsas, { name: 'Salsas', minSelect: 1 }), [
+      optionRow(OPT(1), G.salsas, { name: 'Soya', extraPrice: '1.50', sortOrder: 0 }),
+      optionRow(OPT(2), G.salsas, { name: 'Vieja', active: false, sortOrder: 1 }),
+    ]);
+    mods.seedGroup(groupRow(G.extras, { name: 'Extras', active: false }), [
+      optionRow(OPT(3), G.extras),
+    ]);
+    mods.seedProduct(pid(1), [G.salsas, G.extras]);
+    const detail = await service.findVisibleBySlug('roll-california');
+    expect(detail?.modifierGroups).toEqual([
+      {
+        id: G.salsas,
+        name: 'Salsas',
+        minSelect: 1,
+        maxSelect: 1,
+        required: true,
+        options: [{ id: OPT(1), name: 'Soya', extraPrice: '1.50' }],
+      },
+    ]);
+    expect(mods.count('findOffer')).toBe(1);
+  });
+
+  it('sin grupos => []; la lista pública no consulta modificadores', async () => {
+    const { service, mods } = setup();
+    expect((await service.findVisibleBySlug('te-frio'))?.modifierGroups).toEqual([]);
+    mods.calls.length = 0;
+    await service.getPublicList({ page: 1, pageSize: 20 });
+    expect(mods.calls).toEqual([]);
   });
 });

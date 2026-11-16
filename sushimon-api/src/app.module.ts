@@ -18,6 +18,7 @@ import { DeliveryCoverageModule } from './delivery-coverage/delivery-coverage.mo
 import { LocationsModule } from './locations/locations.module.js';
 import { CategoriesModule } from './categories/categories.module.js';
 import { ProductsModule } from './products/products.module.js';
+import { ModifiersModule } from './modifiers/modifiers.module.js';
 import { BranchesModule } from './branches/branches.module.js';
 import { StaffModule } from './staff/staff.module.js';
 import { CustomersModule } from './customers/customers.module.js';
@@ -57,6 +58,7 @@ import { HealthTokenGuard } from './health/health-token.guard.js';
     BranchesModule,
     CategoriesModule,
     ProductsModule,
+    ModifiersModule,
     BranchScheduleModule,
     LocationsModule,
     DeliveryCoverageModule,
