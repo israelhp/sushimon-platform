@@ -15,7 +15,7 @@ beforeEach(() => resetNavigationMock('/backoffice/panel'));
 const menu = () => within(screen.getByRole('navigation', { name: 'Menú principal' }));
 
 describe('shell autenticado', () => {
-  it('administrador ve las 11 pantallas del menú', async () => {
+  it('administrador ve las 12 pantallas del menú', async () => {
     await renderBackoffice(<BackofficeShell>contenido</BackofficeShell>, { role: 'admin' });
     const names = [
       'Panel',
@@ -25,6 +25,7 @@ describe('shell autenticado', () => {
       'Categorías',
       'Extras',
       'Promociones',
+      'Banners',
       'Sucursales',
       'Usuarios',
       'Roles y permisos',
@@ -33,7 +34,7 @@ describe('shell autenticado', () => {
     for (const name of names) {
       expect(await menu().findByRole('link', { name: new RegExp(name) })).toBeVisible();
     }
-    expect(menu().getAllByRole('link')).toHaveLength(11);
+    expect(menu().getAllByRole('link')).toHaveLength(12);
   });
 
   it('el encargado ve su operación, Productos, Categorías y Extras (solo lectura), Sucursales (solo lectura), Usuarios, Roles y Reportes; no Promociones', async () => {

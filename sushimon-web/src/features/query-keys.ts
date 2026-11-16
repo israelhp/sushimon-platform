@@ -10,6 +10,7 @@ import type { CategoryFilters } from '@/services/categories';
 import type { ModifierGroupFilters } from '@/services/modifiers';
 import type { BranchProductFilters } from '@/services/branch-products';
 import type { MediaFilters } from '@/services/media';
+import type { AdminBannerFilters } from '@/services/banners';
 import type { AdminPromotionFilters } from '@/services/promotions';
 
 /**
@@ -142,6 +143,13 @@ export const queryKeys = {
     promotions: ['catalog', 'promotions'] as const,
     storePromotions: (branchId: string, state: 'live' | 'upcoming') =>
       ['catalog', 'promotions', branchId, state] as const,
+    /**
+     * F16: banners PÚBLICOS del Inicio por sucursal (`'all'` = sin sucursal) e idioma. `banners` es el prefijo de todos; la caché
+     * HTTP dura ≤ 30 s y el servidor da `nextChangeAt`: refetch en ese instante y al cambiar de sucursal o de idioma.
+     */
+    banners: ['catalog', 'banners'] as const,
+    storeBanners: (branchId: string | null, locale: string) =>
+      ['catalog', 'banners', branchId ?? 'all', locale] as const,
   },
   orders: {
     all: ['orders'] as const,
@@ -189,6 +197,12 @@ export const queryKeys = {
     promotionList: (filters: AdminPromotionFilters = {}) =>
       ['catalog', 'backoffice', 'promotions', 'list', filters] as const,
     promotion: (id: string) => ['catalog', 'backoffice', 'promotions', 'detail', id] as const,
+    /** F16: banners ADMIN. `banners` = prefijo de listas, orden y detalle; toda mutación lo invalida (y `catalog.banners`). */
+    banners: ['catalog', 'backoffice', 'banners'] as const,
+    bannerList: (filters: AdminBannerFilters = {}) =>
+      ['catalog', 'backoffice', 'banners', 'list', filters] as const,
+    bannerOrder: ['catalog', 'backoffice', 'banners', 'order'] as const,
+    banner: (id: string) => ['catalog', 'backoffice', 'banners', 'detail', id] as const,
     /** Prefijo de las consultas administrativas de sucursales (F07). */
     branches: ['backoffice', 'branches'] as const,
     adminBranchLists: ['backoffice', 'branches', 'list'] as const,

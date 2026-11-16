@@ -66,9 +66,9 @@ describe('pantallas', () => {
 describe('catálogo granular del mock (spec 006)', () => {
   const codes = PERMISSION_CATALOG.map((p) => p.code);
 
-  it('tiene 43 permisos únicos con formato modulo.accion', () => {
-    expect(codes).toHaveLength(43);
-    expect(new Set(codes).size).toBe(43);
+  it('tiene 46 permisos únicos con formato modulo.accion', () => {
+    expect(codes).toHaveLength(46);
+    expect(new Set(codes).size).toBe(46);
     for (const code of codes) expect(code).toMatch(/^[a-z]+\.[a-z_]+$/);
   });
 

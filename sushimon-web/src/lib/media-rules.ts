@@ -29,6 +29,22 @@ export const MEDIA_PAGE_MAX = 200;
 export const SIMULATED_MEDIA_HOST = 'media-simulado.invalid';
 export const SIMULATED_UPLOAD_HOST = 'almacen-simulado.invalid';
 
+/** F16: tipos de medio (`kind`). El prefijo de la clave de objeto y el tope de tamaño los decide el tipo, nunca el cliente. */
+export const MEDIA_KINDS = ['PRODUCT_IMAGE', 'BANNER_IMAGE'] as const;
+export type MediaKindValue = (typeof MEDIA_KINDS)[number];
+export const isMediaKind = (value: unknown): value is MediaKindValue =>
+  typeof value === 'string' && (MEDIA_KINDS as readonly string[]).includes(value);
+/** Prefijo de la clave de objeto por tipo (`products/<yyyy>/…`, `banners/<yyyy>/…`). */
+export const MEDIA_KEY_PREFIX: Record<MediaKindValue, string> = {
+  PRODUCT_IMAGE: 'products',
+  BANNER_IMAGE: 'banners',
+};
+/** Tope de tamaño por tipo: banners 1 MiB (CHECK propio en la BD); productos 5 MiB. */
+export const MEDIA_MAX_BYTES_BY_KIND: Record<MediaKindValue, number> = {
+  PRODUCT_IMAGE: MEDIA_MAX_BYTES,
+  BANNER_IMAGE: 1024 * 1024,
+};
+
 export const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
 
 export const isAllowedMime = (mime: unknown): mime is MediaMime =>
@@ -130,6 +146,61 @@ export function planOptimization(input: {
   return modern && within && input.sizeBytes <= MEDIA_MAX_BYTES ? 'keep' : 'convert';
 }
 
+// ── Perfil de banner (F16): proporción 3:1, lado largo ≤ 1920 px y ≤ 1 MiB ───────────────────
+
+export const BANNER_ASPECT = 3;
+export const BANNER_MAX_SIDE_PX = 1920;
+export const BANNER_MAX_BYTES = 1024 * 1024;
+/** Calidades WebP que se prueban en orden hasta que quepa en 1 MiB. */
+export const BANNER_WEBP_QUALITIES = [0.82, 0.7, 0.55, 0.4] as const;
+/** Tolerancia de la proporción para respetar una imagen ya optimizada (±1 %). */
+const BANNER_ASPECT_TOLERANCE = 0.01;
+
+export interface BannerGeometry {
+  /** Recorte centrado del origen con proporción EXACTA 3:1. */
+  crop: { x: number; y: number; width: number; height: number };
+  /** Tamaño de salida (3:1, ancho ≤ 1920; nunca agranda). */
+  size: { width: number; height: number };
+}
+
+/**
+ * Recorte centrado a 3:1 y reducción a ≤ 1920 px de ancho. Una imagen más ancha que 3:1 pierde los lados; una más alta pierde
+ * arriba y abajo (el texto del banner es estructurado, no va incrustado: la zona segura es la central). Nunca agranda.
+ */
+export function bannerGeometry(width: number, height: number): BannerGeometry {
+  const wide = width / height > BANNER_ASPECT;
+  const cropWidth = wide ? Math.max(1, Math.round(height * BANNER_ASPECT)) : width;
+  const cropHeight = wide ? height : Math.max(1, Math.round(width / BANNER_ASPECT));
+  const outWidth = Math.min(cropWidth, BANNER_MAX_SIDE_PX);
+  return {
+    crop: {
+      x: Math.floor((width - cropWidth) / 2),
+      y: Math.floor((height - cropHeight) / 2),
+      width: cropWidth,
+      height: cropHeight,
+    },
+    size: { width: outWidth, height: Math.max(1, Math.round(outWidth / BANNER_ASPECT)) },
+  };
+}
+
+/** WebP/AVIF que ya son 3:1 (±1 %), ≤ 1920 px y ≤ 1 MiB se suben tal cual; el resto se recorta y recomprime a WebP. */
+export function planBannerOptimization(input: {
+  mimeType: MediaMime;
+  width: number;
+  height: number;
+  sizeBytes: number;
+}): OptimizationPlan {
+  const modern = input.mimeType === 'image/webp' || input.mimeType === 'image/avif';
+  const ratioOk =
+    Math.abs(input.width / input.height - BANNER_ASPECT) / BANNER_ASPECT <= BANNER_ASPECT_TOLERANCE;
+  return modern &&
+    ratioOk &&
+    input.width <= BANNER_MAX_SIDE_PX &&
+    input.sizeBytes <= BANNER_MAX_BYTES
+    ? 'keep'
+    : 'convert';
+}
+
 export const formatBytes = (bytes: number): string =>
   bytes >= 1024 * 1024
     ? `${(bytes / (1024 * 1024)).toFixed(1)} MiB`
@@ -148,7 +219,7 @@ export function intentShapeProblems(raw: unknown): string[] {
       problems.push(`${key}: campo no permitido`);
     }
   }
-  if (body.kind !== 'PRODUCT_IMAGE') problems.push('kind: debe ser PRODUCT_IMAGE');
+  if (!isMediaKind(body.kind)) problems.push('kind: debe ser PRODUCT_IMAGE o BANNER_IMAGE');
   if (typeof body.mimeType !== 'string' || body.mimeType.length === 0) {
     problems.push('mimeType: debe ser texto');
   }

@@ -80,11 +80,11 @@ describe('F03 · contexto administrativo', () => {
     expect(ctx.staff.permissions).toContain('staff.read');
   });
 
-  it('el administrador tiene los 43 permisos con alcance global y todas las sucursales activas', async () => {
+  it('el administrador tiene los 46 permisos con alcance global y todas las sucursales activas', async () => {
     const h = createHarness();
     h.asStaff('admin');
     const ctx = await staff.getAdminContext(h.client);
-    expect(Object.keys(ctx.staff.grants)).toHaveLength(43);
+    expect(Object.keys(ctx.staff.grants)).toHaveLength(46);
     expect(ctx.staff.grants['roles.manage']).toEqual({ allBranches: true, branchIds: [] });
     expect(ctx.staff.branches.map((b) => b.id)).toEqual(['sucursal-1', 'sucursal-2', 'sucursal-3']);
   });
@@ -497,7 +497,7 @@ describe('F03 · roles y permisos', () => {
       isSystem: true,
       assignedStaffCount: 1,
     });
-    expect(roles.find((r) => r.code === 'admin')?.permissions).toHaveLength(43);
+    expect(roles.find((r) => r.code === 'admin')?.permissions).toHaveLength(46);
     expect(roles.find((r) => r.code === 'kitchen')?.assignedStaffCount).toBe(4);
     expect((await staff.getAdminRole(h.client, ROLE.staff)).permissions.map((p) => p.code)).toEqual(
       ['orders.read', 'orders.accept', 'orders.prepare', 'deliveries.read'],
@@ -505,7 +505,7 @@ describe('F03 · roles y permisos', () => {
     expect(await status(staff.getAdminRole(h.client, 'nada'))).toBe(404);
     const catalog = await staff.listAdminPermissions(h.client);
     expect(catalog.map((m) => m.module)).toContain('staff');
-    expect(catalog.reduce((n, m) => n + m.permissions.length, 0)).toBe(43);
+    expect(catalog.reduce((n, m) => n + m.permissions.length, 0)).toBe(46);
     h.asStaff('kitchen');
     expect(await status(staff.listAdminRoles(h.client))).toBe(403);
     expect(await status(staff.listAdminPermissions(h.client))).toBe(403);

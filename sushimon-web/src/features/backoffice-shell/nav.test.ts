@@ -8,7 +8,7 @@ const screensOf = (grants: Grants) =>
 const grantsOf = (userId: string) => demoStaffFromSeed(userId).grants;
 
 describe('menú por permisos (grants del contexto administrativo)', () => {
-  it('administrador ve las 11 pantallas en 3 secciones', () => {
+  it('administrador ve las 12 pantallas en 3 secciones', () => {
     expect(screensOf(grantsOf('u1'))).toEqual([
       'panel',
       'pedidos',
@@ -17,6 +17,7 @@ describe('menú por permisos (grants del contexto administrativo)', () => {
       'categorias',
       'modificadores',
       'promociones',
+      'banners',
       'sucursales',
       'usuarios',
       'roles',

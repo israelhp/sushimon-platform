@@ -9,7 +9,8 @@ import type {
 import { hexToBase64 } from '@/lib/media-optimize';
 import {
   MEDIA_ALT_MAX,
-  MEDIA_MAX_BYTES,
+  MEDIA_KEY_PREFIX,
+  MEDIA_MAX_BYTES_BY_KIND,
   MEDIA_PAGE_MAX,
   MEDIA_PAGE_SIZE_MAX,
   MEDIA_PENDING_LIMIT,
@@ -20,6 +21,8 @@ import {
   extensionForMime,
   intentShapeProblems,
   isAllowedMime,
+  isMediaKind,
+  type MediaKindValue,
   type MediaMime,
 } from '@/lib/media-rules';
 import { hasDisallowedControlChars } from '@/lib/product-rules';
@@ -55,8 +58,10 @@ const publicUrlOf = (objectKey: string) => `https://${SIMULATED_MEDIA_HOST}/${ob
 /** URL pública simulada de un asset (la usa también el mock de productos para enlazar `assetId`). */
 export const assetPublicUrl = (a: Pick<MediaAssetRecord, 'objectKey'>) => publicUrlOf(a.objectKey);
 
+/** Filas de `product_media` MÁS banners (`banners.image_asset_id`) que referencian el asset (F16). */
 const usageCount = (store: MockStore, assetId: string): number =>
-  store.products.reduce((n, p) => n + p.media.filter((m) => m.assetId === assetId).length, 0);
+  store.products.reduce((n, p) => n + p.media.filter((m) => m.assetId === assetId).length, 0) +
+  store.banners.filter((b) => b.imageAssetId === assetId).length;
 
 function assetView(store: MockStore, a: MediaAssetRecord): AdminMediaAsset {
   return {
@@ -140,12 +145,20 @@ export const createUploadIntent: Handler = (req): AdminMediaUploadIntent => {
     failCode(422, 'MEDIA_TYPE_NOT_ALLOWED', 'Solo se admiten JPEG, PNG, WebP o AVIF');
   }
   const sizeBytes = raw.sizeBytes as number;
-  if (sizeBytes > MEDIA_MAX_BYTES) {
-    failCode(422, 'MEDIA_TOO_LARGE', 'La imagen supera el tamaño máximo (5 MiB)');
+  const kind = raw.kind as MediaKindValue;
+  if (sizeBytes > MEDIA_MAX_BYTES_BY_KIND[kind]) {
+    failCode(
+      422,
+      'MEDIA_TOO_LARGE',
+      kind === 'BANNER_IMAGE'
+        ? 'La imagen del banner supera el tamaño máximo (1 MiB)'
+        : 'La imagen supera el tamaño máximo (5 MiB)',
+    );
   }
   const checksum = raw.checksumSha256 as string;
+  // Dedup por (kind, checksum): la misma imagen puede existir como imagen de producto y de banner.
   const existing = store.mediaAssets.find(
-    (a) => a.status === 'READY' && a.checksumSha256 === checksum,
+    (a) => a.status === 'READY' && a.kind === kind && a.checksumSha256 === checksum,
   );
   if (existing) {
     return {
@@ -175,12 +188,12 @@ export const createUploadIntent: Handler = (req): AdminMediaUploadIntent => {
   const year = at.getUTCFullYear();
   const record: MediaAssetRecord = {
     id,
-    kind: 'PRODUCT_IMAGE',
+    kind,
     status: 'PENDING',
     mimeType,
     sizeBytes,
     checksumSha256: checksum,
-    objectKey: `products/${year}/${id}.${extensionForMime(mimeType as MediaMime)}`,
+    objectKey: `${MEDIA_KEY_PREFIX[kind]}/${year}/${id}.${extensionForMime(mimeType as MediaMime)}`,
     createdAt: at.toISOString(),
     confirmedAt: null,
     expiresAt: new Date(at.getTime() + MEDIA_UPLOAD_TTL_SECONDS * 1000).toISOString(),
@@ -231,7 +244,11 @@ export const completeUpload: Handler = (req): AdminMediaAsset => {
     failCode(422, 'MEDIA_CONTENT_MISMATCH', 'El archivo subido no coincide con lo declarado');
   }
   const winner = store.mediaAssets.find(
-    (a) => a.id !== asset.id && a.status === 'READY' && a.checksumSha256 === asset.checksumSha256,
+    (a) =>
+      a.id !== asset.id &&
+      a.status === 'READY' &&
+      a.kind === asset.kind &&
+      a.checksumSha256 === asset.checksumSha256,
   );
   if (winner) {
     removeAsset(store, asset.id); // carrera de dedup: gana el asset ya confirmado
@@ -285,7 +302,7 @@ export const listAdminMedia: Handler = (req): AdminMediaAssetPage => {
     problems.push(`pageSize: entre 1 y ${MEDIA_PAGE_SIZE_MAX}`);
   }
   const kind = req.query.get('kind');
-  if (kind !== null && kind !== 'PRODUCT_IMAGE') problems.push('kind: PRODUCT_IMAGE');
+  if (kind !== null && !isMediaKind(kind)) problems.push('kind: PRODUCT_IMAGE o BANNER_IMAGE');
   const status = req.query.get('status');
   if (status !== null && status !== 'PENDING' && status !== 'READY') {
     problems.push('status: PENDING o READY');
@@ -299,6 +316,7 @@ export const listAdminMedia: Handler = (req): AdminMediaAssetPage => {
   const p = page ?? 1;
   const size = pageSize ?? 20;
   const matches = store.mediaAssets
+    .filter((a) => kind === null || a.kind === kind)
     .filter((a) => status === null || a.status === status)
     .filter((a) => unref === null || (usageCount(store, a.id) === 0) === (unref === 'true'))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
@@ -321,7 +339,10 @@ export const getAdminMedia: Handler = (req): AdminMediaAssetDetail => {
       .filter((m) => m.assetId === asset.id)
       .map((m) => ({ productId: p.id, productName: p.name, productMediaId: m.id })),
   );
-  return { ...assetView(store, asset), usages };
+  const bannerUsages = store.banners
+    .filter((b) => b.imageAssetId === asset.id)
+    .map((b) => ({ bannerId: b.id, bannerCode: b.code }));
+  return { ...assetView(store, asset), usages, bannerUsages };
 };
 
 /** DELETE /v1/admin/media/:id — 204; 409 `MEDIA_IN_USE`; 503 sin almacenamiento (antes de tocar la fila). */
@@ -332,7 +353,7 @@ export const deleteAdminMedia: Handler = (req): void => {
   if (!asset) failCode(404, 'MEDIA_NOT_FOUND', 'Imagen no encontrada');
   storageGuard(store);
   if (usageCount(store, asset.id) > 0) {
-    failCode(409, 'MEDIA_IN_USE', 'La imagen está en uso por algún producto');
+    failCode(409, 'MEDIA_IN_USE', 'La imagen está en uso por un producto o un banner');
   }
   mediaBusy(store);
   removeAsset(store, asset.id);
@@ -395,6 +416,21 @@ export const attachProductMedia: Handler = (req): AdminProductMedia => {
   if (!asset) failCode(404, 'MEDIA_NOT_FOUND', 'Imagen no encontrada');
   if (asset.status !== 'READY') {
     failCode(422, 'MEDIA_ASSET_NOT_READY', 'La imagen aún no está confirmada');
+  }
+  // F16: una imagen de banner solo la usa un banner (y una de producto no sirve a un banner: `BANNER_IMAGE_INVALID`).
+  if (asset.kind !== 'PRODUCT_IMAGE') {
+    failCode(
+      422,
+      'PRODUCT_MEDIA_INVALID',
+      'Esa imagen es de un banner y no se puede usar en un producto',
+      [
+        {
+          path: 'assetId',
+          code: 'ASSET_KIND_MISMATCH',
+          message: 'El tipo de imagen no corresponde',
+        },
+      ],
+    );
   }
   if (product.media.some((m) => m.assetId === asset.id)) {
     failCode(409, 'MEDIA_ALREADY_ATTACHED', 'La imagen ya está en este producto');

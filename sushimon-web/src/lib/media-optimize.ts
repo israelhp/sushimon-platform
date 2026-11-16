@@ -1,8 +1,12 @@
 import {
+  BANNER_MAX_BYTES,
+  BANNER_WEBP_QUALITIES,
   MEDIA_MAX_BYTES,
   MEDIA_MAX_SIDE_PX,
   MEDIA_WEBP_QUALITY,
+  bannerGeometry,
   fitWithin,
+  planBannerOptimization,
   planOptimization,
   sniffImageMime,
   type MediaErrorKind,
@@ -34,8 +38,16 @@ export const isMediaClientError = (error: unknown): error is MediaClientError =>
 export interface ImageProcessor {
   /** Dimensiones reales; lanza si el navegador no puede decodificar la imagen. */
   measure(blob: Blob): Promise<{ width: number; height: number }>;
-  /** Redimensiona a `size` y codifica en WebP con la calidad dada. */
-  encodeWebp(blob: Blob, size: { width: number; height: number }, quality: number): Promise<Blob>;
+  /**
+   * Redimensiona a `size` y codifica en WebP con la calidad dada. Con `crop` (F16, banners) toma ESA región del origen (recorte
+   * centrado 3:1) en vez de la imagen completa.
+   */
+  encodeWebp(
+    blob: Blob,
+    size: { width: number; height: number },
+    quality: number,
+    crop?: { x: number; y: number; width: number; height: number },
+  ): Promise<Blob>;
 }
 
 /** Implementación del navegador: `createImageBitmap` + canvas (OffscreenCanvas si existe). */
@@ -48,14 +60,29 @@ export const browserImageProcessor: ImageProcessor = {
       bitmap.close();
     }
   },
-  async encodeWebp(blob, size, quality) {
+  async encodeWebp(blob, size, quality, crop) {
     const bitmap = await createImageBitmap(blob);
+    const draw = (ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D) => {
+      if (crop) {
+        ctx.drawImage(
+          bitmap,
+          crop.x,
+          crop.y,
+          crop.width,
+          crop.height,
+          0,
+          0,
+          size.width,
+          size.height,
+        );
+      } else ctx.drawImage(bitmap, 0, 0, size.width, size.height);
+    };
     try {
       if (typeof OffscreenCanvas !== 'undefined') {
         const canvas = new OffscreenCanvas(size.width, size.height);
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('canvas 2d no disponible');
-        ctx.drawImage(bitmap, 0, 0, size.width, size.height);
+        draw(ctx);
         return await canvas.convertToBlob({ type: 'image/webp', quality });
       }
       const canvas = document.createElement('canvas');
@@ -63,7 +90,7 @@ export const browserImageProcessor: ImageProcessor = {
       canvas.height = size.height;
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('canvas 2d no disponible');
-      ctx.drawImage(bitmap, 0, 0, size.width, size.height);
+      draw(ctx);
       return await new Promise<Blob>((resolve, reject) =>
         canvas.toBlob(
           (out) => (out ? resolve(out) : reject(new Error('toBlob sin resultado'))),
@@ -120,6 +147,11 @@ export interface OptimizedImage {
 export interface OptimizeOptions {
   processor?: ImageProcessor;
   subtle?: SubtleCrypto;
+  /**
+   * `product` (defecto): WebP ~0.82, lado ≤ 1600 px, ≤ 5 MiB. `banner` (F16): recorte centrado a 3:1, ancho ≤ 1920 px y ≤ 1 MiB
+   * (baja la calidad por pasos antes de rendirse con `tooLarge`).
+   */
+  profile?: 'product' | 'banner';
 }
 
 /**
@@ -128,7 +160,7 @@ export interface OptimizeOptions {
  */
 export async function optimizeImage(
   file: Blob,
-  { processor = browserImageProcessor, subtle }: OptimizeOptions = {},
+  { processor = browserImageProcessor, subtle, profile = 'product' }: OptimizeOptions = {},
 ): Promise<OptimizedImage> {
   if (file.size === 0) throw new MediaClientError('decode', 'El archivo está vacío');
   const mime = sniffImageMime(await readBytes(file.slice(0, 32)));
@@ -144,18 +176,36 @@ export async function optimizeImage(
   if (!(dims.width > 0 && dims.height > 0)) {
     throw new MediaClientError('decode', 'La imagen no tiene dimensiones válidas');
   }
-  const plan = planOptimization({
+  const banner = profile === 'banner';
+  const limit = banner ? BANNER_MAX_BYTES : MEDIA_MAX_BYTES;
+  const planInput = {
     mimeType: mime,
     width: dims.width,
     height: dims.height,
     sizeBytes: file.size,
-  });
+  };
+  const plan = banner ? planBannerOptimization(planInput) : planOptimization(planInput);
   let blob: Blob;
   let outMime: MediaMime;
   let size = dims;
   if (plan === 'keep') {
     blob = new Blob([file], { type: mime });
     outMime = mime;
+  } else if (banner) {
+    const geometry = bannerGeometry(dims.width, dims.height);
+    size = geometry.size;
+    let best: Blob | null = null;
+    try {
+      for (const quality of BANNER_WEBP_QUALITIES) {
+        const encoded = await processor.encodeWebp(file, size, quality, geometry.crop);
+        best = new Blob([encoded], { type: 'image/webp' });
+        if (best.size <= limit) break;
+      }
+    } catch {
+      throw new MediaClientError('decode', 'No se pudo optimizar la imagen');
+    }
+    blob = best as Blob;
+    outMime = 'image/webp';
   } else {
     size = fitWithin(dims.width, dims.height, MEDIA_MAX_SIDE_PX);
     try {
@@ -166,8 +216,13 @@ export async function optimizeImage(
     }
     outMime = 'image/webp';
   }
-  if (blob.size > MEDIA_MAX_BYTES) {
-    throw new MediaClientError('tooLarge', 'La imagen supera 5 MiB incluso optimizada');
+  if (blob.size > limit) {
+    throw new MediaClientError(
+      'tooLarge',
+      banner
+        ? 'La imagen supera 1 MiB incluso optimizada'
+        : 'La imagen supera 5 MiB incluso optimizada',
+    );
   }
   if (blob.size === 0) throw new MediaClientError('decode', 'La optimización no produjo datos');
   return {

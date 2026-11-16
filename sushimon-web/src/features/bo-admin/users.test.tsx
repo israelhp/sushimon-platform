@@ -412,10 +412,10 @@ describe('Roles y permisos', () => {
   it('lista los roles con empleados asignados; admin es de solo lectura', async () => {
     const user = userEvent.setup();
     await renderRoles();
-    expect(await screen.findByText('4 roles · 43 permisos')).toBeVisible();
+    expect(await screen.findByText('4 roles · 46 permisos')).toBeVisible();
     expect(screen.getByText('Sistema · solo lectura')).toBeVisible();
     // Admin: todo el catálogo y sin edición.
-    expect(screen.getByText(/43 de 43 permisos/)).toBeVisible();
+    expect(screen.getByText(/46 de 46 permisos/)).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Permisos de Administrador general' }));
     expect(screen.getByText(/rol del sistema/)).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Editar permisos' })).toBeNull();
@@ -427,7 +427,7 @@ describe('Roles y permisos', () => {
   it('edita los permisos de un rol, avisa a cuántos empleados afecta y guarda', async () => {
     const user = userEvent.setup();
     await renderRoles();
-    await screen.findByText('4 roles · 43 permisos');
+    await screen.findByText('4 roles · 46 permisos');
     await user.click(screen.getByRole('button', { name: 'Permisos de Cocina' }));
     await user.click(screen.getByRole('button', { name: 'Editar permisos' }));
     // Cocina: 3 empleados activos con el rol (u5, u6, u7; u10 está pendiente pero activo → 4).
@@ -441,13 +441,13 @@ describe('Roles y permisos', () => {
     expect(await screen.findByText('Permisos de Cocina actualizados')).toBeVisible();
     // Vuelve a modo lectura y el cambio persiste.
     expect(await screen.findByRole('button', { name: 'Editar permisos' })).toBeVisible();
-    expect(screen.getByText(/6 de 43 permisos/)).toBeVisible();
+    expect(screen.getByText(/\b6 de 46 permisos/)).toBeVisible();
   });
 
   it('no deja guardar sin cambios y exige al menos un permiso', async () => {
     const user = userEvent.setup();
     await renderRoles();
-    await screen.findByText('4 roles · 43 permisos');
+    await screen.findByText('4 roles · 46 permisos');
     await user.click(screen.getByRole('button', { name: 'Permisos de Empleado' }));
     await user.click(screen.getByRole('button', { name: 'Editar permisos' }));
     expect(screen.getByRole('button', { name: 'Guardar permisos' })).toBeDisabled();
@@ -466,7 +466,7 @@ describe('Roles y permisos', () => {
   it('el encargado ve los permisos pero no puede editarlos', async () => {
     const user = userEvent.setup();
     await renderRoles('manager');
-    await screen.findByText('4 roles · 43 permisos');
+    await screen.findByText('4 roles · 46 permisos');
     await user.click(screen.getByRole('button', { name: 'Permisos de Cocina' }));
     expect(screen.getByText(/puede ver los permisos, pero no editarlos/)).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Editar permisos' })).toBeNull();
