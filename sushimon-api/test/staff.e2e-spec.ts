@@ -332,7 +332,7 @@ describe('Personal, roles y permisos (e2e)', () => {
       expect((q.body as { total: number }).total).toBe(1);
     });
 
-    it('roles y permisos: encargado (roles.read) lee; el catálogo tiene 43 permisos agrupados', async () => {
+    it('roles y permisos: encargado (roles.read) lee; el catálogo tiene 46 permisos agrupados', async () => {
       const auth = await as('manager', [BRANCH_A]);
       const roles = await http().get('/v1/admin/roles').set('Authorization', auth).expect(200);
       const items = (roles.body as { items: { code: string; isSystem: boolean }[] }).items;
@@ -346,7 +346,7 @@ describe('Personal, roles y permisos (e2e)', () => {
       await http().get(`/v1/admin/roles/${MISSING}`).set('Authorization', auth).expect(404);
       const cat = await http().get('/v1/admin/permissions').set('Authorization', auth).expect(200);
       const modules = (cat.body as { items: { permissions: unknown[] }[] }).items;
-      expect(modules.reduce((n, m) => n + m.permissions.length, 0)).toBe(43);
+      expect(modules.reduce((n, m) => n + m.permissions.length, 0)).toBe(46);
     });
   });
 

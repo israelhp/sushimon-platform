@@ -1,6 +1,11 @@
 import { HttpStatus } from '@nestjs/common';
 import { codedException } from '../common/errors/coded-exception.js';
-import type { AdminMediaAssetView, MediaAssetRow, MediaStorageMode } from './media.types.js';
+import type {
+  AdminMediaAssetView,
+  MediaAssetRow,
+  MediaKind,
+  MediaStorageMode,
+} from './media.types.js';
 
 /** Reglas puras de medios (F14): MIME, tamaño, checksum, clave de objeto y firma real. Sin I/O. */
 
@@ -12,6 +17,20 @@ const EXTENSION: Readonly<Record<AllowedMime, string>> = {
   'image/png': 'png',
   'image/webp': 'webp',
   'image/avif': 'avif',
+};
+
+/** Tope de tamaño de las imágenes de banner (F16): 1 MiB; el resto de tipos usa `MEDIA_MAX_BYTES`. */
+export const BANNER_IMAGE_MAX_BYTES = 1_048_576;
+
+/** Tamaño máximo por tipo: nunca supera el global configurado; los banners, además, 1 MiB (CHECK `media_assets_banner_size_chk`). */
+export function maxBytesFor(kind: MediaKind, globalMax: number): number {
+  return kind === 'BANNER_IMAGE' ? Math.min(globalMax, BANNER_IMAGE_MAX_BYTES) : globalMax;
+}
+
+/** Prefijo de la clave de objeto por tipo (CHECK `media_assets_key_prefix_chk`): lo decide el tipo, jamás el cliente. */
+const KEY_PREFIX: Readonly<Record<MediaKind, string>> = {
+  PRODUCT_IMAGE: 'products',
+  BANNER_IMAGE: 'banners',
 };
 
 /** Cabecera de caché del objeto: la clave nunca se reutiliza, así que es inmutable. */
@@ -41,7 +60,11 @@ const coded = (status: HttpStatus, code: string, message: string) =>
 export const mediaNotFound = () =>
   coded(HttpStatus.NOT_FOUND, 'MEDIA_NOT_FOUND', 'Medio no encontrado');
 export const mediaInUse = () =>
-  coded(HttpStatus.CONFLICT, 'MEDIA_IN_USE', 'El medio está en uso por uno o más productos');
+  coded(
+    HttpStatus.CONFLICT,
+    'MEDIA_IN_USE',
+    'El medio está en uso por uno o más productos o banners',
+  );
 export const uploadExpired = () =>
   coded(HttpStatus.GONE, 'MEDIA_UPLOAD_EXPIRED', 'La subida caducó; solicita una nueva');
 export const objectMissing = () =>
@@ -154,10 +177,18 @@ export function isValidObjectKey(key: string): boolean {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/** `products/<yyyy>/<uuid>.<ext>`: extensión del MIME verificado, jamás del nombre del cliente. */
-export function buildObjectKey(mime: AllowedMime, uuid: string, now: Date): string {
+/**
+ * `<products|banners>/<yyyy>/<uuid>.<ext>`: el prefijo lo decide el tipo y la extensión el MIME verificado, jamás el
+ * nombre del archivo ni el cliente.
+ */
+export function buildObjectKey(
+  mime: AllowedMime,
+  uuid: string,
+  now: Date,
+  kind: MediaKind = 'PRODUCT_IMAGE',
+): string {
   if (!UUID_RE.test(uuid)) throw new Error('uuid inválido para la clave de objeto');
-  const key = `products/${now.getUTCFullYear()}/${uuid}.${EXTENSION[mime]}`;
+  const key = `${KEY_PREFIX[kind]}/${now.getUTCFullYear()}/${uuid}.${EXTENSION[mime]}`;
   if (!isValidObjectKey(key)) throw new Error('clave de objeto inválida');
   return key;
 }

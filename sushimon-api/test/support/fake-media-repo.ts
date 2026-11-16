@@ -1,6 +1,7 @@
 import type { MediaRepository, MediaTx } from '../../src/media/media.repository.js';
 import type {
   MediaAssetRow,
+  MediaBannerUsageRow,
   MediaPageFilter,
   MediaUsageRow,
   NewPendingAsset,
@@ -26,6 +27,8 @@ export class FakeMediaRepo {
   calls: string[] = [];
   /** Usos de un asset (de `product_media`). Por defecto, ninguno. */
   usageOf: (assetId: string) => MediaUsageRow[] = () => [];
+  /** Usos de un asset por banners (F16, `banners.image_asset_id`). Por defecto, ninguno. */
+  bannerUsageOf: (assetId: string) => MediaBannerUsageRow[] = () => [];
   failTransactionWith: unknown = null;
   /** La próxima llamada a `markReady` lanza este error (carrera 23505). */
   failNextMarkReadyWith: unknown = null;
@@ -55,7 +58,10 @@ export class FakeMediaRepo {
   }
 
   private withUsage(row: MediaAssetRow): MediaAssetRow {
-    return { ...row, usageCount: this.usageOf(row.id).length };
+    return {
+      ...row,
+      usageCount: this.usageOf(row.id).length + this.bannerUsageOf(row.id).length,
+    };
   }
 
   async transaction<T>(fn: (tx: MediaTx) => Promise<T>): Promise<T> {
@@ -217,6 +223,11 @@ export class FakeMediaRepo {
   findUsages(assetId: string): Promise<MediaUsageRow[]> {
     this.calls.push('findUsages');
     return Promise.resolve(this.usageOf(assetId));
+  }
+
+  findBannerUsages(assetId: string): Promise<MediaBannerUsageRow[]> {
+    this.calls.push('findBannerUsages');
+    return Promise.resolve(this.bannerUsageOf(assetId));
   }
 
   asRepository = (): MediaRepository => this as unknown as MediaRepository;

@@ -226,6 +226,26 @@ describe('Arquitectura: toda ruta /v1/admin exige StaffGuard y MfaGuard', () => 
     }
   });
 
+  it('las 6 rutas admin de banners (F16) están registradas y protegidas', async () => {
+    const { moduleRef, controllers, StaffGuard, MfaGuard } = await loadApp();
+    try {
+      const routes = adminRoutes(controllers).filter((r) =>
+        r.label.startsWith('AdminBannersController.'),
+      );
+      expect(routes.map((r) => r.label).sort()).toEqual([
+        'AdminBannersController.create (/admin/banners)',
+        'AdminBannersController.get (/admin/banners/:id)',
+        'AdminBannersController.list (/admin/banners)',
+        'AdminBannersController.reorder (/admin/banners/order)',
+        'AdminBannersController.update (/admin/banners/:id)',
+        'AdminBannersController.updateStatus (/admin/banners/:id/status)',
+      ]);
+      expect(violations(routes, StaffGuard, MfaGuard)).toEqual([]);
+    } finally {
+      await moduleRef.close();
+    }
+  });
+
   it('prueba negativa: una ruta admin sin @RequireStaff se detecta', async () => {
     const { moduleRef, StaffGuard, MfaGuard } = await loadApp();
     try {

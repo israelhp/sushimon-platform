@@ -46,7 +46,8 @@ export class FakeProductsRepo {
   failNextWriteWith: unknown = null;
   failTransactionWith: unknown = null;
   /** F14: assets (`media_assets`) visibles para adjuntar y para enlazar URL de R2. */
-  assetSource: () => Iterable<{ id: string; status: string; objectKey: string }> = () => [];
+  assetSource: () => Iterable<{ id: string; status: string; objectKey: string; kind?: string }> =
+    () => [];
   private counter = 1000;
 
   /** Ids con forma de UUID: las rutas de F14 validan `:mediaId` con ParseUUIDPipe. */
@@ -253,10 +254,10 @@ export class FakeProductsRepo {
   findAsset(
     _tx: ProductTx,
     id: string,
-  ): Promise<{ id: string; status: string; objectKey: string } | null> {
+  ): Promise<{ id: string; status: string; kind: string; objectKey: string } | null> {
     this.calls.push('findAsset');
     const found = [...this.assetSource()].find((a) => a.id === id);
-    return Promise.resolve(found ? { ...found } : null);
+    return Promise.resolve(found ? { kind: 'PRODUCT_IMAGE', ...found } : null);
   }
 
   findReadyAssetsByKeys(
@@ -266,7 +267,12 @@ export class FakeProductsRepo {
     this.calls.push('findReadyAssetsByKeys');
     return Promise.resolve(
       [...this.assetSource()]
-        .filter((a) => a.status === 'READY' && keys.includes(a.objectKey))
+        .filter(
+          (a) =>
+            a.status === 'READY' &&
+            (a.kind ?? 'PRODUCT_IMAGE') === 'PRODUCT_IMAGE' &&
+            keys.includes(a.objectKey),
+        )
         .map((a) => ({ id: a.id, objectKey: a.objectKey })),
     );
   }

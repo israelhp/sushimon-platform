@@ -1,6 +1,6 @@
 import type { GrantScope, Grants, StaffContext } from '../../src/identity/identity.types.js';
 
-/** Catálogo de 43 permisos (spec 006) y matriz de roles sembrada por la migración 0005. */
+/** Catálogo de 46 permisos (spec 006 + banners.* de F16) y matriz de roles sembrada por la migración 0005. */
 export const ALL_PERMISSIONS = [
   'dashboard.read',
   'branches.read',
@@ -22,6 +22,9 @@ export const ALL_PERMISSIONS = [
   'promotions.read',
   'promotions.create',
   'promotions.update',
+  'banners.read',
+  'banners.create',
+  'banners.update',
   'orders.read',
   'orders.accept',
   'orders.reject',

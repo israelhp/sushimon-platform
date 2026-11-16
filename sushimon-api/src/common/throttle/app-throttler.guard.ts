@@ -49,6 +49,12 @@ export const PROMOTION_WRITE_THROTTLE = {
   actor: { limit: 30, ttl: 60_000 },
 };
 
+/** Escrituras de banners (F16): 30/min por ACTOR autenticado y, además, 60/min por IP (NAT compartido). */
+export const BANNER_WRITE_THROTTLE = {
+  default: { limit: 60, ttl: 60_000 },
+  actor: { limit: 30, ttl: 60_000 },
+};
+
 /** Throttler adicional «por actor»: solo cuenta en las rutas que declaran un límite `actor`. */
 export const ACTOR_THROTTLER = 'actor';
 

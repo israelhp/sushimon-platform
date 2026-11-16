@@ -512,13 +512,13 @@ describe.skipIf(!url)('Personal y RBAC contra PostgreSQL real', () => {
       ).toHaveLength(1);
     });
 
-    it('lista de roles con empleados activos asignados y catálogo de 43 permisos', async () => {
+    it('lista de roles con empleados activos asignados y catálogo de 46 permisos', async () => {
       const a = await newBranch();
       await mkStaff('kitchen', { branchId: a.id });
       const { items } = await roles.list();
       expect(items.find((r) => r.code === 'kitchen')?.assignedStaffCount).toBeGreaterThanOrEqual(1);
       const catalog = await roles.permissions();
-      expect(catalog.items.reduce((n, m) => n + m.permissions.length, 0)).toBe(43);
+      expect(catalog.items.reduce((n, m) => n + m.permissions.length, 0)).toBe(46);
     });
   });
 });

@@ -13,14 +13,14 @@ import {
 } from 'class-validator';
 import { PageQuery, toBoolean } from '../../products/dto/product-requests.dto.js';
 
-export const MEDIA_KINDS = ['PRODUCT_IMAGE'] as const;
+export const MEDIA_KINDS = ['PRODUCT_IMAGE', 'BANNER_IMAGE'] as const;
 export const MEDIA_STATUSES = ['PENDING', 'READY'] as const;
 
 /** Forma del intent. El MIME y el tamaño fallan con 422 (regla de negocio), no con 400: aquí solo la forma. */
 export class CreateMediaUploadIntentRequest {
   @ApiProperty({ type: String, enum: MEDIA_KINDS })
   @IsIn(MEDIA_KINDS)
-  kind!: 'PRODUCT_IMAGE';
+  kind!: 'PRODUCT_IMAGE' | 'BANNER_IMAGE';
 
   @ApiProperty({ type: String, maxLength: 100 })
   @IsString()
@@ -48,7 +48,7 @@ export class ListAdminMediaQuery extends PageQuery {
   @ApiPropertyOptional({ type: String, enum: MEDIA_KINDS })
   @IsOptional()
   @IsIn(MEDIA_KINDS)
-  kind?: 'PRODUCT_IMAGE';
+  kind?: 'PRODUCT_IMAGE' | 'BANNER_IMAGE';
 
   @ApiPropertyOptional({ type: String, enum: MEDIA_STATUSES })
   @IsOptional()

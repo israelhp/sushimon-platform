@@ -2,7 +2,8 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class AdminMediaAssetDto {
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;
-  @ApiProperty({ type: String, enum: ['PRODUCT_IMAGE'] }) kind!: 'PRODUCT_IMAGE';
+  @ApiProperty({ type: String, enum: ['PRODUCT_IMAGE', 'BANNER_IMAGE'] })
+  kind!: 'PRODUCT_IMAGE' | 'BANNER_IMAGE';
   @ApiProperty({ type: String, enum: ['PENDING', 'READY'] }) status!: 'PENDING' | 'READY';
   @ApiProperty({ type: String, format: 'uri', nullable: true }) url!: string | null;
   @ApiProperty({ type: String }) mimeType!: string;
@@ -21,8 +22,19 @@ export class AdminMediaUsageDto {
   @ApiProperty({ type: String, format: 'uuid' }) productMediaId!: string;
 }
 
+export class AdminMediaBannerUsageDto {
+  @ApiProperty({ type: String, format: 'uuid' }) bannerId!: string;
+  @ApiProperty({ type: String }) bannerCode!: string;
+}
+
 export class AdminMediaAssetDetailDto extends AdminMediaAssetDto {
   @ApiProperty({ type: () => [AdminMediaUsageDto] }) usages!: AdminMediaUsageDto[];
+  @ApiProperty({
+    type: () => [AdminMediaBannerUsageDto],
+    required: false,
+    description: 'F16: banners que usan el asset.',
+  })
+  bannerUsages!: AdminMediaBannerUsageDto[];
 }
 
 export class AdminMediaAssetPageDto {

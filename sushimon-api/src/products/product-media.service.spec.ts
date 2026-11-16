@@ -48,6 +48,8 @@ function setup(allowedHosts: string[] = []) {
     { id: A2, status: 'READY', objectKey: 'products/2026/a2.webp' },
     { id: A3, status: 'READY', objectKey: 'products/2026/a3.jpg' },
     { id: PENDING, status: 'PENDING', objectKey: 'products/2026/pend.png' },
+    // F16: imagen de banner READY; nunca debe poder usarse en un producto.
+    { id: BANNER, status: 'READY', kind: 'BANNER_IMAGE', objectKey: 'banners/2026/b1.webp' },
   ];
   h.repo.assetSource = () => assets;
   const audit: Audit[] = [];
@@ -75,6 +77,32 @@ function setup(allowedHosts: string[] = []) {
   );
   return { media, products, audit, urls, ...h };
 }
+
+const BANNER = pid(66);
+
+describe('F16: un asset BANNER_IMAGE no se usa en productos (regresión M1)', () => {
+  it('attach por assetId => 422 PRODUCT_MEDIA_INVALID sin efecto ni auditoría', async () => {
+    const s = setup();
+    const e = (await failure(s.media.attach(staff(), P, { assetId: BANNER }))) as {
+      response: { violations: { path: string }[] };
+    };
+    expect(status(e)).toBe(422);
+    expect(code(e)).toBe('PRODUCT_MEDIA_INVALID');
+    expect(e.response.violations[0]?.path).toBe('assetId');
+    expect(s.repo.media.get(P) ?? []).toEqual([]);
+    expect(s.audit).toEqual([]);
+  });
+
+  it('PATCH media con la URL pública banners/... => 422 y el producto no cambia', async () => {
+    const s = setup();
+    const e = await failure(
+      s.products.update(staff(), P, { media: [{ url: `${BASE}/banners/2026/b1.webp` }] }),
+    );
+    expect(status(e)).toBe(422);
+    expect(code(e)).toBe('PRODUCT_MEDIA_INVALID');
+    expect(s.repo.media.get(P)).toEqual([]);
+  });
+});
 
 describe('ProductMediaService.attach', () => {
   it('adjunta un READY: media_url pública estable, asset_id, sortOrder = tamaño actual y auditoría', async () => {

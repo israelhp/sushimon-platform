@@ -99,7 +99,7 @@ export function normalizeCode(raw: string | null | undefined): string | null {
 // eslint-disable-next-line no-control-regex
 const FORBIDDEN_TEXT = /[\u0000\u200E\u200F\u202A-\u202E\u2066-\u2069]/;
 
-function assertCleanText(field: string, raw: string): void {
+export function assertCleanText(field: string, raw: string): void {
   if (FORBIDDEN_TEXT.test(raw)) fail400(`${field} contiene caracteres no permitidos`);
 }
 
