@@ -4,6 +4,7 @@ import { Prisma } from '../generated/prisma/client.js';
 import type {
   MediaAssetRow,
   MediaKind,
+  MediaBannerUsageRow,
   MediaPageFilter,
   MediaStatus,
   MediaUsageRow,
@@ -26,7 +27,7 @@ const ASSET_SELECT = {
   confirmedAt: true,
   expiresAt: true,
   // Conteo de usos en la MISMA consulta (sin N+1).
-  _count: { select: { productMedia: true } },
+  _count: { select: { productMedia: true, banners: true } },
 } satisfies Prisma.MediaAssetSelect;
 
 type DbAsset = Prisma.MediaAssetGetPayload<{ select: typeof ASSET_SELECT }>;
@@ -44,7 +45,7 @@ const toRow = (a: DbAsset): MediaAssetRow => ({
   createdAt: a.createdAt,
   confirmedAt: a.confirmedAt,
   expiresAt: a.expiresAt,
-  usageCount: a._count.productMedia,
+  usageCount: a._count.productMedia + a._count.banners,
 });
 
 /** Único punto de acceso a datos de `app.media_assets`. */
@@ -170,8 +171,12 @@ export class MediaRepository {
     const where: Prisma.MediaAssetWhereInput = {
       ...(filter.kind ? { kind: filter.kind } : {}),
       ...(filter.status ? { status: filter.status } : {}),
-      ...(filter.unreferenced === true ? { productMedia: { none: {} } } : {}),
-      ...(filter.unreferenced === false ? { productMedia: { some: {} } } : {}),
+      ...(filter.unreferenced === true
+        ? { productMedia: { none: {} }, banners: { none: {} } }
+        : {}),
+      ...(filter.unreferenced === false
+        ? { OR: [{ productMedia: { some: {} } }, { banners: { some: {} } }] }
+        : {}),
     };
     const [rows, total] = await Promise.all([
       this.prisma.mediaAsset.findMany({
@@ -199,5 +204,16 @@ export class MediaRepository {
       productName: r.product.name,
       productMediaId: r.id,
     }));
+  }
+
+  /** Banners (F16) que usan el asset como imagen (una consulta; acotada). */
+  async findBannerUsages(assetId: string): Promise<MediaBannerUsageRow[]> {
+    const rows = await this.prisma.banner.findMany({
+      where: { imageAssetId: assetId },
+      select: { id: true, code: true },
+      orderBy: [{ code: 'asc' }, { id: 'asc' }],
+      take: 500,
+    });
+    return rows.map((r) => ({ bannerId: r.id, bannerCode: r.code }));
   }
 }

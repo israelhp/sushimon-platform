@@ -43,7 +43,10 @@ export class MediaQueryService {
   async get(id: string): Promise<AdminMediaAssetDetailView> {
     const row = await this.repo.findById(id);
     if (!row) throw mediaNotFound();
-    const usages = await this.repo.findUsages(id);
-    return { ...this.view(row), usages };
+    const [usages, bannerUsages] = await Promise.all([
+      this.repo.findUsages(id),
+      this.repo.findBannerUsages(id),
+    ]);
+    return { ...this.view(row), usages, bannerUsages };
   }
 }

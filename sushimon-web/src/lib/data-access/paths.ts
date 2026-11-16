@@ -29,6 +29,8 @@ export const paths = {
   categories: () => '/v1/catalog/categories',
   /** F15 (contrato): promociones y Happy Hour vigentes o próximas de UNA sucursal (`?branchId=&state=live|upcoming`). Público, informativo. */
   storePromotions: () => '/v1/store/promotions',
+  /** F16 (contrato): banners publicados del Inicio (`?branchId&locale=es|en`). Público, solo lectura, caché ≤ 30 s. */
+  storeBanners: () => '/v1/store/banners',
   orders: () => '/v1/orders',
   order: (id: string) => `/v1/orders/${seg(id)}`,
   orderLookup: () => '/v1/orders/lookup',
@@ -64,6 +66,11 @@ export const paths = {
   adminPromotions: () => '/v1/admin/promotions',
   adminPromotion: (id: string) => `/v1/admin/promotions/${seg(id)}`,
   adminPromotionStatus: (id: string) => `/v1/admin/promotions/${seg(id)}/status`,
+  /** F16 (contrato): banners (`banners.read|create|update` + aal2; `ALL` y el reordenado exigen alcance global). Sin borrado. */
+  adminBanners: () => '/v1/admin/banners',
+  adminBannersOrder: () => '/v1/admin/banners/order',
+  adminBanner: (id: string) => `/v1/admin/banners/${seg(id)}`,
+  adminBannerStatus: (id: string) => `/v1/admin/banners/${seg(id)}/status`,
   /** F07 (contrato): administración de sucursales (JWT + `branches.*` + aal2). */
   adminBranches: () => '/v1/admin/branches',
   adminBranch: (id: string) => `/v1/admin/branches/${seg(id)}`,

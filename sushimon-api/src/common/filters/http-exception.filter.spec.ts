@@ -188,6 +188,19 @@ describe('AllExceptionsFilter', () => {
     expect(JSON.stringify(res.json.mock.calls[0]?.[0])).not.toMatch(/Signature|secret|XYZ|r2\./);
   });
 
+  it('5xx: BANNERS_BUSY es público (F16) con su mensaje fijo y sin violaciones internas', () => {
+    const res = fakeRes();
+    new AllExceptionsFilter().catch(
+      codedException(503, 'BANNERS_BUSY', 'reintenta', [
+        { path: 'interno', code: 'X', message: 'detalle' },
+      ]),
+      hostWith(res),
+    );
+    const body = res.json.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(body).toMatchObject({ code: 'BANNERS_BUSY', message: 'reintenta' });
+    expect(body).not.toHaveProperty('violations');
+  });
+
   it('5xx: MODIFIERS_BUSY es público (F12)', () => {
     const res = fakeRes();
     new AllExceptionsFilter().catch(

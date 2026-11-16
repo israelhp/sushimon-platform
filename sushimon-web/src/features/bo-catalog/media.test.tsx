@@ -551,7 +551,7 @@ describe('F14 · biblioteca de medios', () => {
     expect(within(confirm).getByText(/no se puede deshacer/)).toBeVisible();
     await userEvent.click(within(confirm).getByRole('button', { name: 'Eliminar' }));
     expect(await screen.findByText('Imagen eliminada')).toBeVisible();
-    expect(api().store.mediaAssets).toHaveLength(2);
+    expect(api().store.mediaAssets.filter((a) => a.kind === 'PRODUCT_IMAGE')).toHaveLength(2);
   });
 
   it('MEDIA_IN_USE (409): mensaje claro si otro producto la usó mientras tanto', async () => {

@@ -235,21 +235,21 @@ export class ProductsRepository {
   async findAsset(
     tx: ProductTx,
     id: string,
-  ): Promise<{ id: string; status: string; objectKey: string } | null> {
+  ): Promise<{ id: string; status: string; kind: string; objectKey: string } | null> {
     return tx.mediaAsset.findUnique({
       where: { id },
-      select: { id: true, status: true, objectKey: true },
+      select: { id: true, status: true, kind: true, objectKey: true },
     });
   }
 
-  /** Assets READY por clave de objeto (una consulta): enlace automático de URL de R2 en `PATCH media`. */
+  /** Assets READY `PRODUCT_IMAGE` por clave de objeto (una consulta; un `BANNER_IMAGE` nunca se enlaza a un producto): enlace automático de URL de R2 en `PATCH media`. */
   findReadyAssetsByKeys(
     tx: ProductTx,
     keys: readonly string[],
   ): Promise<{ id: string; objectKey: string }[]> {
     if (keys.length === 0) return Promise.resolve([]);
     return tx.mediaAsset.findMany({
-      where: { objectKey: { in: [...keys] }, status: 'READY' },
+      where: { objectKey: { in: [...keys] }, status: 'READY', kind: 'PRODUCT_IMAGE' },
       select: { id: true, objectKey: true },
     });
   }

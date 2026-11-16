@@ -52,6 +52,8 @@ export class ProductMediaService {
       await this.lock(tx, productId);
       const asset = await this.repo.findAsset(tx, input.assetId);
       if (!asset) throw mediaNotFound();
+      if (asset.kind !== 'PRODUCT_IMAGE')
+        throw mediaInvalid('assetId', 'El medio no es una imagen de producto');
       if (asset.status !== 'READY') throw assetNotReady();
       const current = await this.repo.findMediaInTx(tx, productId);
       if (current.some((m) => m.assetId === asset.id)) throw alreadyAttached();

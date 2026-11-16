@@ -2,6 +2,7 @@ import type { MockRoutes } from '@/lib/data-access/mock-client';
 import type { MockContext, MockStore } from '../store';
 import * as account from './account';
 import * as admin from './backoffice-admin';
+import * as banners from './banners';
 import * as bo from './backoffice';
 import * as branches from './branches';
 import * as branchProducts from './branch-products';
@@ -39,6 +40,8 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'GET /v1/store/menu': branchProducts.getStoreBranchMenu,
   // F15: promociones y Happy Hour de una sucursal (contrato, público)
   'GET /v1/store/promotions': promotions.listStorePromotions,
+  // F16: banners publicados del Inicio por sucursal e idioma (contrato, público)
+  'GET /v1/store/banners': banners.listStoreBanners,
   'POST /v1/orders': orders.createOrder,
   'POST /v1/orders/lookup': orders.lookupOrder,
   'GET /v1/orders/:id': orders.getOrder,
@@ -133,6 +136,13 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'GET /v1/admin/promotions/:id': promotions.getAdminPromotion,
   'PATCH /v1/admin/promotions/:id': promotions.updateAdminPromotion,
   'PATCH /v1/admin/promotions/:id/status': promotions.updateAdminPromotionStatus,
+  // F16: banners del Inicio (contrato)
+  'GET /v1/admin/banners': banners.listAdminBanners,
+  'POST /v1/admin/banners': banners.createAdminBanner,
+  'PUT /v1/admin/banners/order': banners.reorderAdminBanners,
+  'GET /v1/admin/banners/:id': banners.getAdminBanner,
+  'PATCH /v1/admin/banners/:id': banners.updateAdminBanner,
+  'PATCH /v1/admin/banners/:id/status': banners.updateAdminBannerStatus,
   // F12: grupos y opciones de modificadores y su asociación a productos (contrato)
   'GET /v1/admin/modifier-groups': modifiers.listAdminModifierGroups,
   'POST /v1/admin/modifier-groups': modifiers.createAdminModifierGroup,

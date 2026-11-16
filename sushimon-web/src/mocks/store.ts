@@ -17,6 +17,7 @@ import type { BranchHoursDay } from '@/lib/data-access/models';
 import type { CategoryRecord } from './fixtures/categories';
 import type { ClosureRecord } from './fixtures/schedule';
 import type { DeliverySettingsRecord } from './fixtures/delivery';
+import type { BannerRecord } from './fixtures/banners';
 import type { PromotionRecord } from './fixtures/promotions';
 import type { RiderSeed } from './fixtures/staff';
 import type { Clock } from './clock';
@@ -28,7 +29,7 @@ import type { MockScenario } from './scenarios';
  * el historial de días anteriores lo genera `factories/history.ts` de forma determinista.
  * NUNCA contiene PAN completo, CVV ni PIN: de una tarjeta solo marca, últimos 4 y referencia.
  */
-export const MOCK_STORE_VERSION = 12;
+export const MOCK_STORE_VERSION = 13;
 
 /**
  * Producto del mock. Los campos F11 (`id`…`updatedAt`) reproducen `app.products` + `app.product_media`; el bloque «SIMULADO»
@@ -62,7 +63,8 @@ export interface ProductRecord {
  */
 export interface MediaAssetRecord {
   id: string;
-  kind: 'PRODUCT_IMAGE';
+  /** F16: `BANNER_IMAGE` (clave `banners/…`, ≤ 1 MiB) además de `PRODUCT_IMAGE`. */
+  kind: 'PRODUCT_IMAGE' | 'BANNER_IMAGE';
   status: 'PENDING' | 'READY';
   mimeType: string;
   sizeBytes: number;
@@ -211,6 +213,8 @@ export interface MockStore {
   modifiersBusy?: number;
   /** F15: simulación DETERMINISTA de `PROMOTIONS_BUSY`: nº de escrituras de promociones que fallarán con 503 antes de que una funcione. */
   promotionsBusy?: number;
+  /** F16: simulación DETERMINISTA de `BANNERS_BUSY`: nº de escrituras de banners (alta, edición, estado, reordenado) y de lecturas públicas que fallarán con 503 antes de que una funcione. */
+  bannersBusy?: number;
   /**
    * F02: simula que el reinicio de MFA no está disponible (falta la clave de servicio del servidor ⇒ 503
    * `MFA_RESET_UNAVAILABLE`). Opcional: ausente/false = disponible. Solo existe en el mock.
@@ -232,6 +236,8 @@ export interface MockStore {
   productModifierGroups: Record<string, string[]>;
   /** F15: promociones y cupones (alcance explícito, `version` para concurrencia optimista). */
   promotions: PromotionRecord[];
+  /** F16: banners del Inicio (estados derivados; `version` para concurrencia optimista; prioridad no única). */
+  banners: BannerRecord[];
   orders: Order[];
   staff: StaffRecord[];
   roles: RoleRecord[];
@@ -262,6 +268,7 @@ export interface MockStore {
     category: number;
     menuCategory: number;
     promotion: number;
+    banner: number;
     user: number;
     job: number;
     quote: number;

@@ -2,6 +2,7 @@ import {
   ALLOWED_MIME_TYPES,
   baseContentType,
   buildObjectKey,
+  maxBytesFor,
   checksumHexToBase64,
   detectImageType,
   isValidObjectKey,
@@ -78,6 +79,30 @@ describe('validateIntent', () => {
   });
 });
 
+describe('maxBytesFor (tope por tipo, F16)', () => {
+  it('BANNER_IMAGE: 1 MiB como máximo, aunque el global sea mayor; nunca sube el global', () => {
+    expect(maxBytesFor('BANNER_IMAGE', 5_242_880)).toBe(1_048_576);
+    expect(maxBytesFor('BANNER_IMAGE', 500_000)).toBe(500_000);
+    expect(maxBytesFor('PRODUCT_IMAGE', 5_242_880)).toBe(5_242_880);
+  });
+  it('validateIntent con el tope del banner: exactamente 1 MiB pasa; un byte más => 422 MEDIA_TOO_LARGE', () => {
+    const input = (sizeBytes: number) => ({
+      mimeType: 'image/webp',
+      sizeBytes,
+      checksumSha256: 'a'.repeat(64),
+    });
+    const max = maxBytesFor('BANNER_IMAGE', 5_242_880);
+    expect(validateIntent(input(1_048_576), max)).toBe('image/webp');
+    expect(() => validateIntent(input(1_048_577), max)).toThrowError(/supera el máximo/);
+  });
+  it('el MIME sigue siendo la lista blanca de F14 (SVG y GIF rechazados) para banners', () => {
+    for (const mimeType of ['image/svg+xml', 'image/gif'])
+      expect(() =>
+        validateIntent({ mimeType, sizeBytes: 100, checksumSha256: 'a'.repeat(64) }, 1_048_576),
+      ).toThrow();
+  });
+});
+
 describe('checksumHexToBase64', () => {
   it('convierte el hex de SHA-256 al base64 que firma x-amz-checksum-sha256', () => {
     // SHA-256("") = e3b0c442...b855
@@ -104,6 +129,16 @@ describe('buildObjectKey', () => {
     ['image/avif', 'avif'],
   ] as const)('%s => extensión %s derivada del MIME', (mime, ext) => {
     expect(buildObjectKey(mime, uuid, now)).toBe(`products/2026/${uuid}.${ext}`);
+  });
+
+  it('BANNER_IMAGE: prefijo banners/ decidido por el tipo (F16); el tipo por defecto sigue siendo products/', () => {
+    expect(buildObjectKey('image/webp', uuid, now, 'BANNER_IMAGE')).toBe(
+      `banners/2026/${uuid}.webp`,
+    );
+    expect(buildObjectKey('image/webp', uuid, now, 'PRODUCT_IMAGE')).toBe(
+      `products/2026/${uuid}.webp`,
+    );
+    expect(isValidObjectKey(buildObjectKey('image/png', uuid, now, 'BANNER_IMAGE'))).toBe(true);
   });
 
   it('cumple la regla del CHECK de BD y rechaza UUID que no lo sea (nunca el nombre del cliente)', () => {

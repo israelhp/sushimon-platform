@@ -17,6 +17,7 @@ import { DELIVERY_SETTINGS_SEEDS, DELIVERY_ZONE_SEEDS, seedDeliveryFee } from '.
 import { HIDDEN_DEMO_SEEDS, PRODUCT_SEEDS } from './fixtures/products';
 import { MEDIA_ASSET_SEEDS, seedAssetUrl } from './fixtures/media';
 import { MODIFIER_GROUP_SEEDS, PRODUCT_MODIFIER_GROUP_SEEDS } from './fixtures/modifiers';
+import { BANNER_ASSET_SEEDS, BANNER_ASSET_SEED_AT, BANNER_SEEDS } from './fixtures/banners';
 import { PROMOTION_SEEDS } from './fixtures/promotions';
 import { ROLE_SEEDS } from './fixtures/rbac';
 import { RIDER_SEEDS, STAFF_SEEDS } from './fixtures/staff';
@@ -40,7 +41,9 @@ import {
  *
  * Escenarios de dominio aplicados aquí:
  * - empty: sin categorías, productos, promociones, pedidos, historial ni datos de cuenta.
- * - promotion-expired: todas las promociones vencieron ayer.
+ * - promotion-expired: todas las promociones vencieron ayer (los banners vinculados dejan de publicarse).
+ * - banner-promotion-expired: igual que promotion-expired (alias explícito de F16 para los banners ligados a promociones).
+ * - banners-empty: sin banners (el Inicio colapsa la sección del carrusel).
  * - branch-closed: las sucursales activas están "cerradas" (no se pide "ahora"; sí programado).
  * - product-unavailable: Calientito Roll y Platanito Roll no disponibles en ninguna sucursal.
  * - order-pending: el pago del pedido demo MON-490217 queda "en verificación" (review).
@@ -96,6 +99,19 @@ function applySeedMedia(
   products: ProductRecord[],
 ): Pick<MockStore, 'mediaAssets' | 'mediaObjects'> {
   if (scenario === 'empty') return { mediaAssets: [], mediaObjects: {} };
+  const bannerAssets: MediaAssetRecord[] = BANNER_ASSET_SEEDS.map((s) => ({
+    id: s.id,
+    kind: 'BANNER_IMAGE',
+    status: 'READY',
+    mimeType: 'image/webp',
+    sizeBytes: s.sizeBytes,
+    checksumSha256: s.checksumSha256,
+    objectKey: s.objectKey,
+    createdAt: BANNER_ASSET_SEED_AT,
+    confirmedAt: BANNER_ASSET_SEED_AT,
+    expiresAt: null,
+    createdById: null,
+  }));
   const mediaAssets: MediaAssetRecord[] = MEDIA_ASSET_SEEDS.map((s) => ({
     id: s.id,
     kind: 'PRODUCT_IMAGE',
@@ -109,6 +125,7 @@ function applySeedMedia(
     expiresAt: null,
     createdById: null,
   }));
+  mediaAssets.push(...bannerAssets);
   for (const s of MEDIA_ASSET_SEEDS) {
     const product = products.find((p) => p.id === s.attachedTo);
     if (!product) continue;
@@ -330,7 +347,7 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
     ? []
     : structuredClone(PROMOTION_SEEDS).map((p) =>
         // F15: todas terminaron ayer (`endsAt` EXCLUSIVO = hoy 00:00 local) y empezaron hace 40 días.
-        scenario === 'promotion-expired'
+        scenario === 'promotion-expired' || scenario === 'banner-promotion-expired'
           ? {
               ...p,
               startsAt: fromLocal(addDaysISO(today, -40)).toISOString(),
@@ -338,6 +355,7 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
             }
           : p,
       );
+  const banners = empty || scenario === 'banners-empty' ? [] : structuredClone(BANNER_SEEDS);
   const orders = empty
     ? []
     : [...STORE_ORDER_SEEDS, ...BACKOFFICE_ORDER_SEEDS].map((s) =>
@@ -383,6 +401,7 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
     ...applySeedMedia(scenario, products),
     ...buildModifiers(scenario),
     promotions,
+    banners,
     orders,
     roles: ROLE_SEEDS.map((r) => ({ ...r, permissions: [...r.permissions] })),
     staff: STAFF_SEEDS.map((u) => ({
@@ -417,6 +436,7 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
       category: 1,
       menuCategory: 1,
       promotion: 1,
+      banner: 1,
       user: 12,
       job: 1,
       quote: 1,

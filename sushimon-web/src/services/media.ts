@@ -7,6 +7,7 @@ import type {
   AdminProductMedia,
   AdminProductMediaList,
   CreateMediaUploadIntentRequest,
+  MediaKind,
   MediaStatus,
 } from '@/lib/data-access/models';
 import { paths } from '@/lib/data-access/paths';
@@ -31,6 +32,8 @@ export const completeMediaUpload = (client: DataClient, assetId: string) =>
   client.post<AdminMediaAsset>(paths.adminMediaComplete(), { assetId });
 
 export interface MediaFilters {
+  /** Tipo de medio; por defecto `PRODUCT_IMAGE` (la biblioteca de productos). */
+  kind?: MediaKind;
   status?: MediaStatus;
   /** true = solo sin uso; false = solo usados; undefined = todos. */
   unreferenced?: boolean;
@@ -38,11 +41,11 @@ export interface MediaFilters {
   pageSize?: number;
 }
 
-/** Biblioteca de medios (`kind=PRODUCT_IMAGE`), orden `createdAt desc, id`. */
+/** Biblioteca de medios (`kind` = `PRODUCT_IMAGE` por defecto; F16 añade `BANNER_IMAGE`), orden `createdAt desc, id`. */
 export const listMedia = (client: DataClient, filters: MediaFilters = {}) =>
   client.get<AdminMediaAssetPage>(paths.adminMediaList(), {
     query: {
-      kind: 'PRODUCT_IMAGE',
+      kind: filters.kind ?? 'PRODUCT_IMAGE',
       status: filters.status,
       unreferenced: filters.unreferenced,
       page: filters.page,

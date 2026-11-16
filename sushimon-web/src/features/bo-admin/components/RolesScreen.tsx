@@ -34,6 +34,7 @@ const KNOWN_MODULES = [
   'roles',
   'catalog',
   'promotions',
+  'banners',
   'orders',
   'payments',
   'riders',

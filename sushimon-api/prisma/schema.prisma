@@ -35,6 +35,7 @@ model Branch {
   deliverySettings  BranchDeliverySettings?
   branchProducts    BranchProduct[]
   promotionBranches PromotionBranch[]
+  bannerBranches    BannerBranch[]
 
   @@map("branches")
   @@schema("app")
@@ -176,6 +177,7 @@ model Category {
   parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   children    Category[] @relation("CategoryTree")
   products    Product[]
+  banners     Banner[]
 
   @@index([parentId, sortOrder, name, id], map: "categories_parent_sort_idx")
   @@map("categories")
@@ -201,6 +203,7 @@ model Product {
   modifierGroups    ProductModifierGroup[]
   branchProducts    BranchProduct[]
   promotionProducts PromotionProduct[]
+  banners           Banner[]
 
   @@index([categoryId, active, name, id], map: "products_category_active_name_idx")
   @@index([active, name, id], map: "products_active_name_idx")
@@ -423,6 +426,7 @@ model MediaAsset {
   expiresAt        DateTime?      @map("expires_at") @db.Timestamptz(6)
   createdBy        StaffUser?     @relation(fields: [createdByStaffId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   productMedia     ProductMedia[]
+  banners          Banner[]
 
   @@index([createdAt(sort: Desc), id], map: "media_assets_created_idx")
   @@map("media_assets")
@@ -470,6 +474,7 @@ model Promotion {
   branches    PromotionBranch[]
   products    PromotionProduct[]
   weekdays    PromotionWeekday[]
+  banners     Banner[]
 
   @@map("promotions")
   @@schema("app")
@@ -512,5 +517,70 @@ model PromotionWeekday {
 
   @@id([promotionId, weekday, startsAt])
   @@map("promotion_weekdays")
+  @@schema("app")
+}
+
+/// F16 (0017). Banners del Inicio. Estados (inactivo/programado/publicado/vencido) DERIVADOS, no columnas. CHECK de code,
+/// CTA (una sola referencia por tipo, PAGE en lista blanca), periodo (ends_at > starts_at) y sort_order 0..9999 solo en
+/// SQL. `code` inmutable: lo impone la API. `sort_order` NO único (desempate created_at, id). version/updated_at los
+/// mantiene la API (sin triggers). FK a media_assets, categories, products y promotions RESTRICT.
+model Banner {
+  id            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code          String              @unique(map: "banners_code_key")
+  imageAssetId  String              @map("image_asset_id") @db.Uuid
+  /// NONE | MENU | PROMOTIONS | CATEGORY | PRODUCT | PAGE (CHECK en SQL).
+  ctaType       String              @default("NONE") @map("cta_type")
+  ctaCategoryId String?             @map("cta_category_id") @db.Uuid
+  ctaProductId  String?             @map("cta_product_id") @db.Uuid
+  /// CAREERS | TRACK_ORDER | INCIDENTS (CHECK en SQL).
+  ctaPage       String?             @map("cta_page")
+  promotionId   String?             @map("promotion_id") @db.Uuid
+  startsAt      DateTime?           @map("starts_at") @db.Timestamptz(6)
+  endsAt        DateTime?           @map("ends_at") @db.Timestamptz(6)
+  active        Boolean             @default(true)
+  sortOrder     Int                 @default(0) @map("sort_order")
+  version       Int                 @default(1)
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// La mantiene la API en el UPDATE (sin trigger).
+  updatedAt     DateTime            @default(now()) @map("updated_at") @db.Timestamptz(6)
+  image         MediaAsset          @relation(fields: [imageAssetId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  ctaCategory   Category?           @relation(fields: [ctaCategoryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  ctaProduct    Product?            @relation(fields: [ctaProductId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  promotion     Promotion?          @relation(fields: [promotionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  translations  BannerTranslation[]
+  branches      BannerBranch[]
+
+  /// Índice parcial (WHERE active) solo en SQL: banners_active_order_idx (sort_order, created_at, id).
+  @@index([imageAssetId], map: "banners_image_asset_idx")
+  @@map("banners")
+  @@schema("app")
+}
+
+/// F16 (0017). locale es|en; la fila `es` exige title e image_alt (CHECK); su existencia la impone el servicio.
+/// Cadena en blanco = NULL (CHECK btrim no vacío).
+model BannerTranslation {
+  bannerId String  @map("banner_id") @db.Uuid
+  locale   String
+  title    String?
+  subtitle String?
+  ctaLabel String? @map("cta_label")
+  imageAlt String? @map("image_alt")
+  banner   Banner  @relation(fields: [bannerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([bannerId, locale])
+  @@map("banner_translations")
+  @@schema("app")
+}
+
+/// F16 (0017). Ausencia de filas = todas las sucursales. FK a branches RESTRICT (no se borran).
+model BannerBranch {
+  bannerId String @map("banner_id") @db.Uuid
+  branchId String @map("branch_id") @db.Uuid
+  banner   Banner @relation(fields: [bannerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@id([bannerId, branchId])
+  @@index([branchId, bannerId], map: "banner_branches_branch_idx")
+  @@map("banner_branches")
   @@schema("app")
 }

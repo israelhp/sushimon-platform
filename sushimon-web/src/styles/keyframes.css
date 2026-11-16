@@ -76,3 +76,23 @@
     transform: scale(1);
   }
 }
+
+/* F16: pliegue del hueco reservado del carrusel cuando no hay banners (sin movimiento con reduced-motion). */
+@keyframes banner-collapse {
+  from {
+    max-height: 320px;
+    opacity: 1;
+  }
+  to {
+    max-height: 0;
+    opacity: 0;
+  }
+}
+.banner-collapse {
+  animation: banner-collapse 300ms ease-in-out forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .banner-collapse {
+    animation-duration: 1ms;
+  }
+}

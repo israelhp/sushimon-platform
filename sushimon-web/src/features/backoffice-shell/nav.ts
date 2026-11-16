@@ -43,6 +43,7 @@ export const NAV: readonly NavSectionDef[] = [
       { screen: 'categorias', icon: 'grid' },
       { screen: 'modificadores', icon: 'layers' },
       { screen: 'promociones', icon: 'tag' },
+      { screen: 'banners', icon: 'image' },
     ],
   },
   {

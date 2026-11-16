@@ -1,6 +1,6 @@
 /** Tipos compartidos del módulo de medios (F14). Sin dependencias de Nest ni de Prisma. */
 
-export type MediaKind = 'PRODUCT_IMAGE';
+export type MediaKind = 'PRODUCT_IMAGE' | 'BANNER_IMAGE';
 export type MediaStatus = 'PENDING' | 'READY';
 /** Modo del adaptador activo. `UNAVAILABLE` no se expone en el contrato (las operaciones responden 503). */
 export type StorageKind = 'R2' | 'MOCK' | 'UNAVAILABLE';
@@ -49,6 +49,12 @@ export interface MediaUsageRow {
   productMediaId: string;
 }
 
+/** Banner (F16) que usa el asset como imagen. */
+export interface MediaBannerUsageRow {
+  bannerId: string;
+  bannerCode: string;
+}
+
 export interface AdminMediaAssetView {
   id: string;
   kind: MediaKind;
@@ -66,6 +72,8 @@ export interface AdminMediaAssetView {
 
 export interface AdminMediaAssetDetailView extends AdminMediaAssetView {
   usages: MediaUsageRow[];
+  /** F16: banners que usan el asset (vacío si ninguno). */
+  bannerUsages: MediaBannerUsageRow[];
 }
 
 export interface AdminMediaAssetPageView {

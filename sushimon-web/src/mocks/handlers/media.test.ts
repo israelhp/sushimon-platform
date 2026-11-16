@@ -139,7 +139,7 @@ describe('F14 mock · intent', () => {
     });
     expect(intent.asset.status).toBe('READY');
     // El mock no crea otra fila.
-    expect(h.store.mediaAssets).toHaveLength(3);
+    expect(h.store.mediaAssets.filter((a) => a.kind === 'PRODUCT_IMAGE')).toHaveLength(3);
   });
 
   it('tope de 50 PENDING por empleado; las caducadas se purgan al crear', async () => {

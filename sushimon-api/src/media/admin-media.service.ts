@@ -14,6 +14,7 @@ import {
   baseContentType,
   buildObjectKey,
   checksumHexToBase64,
+  maxBytesFor,
   contentMismatch,
   mediaBusy,
   mediaInUse,
@@ -74,7 +75,7 @@ export class AdminMediaService {
     this.assertGlobal(staff, 'catalog.update');
     // Orden (spec D6): almacenamiento -> MIME -> tamaño -> dedup -> límite de PENDING -> crear y firmar.
     if (this.storage.mode === 'UNAVAILABLE') throw storageUnavailable();
-    const mime = validateIntent(input, this.config.maxBytes);
+    const mime = validateIntent(input, maxBytesFor(input.kind, this.config.maxBytes));
 
     const existing = await this.read(() =>
       this.repo.findReadyByChecksum(input.kind, input.checksumSha256),
@@ -94,7 +95,7 @@ export class AdminMediaService {
 
     const now = new Date();
     const expiresAt = new Date(now.getTime() + this.config.uploadTtlSeconds * 1000);
-    const objectKey = buildObjectKey(mime, randomUUID(), now);
+    const objectKey = buildObjectKey(mime, randomUUID(), now, input.kind);
     const bucket = this.config.bucket as string;
     const row = await this.inTransaction(async (tx) => {
       // Serializa los intents del mismo empleado: lock -> count -> insert (el tope no se rebasa por concurrencia).
@@ -205,10 +206,14 @@ export class AdminMediaService {
 
   /** Discrepancia entre lo declarado y lo que R2 informa en `HeadObject`. */
   private rejectionOfHead(
-    row: { sizeBytes: number; mimeType: string; checksumSha256: string },
+    row: { kind: MediaKind; sizeBytes: number; mimeType: string; checksumSha256: string },
     head: { sizeBytes: number; contentType: string | null; checksumSha256Base64: string | null },
   ): Rejection | null {
-    if (head.sizeBytes !== row.sizeBytes || head.sizeBytes > this.config.maxBytes) return 'size';
+    if (
+      head.sizeBytes !== row.sizeBytes ||
+      head.sizeBytes > maxBytesFor(row.kind, this.config.maxBytes)
+    )
+      return 'size';
     if (baseContentType(head.contentType) !== row.mimeType) return 'type';
     // Sin checksum informado no se puede verificar: se falla cerrado (ver docs/integrations/cloudflare-r2.md).
     if (head.checksumSha256Base64 !== checksumHexToBase64(row.checksumSha256)) return 'checksum';

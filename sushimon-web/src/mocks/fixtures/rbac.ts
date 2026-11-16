@@ -1,7 +1,7 @@
 import type { StaffRole } from '@/lib/data-access/models';
 
 /**
- * Catálogo granular de permisos (43, `modulo.accion`) y roles del sistema, equivalentes a los que la migración 0005
+ * Catálogo granular de permisos (46, `modulo.accion`) y roles del sistema, equivalentes a los que la migración 0005
  * (spec 006, ADR-0010) siembra en la base real. SOLO mock: en http los devuelven `/v1/admin/permissions` y
  * `/v1/admin/roles`. Los permisos de módulos aún inexistentes (pagos, incidencias, auditoría, ajustes) existen para que
  * los roles los referencien; no habilitan nada todavía.
@@ -32,6 +32,9 @@ export const PERMISSION_CATALOG: readonly PermissionSeed[] = [
   { code: 'promotions.read', description: 'Ver promociones' },
   { code: 'promotions.create', description: 'Crear promociones' },
   { code: 'promotions.update', description: 'Editar y activar promociones' },
+  { code: 'banners.read', description: 'Ver banners' },
+  { code: 'banners.create', description: 'Crear banners' },
+  { code: 'banners.update', description: 'Editar, activar y reordenar banners' },
   { code: 'orders.read', description: 'Ver pedidos' },
   { code: 'orders.accept', description: 'Aceptar pedidos' },
   { code: 'orders.reject', description: 'Rechazar pedidos' },

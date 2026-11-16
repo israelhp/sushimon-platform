@@ -237,30 +237,6 @@
     "prev": "Previous promotion",
     "next": "Next promotion",
     "goSlide": "Go to promotion {a}",
-    "slides": {
-      "favs": {
-        "eyebrow": "Most ordered",
-        "title": "The MONcheros’ favorites",
-        "text": "Platanito, California and Calientito Roll.",
-        "cta": "See rolls"
-      },
-      "happy": {
-        "eyebrow": "Mon–Thu · 3:00 to 6:00 p.m.",
-        "text": "Rolls from Q39 and beers 2 for Q50 · Dine-in only",
-        "cta": "See deals"
-      },
-      "calientito": {
-        "title": "You deserve a calientito",
-        "text": "Choose your favorite and customize your order.",
-        "cta": "Get yours"
-      },
-      "team": {
-        "eyebrow": "Work with us",
-        "title": "Want to be a MONchero?",
-        "text": "The best sushi is made as a team.",
-        "cta": "See openings"
-      }
-    },
     "hungry": "Hungry?",
     "helloName": "Hi, {a}!",
     "trackTitle": "Track your order",
@@ -285,7 +261,10 @@
     "footnote": "{a} items on the menu · Prices in quetzales",
     "noProducts": "There are no products to show yet.",
     "pause": "Pause carousel",
-    "play": "Resume carousel"
+    "play": "Resume carousel",
+    "banner": {
+      "cta": "See more"
+    }
   },
   "menu": {
     "title": "Menu",
@@ -1426,7 +1405,8 @@
         "sucursales": "Sucursales",
         "usuarios": "Usuarios",
         "reportes": "Reportes",
-        "roles": "Roles y permisos"
+        "roles": "Roles y permisos",
+        "banners": "Banners"
       }
     },
     "shell": {
@@ -2620,7 +2600,8 @@
       "incidents": "Incidencias",
       "reports": "Reportes",
       "audit": "Auditoría",
-      "settings": "Ajustes"
+      "settings": "Ajustes",
+      "banners": "Banners"
     },
     "modifiers": {
       "title": "Extras",
@@ -2919,6 +2900,227 @@
         "invalid": "The request is not valid.",
         "other": "The operation could not be completed. Retry."
       }
+    },
+    "banners": {
+      "title": "Banners",
+      "subtitle": "{count, plural, one {# banner} other {# banners}}",
+      "new": "Nuevo banner",
+      "error": "No se pudieron cargar los banners.",
+      "saveError": "No se pudo guardar el cambio: {message}",
+      "noticeReadOnly": "Tu rol puede ver los banners, pero no crearlos ni editarlos.",
+      "noticeScope": "Tu rol solo puede crear o editar algunas acciones de banners; la API decide cada una.",
+      "publishDelay": "Los cambios pueden tardar hasta 30 segundos en verse en la tienda.",
+      "uploadAdminOnly": "En esta versión solo un administrador (con permiso de catálogo sobre todas las sucursales) puede subir imágenes nuevas; el resto puede elegir una ya subida.",
+      "empty": {
+        "title": "Sin banners",
+        "description": "Crea el primer banner para mostrarlo en el carrusel del Inicio.",
+        "filtered": "Ningún banner coincide con los filtros.",
+        "clear": "Limpiar filtros"
+      },
+      "filters": {
+        "label": "Filtros de banners",
+        "search": "Buscar por título o código",
+        "searchPlaceholder": "Buscar por título o código",
+        "branch": "Filtrar por sucursal",
+        "branchAll": "Todas las sucursales",
+        "status": "Filtrar por estado",
+        "statusAll": "Todos los estados"
+      },
+      "lifecycle": {
+        "INACTIVE": "Inactivo",
+        "SCHEDULED": "Programado",
+        "PUBLISHED": "Publicado",
+        "EXPIRED": "Vencido"
+      },
+      "switchState": {
+        "on": "Se muestra en la tienda",
+        "off": "Inactivo",
+        "expired": "Vencido · ya no se muestra",
+        "scheduled": "Programado · aún no inicia",
+        "hidden": "Activo pero oculto ahora"
+      },
+      "hidden": {
+        "PROMOTION_NOT_LIVE": "Oculto ahora: su promoción vinculada no está vigente o no aplica a sus sucursales.",
+        "CTA_TARGET_INACTIVE": "Oculto ahora: la categoría o el producto de destino está inactivo.",
+        "IMAGE_UNAVAILABLE": "Oculto ahora: la imagen no está disponible."
+      },
+      "code": "Código: {code}",
+      "priority": "Prioridad {n}",
+      "promotion": "Promoción: {name}",
+      "period": {
+        "always": "Sin fechas: siempre vigente",
+        "range": "Vigencia: {from} – {to}",
+        "now": "ya",
+        "noEnd": "sin fin"
+      },
+      "cta": {
+        "types": {
+          "NONE": "Sin botón",
+          "MENU": "Botón al menú",
+          "PROMOTIONS": "Botón a promociones",
+          "CATEGORY": "Botón a categoría",
+          "PRODUCT": "Botón a producto",
+          "PAGE": "Botón a página"
+        },
+        "pages": {
+          "CAREERS": "Trabaja con nosotros",
+          "TRACK_ORDER": "Consultar pedido",
+          "INCIDENTS": "Incidencias"
+        },
+        "withTarget": "{type}: {target}"
+      },
+      "branchesAll": "Todas las sucursales",
+      "branchesNone": "Sin sucursales a tu alcance",
+      "activate": "Activar {name}",
+      "edit": "Editar",
+      "editLabel": "Editar {name}",
+      "notEditable": "No cubres todas las sucursales de este banner",
+      "order": {
+        "help": "El orden de esta lista es el del carrusel. Usa subir y bajar para cambiar la prioridad.",
+        "clearFilters": "Quita los filtros para reordenar.",
+        "needGlobal": "Reordenar exige permiso de edición sobre todas las sucursales.",
+        "tieNote": "Con la misma prioridad sale primero el más antiguo. Los vencidos no se reordenan.",
+        "up": "Subir {name}",
+        "down": "Bajar {name}"
+      },
+      "toast": {
+        "on": "{name} activado",
+        "off": "{name} desactivado",
+        "created": "Banner creado",
+        "updated": "{name} actualizado",
+        "noChanges": "Sin cambios que guardar",
+        "movedUp": "{name} subió una posición",
+        "movedDown": "{name} bajó una posición"
+      },
+      "pager": {
+        "label": "Paginación de banners",
+        "prev": "Anterior",
+        "next": "Siguiente",
+        "status": "Página {page} de {pages} · {total} banners"
+      },
+      "form": {
+        "title": "Nuevo banner",
+        "titleEdit": "Editar banner",
+        "gone": "El banner ya no existe.",
+        "loadError": "No se pudo cargar el banner.",
+        "cancel": "Cancelar",
+        "saving": "Guardando…",
+        "save": "Crear banner",
+        "saveEdit": "Guardar cambios",
+        "publishDelay": "Los cambios pueden tardar hasta 30 segundos en verse en la tienda. La vigencia usa la hora de Guatemala.",
+        "code": "Código",
+        "codePlaceholder": "p. ej. navidad-2026",
+        "codeHint": "Identificador único en minúsculas (letras, números y guiones). No se puede cambiar después.",
+        "codeLocked": "El código no se puede cambiar.",
+        "spanish": "Textos en español (obligatorios)",
+        "english": "Textos en inglés (opcionales)",
+        "englishHint": "Si dejas un campo vacío, la tienda en inglés usa el texto en español de ese campo.",
+        "texts": {
+          "title": "Título",
+          "subtitle": "Subtítulo",
+          "ctaLabel": "Texto del botón",
+          "imageAlt": "Texto alternativo de la imagen"
+        },
+        "max": "{count}/{max}",
+        "cta": "Destino del botón",
+        "ctaTypes": {
+          "NONE": "Sin botón",
+          "MENU": "El menú",
+          "PROMOTIONS": "Promociones",
+          "CATEGORY": "Una categoría del menú",
+          "PRODUCT": "Un producto",
+          "PAGE": "Una página de la tienda"
+        },
+        "ctaCategory": "Categoría de destino",
+        "ctaCategoryPlaceholder": "Elige una categoría",
+        "ctaProduct": "Producto de destino",
+        "ctaProductPlaceholder": "Elige un producto",
+        "ctaPage": "Página de destino",
+        "ctaPagePlaceholder": "Elige una página",
+        "ctaPages": {
+          "CAREERS": "Trabaja con nosotros",
+          "TRACK_ORDER": "Consultar pedido",
+          "INCIDENTS": "Incidencias"
+        },
+        "ctaHint": "El destino es una opción de la lista: no se admiten enlaces externos ni rutas escritas a mano.",
+        "startsAt": "Inicio de la vigencia",
+        "startsAtHint": "Opcional. Vacío = desde ya.",
+        "endsAt": "Fin de la vigencia",
+        "endsAtHint": "Opcional. Exclusivo: ya no se muestra a esa hora. Vacío = sin fin.",
+        "promotion": "Promoción vinculada",
+        "promotionNone": "Sin promoción",
+        "promotionHint": "Con una promoción vinculada el banner solo se muestra mientras esa promoción esté vigente y aplique a la sucursal.",
+        "couponWarning": "Si la promoción es un cupón, no escribas su código en los textos del banner si no quieres divulgarlo: el banner nunca lo muestra, pero tu texto sí.",
+        "sortOrder": "Prioridad",
+        "sortOrderAuto": "Al final",
+        "sortOrderHint": "Menor número = sale primero (0 a {max}). Con la misma prioridad sale primero el más antiguo.",
+        "active": "Activo al crearlo",
+        "reloadVersion": "Cargar la versión actual",
+        "sections": {
+          "image": "Imagen",
+          "texts": "Textos",
+          "target": "Destino",
+          "scope": "Vigencia y alcance"
+        }
+      },
+      "image": {
+        "label": "Imagen del banner *",
+        "currentAlt": "Imagen elegida para el banner",
+        "empty": "Sin imagen",
+        "meta": "Tamaño: {size}",
+        "inputLabel": "Seleccionar la imagen del banner",
+        "upload": "Subir imagen",
+        "replace": "Cambiar imagen",
+        "library": "Elegir de la biblioteca",
+        "cancel": "Cancelar subida",
+        "simulated": "Almacén simulado",
+        "help": "Se recorta a 3:1 (p. ej. 1920 × 640) y se optimiza en tu navegador: máximo 1920 px y 1 MiB. Deja la zona central libre y no incluyas texto dentro de la imagen: el texto va en los campos.",
+        "uploadScope": "No tienes permiso para subir imágenes (catálogo con alcance sobre todas las sucursales). Puedes elegir una ya subida.",
+        "status": {
+          "optimizing": "Optimizando la imagen…",
+          "uploading": "Subiendo… {percent}%",
+          "confirming": "Confirmando…",
+          "done": "Imagen lista"
+        },
+        "tooLarge": "La imagen supera 1 MiB incluso optimizada. Usa una más sencilla o más pequeña.",
+        "storageDown": "Puedes seguir editando los textos y guardar con una imagen ya subida.",
+        "libraryTitle": "Imágenes de banner",
+        "libraryHelp": "Reutiliza una imagen de banner ya subida.",
+        "close": "Cerrar",
+        "loading": "Cargando…",
+        "libraryForbidden": "No tienes permiso para ver la biblioteca de imágenes.",
+        "libraryError": "No se pudo cargar la biblioteca.",
+        "retry": "Reintentar",
+        "libraryEmpty": "Todavía no hay imágenes de banner subidas.",
+        "libraryMeta": "{size} · {count, plural, =0 {sin uso} one {usada en # banner} other {usada en # banners}}",
+        "pickLabel": "Usar la imagen {n}",
+        "picked": "Elegida",
+        "pick": "Usar esta imagen",
+        "prev": "Anterior",
+        "next": "Siguiente",
+        "pager": "Página {page} de {pages}",
+        "safeZone": "Evita fotos muy claras bajo el texto (se pierde el contraste) y coloca el motivo en el 60 % izquierdo o central de la imagen: en 3:1 el texto va a la izquierda y en móvil el recorte pierde los bordes."
+      },
+      "preview": {
+        "title": "Vista previa (sin publicar)",
+        "device": "Dispositivo de la vista previa",
+        "desktop": "Escritorio",
+        "mobile": "Móvil",
+        "language": "Idioma de la vista previa",
+        "incomplete": "Elige una imagen y escribe el título y el texto alternativo en español para ver la vista previa.",
+        "fallback": "Saldrán en español (sin traducción): {fields}.",
+        "note": "Así se vería en la tienda; no cambia nada publicado hasta que guardes.",
+        "mobileSmall": "Móvil pequeño (320 px)"
+      },
+      "fields": {
+        "fallback": {
+          "title": "título",
+          "subtitle": "subtítulo",
+          "ctaLabel": "texto del botón",
+          "imageAlt": "texto alternativo"
+        }
+      },
+      "hasEnglish": "Con versión en inglés"
     }
   }
 }
