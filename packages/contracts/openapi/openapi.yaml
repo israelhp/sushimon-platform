@@ -1,6 +1,6 @@
 # Contrato HTTP canónico de Sushi Mon (Contract First).
 # Se diseña ANTES de implementar cada slice y se verifica contra NestJS con `pnpm contracts:check`.
-# Estado: F12 (modificadores de producto: /v1/admin/modifier-groups, /v1/admin/modifiers, /v1/admin/products/{id}/modifiers|modifier-groups; modifierGroups en la ficha pública) + F11 (productos y fichas de catálogo: /v1/store/products, /v1/admin/products) + F10 (categorías y jerarquía del menú: /v1/store/categories, /v1/admin/categories, /v1/admin/categories/reorder) + F09 (geografía, cobertura y zonas propias: /v1/locations/*, /v1/admin/delivery-zones, /v1/admin/branches/{id}/delivery-settings, /v1/delivery-coverage/check) + F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
+# Estado: F13 (precio y disponibilidad por sucursal: /v1/store/menu, /v1/admin/branches/{id}/products[/{productId}/pricing], /v1/admin/products/{id}/branches|availability) + F12 (modificadores de producto: /v1/admin/modifier-groups, /v1/admin/modifiers, /v1/admin/products/{id}/modifiers|modifier-groups; modifierGroups en la ficha pública) + F11 (productos y fichas de catálogo: /v1/store/products, /v1/admin/products) + F10 (categorías y jerarquía del menú: /v1/store/categories, /v1/admin/categories, /v1/admin/categories/reorder) + F09 (geografía, cobertura y zonas propias: /v1/locations/*, /v1/admin/delivery-zones, /v1/admin/branches/{id}/delivery-settings, /v1/delivery-coverage/check) + F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
 # Seguridad por defecto: Bearer JWT de Supabase Auth en todo salvo operaciones con `security: []` (health).
 # Transversal a TODAS las respuestas: cabecera `X-Request-Id`; errores con `ErrorResponse`; 429 cuando
 # se excede el rate limit global (no se repite por operación).
@@ -3583,6 +3583,305 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /v1/store/menu:
+    get:
+      operationId: getStoreBranchMenu
+      summary: Precio efectivo y disponibilidad por sucursal de los productos visibles (overlay del menú)
+      description: |
+        F13. Sin autenticación. Devuelve, para UNA sucursal ACTIVA, un «overlay» ligero con TODOS los productos públicamente visibles (F11: producto activo Y
+        categoría efectivamente visible): `productId`, `slug`, `price` (precio EFECTIVO de esa sucursal: `price_override` si existe, si no el precio base; cadena
+        decimal) y `available`. NO duplica nombre, descripción, categoría ni imágenes (la web combina con `listStoreProducts`/`getStoreProduct`) y NO expone el precio
+        base ni si hay override (nunca se muestra el precio de otra sucursal). Sin stock numérico: `available=false` significa «agotado/no disponible» y no promete
+        cantidades. Sin paginación (catálogo de cientos de productos; orden `slug`, `productId`). `branchId` ausente o con forma inválida => 400; sucursal inexistente o
+        inactiva => 404 `BRANCH_NOT_FOUND` (no se distingue). Caché compartida corta `public, max-age=15` (sin `stale-while-revalidate` ni `ETag`): la caché HTTP no se
+        puede invalidar, de modo que un cambio de disponibilidad/precio es visible en <= 15 s; la web además invalida su caché de TanStack Query. Es INFORMATIVO: la validación
+        DEFINITIVA al cotizar/crear el pedido (F19/F20) se hace en el servidor contra la base de datos. Las respuestas de error llevan `Cache-Control: no-store`.
+        Límite de tasa propio (60/min por IP, como F11).
+      tags: [branch-products]
+      security: []
+      parameters:
+        - name: branchId
+          in: query
+          required: true
+          description: UUID de una sucursal activa.
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Overlay de la sucursal
+          headers:
+            Cache-Control:
+              description: public, max-age=15
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreBranchMenu'
+        '400':
+          description: '`branchId` ausente o que no es un UUID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`BRANCH_NOT_FOUND`: no existe o está inactiva'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/branches/{id}/products:
+    get:
+      operationId: listAdminBranchProducts
+      summary: Matriz de precio y disponibilidad de los productos de una sucursal (backoffice)
+      description: |
+        F13. Exige `catalog.read` EN ESA SUCURSAL y `aal2`; sucursal inexistente o fuera del alcance del empleado => 404 `BRANCH_NOT_FOUND` (no se distingue). Una
+        sucursal inactiva SÍ se puede consultar. Lista TODOS los productos del catálogo (activos e inactivos, categoría visible o no) con `basePrice`, `priceOverride`
+        (`null` = sin override), `effectivePrice`, `available` y `offered` (`true` si el público lo ve en esa sucursal: producto visible Y `available`). Ausencia de fila
+        en `branch_products` = disponible al precio base. Filtros: `q` (nombre, slug o SKU; contiene, sin distinguir mayúsculas ni acentos; comodines literales; máx. 80),
+        `categoryId` (categoría exacta), `available`, `hasOverride`. Orden fijo `name`, `id`. Una consulta para la página (+ `count`), sin N+1. Respuesta `Cache-Control: no-store`.
+      tags: [branch-products]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 80 }
+        - name: categoryId
+          in: query
+          description: Inexistente => lista vacía.
+          schema: { type: string, format: uuid }
+        - name: available
+          in: query
+          description: Sin valor = todos.
+          schema: { type: boolean }
+        - name: hasOverride
+          in: query
+          description: '`true` = solo con precio de sucursal; `false` = solo sin override. Sin valor = todos.'
+          schema: { type: boolean }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Página de la matriz
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBranchProductPage'
+        '400':
+          description: Parámetros de consulta o UUID inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.read` o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`BRANCH_NOT_FOUND`: no existe o fuera de alcance'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/products/{id}/branches:
+    get:
+      operationId: listAdminProductBranches
+      summary: Matriz de precio y disponibilidad de un producto por sucursal (backoffice)
+      description: |
+        F13. Exige `catalog.read` y `aal2`. Devuelve una fila por cada sucursal (activa o inactiva) DENTRO DEL ALCANCE de `catalog.read` del empleado (`scopeFor`: global =
+        todas; acotado = solo las suyas; nunca aparecen sucursales ajenas), ordenadas por `name`, `id`. Cada fila trae `priceOverride`, `effectivePrice`, `available` y
+        `offered`. 404 `PRODUCT_NOT_FOUND` si el producto no existe (un producto inactivo SÍ se consulta). Una consulta para la sucursales + una para las filas de
+        `branch_products` (sin N+1). Respuesta `Cache-Control: no-store`.
+      tags: [branch-products]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '200':
+          description: Sucursales del alcance con su estado
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProductBranches'
+        '400':
+          description: UUID inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.read` o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`PRODUCT_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/branches/{id}/products/{productId}/pricing:
+    put:
+      operationId: setAdminBranchProductPricing
+      summary: Fija o elimina el precio de sucursal (override) de un producto
+      description: |
+        F13. Exige `catalog.update` EN ESA SUCURSAL (`canAccess`) y `aal2`. Orden de comprobaciones: sucursal fuera de alcance o inexistente => 404 `BRANCH_NOT_FOUND`;
+        luego producto inexistente => 404 `PRODUCT_NOT_FOUND` (un producto inactivo u oculto SÍ admite precio, para prepararlo). `priceOverride` es cadena decimal
+        `^[0-9]{1,6}\.[0-9]{2}$` (nunca `number`; un número JSON, otra forma o más de 999999.99 => 400) o `null` para ELIMINAR el override. Una cadena bien formada pero <= 0
+        (`"0.00"`) => 422 `BRANCH_PRICE_INVALID`. Un override igual al precio base es un override válido (congela el precio de la sucursal frente a cambios futuros del base).
+        Semántica de fila: solo existe fila en `branch_products` si hay override o `available=false`; al borrar el override con `available=true` la fila se ELIMINA. Idempotente: si el estado
+        resultante coincide con el vigente => 200 sin escribir ni auditar. Escritura atómica por upsert/delete de la fila (PK compuesta; sin lock global; el último en escribir gana, sin control optimista).
+        Auditoría en la misma transacción: `branch_product.price_set` o `branch_product.price_cleared` (`branchId`, `productId`, precio anterior y nuevo), sin PII. Responde 200 con el estado
+        resultante (si la fila se eliminó, `available=true`, `priceOverride=null`, `updatedAt=null`). Respuesta `no-store`.
+      tags: [branch-products]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+        - $ref: '#/components/parameters/BranchProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetBranchProductPricingRequest'
+      responses:
+        '200':
+          description: Estado del producto en la sucursal tras la operación
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBranchProductState'
+        '400':
+          description: Forma inválida (UUID mal formado, precio no cadena o fuera de forma/rango de formato, propiedades desconocidas, falta `priceOverride`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.update` o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`BRANCH_NOT_FOUND` (inexistente o fuera de alcance) o `PRODUCT_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`BRANCH_PRICE_INVALID`: cadena bien formada pero <= 0 (con `violations[0].path = priceOverride`)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`BRANCH_PRODUCTS_BUSY`: la transacción agotó su tiempo; reintentable'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/products/{id}/availability:
+    patch:
+      operationId: setAdminProductAvailability
+      summary: Marca un producto como disponible o agotado en una sucursal
+      description: |
+        F13. Exige `catalog.manage_availability` EN LA SUCURSAL del cuerpo (`canAccess`) y `aal2`. Sucursal inexistente o fuera de alcance => 404 `BRANCH_NOT_FOUND`; luego producto
+        inexistente => 404 `PRODUCT_NOT_FOUND` (un producto inactivo u oculto SÍ admite el cambio). `available=false` crea o actualiza la fila (conserva el override);
+        `available=true` sin override ELIMINA la fila (vuelve al valor por defecto). NO es stock: no hay cantidades. Idempotente: sin cambio => 200 sin escribir ni auditar. Auditoría
+        `branch_product.availability_changed` (`branchId`, `productId`, valor anterior y nuevo) en la misma transacción, sin PII. Responde 200 con el estado resultante. El cambio es visible en
+        el menú público en <= 15 s (caché de `getStoreBranchMenu`); la verificación definitiva en checkout es inmediata. Respuesta `no-store`.
+      tags: [branch-products]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetProductAvailabilityRequest'
+      responses:
+        '200':
+          description: Estado del producto en la sucursal tras la operación
+          headers:
+            Cache-Control:
+              description: no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBranchProductState'
+        '400':
+          description: Forma inválida (UUID mal formado, `available` no booleano, propiedades desconocidas o faltantes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `catalog.manage_availability` o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`BRANCH_NOT_FOUND` (inexistente o fuera de alcance) o `PRODUCT_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`BRANCH_PRODUCTS_BUSY`: la transacción agotó su tiempo; reintentable'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   parameters:
     StaffId:
@@ -3650,6 +3949,12 @@ components:
       in: path
       required: true
       description: UUID de la opción (`modifiers.id`).
+      schema: { type: string, format: uuid }
+    BranchProductId:
+      name: productId
+      in: path
+      required: true
+      description: UUID del producto (`products.id`) cuyo precio de sucursal se gestiona (F13).
       schema: { type: string, format: uuid }
   schemas:
     PublicBranch:
@@ -4211,7 +4516,7 @@ components:
           type: string
           description: |
             Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
+            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
         violations:
           type: array
           description: Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09).
@@ -6104,6 +6409,126 @@ components:
           maxItems: 50
           description: 'Lista completa y ordenada (`[]` quita todos). Máx. 10 (11-50 => 422 `MODIFIER_LIMIT_REACHED`); duplicados/inexistentes/inactivos nuevos => 422 `MODIFIER_GROUP_INVALID`.'
           items: { type: string, format: uuid }
+    StoreBranchMenuItem:
+      type: object
+      description: Overlay de un producto visible en una sucursal (F13). Sin nombre/categoría (se combinan con `listStoreProducts`), sin precio base ni indicio de override, sin stock.
+      required: [productId, slug, price, available]
+      properties:
+        productId: { type: string, format: uuid }
+        slug: { type: string, maxLength: 80, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        price:
+          allOf:
+            - $ref: '#/components/schemas/ProductPrice'
+          description: Precio EFECTIVO en esa sucursal (override o base). Informativo; el servidor recalcula al cotizar (F19).
+        available:
+          type: boolean
+          description: '`false` = agotado/no disponible en esa sucursal (sin cantidades). La web lo muestra deshabilitado y no lo permite añadir al carrito.'
+    StoreBranchMenu:
+      type: object
+      required: [branchId, items]
+      properties:
+        branchId: { type: string, format: uuid }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/StoreBranchMenuItem' }
+    AdminBranchProductState:
+      type: object
+      description: Estado de un producto en una sucursal (F13). Sin fila en `branch_products` => `priceOverride=null`, `available=true`, `updatedAt=null`.
+      required:
+        [
+          branchId,
+          productId,
+          basePrice,
+          priceOverride,
+          effectivePrice,
+          available,
+          offered,
+          updatedAt,
+        ]
+      properties:
+        branchId: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        basePrice: { $ref: '#/components/schemas/ProductPrice' }
+        priceOverride:
+          type: string
+          nullable: true
+          pattern: '^[0-9]{1,6}\.[0-9]{2}$'
+          description: Precio de la sucursal (`null` = usa el precio base).
+        effectivePrice: { $ref: '#/components/schemas/ProductPrice' }
+        available: { type: boolean }
+        offered:
+          type: boolean
+          description: 'El público ve y puede pedir el producto en esa sucursal: producto visible (F11) Y `available`.'
+        updatedAt:
+          {
+            type: string,
+            format: date-time,
+            nullable: true,
+            description: Última escritura de la fila (`null` si no existe fila).,
+          }
+    AdminBranchProductRow:
+      description: Fila de la matriz por sucursal (`listAdminBranchProducts`).
+      allOf:
+        - $ref: '#/components/schemas/AdminBranchProductState'
+        - type: object
+          required: [sku, slug, name, category, active, publiclyVisible]
+          properties:
+            sku: { type: string, nullable: true, maxLength: 40 }
+            slug: { type: string, maxLength: 80 }
+            name: { type: string, maxLength: 120 }
+            category: { $ref: '#/components/schemas/AdminProductCategory' }
+            active: { type: boolean, description: Estado propio del producto (F11). }
+            publiclyVisible:
+              { type: boolean, description: '`active` Y categoría efectivamente visible.' }
+    AdminBranchProductPage:
+      type: object
+      required: [branchId, items, page, pageSize, total]
+      properties:
+        branchId: { type: string, format: uuid }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminBranchProductRow' }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0 }
+    AdminProductBranchRow:
+      description: Fila de la matriz por producto (`listAdminProductBranches`).
+      allOf:
+        - $ref: '#/components/schemas/AdminBranchProductState'
+        - type: object
+          required: [branchCode, branchName, branchActive]
+          properties:
+            branchCode: { type: string }
+            branchName: { type: string }
+            branchActive: { type: boolean }
+    AdminProductBranches:
+      type: object
+      required: [productId, basePrice, active, publiclyVisible, items]
+      properties:
+        productId: { type: string, format: uuid }
+        basePrice: { $ref: '#/components/schemas/ProductPrice' }
+        active: { type: boolean }
+        publiclyVisible: { type: boolean }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminProductBranchRow' }
+    SetBranchProductPricingRequest:
+      type: object
+      required: [priceOverride]
+      additionalProperties: false
+      properties:
+        priceOverride:
+          type: string
+          nullable: true
+          pattern: '^[0-9]{1,6}\.[0-9]{2}$'
+          description: 'Cadena decimal GTQ (`"85.00"`; nunca `number`) o `null` para eliminar el override. Forma inválida => 400; `"0.00"` => 422 `BRANCH_PRICE_INVALID`.'
+    SetProductAvailabilityRequest:
+      type: object
+      required: [branchId, available]
+      additionalProperties: false
+      properties:
+        branchId: { type: string, format: uuid }
+        available: { type: boolean }
   securitySchemes:
     bearer:
       type: http

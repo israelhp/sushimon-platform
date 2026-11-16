@@ -1403,6 +1403,132 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/store/menu": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Precio efectivo y disponibilidad por sucursal de los productos visibles (overlay del menú)
+         * @description F13. Sin autenticación. Devuelve, para UNA sucursal ACTIVA, un «overlay» ligero con TODOS los productos públicamente visibles (F11: producto activo Y
+         *     categoría efectivamente visible): `productId`, `slug`, `price` (precio EFECTIVO de esa sucursal: `price_override` si existe, si no el precio base; cadena
+         *     decimal) y `available`. NO duplica nombre, descripción, categoría ni imágenes (la web combina con `listStoreProducts`/`getStoreProduct`) y NO expone el precio
+         *     base ni si hay override (nunca se muestra el precio de otra sucursal). Sin stock numérico: `available=false` significa «agotado/no disponible» y no promete
+         *     cantidades. Sin paginación (catálogo de cientos de productos; orden `slug`, `productId`). `branchId` ausente o con forma inválida => 400; sucursal inexistente o
+         *     inactiva => 404 `BRANCH_NOT_FOUND` (no se distingue). Caché compartida corta `public, max-age=15` (sin `stale-while-revalidate` ni `ETag`): la caché HTTP no se
+         *     puede invalidar, de modo que un cambio de disponibilidad/precio es visible en <= 15 s; la web además invalida su caché de TanStack Query. Es INFORMATIVO: la validación
+         *     DEFINITIVA al cotizar/crear el pedido (F19/F20) se hace en el servidor contra la base de datos. Las respuestas de error llevan `Cache-Control: no-store`.
+         *     Límite de tasa propio (60/min por IP, como F11).
+         */
+        get: operations["getStoreBranchMenu"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/branches/{id}/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Matriz de precio y disponibilidad de los productos de una sucursal (backoffice)
+         * @description F13. Exige `catalog.read` EN ESA SUCURSAL y `aal2`; sucursal inexistente o fuera del alcance del empleado => 404 `BRANCH_NOT_FOUND` (no se distingue). Una
+         *     sucursal inactiva SÍ se puede consultar. Lista TODOS los productos del catálogo (activos e inactivos, categoría visible o no) con `basePrice`, `priceOverride`
+         *     (`null` = sin override), `effectivePrice`, `available` y `offered` (`true` si el público lo ve en esa sucursal: producto visible Y `available`). Ausencia de fila
+         *     en `branch_products` = disponible al precio base. Filtros: `q` (nombre, slug o SKU; contiene, sin distinguir mayúsculas ni acentos; comodines literales; máx. 80),
+         *     `categoryId` (categoría exacta), `available`, `hasOverride`. Orden fijo `name`, `id`. Una consulta para la página (+ `count`), sin N+1. Respuesta `Cache-Control: no-store`.
+         */
+        get: operations["listAdminBranchProducts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/products/{id}/branches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Matriz de precio y disponibilidad de un producto por sucursal (backoffice)
+         * @description F13. Exige `catalog.read` y `aal2`. Devuelve una fila por cada sucursal (activa o inactiva) DENTRO DEL ALCANCE de `catalog.read` del empleado (`scopeFor`: global =
+         *     todas; acotado = solo las suyas; nunca aparecen sucursales ajenas), ordenadas por `name`, `id`. Cada fila trae `priceOverride`, `effectivePrice`, `available` y
+         *     `offered`. 404 `PRODUCT_NOT_FOUND` si el producto no existe (un producto inactivo SÍ se consulta). Una consulta para la sucursales + una para las filas de
+         *     `branch_products` (sin N+1). Respuesta `Cache-Control: no-store`.
+         */
+        get: operations["listAdminProductBranches"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/branches/{id}/products/{productId}/pricing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Fija o elimina el precio de sucursal (override) de un producto
+         * @description F13. Exige `catalog.update` EN ESA SUCURSAL (`canAccess`) y `aal2`. Orden de comprobaciones: sucursal fuera de alcance o inexistente => 404 `BRANCH_NOT_FOUND`;
+         *     luego producto inexistente => 404 `PRODUCT_NOT_FOUND` (un producto inactivo u oculto SÍ admite precio, para prepararlo). `priceOverride` es cadena decimal
+         *     `^[0-9]{1,6}\.[0-9]{2}$` (nunca `number`; un número JSON, otra forma o más de 999999.99 => 400) o `null` para ELIMINAR el override. Una cadena bien formada pero <= 0
+         *     (`"0.00"`) => 422 `BRANCH_PRICE_INVALID`. Un override igual al precio base es un override válido (congela el precio de la sucursal frente a cambios futuros del base).
+         *     Semántica de fila: solo existe fila en `branch_products` si hay override o `available=false`; al borrar el override con `available=true` la fila se ELIMINA. Idempotente: si el estado
+         *     resultante coincide con el vigente => 200 sin escribir ni auditar. Escritura atómica por upsert/delete de la fila (PK compuesta; sin lock global; el último en escribir gana, sin control optimista).
+         *     Auditoría en la misma transacción: `branch_product.price_set` o `branch_product.price_cleared` (`branchId`, `productId`, precio anterior y nuevo), sin PII. Responde 200 con el estado
+         *     resultante (si la fila se eliminó, `available=true`, `priceOverride=null`, `updatedAt=null`). Respuesta `no-store`.
+         */
+        put: operations["setAdminBranchProductPricing"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/products/{id}/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Marca un producto como disponible o agotado en una sucursal
+         * @description F13. Exige `catalog.manage_availability` EN LA SUCURSAL del cuerpo (`canAccess`) y `aal2`. Sucursal inexistente o fuera de alcance => 404 `BRANCH_NOT_FOUND`; luego producto
+         *     inexistente => 404 `PRODUCT_NOT_FOUND` (un producto inactivo u oculto SÍ admite el cambio). `available=false` crea o actualiza la fila (conserva el override);
+         *     `available=true` sin override ELIMINA la fila (vuelve al valor por defecto). NO es stock: no hay cantidades. Idempotente: sin cambio => 200 sin escribir ni auditar. Auditoría
+         *     `branch_product.availability_changed` (`branchId`, `productId`, valor anterior y nuevo) en la misma transacción, sin PII. Responde 200 con el estado resultante. El cambio es visible en
+         *     el menú público en <= 15 s (caché de `getStoreBranchMenu`); la verificación definitiva en checkout es inmediata. Respuesta `no-store`.
+         */
+        patch: operations["setAdminProductAvailability"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1798,7 +1924,7 @@ export interface components {
             details?: string[];
             /**
              * @description Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
+             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
              */
             code?: string;
             /** @description Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09). */
@@ -3067,6 +3193,82 @@ export interface components {
             /** @description Lista completa y ordenada (`[]` quita todos). Máx. 10 (11-50 => 422 `MODIFIER_LIMIT_REACHED`); duplicados/inexistentes/inactivos nuevos => 422 `MODIFIER_GROUP_INVALID`. */
             groupIds: string[];
         };
+        /** @description Overlay de un producto visible en una sucursal (F13). Sin nombre/categoría (se combinan con `listStoreProducts`), sin precio base ni indicio de override, sin stock. */
+        StoreBranchMenuItem: {
+            /** Format: uuid */
+            productId: string;
+            slug: string;
+            /** @description Precio EFECTIVO en esa sucursal (override o base). Informativo; el servidor recalcula al cotizar (F19). */
+            price: components["schemas"]["ProductPrice"];
+            /** @description `false` = agotado/no disponible en esa sucursal (sin cantidades). La web lo muestra deshabilitado y no lo permite añadir al carrito. */
+            available: boolean;
+        };
+        StoreBranchMenu: {
+            /** Format: uuid */
+            branchId: string;
+            items: components["schemas"]["StoreBranchMenuItem"][];
+        };
+        /** @description Estado de un producto en una sucursal (F13). Sin fila en `branch_products` => `priceOverride=null`, `available=true`, `updatedAt=null`. */
+        AdminBranchProductState: {
+            /** Format: uuid */
+            branchId: string;
+            /** Format: uuid */
+            productId: string;
+            basePrice: components["schemas"]["ProductPrice"];
+            /** @description Precio de la sucursal (`null` = usa el precio base). */
+            priceOverride: string | null;
+            effectivePrice: components["schemas"]["ProductPrice"];
+            available: boolean;
+            /** @description El público ve y puede pedir el producto en esa sucursal: producto visible (F11) Y `available`. */
+            offered: boolean;
+            /**
+             * Format: date-time
+             * @description Última escritura de la fila (`null` si no existe fila).
+             */
+            updatedAt: string | null;
+        };
+        /** @description Fila de la matriz por sucursal (`listAdminBranchProducts`). */
+        AdminBranchProductRow: components["schemas"]["AdminBranchProductState"] & {
+            sku: string | null;
+            slug: string;
+            name: string;
+            category: components["schemas"]["AdminProductCategory"];
+            /** @description Estado propio del producto (F11). */
+            active: boolean;
+            /** @description `active` Y categoría efectivamente visible. */
+            publiclyVisible: boolean;
+        };
+        AdminBranchProductPage: {
+            /** Format: uuid */
+            branchId: string;
+            items: components["schemas"]["AdminBranchProductRow"][];
+            page: number;
+            pageSize: number;
+            total: number;
+        };
+        /** @description Fila de la matriz por producto (`listAdminProductBranches`). */
+        AdminProductBranchRow: components["schemas"]["AdminBranchProductState"] & {
+            branchCode: string;
+            branchName: string;
+            branchActive: boolean;
+        };
+        AdminProductBranches: {
+            /** Format: uuid */
+            productId: string;
+            basePrice: components["schemas"]["ProductPrice"];
+            active: boolean;
+            publiclyVisible: boolean;
+            items: components["schemas"]["AdminProductBranchRow"][];
+        };
+        SetBranchProductPricingRequest: {
+            /** @description Cadena decimal GTQ (`"85.00"`; nunca `number`) o `null` para eliminar el override. Forma inválida => 400; `"0.00"` => 422 `BRANCH_PRICE_INVALID`. */
+            priceOverride: string | null;
+        };
+        SetProductAvailabilityRequest: {
+            /** Format: uuid */
+            branchId: string;
+            available: boolean;
+        };
     };
     responses: never;
     parameters: {
@@ -3092,6 +3294,8 @@ export interface components {
         ModifierGroupId: string;
         /** @description UUID de la opción (`modifiers.id`). */
         ModifierId: string;
+        /** @description UUID del producto (`products.id`) cuyo precio de sucursal se gestiona (F13). */
+        BranchProductId: string;
     };
     requestBodies: never;
     headers: never;
@@ -7345,6 +7549,340 @@ export interface operations {
                 };
             };
             /** @description `MODIFIERS_BUSY`: bloqueo no disponible o la transacción agotó su tiempo; reintentable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getStoreBranchMenu: {
+        parameters: {
+            query: {
+                /** @description UUID de una sucursal activa. */
+                branchId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Overlay de la sucursal */
+            200: {
+                headers: {
+                    /** @description public, max-age=15 */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoreBranchMenu"];
+                };
+            };
+            /** @description `branchId` ausente o que no es un UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `BRANCH_NOT_FOUND`: no existe o está inactiva */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAdminBranchProducts: {
+        parameters: {
+            query?: {
+                q?: string;
+                /** @description Inexistente => lista vacía. */
+                categoryId?: string;
+                /** @description Sin valor = todos. */
+                available?: boolean;
+                /** @description `true` = solo con precio de sucursal; `false` = solo sin override. Sin valor = todos. */
+                hasOverride?: boolean;
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path: {
+                /** @description UUID de la sucursal. */
+                id: components["parameters"]["BranchId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de la matriz */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminBranchProductPage"];
+                };
+            };
+            /** @description Parámetros de consulta o UUID inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.read` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `BRANCH_NOT_FOUND`: no existe o fuera de alcance */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAdminProductBranches: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del producto (`products.id`). */
+                id: components["parameters"]["ProductId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sucursales del alcance con su estado */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminProductBranches"];
+                };
+            };
+            /** @description UUID inválido */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.read` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PRODUCT_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setAdminBranchProductPricing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la sucursal. */
+                id: components["parameters"]["BranchId"];
+                /** @description UUID del producto (`products.id`) cuyo precio de sucursal se gestiona (F13). */
+                productId: components["parameters"]["BranchProductId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetBranchProductPricingRequest"];
+            };
+        };
+        responses: {
+            /** @description Estado del producto en la sucursal tras la operación */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminBranchProductState"];
+                };
+            };
+            /** @description Forma inválida (UUID mal formado, precio no cadena o fuera de forma/rango de formato, propiedades desconocidas, falta `priceOverride`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.update` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `BRANCH_NOT_FOUND` (inexistente o fuera de alcance) o `PRODUCT_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `BRANCH_PRICE_INVALID`: cadena bien formada pero <= 0 (con `violations[0].path = priceOverride`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `BRANCH_PRODUCTS_BUSY`: la transacción agotó su tiempo; reintentable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setAdminProductAvailability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del producto (`products.id`). */
+                id: components["parameters"]["ProductId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetProductAvailabilityRequest"];
+            };
+        };
+        responses: {
+            /** @description Estado del producto en la sucursal tras la operación */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminBranchProductState"];
+                };
+            };
+            /** @description Forma inválida (UUID mal formado, `available` no booleano, propiedades desconocidas o faltantes) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `catalog.manage_availability` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `BRANCH_NOT_FOUND` (inexistente o fuera de alcance) o `PRODUCT_NOT_FOUND` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `BRANCH_PRODUCTS_BUSY`: la transacción agotó su tiempo; reintentable */
             503: {
                 headers: {
                     [name: string]: unknown;
