@@ -118,6 +118,16 @@ export const IconGrid = make(
   </>,
 );
 
+/** F12: capas apiladas (extras / modificadores). */
+export const IconLayers = make(
+  'Layers',
+  <>
+    <path d="m12 2 9 5-9 5-9-5 9-5Z" />
+    <path d="m3 12 9 5 9-5" />
+    <path d="m3 17 9 5 9-5" />
+  </>,
+);
+
 export const IconTag = make(
   'Tag',
   <>
@@ -367,6 +377,7 @@ export const BO_NAV_ICONS = {
   fork: IconFork,
   grid: IconGrid,
   tag: IconTag,
+  layers: IconLayers,
   store: IconStore,
   users: IconUsers,
   chart: IconChart,

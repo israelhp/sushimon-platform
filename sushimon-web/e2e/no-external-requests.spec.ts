@@ -33,6 +33,7 @@ const BACKOFFICE_SCREENS = [
   'entregas',
   'productos',
   'categorias',
+  'modificadores',
   'promociones',
   'sucursales',
   'usuarios',

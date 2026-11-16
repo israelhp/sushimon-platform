@@ -2,14 +2,15 @@
 
 import { Minus, Plus, X } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
-import { useId, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { Portal } from '@/components/ui/Portal';
 import { useToast } from '@/components/ui/Toast';
 import { useDialog } from '@/components/ui/use-dialog';
 import { cn } from '@/lib/cn';
 import { formatMoney } from '@/lib/format';
 import { isApiError } from '@/lib/data-access/errors';
-import type { Product, PublicProductMedia } from '@/lib/data-access/models';
+import type { Product, PublicModifierGroup, PublicProductMedia } from '@/lib/data-access/models';
+import type { ModifierSelection } from '@/lib/modifier-rules';
 import { safeMediaUrl } from '@/lib/product-rules';
 import { useCategoryLabel } from '@/features/menu/category-label';
 import { MAX_NOTE_LENGTH, MAX_QUANTITY } from '@/features/cart/cart';
@@ -17,8 +18,10 @@ import { useCart } from '@/features/cart/cart-context';
 import type { CatalogProduct } from '../catalog-product';
 import { useProducts, useStoreProduct } from '../hooks';
 import { productDescription, productName, tileClass } from '../localized';
+import { estimatedUnitCents, useModifierSelection } from '../modifier-selection';
 import { useProductSheet } from '../product-sheet-context';
 import { FavoriteButton } from './favorite-button';
+import { ModifierSelector } from './modifier-selector';
 import { ProductArt } from './product-art';
 
 const money = (value: number) => formatMoney(value, 'es', { decimals: 'auto' });
@@ -45,21 +48,37 @@ export function ProductSheetHost() {
 
 /** Campos de `CatalogProduct` que la ficha aprovecha cuando existen (slug para la ficha del servidor, categoría e imágenes). */
 type ProductWithCatalogFields = Product &
-  Partial<Pick<CatalogProduct, 'slug' | 'category' | 'media'>>;
+  Partial<Pick<CatalogProduct, 'slug' | 'category' | 'media' | 'basePrice'>>;
 
 /**
  * Ficha del producto: hoja inferior en móvil y modal centrado de dos columnas desde `md` (como el
  * prototipo). Cantidad 1–99, observaciones (no cambian el precio) y "Agregar" con el total, que es solo
  * una referencia: el precio definitivo lo calcula el servidor al crear el pedido.
  */
+/** Lo que la ficha entrega al agregar: producto, cantidad, nota y la selección ESTRUCTURADA de extras (F12; F18 la consume). */
+export interface SheetAddPayload {
+  productId: string;
+  quantity: number;
+  note: string;
+  modifiers: ModifierSelection[];
+}
+
+const NO_GROUPS: readonly PublicModifierGroup[] = [];
+
 export function ProductSheet({
   product,
   catalog,
   onClose,
+  onAdd,
 }: {
   product: Product;
   catalog: readonly Product[];
   onClose: () => void;
+  /**
+   * Reemplaza la acción de agregar. Por defecto agrega el producto BASE al carrito mock: el carrito aún no transporta extras
+   * (F18); la selección validada llega en `modifiers` para quien la consuma.
+   */
+  onAdd?: (payload: SheetAddPayload) => void;
 }) {
   const t = useTranslations();
   const locale = useLocale();
@@ -90,9 +109,21 @@ export function ProductSheet({
   const gone = isApiError(detail.error) && detail.error.status === 404;
   const available = product.available && !gone;
 
+  // F12: extras de la ficha del servidor (solo grupos ofrecibles y opciones activas). Sin ficha (sin slug) no hay extras.
+  const groups = useMemo(() => detail.data?.modifierGroups ?? NO_GROUPS, [detail.data]);
+  const selection = useModifierSelection(groups);
+  const modifiersLoading = Boolean(detailSlug) && detail.isPending;
+  const modifiersFailed = detail.isError && !gone;
+  const canAdd = available && !modifiersLoading && !modifiersFailed && selection.valid;
+  const basePrice = extra.basePrice ?? null;
+  const unitCents =
+    (basePrice ? estimatedUnitCents(basePrice, selection.extraCents) : null) ??
+    Math.round(product.price * 100) + selection.extraCents;
+
   const submit = () => {
-    if (!available) return;
-    cart.add(product.id, quantity, note);
+    if (!canAdd) return;
+    if (onAdd) onAdd({ productId: product.id, quantity, note, modifiers: selection.selections });
+    else cart.add(product.id, quantity, note);
     notify(t('product.addedQty', { a: quantity, b: name }));
     onClose();
   };
@@ -208,6 +239,42 @@ export function ProductSheet({
               {t('product.unavailableNote')}
             </p>
           ) : null}
+          {modifiersLoading ? (
+            <p role="status" className="m-0 text-[14px] text-muted">
+              {t('product.modifiers.loading')}
+            </p>
+          ) : modifiersFailed ? (
+            <p role="alert" className="notice notice-warn m-0">
+              {t('product.modifiers.loadError')}{' '}
+              <button type="button" className="underline" onClick={() => void detail.refetch()}>
+                {t('product.modifiers.retry')}
+              </button>
+            </p>
+          ) : null}
+          <ModifierSelector groups={groups} selection={selection} disabled={!available} />
+          {groups.length > 0 ? (
+            <div className="rounded-2xl bg-subtle p-3.5 text-[14px]">
+              <dl className="m-0 flex flex-col gap-1">
+                <div className="flex justify-between gap-3">
+                  <dt>{t('product.modifiers.extrasTotal')}</dt>
+                  <dd className="m-0 font-bold">{`+${formatMoney(selection.extraCents / 100)}`}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt>{t('product.modifiers.estimatedTotal')}</dt>
+                  <dd className="m-0 font-extrabold">{formatMoney(unitCents / 100)}</dd>
+                </div>
+              </dl>
+              <p className="m-0 mt-1.5 text-[13px] text-muted">
+                {t('product.modifiers.estimateNote')}
+              </p>
+              <p className="m-0 mt-1 text-[13px] text-muted">{t('product.modifiers.cartNote')}</p>
+            </div>
+          ) : null}
+          {!selection.valid && available ? (
+            <p role="status" className="m-0 text-[13px] font-bold text-danger">
+              {t('product.modifiers.missing')}
+            </p>
+          ) : null}
           <div>
             <label className="lbl" htmlFor={noteId}>
               {t('product.notes')}
@@ -255,7 +322,7 @@ export function ProductSheet({
               type="button"
               className="btn btn-primary min-w-0 flex-1 !justify-between !px-5"
               onClick={submit}
-              disabled={!available}
+              disabled={!canAdd}
             >
               <span>{t('common.add')}</span>
               <span className="font-display">{money(product.price * quantity)}</span>

@@ -7,6 +7,7 @@ import type {
   Order,
   AdminProductMedia,
   ProductBranchAvailability,
+  ModifierExtraPrice,
   ProductPrice,
   StaffRole,
   StoreConfig,
@@ -28,7 +29,7 @@ import type { MockScenario } from './scenarios';
  * el historial de días anteriores lo genera `factories/history.ts` de forma determinista.
  * NUNCA contiene PAN completo, CVV ni PIN: de una tarjeta solo marca, últimos 4 y referencia.
  */
-export const MOCK_STORE_VERSION = 8;
+export const MOCK_STORE_VERSION = 9;
 
 /**
  * Producto del mock. Los campos F11 (`id`…`updatedAt`) reproducen `app.products` + `app.product_media`; el bloque «SIMULADO»
@@ -55,6 +56,29 @@ export interface ProductRecord {
   featured: boolean;
   food: boolean;
   availability: ProductBranchAvailability[];
+}
+
+/** F12: grupo de modificadores (`app.modifier_groups`). Sin borrado físico: solo `active=false`. */
+export interface ModifierGroupRecord {
+  id: string;
+  name: string;
+  minSelect: number;
+  maxSelect: number;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** F12: opción de un grupo (`app.modifiers`). `extraPrice` es una cadena decimal (`"5.00"`). */
+export interface ModifierRecord {
+  id: string;
+  groupId: string;
+  name: string;
+  extraPrice: ModifierExtraPrice;
+  active: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** F06: favorito del cliente (`customer_favorites`). Sin precios ni datos del producto: solo el id y cuándo se marcó. */
@@ -133,6 +157,11 @@ export interface MockStore {
    */
   productsBusy?: number;
   /**
+   * F12: simulación DETERMINISTA de `MODIFIERS_BUSY` (bloqueo no disponible o transacción agotada): nº de escrituras de
+   * modificadores (grupos, opciones, reordenar, asociar a producto) que fallarán con 503 antes de que una funcione.
+   */
+  modifiersBusy?: number;
+  /**
    * F02: simula que el reinicio de MFA no está disponible (falta la clave de servicio del servidor ⇒ 503
    * `MFA_RESET_UNAVAILABLE`). Opcional: ausente/false = disponible. Solo existe en el mock.
    */
@@ -141,6 +170,11 @@ export interface MockStore {
   /** F10: categorías del menú (jerarquía). Los productos mock se unen a ellas por `slug` hasta F11. */
   menuCategories: CategoryRecord[];
   products: ProductRecord[];
+  /** F12: grupos y opciones de modificadores (globales, compartibles entre productos). */
+  modifierGroups: ModifierGroupRecord[];
+  modifiers: ModifierRecord[];
+  /** F12: id de producto → ids de grupos asociados, en orden de asociación (máx. 10). */
+  productModifierGroups: Record<string, string[]>;
   promotions: PromotionSeed[];
   orders: Order[];
   staff: StaffRecord[];
@@ -166,6 +200,8 @@ export interface MockStore {
     address: number;
     product: number;
     media: number;
+    modifierGroup: number;
+    modifier: number;
     category: number;
     menuCategory: number;
     promotion: number;

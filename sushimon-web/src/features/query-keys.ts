@@ -7,6 +7,7 @@ import type { AdminBranchFilters } from '@/services/branches';
 import type { ClosureFilters } from '@/services/branch-schedule';
 import type { AdminStaffFilters } from '@/services/staff';
 import type { CategoryFilters } from '@/services/categories';
+import type { ModifierGroupFilters } from '@/services/modifiers';
 
 /**
  * Claves de TanStack Query centralizadas. Jerárquicas para invalidar por prefijo
@@ -83,11 +84,24 @@ export const queryKeys = {
   products: {
     all: ['products'] as const,
     storeSearch: (q: string) => ['products', 'store', 'search', q] as const,
+    /** Prefijo de TODAS las fichas públicas (F12: los `modifierGroups` viajan en la ficha). */
+    storeDetails: ['products', 'store', 'detail'] as const,
     storeDetail: (slug: string) => ['products', 'store', 'detail', slug] as const,
     adminLists: ['products', 'admin'] as const,
     admin: (filters: AdminProductFilters = {}) => ['products', 'admin', filters] as const,
     /** SIMULADO (solo mock): disponibilidad por sucursal, ilustración y textos en inglés de cada producto. */
     extras: ['products', 'extras'] as const,
+  },
+  /**
+   * F12 (spec 013): modificadores. `groupLists` = prefijo de las listas filtradas; `group(id)` = detalle con opciones;
+   * `product(id)` = grupos asociados a un producto. Toda mutación invalida `all` y las fichas públicas (`products.storeDetails`).
+   */
+  modifiers: {
+    all: ['modifiers'] as const,
+    groupLists: ['modifiers', 'groups'] as const,
+    groups: (filters: ModifierGroupFilters = {}) => ['modifiers', 'groups', filters] as const,
+    group: (id: string) => ['modifiers', 'group', id] as const,
+    product: (productId: string) => ['modifiers', 'product', productId] as const,
   },
   catalog: {
     all: ['catalog'] as const,

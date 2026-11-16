@@ -31,12 +31,12 @@ src/mocks/
   clock.ts             reloj inyectable (fecha base fija) — único lugar que lee la hora real
   factories/random.ts  mulberry32 + hash de semilla
   factories/history.ts historial determinista de 60 días (genDay del backoffice)
-  fixtures/            store · branches · products (29 + 2 de demostración F11) · promotions · staff · orders · geography · delivery (F09) · categories (F10)
+  fixtures/            store · branches · products (29 + 2 de demostración F11) · promotions · staff · orders · geography · delivery (F09) · categories (F10) · modifiers (F12)
   seed.ts              createSeedStore(scenario)
   store.ts             tipo MockStore + persistencia en sessionStorage (clave sushimon-mock-store-v1:<escenario>)
   domain.ts            reglas puras (totales, validaciones, fail(), failCode()/badRequest() con `code`/`violations`)
   coverage.ts          motor de cobertura F09 (OWN, PedidosYa simulado, elegibilidad A–G): réplica de la API
-  handlers/            public · orders · account · backoffice · backoffice-admin · logistics · schedule · delivery (F09) · categories (F10) · products (F11) · favorites (F06) · index (mockRoutes)
+  handlers/            public · orders · account · backoffice · backoffice-admin · logistics · schedule · delivery (F09) · categories (F10) · products (F11) · modifiers (F12) · favorites (F06) · index (mockRoutes)
   index.ts             createMockDataClient({ scenario, latencyMs?, store?, clock?, session?, persist? })
   testing.ts           createHarness() para pruebas
 src/services/          store · orders · account · favorites (F06) · backoffice-orders · backoffice-admin
@@ -274,7 +274,38 @@ Notas del mock:
   `categorySlug` con descendientes, `page ≤ 200`, `pageSize ≤ 100`, orden `name,id`, 400/401/403/404/409/422, media que reemplaza (https con dominio, sin IP
   literales/localhost/credenciales), 503 `PRODUCTS_BUSY` determinista (`store.productsBusy`). No simula auditoría, caché ni UUID.
 - El pedido simulado solo acepta productos publicados y usa `basePrice`; los favoritos usan la misma visibilidad (`INACTIVE` si se despublica).
-- `MOCK_STORE_VERSION` = 8 (la forma de `products` cambió).
+- `MOCK_STORE_VERSION` = 8 en F11 (la forma de `products` cambió); F12 la subió a 9 (ver más abajo).
+
+## F12 — Modificadores (extras) de producto (spec 013, ADR-0018)
+
+Estado: **web conectada al contrato (mock fiel a las reglas del servidor); integración http real NO verificada** (la API se implementa en
+paralelo; no se ha probado la web contra ella). El carrito, la cotización y los pedidos con extras NO existen (F18/F19/F20).
+
+| Qué                                                                                                                                                    | Estado                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backoffice **Extras** (`/backoffice/modificadores`): lista paginada de grupos, búsqueda, filtro activo, alta con opciones, edición, activar/desactivar | **Contrato F12** (`/v1/admin/modifier-groups`) vía `services/modifiers` → `features/modifiers/hooks`; errores por `code`; permisos `catalog.read` (ver) y `catalog.create/update` con alcance global (escribir)     |
+| Opciones de un grupo: crear, nombre, precio extra, activar/desactivar, reordenar (subir/bajar)                                                         | **Contrato F12** (`POST …/modifiers`, `PATCH /v1/admin/modifiers/{id}`, `PUT …/modifiers/reorder`); sin borrado; sin arrastrar (botones accesibles, `aria-live`, foco conservado)                                   |
+| Asociar grupos a un producto (sección «Extras del producto» del editor)                                                                                | **Contrato F12** (`GET /v1/admin/products/{id}/modifiers`, `PUT …/modifier-groups` reemplaza la lista, máx. 10); se guarda aparte de «Guardar producto»                                                             |
+| Selector de extras en la ficha pública (radio si `maxSelect = 1`, casillas con tope si > 1; obligatorio/opcional; regla)                               | **Contrato F12** (`PublicProductDetail.modifierGroups` de `GET /v1/store/products/{slug}`): solo grupos ofrecibles y opciones activas. La lista pública NO los trae                                                 |
+| Total estimado (base + extras, céntimos enteros)                                                                                                       | **Estimado en el cliente** y rotulado como tal: el servidor recalcula (F19). La suma usa cadenas decimales → céntimos (`lib/modifier-rules`), nunca coma flotante                                                   |
+| Validación de selección (`REQUIRED/TOO_MANY/NOT_IN_GROUP/GROUP_NOT_ON_PRODUCT/INACTIVE/DUPLICATED`)                                                    | Misma lógica pura en `lib/modifier-rules.validateSelection` (la ficha la usa en vivo). El validador del servidor (`ModifierSelectionService`) NO tiene endpoint en F12: **no hay llamada real de validación**       |
+| Carrito con extras, cotización, snapshot en pedido                                                                                                     | **PENDIENTE (F18/F19/F20)**: el carrito mock agrega el producto base (la ficha lo avisa). La selección estructurada `{groupId, modifierIds[]}[]` queda disponible vía `useModifierSelection` y `ProductSheet.onAdd` |
+| Disponibilidad de opciones por sucursal, cantidad por opción, textos por idioma                                                                        | No existen (F13 / extensión futura / sin contrato): los extras son globales, se eligen 0 o 1 vez y el nombre es el del servidor (sin traducción)                                                                    |
+
+Notas del mock:
+
+- Semillas (`mocks/fixtures/modifiers.ts`): «Extras» (opcional, máx. 3: Queso crema Q5.00, Aguacate Q4.00, Salsa extra Q3.00 y Crunch de tempura Q6.00 INACTIVA)
+  en California Roll, Cayibel Roll y Sushi Pizza; «Salsa» (obligatoria, elige 1, opciones Q0.00) en Sushi Pizza y Poporopos de Cangrejo; «Bebida del combo» (inactivo,
+  sin productos). Los productos usados por los carritos/pedidos/e2e de la demo (p. ej. Dumplings) siguen sin extras. No existían extras simulados previos que retirar:
+  la ficha no tenía selector.
+- Reglas emuladas: 400 de forma (propiedades desconocidas, cuerpo vacío en PATCH, nombre 1–80, precio `^[0-9]{1,4}\.[0-9]{2}$`, `groupIds` > 50, `orderedIds` > 30, `options` > 100),
+  401/403 (alcance global para escribir), 404 `MODIFIER_GROUP_NOT_FOUND|MODIFIER_NOT_FOUND|PRODUCT_NOT_FOUND`, 409 `MODIFIER_GROUP_NAME_TAKEN|MODIFIER_NAME_TAKEN` (sin distinguir
+  mayúsculas), 422 `MODIFIER_LIMITS_INVALID` (min/max y grupo activo con menos opciones activas que `minSelect`), `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED` (30 opciones, 10 grupos),
+  `MODIFIER_REORDER_MISMATCH` (conjunto exacto) y `MODIFIER_GROUP_INVALID` (duplicados, inexistentes o inactivos NUEVOS; un asociado desactivado puede permanecer), 503 `MODIFIERS_BUSY`
+  determinista (`store.modifiersBusy`). Sin cambios => 200 sin escribir. No simula auditoría, caché de la ficha (60 s + SWR) ni UUID.
+- La ficha pública omite grupos no ofrecibles (inactivos o sin opciones activas suficientes) sin ocultar el producto, como el servidor (D9).
+- Invalidación TanStack Query: toda mutación invalida `modifiers.*` y las fichas públicas (`products.storeDetails`); la lista pública y el catálogo no cambian.
+- `MOCK_STORE_VERSION` = 9 (`modifierGroups`, `modifiers`, `productModifierGroups`, `sequences.modifierGroup|modifier`, `modifiersBusy`): un store persistido de otra versión se descarta.
 
 ## Corrección de la auditoría F00–F09 (web)
 

@@ -8,6 +8,7 @@ import * as bo from '@/services/backoffice-orders';
 import * as coverage from '@/services/delivery-coverage';
 import * as categories from '@/services/categories';
 import * as favorites from '@/services/favorites';
+import * as modifiers from '@/services/modifiers';
 import * as products from '@/services/products';
 import * as zones from '@/services/delivery-zones';
 import * as locations from '@/services/locations';
@@ -314,6 +315,98 @@ describe('paridad mock ↔ http', () => {
     expect(y).toEqual(x);
     expect(x[0]).toMatchObject({ error: { status: 401 } });
     expect(x[1]).toHaveProperty('ok');
+  });
+
+  it('F12: modificadores (grupos, opciones, reordenar, asociación, ficha pública, 400/401/403/404/409/422/503) producen los mismos resultados y errores', async () => {
+    const p = pair();
+    p.asStaff('admin');
+    for (const h of [p.mock, p.backend]) h.store.modifiersBusy = 1;
+    const ids = ['mopt-salsa-extra', 'mopt-aguacate', 'mopt-queso-crema', 'mopt-tempura-crunch'];
+    const steps: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => products.getStoreProduct(c, 'sushi-pizza'), // modifierGroups
+      (c) => modifiers.listAdminModifierGroups(c),
+      (c) => modifiers.listAdminModifierGroups(c, { q: 'sal', active: true, pageSize: 5 }),
+      (c) => modifiers.listAdminModifierGroups(c, { pageSize: 101 }), // 400
+      (c) => modifiers.getAdminModifierGroup(c, 'mgroup-extras'),
+      (c) => modifiers.getAdminModifierGroup(c, 'no-existe'), // 404 MODIFIER_GROUP_NOT_FOUND
+      (c) => modifiers.createAdminModifierGroup(c, { name: 'Término' }), // 503 MODIFIERS_BUSY
+      (c) =>
+        modifiers.createAdminModifierGroup(c, {
+          name: 'Término',
+          minSelect: 1,
+          maxSelect: 1,
+          options: [{ name: 'Medio', extraPrice: '0.00' }, { name: 'Bien cocido' }],
+        }),
+      (c) => modifiers.createAdminModifierGroup(c, { name: 'EXTRAS' }), // 409 nombre de grupo
+      (c) => modifiers.createAdminModifierGroup(c, { name: 'Malo', minSelect: 3, maxSelect: 2 }), // 422 límites
+      (c) => modifiers.createAdminModifierGroup(c, { name: 'Malo', minSelect: 2, maxSelect: 2 }), // 422 inalcanzable
+      (c) => modifiers.createAdminModifierGroup(c, { name: '' }), // 400
+      (c) => modifiers.updateAdminModifierGroup(c, 'mgroup-extras', { maxSelect: 2 }),
+      (c) => modifiers.updateAdminModifierGroup(c, 'mgroup-extras', {}), // 400
+      (c) => modifiers.updateAdminModifierGroup(c, 'mgroup-extras', { minSelect: 4, maxSelect: 4 }), // 422
+      (c) =>
+        modifiers.createAdminModifier(c, 'mgroup-bebida', { name: 'Limonada', extraPrice: '1.50' }),
+      (c) => modifiers.createAdminModifier(c, 'mgroup-bebida', { name: 'té frío' }), // 409 opción
+      (c) => modifiers.createAdminModifier(c, 'mgroup-bebida', { name: 'X', extraPrice: '5' }), // 400
+      (c) => modifiers.createAdminModifier(c, 'no-existe', { name: 'X' }), // 404 grupo
+      (c) => modifiers.reorderAdminModifiers(c, 'mgroup-extras', { orderedIds: ids }),
+      (c) => modifiers.reorderAdminModifiers(c, 'mgroup-extras', { orderedIds: ids.slice(1) }), // 422 mismatch
+      (c) =>
+        modifiers.updateAdminModifier(c, 'mopt-aguacate', { extraPrice: '4.50', active: false }),
+      (c) => modifiers.updateAdminModifier(c, 'no-existe', { name: 'X' }), // 404 opción
+      (c) => modifiers.updateAdminModifier(c, 'mopt-anguila', { active: false }),
+      (c) => modifiers.updateAdminModifier(c, 'mopt-mayo-spicy', { active: false }),
+      (c) => modifiers.updateAdminModifier(c, 'mopt-ponzu', { active: false }), // 422 unsatisfiable
+      (c) => modifiers.getAdminProductModifiers(c, 'sushi-pizza'),
+      (c) => modifiers.getAdminProductModifiers(c, 'no-existe'), // 404 PRODUCT_NOT_FOUND
+      (c) => modifiers.replaceAdminProductModifierGroups(c, 'dumplings', ['mgroup-extras']),
+      (c) => modifiers.replaceAdminProductModifierGroups(c, 'dumplings', ['mgroup-bebida']), // 422 inactivo
+      (c) => modifiers.replaceAdminProductModifierGroups(c, 'dumplings', []),
+      (c) => modifiers.replaceAdminProductModifierGroups(c, 'no-existe', []), // 404
+      (c) => products.getStoreProduct(c, 'california-roll'), // la ficha refleja los cambios
+    ];
+    const a = await run(steps, p.mock.client);
+    const b = await run(steps, p.http);
+    expect(b).toEqual(a);
+    expect(
+      a
+        .flatMap((x) => ('error' in x ? [x.error.businessCode] : []))
+        .filter(Boolean)
+        .sort(),
+    ).toEqual(
+      [
+        'MODIFIER_GROUP_INVALID',
+        'MODIFIER_GROUP_NAME_TAKEN',
+        'MODIFIER_GROUP_NOT_FOUND',
+        'MODIFIER_GROUP_NOT_FOUND',
+        'MODIFIER_GROUP_UNSATISFIABLE',
+        'MODIFIER_LIMITS_INVALID',
+        'MODIFIER_LIMITS_INVALID',
+        'MODIFIER_LIMITS_INVALID',
+        'MODIFIER_NAME_TAKEN',
+        'MODIFIER_NOT_FOUND',
+        'MODIFIER_REORDER_MISMATCH',
+        'MODIFIERS_BUSY',
+        'PRODUCT_NOT_FOUND',
+        'PRODUCT_NOT_FOUND',
+      ].sort(),
+    );
+    // La ficha pública trae modifierGroups en ambos adaptadores (contrato: requerido, vacío si no hay).
+    expect(a[0]).toMatchObject({ ok: { modifierGroups: [{ name: 'Salsa' }, { name: 'Extras' }] } });
+    // Sin sesión: administración 401; 403 sin permiso (cocina); la ficha pública funciona.
+    for (const role of [null, 'kitchen'] as const) {
+      const anon = pair();
+      if (role) anon.asStaff(role);
+      const probe: ((c: DataClient) => Promise<unknown>)[] = [
+        (c) => modifiers.listAdminModifierGroups(c),
+        (c) => modifiers.createAdminModifierGroup(c, { name: 'X' }),
+        (c) => products.getStoreProduct(c, 'california-roll'),
+      ];
+      const x = await run(probe, anon.mock.client);
+      expect(await run(probe, anon.http)).toEqual(x);
+      expect(x[0]).toMatchObject({ error: { status: role ? 403 : 401 } });
+      expect(x[2]).toHaveProperty('ok');
+    }
   });
 
   it('F10: categorías (árbol público, lista admin, alta, mover, ciclo y reorder) producen los mismos resultados y errores', async () => {

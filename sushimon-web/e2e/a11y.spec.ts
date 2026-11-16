@@ -224,6 +224,23 @@ export const A11Y_ROUTES: RouteCase[] = [
     staff: 'admin',
   },
   {
+    path: '/backoffice/modificadores',
+    ready: { role: 'heading', name: 'Extras' },
+    staff: 'admin',
+  },
+  {
+    path: '/backoffice/modificadores',
+    label: 'modal grupo de extras',
+    ready: { role: 'heading', name: 'Extras' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Nuevo grupo' }).click();
+      await page.getByRole('dialog', { name: 'Nuevo grupo de extras' }).waitFor();
+      await page.getByRole('button', { name: 'Guardar grupo' }).click();
+      await page.getByRole('dialog').getByRole('alert').first().waitFor();
+    },
+  },
+  {
     path: '/backoffice/promociones',
     ready: { role: 'heading', name: 'Promociones' },
     staff: 'admin',

@@ -19,6 +19,7 @@ export type BackofficeScreen =
   | 'entregas'
   | 'productos'
   | 'categorias'
+  | 'modificadores'
   | 'promociones'
   | 'sucursales'
   | 'usuarios'
@@ -32,6 +33,7 @@ export const SCREEN_PERMISSION: Readonly<Record<BackofficeScreen, StaffPermissio
   entregas: 'deliveries.read',
   productos: 'catalog.read',
   categorias: 'catalog.read',
+  modificadores: 'catalog.read',
   promociones: 'promotions.read',
   sucursales: 'branches.read',
   usuarios: 'staff.read',
@@ -51,6 +53,7 @@ const HOME_ORDER: readonly BackofficeScreen[] = [
   'roles',
   'reportes',
   'categorias',
+  'modificadores',
 ];
 
 /**

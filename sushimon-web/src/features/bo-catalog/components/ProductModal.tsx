@@ -33,6 +33,7 @@ import {
   type ProductFormErrors,
   type ProductFormValues,
 } from '../products-view';
+import { ProductModifiersSection } from './ProductModifiersSection';
 
 interface ProductModalProps {
   /** Producto a editar; sin él, alta. */
@@ -420,6 +421,8 @@ export function ProductModal({ product, categories, onClose }: ProductModalProps
           </div>
           {fieldError('media')}
         </fieldset>
+
+        {product ? <ProductModifiersSection productId={product.id} /> : null}
 
         {!editing ? (
           <label className="row gap8 span-2">
