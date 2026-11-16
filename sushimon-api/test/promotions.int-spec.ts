@@ -53,6 +53,10 @@ describe.skipIf(!url || !ready)('Promociones (F15) contra PostgreSQL real', () =
   const staffId = randomUUID();
   const PERMS = ['promotions.read', 'promotions.create', 'promotions.update'];
   const staff = globalStaff(PERMS, { staffId });
+  // Sembrar categorías/productos exige permisos de catálogo, distintos de los de promociones.
+  const catalogStaff = globalStaff(['catalog.read', 'catalog.create', 'catalog.update'], {
+    staffId,
+  });
   const NOW = new Date('2026-11-16T22:00:00Z'); // lunes 16:00 en Guatemala
   let prisma: PrismaService;
   let admin: AdminPromotionsService;
@@ -109,13 +113,13 @@ describe.skipIf(!url || !ready)('Promociones (F15) contra PostgreSQL real', () =
     return b.id;
   };
   const newProduct = async (name: string, basePrice = '50.00') => {
-    const cat = await categories.create(staff, {
+    const cat = await categories.create(catalogStaff, {
       name: `Cat ${name} ${run}`,
       parentId: null,
       active: true,
     });
     categoryIds.add(cat.id);
-    const view = await products.create(staff, {
+    const view = await products.create(catalogStaff, {
       name: `${name} ${run}`,
       basePrice,
       categoryId: cat.id,
@@ -283,7 +287,7 @@ describe.skipIf(!url || !ready)('Promociones (F15) contra PostgreSQL real', () =
       failure(admin.update(staff, p.id, { expectedVersion: 1, name: `B ${run}` })),
     ]);
     expect(results.filter((r) => r === null)).toHaveLength(1);
-    expect(results.map(code).filter(Boolean)).toEqual(['PROMOTION_VERSION_CONFLICT']);
+    expect(results.filter((r) => r !== null).map(code)).toEqual(['PROMOTION_VERSION_CONFLICT']);
     expect((await admin.get(staff, p.id)).version).toBe(2);
   });
 
