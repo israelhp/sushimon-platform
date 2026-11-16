@@ -83,6 +83,9 @@ describe('paths', () => {
       '/v1/backoffice/branches',
       '/v1/backoffice/users',
       '/v1/delivery/quote',
+      // F11: los sustituyen `/v1/store/products` y `/v1/admin/products`; lo no cubierto (disponibilidad F13) vive en `/v1/demo/catalog/*`.
+      '/v1/catalog/products',
+      '/v1/backoffice/products',
     ]);
     const documented = [...doc.matchAll(/`(\/v1\/[^`?\s[]+)/g)]
       .map((m) => (m[1] ?? '').replace(/\{(\w+)\}/g, 'X'))

@@ -1,88 +1,145 @@
 'use client';
 
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { BoProductArt, IconPencil, IconPlus } from '@/components/icons/bo';
 import { Banner } from '@/components/ui/Banner';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { Pill, type PillTone } from '@/components/ui/Pill';
+import { Pill } from '@/components/ui/Pill';
 import { SearchInput } from '@/components/ui/SearchInput';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Switch } from '@/components/ui/Switch';
-import { Tabs, type TabItem } from '@/components/ui/Tabs';
 import { useToast } from '@/components/ui/Toast';
-import {
-  useBoCategories,
-  useBoProducts,
-  useSetProductAvailability,
-} from '@/features/backoffice/hooks';
+import { ConfirmModal } from '@/features/bo-admin/components/ConfirmModal';
 import { ForbiddenScreen } from '@/features/backoffice-shell/ForbiddenScreen';
 import { useShell } from '@/features/backoffice-shell/shell-context';
-import { errorMessage, isForbidden } from '@/features/bo-orders/error-message';
+import { isForbidden, errorMessage } from '@/features/bo-orders/error-message';
+import { useAdminCategories } from '@/features/categories/hooks';
+import {
+  useAdminProducts,
+  useSetProductAvailability,
+  useSimulatedProductExtras,
+  useUpdateProduct,
+} from '@/features/products/hooks';
+import { queryKeys } from '@/features/query-keys';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { cn } from '@/lib/cn';
-import type { Product } from '@/lib/data-access/models';
+import type { AdminProduct } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
+import { canGlobally } from '@/lib/permissions';
+import { priceToNumber } from '@/lib/product-rules';
 import {
   availabilityPatch,
   availabilityState,
   categoryLook,
-  countByCategory,
-  filterProducts,
-  sortCategories,
-  type AvailabilityKind,
   type AvailabilityState,
 } from '../catalog-view';
+import {
+  categorySlugChain,
+  productServerError,
+  statusToActive,
+  visibilityReason,
+  type ProductStatusFilter,
+} from '../products-view';
 import { useCatalogScope } from '../use-catalog-scope';
 import { ProductModal } from './ProductModal';
+import { firstProductImage } from '@/features/catalog/components/product-art';
 
 type View = 'grid' | 'tabla';
+const PAGE_SIZE = 20;
 
-const KIND_TONE: Record<AvailabilityKind, PillTone> = {
-  on: 'success',
-  off: 'muted',
-  partial: 'warning',
-};
+type Dialog = { kind: 'create' } | { kind: 'edit'; id: string } | { kind: 'status'; id: string };
 
-/** Pantalla Productos: tarjetas o tabla, búsqueda, filtro por categoría y disponibilidad por sucursal. */
+/**
+ * Pantalla Productos (F11): lista PAGINADA del servidor (búsqueda con debounce, filtro por categoría y estado), alta, edición y
+ * activar/desactivar con confirmación. Muestra `publiclyVisible` y el motivo (inactivo o categoría oculta). La vista exige
+ * `catalog.read`; crear/editar `catalog.create`/`catalog.update` con alcance GLOBAL (si no, se deshabilitan con aviso: el
+ * servidor responde 403 de todos modos). Sin borrado. La disponibilidad por sucursal sigue SIMULADA (F13): solo se ofrece con el
+ * adaptador mock.
+ */
 export function ProductsScreen() {
   const t = useTranslations('backoffice.products');
   const tu = useTranslations('ui');
   const toast = useToast();
-  const { can } = useShell();
-  const { scope, activeBranches, title: branchTitle } = useCatalogScope();
-  const products = useBoProducts();
-  const categories = useBoCategories();
+  const qc = useQueryClient();
+  const { grants, can } = useShell();
+  const { scope, title: branchTitle } = useCatalogScope();
+  const categoriesQuery = useAdminCategories();
+  const update = useUpdateProduct();
   const setAvailability = useSetProductAvailability();
-  const canEdit = can('catalog.update');
+  const extras = useSimulatedProductExtras();
 
   const [view, setView] = useState<View>('grid');
   const [query, setQuery] = useState('');
   const [categoryId, setCategoryId] = useState('all');
-  /** `null` = cerrado; `{}` = alta; `{ product }` = edición. */
-  const [form, setForm] = useState<{ product?: Product } | null>(null);
+  const [status, setStatus] = useState<ProductStatusFilter>('all');
+  const [page, setPage] = useState(1);
+  const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [statusError, setStatusError] = useState('');
   const [pendingId, setPendingId] = useState<string | null>(null);
 
-  const all = useMemo(() => products.data ?? [], [products.data]);
-  const productCategories = useMemo(
-    () => sortCategories(categories.data ?? []).filter((c) => c.kind === 'products'),
-    [categories.data],
-  );
-  const categoryName = useMemo(
-    () => new Map(productCategories.map((c) => [c.id, c.name])),
-    [productCategories],
-  );
-  const counts = useMemo(() => countByCategory(all), [all]);
-  const shown = useMemo(() => filterProducts(all, { query, categoryId }), [all, query, categoryId]);
+  const q = useDebouncedValue(query, 300).trim();
+  const products = useAdminProducts({
+    q: q || undefined,
+    categoryId: categoryId === 'all' ? undefined : categoryId,
+    active: statusToActive(status),
+    page,
+    pageSize: PAGE_SIZE,
+  });
+
+  const categories = useMemo(() => categoriesQuery.data?.items ?? [], [categoriesQuery.data]);
+  const items = useMemo(() => products.data?.items ?? [], [products.data]);
+  const total = products.data?.total ?? 0;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const filtered = Boolean(q) || categoryId !== 'all' || status !== 'all';
+  const extrasById = extras.data;
+
+  const canCreate = canGlobally(grants, 'catalog.create');
+  const canUpdate = canGlobally(grants, 'catalog.update');
+  const anyWrite = can('catalog.create') || can('catalog.update');
+  const noticeKey = canCreate || canUpdate ? null : anyWrite ? 'noticeScope' : 'noticeReadOnly';
 
   if (isForbidden(products.error)) return <ForbiddenScreen reason="server" />;
 
-  const tabs: TabItem<string>[] = [
-    { value: 'all', label: t('all'), count: all.length },
-    ...productCategories.map((c) => ({ value: c.id, label: c.name, count: counts.get(c.id) ?? 0 })),
-  ];
+  const target =
+    dialog && dialog.kind !== 'create' ? items.find((p) => p.id === dialog.id) : undefined;
 
-  const toggle = (p: Product, state: AvailabilityState) => {
+  const close = () => {
+    setDialog(null);
+    setStatusError('');
+  };
+  const resetPage =
+    <T,>(set: (v: T) => void) =>
+    (value: T) => {
+      set(value);
+      setPage(1);
+    };
+  const clearFilters = () => {
+    setQuery('');
+    setCategoryId('all');
+    setStatus('all');
+    setPage(1);
+  };
+
+  const confirmStatus = (p: AdminProduct) =>
+    update.mutate(
+      { id: p.id, input: { active: !p.active } },
+      {
+        onSuccess: () => {
+          toast.notify(t(p.active ? 'toastDeactivated' : 'toastActivated', { name: p.name }));
+          close();
+        },
+        onError: (error) => {
+          const parsed = productServerError(error);
+          setStatusError(parsed.message);
+          if (parsed.reload) void qc.invalidateQueries({ queryKey: queryKeys.products.all });
+        },
+      },
+    );
+
+  const toggleAvailability = (p: AdminProduct, state: AvailabilityState) => {
     const value = state.kind !== 'on';
     setPendingId(p.id);
     setAvailability.mutate(
@@ -96,11 +153,6 @@ export function ProductsScreen() {
     );
   };
 
-  const clearFilters = () => {
-    setQuery('');
-    setCategoryId('all');
-  };
-
   const stateLabel = (s: AvailabilityState) =>
     s.kind === 'on'
       ? t('stateOn')
@@ -108,30 +160,82 @@ export function ProductsScreen() {
         ? t('stateOff')
         : t('statePartial', { on: s.on, total: s.total });
 
-  const renderSwitch = (p: Product, state: AvailabilityState) => (
-    <Switch
-      zone="bo"
-      checked={state.kind === 'on'}
-      mixed={state.kind === 'partial'}
-      label={t('switchLabel', { name: p.name })}
-      title={t('switchTitle')}
-      disabled={pendingId === p.id || scope.length === 0}
-      onCheckedChange={() => toggle(p, state)}
-    />
-  );
+  const visibilityPill = (p: AdminProduct) => {
+    const reason = visibilityReason(p);
+    return (
+      <Pill
+        zone="bo"
+        tone={reason === 'visible' ? 'success' : reason === 'inactive' ? 'muted' : 'warning'}
+      >
+        {t(`visibility.${reason}`)}
+      </Pill>
+    );
+  };
 
-  const editButton = (p: Product) =>
-    canEdit ? (
+  /** Disponibilidad SIMULADA (F13): solo si el mock entregó los extras de este producto. */
+  const renderAvailability = (p: AdminProduct) => {
+    const e = extrasById?.get(p.id);
+    if (!e) return null;
+    const state = availabilityState(e, scope);
+    return (
+      <>
+        <Switch
+          zone="bo"
+          checked={state.kind === 'on'}
+          mixed={state.kind === 'partial'}
+          label={t('switchLabel', { name: p.name })}
+          title={t('switchTitle')}
+          disabled={pendingId === p.id || scope.length === 0}
+          onCheckedChange={() => toggleAvailability(p, state)}
+        />
+        <span className="xs muted" style={{ fontWeight: 700 }}>
+          {stateLabel(state)}
+        </span>
+      </>
+    );
+  };
+
+  const actions = (p: AdminProduct) => (
+    <>
+      <button
+        type="button"
+        className="btn sm"
+        disabled={!canUpdate}
+        aria-label={t(p.active ? 'deactivateLabel' : 'activateLabel', { name: p.name })}
+        onClick={() => setDialog({ kind: 'status', id: p.id })}
+      >
+        {t(p.active ? 'deactivate' : 'activate')}
+      </button>
       <button
         type="button"
         className="icon-btn bordered"
+        disabled={!canUpdate}
         aria-label={t('editLabel', { name: p.name })}
         title={t('edit')}
-        onClick={() => setForm({ product: p })}
+        onClick={() => setDialog({ kind: 'edit', id: p.id })}
       >
         <IconPencil size="sm" />
       </button>
-    ) : null;
+    </>
+  );
+
+  const look = (p: AdminProduct) => categoryLook(categorySlugChain(p, categories));
+  const photo = (p: AdminProduct, variant?: 'thumb') => {
+    const image = firstProductImage(p);
+    const l = look(p);
+    return image ? (
+      // eslint-disable-next-line @next/next/no-img-element -- URL https del catálogo (F14 aportará la subida)
+      <img
+        src={image.url}
+        alt={image.altText ?? ''}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+      />
+    ) : (
+      <BoProductArt kind={l.art} variant={variant} />
+    );
+  };
 
   return (
     <div className="page" style={{ animation: 'none' }}>
@@ -139,7 +243,9 @@ export function ProductsScreen() {
         <div className="grow">
           <h1>{t('title')}</h1>
           <div className="page-sub">
-            {t('subtitle', { count: all.length, branch: branchTitle })}
+            {extrasById
+              ? t('subtitle', { count: total, branch: branchTitle })
+              : t('subtitleReal', { count: total })}
           </div>
         </div>
         <SegmentedControl
@@ -152,34 +258,59 @@ export function ProductsScreen() {
             { value: 'tabla', label: t('viewTable') },
           ]}
         />
-        {canEdit ? (
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={products.isPending || categories.isPending}
-            onClick={() => setForm({})}
-          >
-            <IconPlus size="sm" />
-            {t('new')}
-          </button>
-        ) : null}
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={!canCreate || categoriesQuery.isPending}
+          onClick={() => setDialog({ kind: 'create' })}
+        >
+          <IconPlus size="sm" />
+          {t('new')}
+        </button>
       </div>
+
+      {noticeKey ? (
+        <Banner zone="bo" tone="info" role="status">
+          {t(noticeKey)}
+        </Banner>
+      ) : null}
 
       <div className="toolbar">
         <SearchInput
           zone="bo"
           inline
           value={query}
-          onValueChange={setQuery}
+          onValueChange={resetPage(setQuery)}
           label={t('searchLabel')}
           placeholder={t('searchPlaceholder')}
+          maxLength={80}
         />
-        <Tabs
+        <label className="row gap8">
+          <span className="sr-only">{t('categoryFilter')}</span>
+          <select
+            className="inp"
+            aria-label={t('categoryFilter')}
+            value={categoryId}
+            onChange={(e) => resetPage(setCategoryId)(e.target.value)}
+          >
+            <option value="all">{t('all')}</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {`${'— '.repeat(c.depth - 1)}${c.name}`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <SegmentedControl
           zone="bo"
-          label={t('categoriesLabel')}
-          items={tabs}
-          value={categoryId}
-          onChange={setCategoryId}
+          label={t('statusFilter')}
+          value={status}
+          onChange={resetPage(setStatus)}
+          options={[
+            { value: 'all', label: t('statusAll') },
+            { value: 'active', label: t('statusActive') },
+            { value: 'inactive', label: t('statusInactive') },
+          ]}
         />
       </div>
 
@@ -198,13 +329,13 @@ export function ProductsScreen() {
             <Skeleton key={i} zone="bo" style={{ height: 320, borderRadius: 16 }} />
           ))}
         </div>
-      ) : shown.length === 0 && !products.isError ? (
+      ) : items.length === 0 && !products.isError ? (
         <EmptyState
           zone="bo"
           title={t('empty.title')}
-          description={all.length === 0 ? t('empty.none') : t('empty.description')}
+          description={filtered ? t('empty.description') : t('empty.none')}
           action={
-            all.length > 0 ? (
+            filtered ? (
               <button type="button" className="btn mt8" onClick={clearFilters}>
                 {t('empty.clear')}
               </button>
@@ -213,35 +344,29 @@ export function ProductsScreen() {
         />
       ) : view === 'grid' ? (
         <div className="pgrid" role="list">
-          {shown.map((p) => {
-            const state = availabilityState(p, scope);
-            const look = categoryLook(p.categoryId);
-            return (
-              <div
-                key={p.id}
-                role="listitem"
-                className={cn('pcard', state.kind === 'off' && 'off')}
-              >
-                <div className={cn('pimg', look.tile)}>
-                  <Pill zone="bo" tone={KIND_TONE[state.kind]}>
-                    {stateLabel(state)}
-                  </Pill>
-                  <BoProductArt kind={look.art} />
+          {items.map((p) => (
+            <div key={p.id} role="listitem" className={cn('pcard', !p.publiclyVisible && 'off')}>
+              <div className={cn('pimg', look(p).tile)}>
+                {visibilityPill(p)}
+                {photo(p)}
+              </div>
+              <div className="pbody">
+                <div className="pcat">{p.category.name}</div>
+                <div className="pname">{p.name}</div>
+                <div className="pdesc">{p.description}</div>
+                <div className="xs muted" style={{ fontWeight: 600 }}>
+                  <code>{p.slug}</code>
+                  {p.sku ? ` · ${p.sku}` : ''}
                 </div>
-                <div className="pbody">
-                  <div className="pcat">{categoryName.get(p.categoryId) ?? t('noCategory')}</div>
-                  <div className="pname">{p.name}</div>
-                  <div className="pdesc">{p.description}</div>
-                  <div className="pfoot">
-                    <span className="price">{formatMoney(p.price)}</span>
-                    <span className="spacer" />
-                    {renderSwitch(p, state)}
-                    {editButton(p)}
-                  </div>
+                <div className="pfoot">
+                  <span className="price">{formatMoney(priceToNumber(p.basePrice))}</span>
+                  <span className="spacer" />
+                  {renderAvailability(p)}
+                  {actions(p)}
                 </div>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       ) : (
         <div className="card">
@@ -252,51 +377,91 @@ export function ProductsScreen() {
                 <span role="columnheader">{t('table.name')}</span>
                 <span role="columnheader">{t('table.category')}</span>
                 <span role="columnheader">{t('table.price')}</span>
-                <span role="columnheader">{t('table.availability')}</span>
+                <span role="columnheader">{t('table.status')}</span>
                 <span role="columnheader">
                   <span className="sr-only">{t('edit')}</span>
                 </span>
               </div>
-              {shown.map((p) => {
-                const state = availabilityState(p, scope);
-                const look = categoryLook(p.categoryId);
-                return (
-                  <div className="trow cols-prod" role="row" key={p.id}>
-                    <div className={cn('thumb', look.tile)} role="cell">
-                      <BoProductArt kind={look.art} variant="thumb" />
-                    </div>
-                    <div role="cell">
-                      <div className="cell-main">{p.name}</div>
-                      <div className="cell-sub trunc">{p.description}</div>
-                    </div>
-                    <div className="sm hide-sm" style={{ fontWeight: 700 }} role="cell">
-                      {categoryName.get(p.categoryId) ?? t('noCategory')}
-                    </div>
-                    <div className="num strong" role="cell">
-                      {formatMoney(p.price)}
-                    </div>
-                    <div className="sw-row" role="cell">
-                      {renderSwitch(p, state)}
-                      {stateLabel(state)}
-                    </div>
-                    <div className="row-actions" role="cell">
-                      {editButton(p)}
-                    </div>
+              {items.map((p) => (
+                <div className="trow cols-prod" role="row" key={p.id}>
+                  <div className={cn('thumb', look(p).tile)} role="cell">
+                    {photo(p, 'thumb')}
                   </div>
-                );
-              })}
+                  <div role="cell">
+                    <div className="cell-main">{p.name}</div>
+                    <div className="cell-sub trunc">{p.description}</div>
+                  </div>
+                  <div className="sm hide-sm" style={{ fontWeight: 700 }} role="cell">
+                    {p.category.name}
+                  </div>
+                  <div className="num strong" role="cell">
+                    {formatMoney(priceToNumber(p.basePrice))}
+                  </div>
+                  <div className="sw-row" role="cell">
+                    {visibilityPill(p)}
+                    {renderAvailability(p)}
+                  </div>
+                  <div className="row-actions" role="cell">
+                    {actions(p)}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       )}
 
-      {form ? (
-        <ProductModal
-          product={form.product}
-          categories={productCategories}
-          branches={activeBranches}
-          onClose={() => setForm(null)}
-        />
+      {total > 0 ? (
+        <nav
+          className="row gap8"
+          aria-label={t('pager.label')}
+          style={{ justifyContent: 'center', marginTop: 16 }}
+        >
+          <button
+            type="button"
+            className="btn sm"
+            disabled={page <= 1}
+            onClick={() => setPage((n) => Math.max(1, n - 1))}
+          >
+            {t('pager.prev')}
+          </button>
+          <span className="sm muted" role="status" style={{ fontWeight: 700 }}>
+            {t('pager.status', { page, pages, total })}
+          </span>
+          <button
+            type="button"
+            className="btn sm"
+            disabled={page >= pages}
+            onClick={() => setPage((n) => n + 1)}
+          >
+            {t('pager.next')}
+          </button>
+        </nav>
+      ) : null}
+
+      {dialog?.kind === 'create' ? <ProductModal categories={categories} onClose={close} /> : null}
+      {dialog?.kind === 'edit' && target ? (
+        <ProductModal product={target} categories={categories} onClose={close} />
+      ) : null}
+      {dialog?.kind === 'status' && target ? (
+        <ConfirmModal
+          title={t(target.active ? 'deactivateTitle' : 'activateTitle', { name: target.name })}
+          description={t('statusNow', { state: t(`visibility.${visibilityReason(target)}`) })}
+          confirmLabel={t(target.active ? 'deactivate' : 'activate')}
+          cancelLabel={t('cancel')}
+          pendingLabel={t('saving')}
+          danger={target.active}
+          pending={update.isPending}
+          error={statusError}
+          onConfirm={() => confirmStatus(target)}
+          onClose={close}
+        >
+          {target.active
+            ? t('deactivateBody', { name: target.name })
+            : target.category.effectivelyVisible
+              ? t('activateBody', { name: target.name })
+              : t('activateHiddenBody', { name: target.name, category: target.category.name })}
+        </ConfirmModal>
       ) : null}
     </div>
   );

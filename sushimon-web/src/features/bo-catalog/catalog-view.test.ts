@@ -1,19 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import type { Category } from '@/lib/data-access/models';
 import {
   availabilityPatch,
   availabilityState,
+  categoryLook,
   discountLabel,
   emptyPromotionForm,
-  filterProducts,
   formatRange,
   isRunning,
-  parsePrice,
   promotionInput,
-  sortCategories,
-  validateProductForm,
   validatePromotionForm,
-  type ProductFormValues,
 } from './catalog-view';
 
 const avail = (...flags: [string, boolean][]) => ({
@@ -41,64 +36,12 @@ describe('disponibilidad por sucursal', () => {
   });
 });
 
-describe('búsqueda y filtros', () => {
-  const items = [
-    { name: 'Dumplings', nameEn: 'Dumplings', categoryId: 'entradas' },
-    { name: 'Té Lipton', nameEn: 'Lipton tea', categoryId: 'relax' },
-    { name: 'California Roll', categoryId: 'rolls' },
-  ];
-  it('ignora mayúsculas y acentos, y filtra por categoría', () => {
-    expect(filterProducts(items, { query: 'te lipton', categoryId: 'all' })).toHaveLength(1);
-    expect(filterProducts(items, { query: 'TEA', categoryId: 'all' })).toHaveLength(1);
-    expect(filterProducts(items, { query: '', categoryId: 'rolls' })).toHaveLength(1);
-    expect(filterProducts(items, { query: 'roll', categoryId: 'relax' })).toHaveLength(0);
-  });
-});
-
-describe('orden de categorías (selector de producto)', () => {
-  const cat = (id: string, sortOrder: number): Category => ({
-    id,
-    name: id,
-    sortOrder,
-    visible: true,
-    kind: 'products',
-  });
-  it('ordena por sortOrder', () => {
-    expect(sortCategories([cat('c', 3), cat('a', 1), cat('b', 2)]).map((c) => c.id)).toEqual([
-      'a',
-      'b',
-      'c',
-    ]);
-  });
-});
-
-describe('formulario de producto', () => {
-  const valid: ProductFormValues = {
-    name: 'Roll Mon',
-    nameEn: '',
-    description: '',
-    descriptionEn: '',
-    categoryId: 'rolls',
-    price: '45',
-    featured: false,
-    availability: {},
-  };
-  it('acepta un producto válido', () => {
-    expect(validateProductForm(valid)).toEqual([]);
-  });
-  it('reporta nombre, categoría y precio en el orden de los campos', () => {
-    expect(validateProductForm({ ...valid, name: ' ', categoryId: '', price: '0' })).toEqual([
-      { field: 'name', code: 'nameRequired' },
-      { field: 'categoryId', code: 'categoryRequired' },
-      { field: 'price', code: 'priceInvalid' },
-    ]);
-  });
-  it('valida el precio: positivo, finito, con coma decimal y tope', () => {
-    expect(parsePrice('12,5')).toBe(12.5);
-    expect(parsePrice('')).toBeNull();
-    expect(parsePrice('-3')).toBeNull();
-    expect(parsePrice('abc')).toBeNull();
-    expect(parsePrice('100000')).toBeNull();
+describe('arte por categoría', () => {
+  it('usa el primer slug conocido de la cadena (categoría y ancestros) y roll por defecto', () => {
+    expect(categoryLook(['rolls-frios', 'rolls']).art).toBe('roll');
+    expect(categoryLook(['subcat', 'postres']).art).toBe('dessert');
+    expect(categoryLook(['desconocida']).art).toBe('roll');
+    expect(categoryLook([]).tile).toBe('tile-beige');
   });
 });
 

@@ -1,20 +1,15 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
-import type { ProductBranchAvailability, PromotionInput } from '@/lib/data-access/models';
+import type { PromotionInput } from '@/lib/data-access/models';
 import { useDataClient } from '@/lib/data-access/provider';
 import {
-  createProduct,
   createPromotion,
   getReportHistory,
   getReportSummary,
   listBoCategories,
-  listBoProducts,
   listBoPromotions,
-  setProductAvailability,
-  updateProduct,
   updatePromotion,
-  type ProductInput,
   type ReportFilters,
 } from '@/services/backoffice-admin';
 import {
@@ -160,36 +155,6 @@ function useInvalidatingMutation<TArgs, TResult>(
     // misma acción sobre datos obsoletos (p. ej. «Agregar sucursal» sobre el mismo hueco).
     onSuccess: () => Promise.all(keys.map((queryKey) => qc.invalidateQueries({ queryKey }))),
   });
-}
-
-export function useBoProducts() {
-  const client = useDataClient();
-  const enabled = useStaffEnabled();
-  return useQuery({
-    queryKey: queryKeys.backoffice.products,
-    queryFn: () => listBoProducts(client),
-    enabled,
-  });
-}
-
-/** Crear (sin `id`) o editar (con `id`) un producto — admin. */
-export function useSaveProduct() {
-  const client = useDataClient();
-  return useInvalidatingMutation(
-    ({ id, input }: { id?: string; input: ProductInput }) =>
-      id ? updateProduct(client, id, input) : createProduct(client, input),
-    [queryKeys.catalog.all],
-  );
-}
-
-/** Disponibilidad por sucursal — encargado (su sucursal) o admin. */
-export function useSetProductAvailability() {
-  const client = useDataClient();
-  return useInvalidatingMutation(
-    ({ id, availability }: { id: string; availability: ProductBranchAvailability[] }) =>
-      setProductAvailability(client, id, availability),
-    [queryKeys.catalog.all],
-  );
 }
 
 export function useBoCategories() {

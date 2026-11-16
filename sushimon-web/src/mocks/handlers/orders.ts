@@ -9,6 +9,7 @@ import type {
   OrderSchedule,
   PaymentResult,
 } from '@/lib/data-access/models';
+import { priceToNumber } from '@/lib/product-rules';
 import { isScheduleValid } from '@/lib/schedule';
 import {
   assertAddress,
@@ -31,6 +32,7 @@ import { TEST_CARDS } from '../fixtures/orders';
 import { pick, rngFor } from '../factories/random';
 import type { MockStore } from '../store';
 import { advanceDelivery, applyOrderStatus, dispatchOrder, freeOwnRider } from './logistics';
+import { isProductVisible } from './products';
 import { resolveOwnDelivery } from '../coverage';
 import { body, now, oneOf, requireStaff, str, type Handler, type Req } from './shared';
 
@@ -143,15 +145,19 @@ export const createOrder: Handler = (req): Order => {
 
   const lines: OrderLine[] = b.lines.map((l) => {
     const product = req.store.products.find((p) => p.id === l.productId);
-    if (!product) fail(422, `Producto inexistente: ${l.productId}`);
+    // F11: solo se piden productos publicados (activos con categoría visible); el precio es el `basePrice` del servidor.
+    if (!product || !isProductVisible(req.store, product)) {
+      fail(422, `Producto inexistente: ${l.productId}`);
+    }
     if (!availableAt(product, branch.id)) fail(409, `${product.name} no está disponible`);
+    const unitPrice = priceToNumber(product.basePrice);
     return {
       productId: product.id,
       name: product.name,
       quantity: l.quantity,
       note: (l.note ?? '').trim(),
-      unitPrice: product.price,
-      subtotal: round2(product.price * l.quantity),
+      unitPrice,
+      subtotal: round2(unitPrice * l.quantity),
     };
   });
   const t = totals(lines, deliveryFee);
@@ -426,7 +432,9 @@ export const demoSimulateOrder: Handler = (req) => {
   const branchId = ownBranch ?? b.branchId ?? open[n % Math.max(open.length, 1)]?.id;
   const branch = req.store.branches.find((x) => x.id === branchId && x.status === 'active');
   if (!branch) fail(409, 'No hay sucursales abiertas');
-  const pool = req.store.products.filter((p) => p.food && availableAt(p, branch.id));
+  const pool = req.store.products.filter(
+    (p) => p.food && isProductVisible(req.store, p) && availableAt(p, branch.id),
+  );
   if (pool.length === 0) fail(409, 'No hay productos disponibles');
   const delivery = n % 3 !== 1;
   const at = now(req);
@@ -440,8 +448,8 @@ export const demoSimulateOrder: Handler = (req) => {
       name: p.name,
       quantity,
       note: '',
-      unitPrice: p.price,
-      subtotal: p.price * quantity,
+      unitPrice: priceToNumber(p.basePrice),
+      subtotal: priceToNumber(p.basePrice) * quantity,
     };
   });
   const zoneRule = req.store.deliveryZones.find(

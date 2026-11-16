@@ -5,7 +5,6 @@ import type {
   OrderAddress,
   OrderLine,
   OrderStatusEvent,
-  Product,
   Promotion,
 } from '@/lib/data-access/models';
 import { localDate, localIsoWeekday, localMinutes, hmToMinutes } from '@/lib/time';
@@ -97,10 +96,6 @@ export function assertAddress(store: MockStore, address: Partial<OrderAddress> |
 export function availableAt(product: ProductRecord, branchId: string | undefined): boolean {
   if (!branchId) return product.availability.some((a) => a.available);
   return product.availability.find((a) => a.branchId === branchId)?.available ?? false;
-}
-
-export function productView(product: ProductRecord, branchId?: string): Product {
-  return { ...product, available: availableAt(product, branchId) };
 }
 
 export function promotionView(seed: PromotionSeed, now: Date): Promotion {

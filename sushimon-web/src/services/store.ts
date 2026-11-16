@@ -4,7 +4,6 @@ import type {
   Category,
   JobApplication,
   JobApplicationRequest,
-  Product,
   Promotion,
   StoreConfig,
 } from '@/lib/data-access/models';
@@ -22,16 +21,6 @@ export const listBranches = (client: DataClient) =>
   client.get<Branch[]>(paths.demoBranchOperations());
 
 export const listCategories = (client: DataClient) => client.get<Category[]>(paths.categories());
-
-export interface ProductFilters {
-  branchId?: string;
-  categoryId?: string;
-}
-
-export const listProducts = (client: DataClient, filters: ProductFilters = {}) =>
-  client.get<Product[]>(paths.products(), {
-    query: { branchId: filters.branchId, categoryId: filters.categoryId },
-  });
 
 export const listPromotions = (client: DataClient) => client.get<Promotion[]>(paths.promotions());
 

@@ -6,6 +6,7 @@ import type {
 } from '@/lib/data-access/models';
 import { badRequest, failCode } from '../domain';
 import type { FavoriteRecord, MockStore, ProductRecord } from '../store';
+import { isProductVisible } from './products';
 import { now, requireCustomer, type Handler, type Req } from './shared';
 
 /**
@@ -29,12 +30,14 @@ const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
 const MAX_PAGE = 10_000;
 
-/** Estado del producto frente al catálogo mock: sin categoría visible = despublicado; sin sucursal que lo ofrezca = no pedible. */
+/**
+ * Estado del producto frente al catálogo mock (F11): inactivo o con categoría oculta = despublicado (`INACTIVE`); sin sucursal
+ * que lo ofrezca = no pedible (`UNAVAILABLE`, simulado hasta F13). Un id que no existe = `REMOVED`.
+ */
 function statusOf(store: MockStore, productId: string): FavoriteProductStatus {
   const product = store.products.find((p) => p.id === productId);
   if (!product) return 'REMOVED';
-  const visible = store.categories.some((c) => c.id === product.categoryId && c.visible);
-  if (!visible) return 'INACTIVE';
+  if (!isProductVisible(store, product)) return 'INACTIVE';
   return product.availability.some((a) => a.available) ? 'ACTIVE' : 'UNAVAILABLE';
 }
 
@@ -44,7 +47,7 @@ function summaryOf(product: ProductRecord): FavoriteProductSummary {
     id: product.id,
     name: product.name,
     nameEn: product.nameEn ?? null,
-    imageUrl: null,
+    imageUrl: [...product.media].sort((a, b) => a.sortOrder - b.sortOrder)[0]?.url ?? null,
     categoryId: product.categoryId,
   };
 }

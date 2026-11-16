@@ -36,7 +36,8 @@ describe('createSeedStore', () => {
 
   it('siembra el modelo conciliado', () => {
     const s = createSeedStore();
-    expect(s.products).toHaveLength(29);
+    // 29 del menú + 2 de demostración de visibilidad (uno inactivo, otro bajo categoría oculta).
+    expect(s.products).toHaveLength(31);
     expect(PRODUCT_SEEDS).toHaveLength(29);
     expect(s.categories.map((c) => c.id)).toEqual([
       'entradas',

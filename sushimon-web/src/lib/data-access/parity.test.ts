@@ -8,6 +8,7 @@ import * as bo from '@/services/backoffice-orders';
 import * as coverage from '@/services/delivery-coverage';
 import * as categories from '@/services/categories';
 import * as favorites from '@/services/favorites';
+import * as products from '@/services/products';
 import * as zones from '@/services/delivery-zones';
 import * as locations from '@/services/locations';
 import * as orders from '@/services/orders';
@@ -126,7 +127,8 @@ const storeSteps: ((c: DataClient) => Promise<unknown>)[] = [
   (c) => store.getStoreConfig(c),
   (c) => store.listBranches(c),
   (c) => store.listCategories(c),
-  (c) => store.listProducts(c, { branchId: 'sucursal-3', categoryId: 'rolls' }),
+  (c) => products.listStoreProducts(c, { categorySlug: 'rolls', pageSize: 5 }),
+  (c) => products.listSimulatedProductExtras(c, 'sucursal-3'),
   (c) => store.listPromotions(c),
   (c) =>
     coverage.checkDeliveryCoverage(c, {
@@ -241,6 +243,77 @@ describe('paridad mock ↔ http', () => {
       'DELIVERY_ZONE_VERSION_CONFLICT',
       'BRANCH_NOT_AVAILABLE',
     ]);
+  });
+
+  it('F11: productos (lista/ficha públicas, admin, alta, edición, 404/409/422/400/503) producen los mismos resultados y errores', async () => {
+    const p = pair();
+    p.asStaff('admin');
+    for (const h of [p.mock, p.backend]) h.store.productsBusy = 1;
+    const ok = { name: 'Roll Nuevo', basePrice: '75.00', categoryId: 'cat-rolls' };
+    const steps: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => products.listStoreProducts(c),
+      (c) => products.listStoreProducts(c, { categorySlug: 'rolls', q: 'salmon', pageSize: 3 }),
+      (c) => products.listStoreProducts(c, { categorySlug: 'temporada' }),
+      (c) => products.listStoreProducts(c, { pageSize: 101 }), // 400
+      (c) => products.getStoreProduct(c, 'alaska-roll'),
+      (c) => products.getStoreProduct(c, 'roll-edicion-limitada'), // 404 PRODUCT_NOT_FOUND
+      (c) => products.getStoreProduct(c, 'gyoza-vegetal'), // 404
+      (c) => products.listAdminProducts(c, { active: false }),
+      (c) => products.listAdminProducts(c, { sort: 'basePrice', order: 'desc', pageSize: 5 }),
+      (c) => products.getAdminProduct(c, 'dumplings'),
+      (c) => products.getAdminProduct(c, 'no-existe'), // 404
+      (c) => products.createAdminProduct(c, ok), // 503 PRODUCTS_BUSY (primera escritura)
+      (c) =>
+        products.createAdminProduct(c, {
+          ...ok,
+          sku: 'rn-1',
+          media: [{ url: 'https://cdn.ejemplo.com/a.jpg', altText: 'Roll' }],
+        }),
+      (c) => products.createAdminProduct(c, { ...ok, name: 'Otro', slug: 'roll-nuevo' }), // 409 slug
+      (c) => products.createAdminProduct(c, { ...ok, name: 'Otro', sku: 'RN-1' }), // 409 sku
+      (c) => products.createAdminProduct(c, { ...ok, categoryId: 'cat-temporada' }), // 422 categoría inactiva
+      (c) => products.createAdminProduct(c, { ...ok, media: [{ url: 'http://x.com/a.jpg' }] }), // 422 media
+      (c) => products.createAdminProduct(c, { ...ok, basePrice: '0.00' }), // 400
+      (c) => products.updateAdminProduct(c, 'dumplings', { active: false }),
+      (c) => products.updateAdminProduct(c, 'dumplings', { media: [] }),
+      (c) => products.updateAdminProduct(c, 'dumplings', {}), // 400
+      (c) => products.updateAdminProduct(c, 'no-existe', { name: 'X' }), // 404
+      (c) => products.listStoreProducts(c, { q: 'dumpl' }),
+    ];
+    const a = await run(steps, p.mock.client);
+    const b = await run(steps, p.http);
+    expect(b).toEqual(a);
+    expect(
+      a
+        .flatMap((x) => ('error' in x ? [x.error.businessCode] : []))
+        .filter(Boolean)
+        .sort(),
+    ).toEqual(
+      [
+        'PRODUCT_CATEGORY_INVALID',
+        'PRODUCT_MEDIA_INVALID',
+        'PRODUCT_NOT_FOUND',
+        'PRODUCT_NOT_FOUND',
+        'PRODUCT_NOT_FOUND',
+        'PRODUCT_NOT_FOUND',
+        'PRODUCT_SKU_TAKEN',
+        'PRODUCT_SLUG_TAKEN',
+        'PRODUCTS_BUSY',
+      ].sort(),
+    );
+    // Sin sesión: la lista admin es 401 y la pública funciona, igual en ambos adaptadores.
+    const anon = pair();
+    const x = await run(
+      [(c) => products.listAdminProducts(c), (c) => products.listStoreProducts(c)],
+      anon.mock.client,
+    );
+    const y = await run(
+      [(c) => products.listAdminProducts(c), (c) => products.listStoreProducts(c)],
+      anon.http,
+    );
+    expect(y).toEqual(x);
+    expect(x[0]).toMatchObject({ error: { status: 401 } });
+    expect(x[1]).toHaveProperty('ok');
   });
 
   it('F10: categorías (árbol público, lista admin, alta, mover, ciclo y reorder) producen los mismos resultados y errores', async () => {
@@ -473,8 +546,10 @@ describe('paridad mock ↔ http', () => {
       (c) => bo.listRiders(c),
       (c) => bo.listDeliveries(c, { from: '2026-11-10', to: '2026-11-11', provider: 'own' }),
       (c) =>
-        admin.setProductAvailability(c, 'gaseosas', [{ branchId: 'sucursal-1', available: false }]),
-      (c) => admin.updateProduct(c, 'gaseosas', { price: -1 }),
+        products.setSimulatedProductAvailability(c, 'gaseosas', [
+          { branchId: 'sucursal-1', available: false },
+        ]),
+      (c) => products.updateAdminProduct(c, 'gaseosas', { basePrice: '0.00' }),
       (c) => admin.getReportSummary(c, { from: '2026-11-01', to: '2026-11-11' }),
       (c) => admin.getReportHistory(c, { from: '2026-11-10' }),
     ];
@@ -570,7 +645,7 @@ describe('paridad mock ↔ http', () => {
       const p = pair(scenario);
       p.asStaff('manager');
       const steps: ((c: DataClient) => Promise<unknown>)[] = [
-        (c) => store.listProducts(c),
+        (c) => products.listStoreProducts(c),
         (c) => orders.createOrder(c, { ...newOrder, paymentMethod: 'cash' }),
         (c) => bo.getDashboard(c),
         (c) => bo.dispatchOrder(c, { id: 'MON-307051', provider: 'pedidosya' }),

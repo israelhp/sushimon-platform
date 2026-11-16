@@ -1,5 +1,7 @@
-import { act, fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { ApiError } from '@/lib/data-access/errors';
+import { withShortcuts } from '@/lib/data-access/types';
 import { renderStore } from '@/test/store-providers';
 import { MAX_QUANTITY } from '@/features/cart/cart';
 import { useProductSheet } from '../product-sheet-context';
@@ -129,5 +131,71 @@ describe('ProductSheet', () => {
     await act(async () => {});
     fireEvent.click(screen.getByRole('button', { name: 'abrir' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+});
+
+describe('ProductSheet · ficha del servidor (F11)', () => {
+  const seedRollFrio = (store: import('@/mocks/store').MockStore) => {
+    const base = store.products.find((p) => p.id === 'alaska-roll')!;
+    Object.assign(base, {
+      categoryId: 'cat-rolls-frios',
+      media: [
+        { id: 'm1', url: 'https://cdn.ejemplo.com/a.jpg', altText: 'Alaska roll', sortOrder: 0 },
+        { id: 'm2', url: 'https://cdn.ejemplo.com/b.jpg', altText: null, sortOrder: 1 },
+        { id: 'm3', url: 'javascript:alert(1)', altText: 'xss', sortOrder: 2 },
+      ],
+    });
+  };
+
+  it('breadcrumb de categoría con ancestros (raíz → hoja) y galería solo con URL https', async () => {
+    const { dialog } = await openSheet('alaska-roll', { prepareStore: seedRollFrio });
+    const crumb = await within(dialog).findByRole('navigation', { name: 'Categoría del producto' });
+    await waitFor(() => expect(crumb).toHaveTextContent('Sushi Rolls›Rolls fríos'));
+    expect(within(crumb).getByText('Rolls fríos')).toHaveAttribute('aria-current', 'location');
+    const img = within(dialog).getByRole('img', { name: 'Alaska roll' });
+    expect(img).toHaveAttribute('src', 'https://cdn.ejemplo.com/a.jpg');
+    const dots = within(dialog).getAllByRole('button', { name: /^Imagen \d de 2$/ });
+    expect(dots).toHaveLength(2); // la URL javascript: se descarta
+    fireEvent.click(dots[1]!);
+    // Sin altText la imagen es decorativa (alt vacío): el nombre va en el título.
+    expect(dialog.querySelector('img[src^="https"]')).toHaveAttribute(
+      'src',
+      'https://cdn.ejemplo.com/b.jpg',
+    );
+    expect(dialog.querySelector('[src^="javascript"]')).toBeNull();
+  });
+
+  it('sin imágenes muestra el placeholder (ilustración, sin <img>)', async () => {
+    const { dialog } = await openSheet('dumplings');
+    expect(dialog.querySelector('img')).toBeNull();
+    expect(dialog.querySelector('svg')).not.toBeNull();
+  });
+
+  it('si la ficha ya no está publicada (404) avisa y no deja agregar', async () => {
+    let target: import('@/mocks/store').MockStore | null = null;
+    const { dialog } = await openSheet('dumplings', {
+      prepareStore: (store) => {
+        target = store;
+      },
+      wrapClient: (base) =>
+        withShortcuts('mock', async (path, options) => {
+          if (/^\/v1\/store\/products\/dumplings$/.test(path)) {
+            throw new ApiError(
+              404,
+              'not_found',
+              'Producto no encontrado',
+              undefined,
+              undefined,
+              'PRODUCT_NOT_FOUND',
+            );
+          }
+          return base.request(path, options);
+        }),
+    });
+    expect(target).not.toBeNull();
+    expect(
+      await within(dialog).findByText('Este producto ya no está disponible en el menú.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Agregar\s*Q53$/ })).toBeDisabled();
   });
 });

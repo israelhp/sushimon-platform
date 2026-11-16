@@ -1,4 +1,5 @@
-import type { ProductFilters } from '@/services/store';
+import type { ProductFilters } from './catalog/catalog-product';
+import type { AdminProductFilters } from '@/services/products';
 import type { DeliveryZoneFilters } from '@/services/delivery-zones';
 import type { BackofficeOrderFilters, DeliveryFilters } from '@/services/backoffice-orders';
 import type { ReportFilters } from '@/services/backoffice-admin';
@@ -75,6 +76,19 @@ export const queryKeys = {
     adminLists: ['categories', 'admin'] as const,
     admin: (filters: CategoryFilters = {}) => ['categories', 'admin', filters] as const,
   },
+  /**
+   * F11 (spec 012): productos del contrato. `store` = lecturas PÚBLICAS (búsqueda con `q`, ficha por slug); `admin` = lista
+   * paginada del backoffice. Toda mutación invalida `all` y el catálogo unido (`catalog.all`).
+   */
+  products: {
+    all: ['products'] as const,
+    storeSearch: (q: string) => ['products', 'store', 'search', q] as const,
+    storeDetail: (slug: string) => ['products', 'store', 'detail', slug] as const,
+    adminLists: ['products', 'admin'] as const,
+    admin: (filters: AdminProductFilters = {}) => ['products', 'admin', filters] as const,
+    /** SIMULADO (solo mock): disponibilidad por sucursal, ilustración y textos en inglés de cada producto. */
+    extras: ['products', 'extras'] as const,
+  },
   catalog: {
     all: ['catalog'] as const,
     categories: ['catalog', 'categories'] as const,
@@ -121,7 +135,6 @@ export const queryKeys = {
     orders: (filters: BackofficeOrderFilters = {}) => ['orders', 'backoffice', filters] as const,
     deliveries: (filters: DeliveryFilters = {}) => ['orders', 'deliveries', filters] as const,
     riders: (branchId?: string) => ['backoffice', 'riders', branchId ?? 'all'] as const,
-    products: ['catalog', 'backoffice', 'products'] as const,
     categories: ['catalog', 'backoffice', 'categories'] as const,
     promotions: ['catalog', 'backoffice', 'promotions'] as const,
     /** Prefijo de las consultas administrativas de sucursales (F07). */

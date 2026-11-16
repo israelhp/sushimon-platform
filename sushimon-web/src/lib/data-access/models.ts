@@ -75,7 +75,26 @@ export type AdminCategoryList = S['AdminCategoryList'];
 export type CreateCategoryRequest = S['CreateCategoryRequest'];
 export type UpdateCategoryRequest = S['UpdateCategoryRequest'];
 export type ReorderCategoriesRequest = S['ReorderCategoriesRequest'];
+/**
+ * Modelo UI del producto (borrador `Product`, MOCK_ONLY): lo que consumen carrito, checkout y favoritos. Desde F11 se
+ * construye en `features/catalog/catalog-product.ts` a partir de `PublicProduct` (contrato real) más lo que F11 NO provee y
+ * sigue SIMULADO (ilustración, destacado, `available`/disponibilidad por sucursal F13, textos en inglés).
+ */
 export type Product = S['Product'];
+/** F11: productos y fichas (`/v1/store/products`, `/v1/admin/products`). Importes como CADENA decimal (`"85.00"`). */
+export type ProductPrice = S['ProductPrice'];
+export type PublicProduct = S['PublicProduct'];
+export type PublicProductDetail = S['PublicProductDetail'];
+export type PublicProductPage = S['PublicProductPage'];
+export type PublicProductCategoryRef = S['PublicProductCategoryRef'];
+export type PublicProductMedia = S['PublicProductMedia'];
+export type AdminProduct = S['AdminProduct'];
+export type AdminProductPage = S['AdminProductPage'];
+export type AdminProductCategory = S['AdminProductCategory'];
+export type AdminProductMedia = S['AdminProductMedia'];
+export type ProductMediaInput = S['ProductMediaInput'];
+export type CreateProductRequest = S['CreateProductRequest'];
+export type UpdateProductRequest = S['UpdateProductRequest'];
 /** Disponibilidad de un PRODUCTO por sucursal (borrador del catálogo; no confundir con `BranchAvailability`, F08). */
 export type ProductBranchAvailability = S['DraftBranchAvailability'];
 export type Promotion = S['Promotion'];
@@ -217,3 +236,20 @@ export type CustomerFavorites = S['CustomerFavorites'];
 export type FavoriteItem = S['FavoriteItem'];
 export type FavoriteProductSummary = S['FavoriteProductSummary'];
 export type FavoriteProductStatus = S['FavoriteProductStatus'];
+
+/**
+ * SIMULADO (solo mock, `/v1/demo/catalog/product-extras`): lo que F11 NO provee y la tienda sigue necesitando hasta que
+ * lleguen F12 (modificadores), F13 (disponibilidad/precio por sucursal), F15 (insignias) y los textos por idioma. Nunca existe
+ * en la API real: en http la UI usa valores por defecto.
+ */
+export interface SimulatedProductExtras {
+  productId: string;
+  nameEn?: string;
+  descriptionEn?: string;
+  illustration: string;
+  featured: boolean;
+  food: boolean;
+  /** Disponible en la sucursal pedida (o en alguna activa si no se indica). */
+  available: boolean;
+  availability: ProductBranchAvailability[];
+}

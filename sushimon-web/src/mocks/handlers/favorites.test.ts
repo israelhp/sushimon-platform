@@ -97,9 +97,9 @@ describe('F06 favoritos · mock que reproduce las reglas del servidor', () => {
       status: 404,
       code: 'PRODUCT_NOT_FOUND',
     });
-    const category = h.store.categories.find((c) => c.id === h.store.products[0]?.categoryId);
+    // F11: un producto inactivo (o con categoría oculta) se despublica.
     const productId = h.store.products[0]?.id as string;
-    if (category) category.visible = false;
+    h.store.products[0]!.active = false;
     expect(await failure(favorites.addMyFavorite(h.client, productId))).toEqual({
       status: 404,
       code: 'PRODUCT_NOT_FOUND',
@@ -155,9 +155,8 @@ describe('F06 favoritos · mock que reproduce las reglas del servidor', () => {
     const h = setup();
     const account = h.store.accounts['cliente@ejemplo.com']!;
     const hiddenProduct = h.store.products.find((p) => p.id === 'dumplings')!;
-    const category = h.store.categories.find((c) => c.id === hiddenProduct.categoryId)!;
-    // Con la categoría oculta todos los productos de ella son INACTIVE.
-    category.visible = false;
+    // Con la categoría oculta (F10) todos los productos de ella son INACTIVE.
+    h.store.menuCategories.find((c) => c.id === hiddenProduct.categoryId)!.active = false;
     h.store.products.find((p) => p.id === 'platanito-roll')!.availability = h.store.products
       .find((p) => p.id === 'platanito-roll')!
       .availability.map((a) => ({ ...a, available: false }));

@@ -60,14 +60,19 @@ test('administrador: edita un producto y crea otro con validación', async ({ pa
   await page.getByRole('button', { name: 'Nuevo producto' }).click();
   const dialog = page.getByRole('dialog', { name: 'Nuevo producto' });
   await dialog.getByRole('button', { name: 'Guardar producto' }).click();
-  await expect(dialog.getByRole('alert')).toHaveText('Escribe el nombre del producto.');
+  await expect(dialog.getByRole('alert').first()).toContainText('Escribe un nombre');
   await expect(dialog.getByRole('textbox', { name: 'Nombre', exact: true })).toBeFocused();
 
   await dialog.getByRole('textbox', { name: 'Nombre', exact: true }).fill('Roll Mon especial');
+  await dialog.getByRole('combobox', { name: /^Categoría/ }).selectOption({ label: 'Sushi Rolls' });
   await dialog.getByLabel(/^Precio/).fill('48');
   await dialog.getByRole('button', { name: 'Guardar producto' }).click();
-  await expect(page.locator('.toast', { hasText: 'Producto creado' })).toBeVisible();
+  await expect(
+    page.locator('.toast', { hasText: 'Producto «Roll Mon especial» creado' }),
+  ).toBeVisible();
   await expect(dialog).toBeHidden();
+  // La lista es paginada (20 por página): se busca en el servidor.
+  await page.getByRole('searchbox', { name: 'Buscar producto' }).fill('Roll Mon especial');
   await expect(card(page, 'Roll Mon especial')).toContainText('Q48.00');
 
   await page.getByRole('button', { name: 'Editar Roll Mon especial' }).click();
@@ -184,8 +189,10 @@ test('encargado: sin botones de edición, pero cambia la disponibilidad de su su
     timeout: 90_000,
   });
   await expect(dumplings(page)).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByRole('button', { name: 'Nuevo producto' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /^Editar / })).toHaveCount(0);
+  // F11: solo lectura con aviso (el servidor responde 403 de todos modos); la disponibilidad simulada sigue.
+  await expect(page.getByText('Tienes acceso de solo lectura al catálogo.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Nuevo producto' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Editar Dumplings' })).toBeDisabled();
 
   await dumplings(page).click();
   await expect(page.locator('.toast', { hasText: 'Dumplings marcado como agotado' })).toBeVisible();

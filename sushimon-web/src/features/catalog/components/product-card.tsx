@@ -2,15 +2,15 @@
 
 import { Minus, Plus } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
-import { FoodArt } from '@/components/art/FoodArt';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
 import { formatMoney } from '@/lib/format';
 import type { Product } from '@/lib/data-access/models';
 import { useCart } from '@/features/cart/cart-context';
-import { foodArtKind, productDescription, productName, tileClass } from '../localized';
+import { productDescription, productName, tileClass } from '../localized';
 import { useProductSheet } from '../product-sheet-context';
 import { FavoriteButton } from './favorite-button';
+import { ProductArt } from './product-art';
 
 const money = (value: number) => formatMoney(value, 'es', { decimals: 'auto' });
 
@@ -53,7 +53,7 @@ function TileCard({ product, catalog, className }: Omit<ProductCardProps, 'varia
             'flex h-[110px] items-center justify-center',
           )}
         >
-          <FoodArt kind={foodArtKind(product.illustration)} className="h-[80%] w-auto" />
+          <ProductArt product={product} artClassName="h-[80%] w-auto" />
         </span>
         <span className="flex flex-col gap-0.5 p-3">
           <span className="text-[15px] font-extrabold leading-tight">{name}</span>
@@ -98,7 +98,7 @@ function RowCard({ product, catalog, className }: Omit<ProductCardProps, 'varian
           'flex h-[84px] w-[84px] flex-none items-center justify-center overflow-hidden rounded-xl sm:h-[96px] sm:w-[96px]',
         )}
       >
-        <FoodArt kind={foodArtKind(product.illustration)} className="h-[78%] w-auto" />
+        <ProductArt product={product} artClassName="h-[78%] w-auto" />
       </button>
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="-mr-1 -mt-1 flex items-start justify-between gap-1">

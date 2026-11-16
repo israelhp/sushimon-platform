@@ -1,15 +1,13 @@
 import type { BoProductArtKind } from '@/components/icons/bo';
 import type {
   ProductBranchAvailability,
-  Category,
-  Product,
   Promotion,
   PromotionInput,
 } from '@/lib/data-access/models';
 
 /**
- * Lógica pura del catálogo del backoffice (Productos, Categorías, Promociones): disponibilidad por
- * sucursal, filtros, orden de categorías y validación de formularios. Sin React ni red: se prueba aparte.
+ * Lógica pura del catálogo del backoffice: arte por categoría, disponibilidad por sucursal SIMULADA (F13) y formulario de
+ * promociones (el de productos F11 vive en `products-view`). Sin React ni red: se prueba aparte.
  * Los textos viajan como códigos de error; la traducción vive en los mensajes (`backoffice.*`).
  */
 
@@ -26,8 +24,13 @@ const CATEGORY_LOOK: Record<string, { art: BoProductArtKind; tile: BoTile }> = {
   postres: { art: 'dessert', tile: 'tile-coral' },
 };
 
-export function categoryLook(categoryId: string): { art: BoProductArtKind; tile: BoTile } {
-  return CATEGORY_LOOK[categoryId] ?? { art: 'roll', tile: 'tile-beige' };
+/** Arte y mosaico del primer slug conocido de la cadena (categoría y luego sus ancestros); sin dato, `roll`. */
+export function categoryLook(slugs: readonly string[]): { art: BoProductArtKind; tile: BoTile } {
+  for (const slug of slugs) {
+    const found = CATEGORY_LOOK[slug];
+    if (found) return found;
+  }
+  return { art: 'roll', tile: 'tile-beige' };
 }
 
 // ── Disponibilidad por sucursal ─────────────────────────────────────────────────────────────
@@ -43,7 +46,7 @@ export interface AvailabilityState {
 
 /** Estado del producto en las sucursales del alcance (una sucursal, o todas las activas). */
 export function availabilityState(
-  product: Pick<Product, 'availability'>,
+  product: { availability: readonly ProductBranchAvailability[] },
   scope: readonly string[],
 ): AvailabilityState {
   const on = scope.filter(
@@ -60,115 +63,6 @@ export function availabilityPatch(
   value: boolean,
 ): ProductBranchAvailability[] {
   return scope.map((branchId) => ({ branchId, available: value }));
-}
-
-// ── Filtros y conteos ───────────────────────────────────────────────────────────────────────
-
-export const normalizeText = (s: string) =>
-  s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
-
-export interface ProductFilter {
-  query: string;
-  /** `all` o id de categoría. */
-  categoryId: string;
-}
-
-export function filterProducts<T extends Pick<Product, 'name' | 'nameEn' | 'categoryId'>>(
-  products: readonly T[],
-  { query, categoryId }: ProductFilter,
-): T[] {
-  const q = normalizeText(query);
-  return products.filter(
-    (p) =>
-      (categoryId === 'all' || p.categoryId === categoryId) &&
-      (!q || normalizeText(p.name).includes(q) || normalizeText(p.nameEn ?? '').includes(q)),
-  );
-}
-
-export function countByCategory(products: readonly Pick<Product, 'categoryId'>[]) {
-  const counts = new Map<string, number>();
-  for (const p of products) counts.set(p.categoryId, (counts.get(p.categoryId) ?? 0) + 1);
-  return counts;
-}
-
-// ── Categorías del catálogo simulado (selector de producto; la jerarquía F10 vive en `categories-view`) ─────
-
-export function sortCategories(categories: readonly Category[]): Category[] {
-  return [...categories].sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id));
-}
-
-// ── Formulario de producto ──────────────────────────────────────────────────────────────────
-
-export interface ProductFormValues {
-  name: string;
-  nameEn: string;
-  description: string;
-  descriptionEn: string;
-  categoryId: string;
-  /** Texto del campo (se valida al guardar). */
-  price: string;
-  featured: boolean;
-  /** Disponibilidad por id de sucursal. */
-  availability: Record<string, boolean>;
-}
-
-export type ProductField = 'name' | 'price' | 'categoryId';
-export type ProductErrorCode = 'nameRequired' | 'priceInvalid' | 'categoryRequired';
-export interface ProductFormError {
-  field: ProductField;
-  code: ProductErrorCode;
-}
-
-export const MAX_PRICE = 9999;
-
-/** Precio en quetzales o `null` si no es un número mayor a 0 (admite coma decimal). */
-export function parsePrice(text: string): number | null {
-  const n = Number(text.trim().replace(',', '.'));
-  if (!text.trim() || !Number.isFinite(n) || n <= 0 || n > MAX_PRICE) return null;
-  return Math.round(n * 100) / 100;
-}
-
-/** Errores en el orden en que aparecen los campos (el primero recibe el foco). */
-export function validateProductForm(values: ProductFormValues): ProductFormError[] {
-  const errors: ProductFormError[] = [];
-  if (!values.name.trim()) errors.push({ field: 'name', code: 'nameRequired' });
-  if (!values.categoryId) errors.push({ field: 'categoryId', code: 'categoryRequired' });
-  if (parsePrice(values.price) === null) errors.push({ field: 'price', code: 'priceInvalid' });
-  return errors;
-}
-
-export function emptyProductForm(
-  categoryId: string,
-  branchIds: readonly string[],
-): ProductFormValues {
-  return {
-    name: '',
-    nameEn: '',
-    description: '',
-    descriptionEn: '',
-    categoryId,
-    price: '',
-    featured: false,
-    availability: Object.fromEntries(branchIds.map((id) => [id, true])),
-  };
-}
-
-export function productToForm(product: Product, branchIds: readonly string[]): ProductFormValues {
-  return {
-    name: product.name,
-    nameEn: product.nameEn ?? '',
-    description: product.description,
-    descriptionEn: product.descriptionEn ?? '',
-    categoryId: product.categoryId,
-    price: String(product.price),
-    featured: product.featured,
-    availability: Object.fromEntries(
-      branchIds.map((id) => [
-        id,
-        product.availability.find((a) => a.branchId === id)?.available === true,
-      ]),
-    ),
-  };
 }
 
 // ── Promociones ─────────────────────────────────────────────────────────────────────────────

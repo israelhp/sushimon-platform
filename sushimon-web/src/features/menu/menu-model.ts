@@ -1,16 +1,15 @@
 import type { FoodArtKind } from '@/components/art/FoodArt';
 import { flattenPublic, type PublicNode } from '@/lib/category-tree';
 import type { Product, PublicCategory } from '@/lib/data-access/models';
+import { CATEGORY_DECOR } from '@/lib/product-decor';
 
 /** Valor de `?cat=` que representa "Todo" (sin parámetro). Reservado: ninguna categoría se resuelve por ese slug. */
 export const ALL_CATEGORY = 'all';
 
 /**
- * Sección del menú: una categoría VISIBLE del árbol público (F10) con SUS productos propios.
- *
- * LIMITACIÓN (hasta F11): los productos mock siguen en el catálogo simulado y referencian su categoría por un texto
- * (`Product.categoryId`, p. ej. `rolls`). Se unen a la categoría real por `slug` (o por `id`, que será lo que traiga el
- * catálogo real en F11). Una categoría sin productos propios no genera sección.
+ * Sección del menú: una categoría VISIBLE del árbol público (F10) con SUS productos propios (F11: `Product.categoryId` es el
+ * id de la categoría real; un producto cuya categoría no esté en el árbol visible no genera sección). Una categoría sin
+ * productos propios tampoco.
  */
 export interface MenuSection {
   category: PublicCategory;
@@ -20,7 +19,7 @@ export interface MenuSection {
 }
 
 const ownsProduct = (category: PublicCategory, product: Product) =>
-  product.categoryId === category.slug || product.categoryId === category.id;
+  product.categoryId === category.id;
 
 /** Secciones en el orden del árbol (depth-first): solo categorías visibles con productos. */
 export function menuSections(
@@ -99,24 +98,15 @@ export function menuHref(category: string): string {
 }
 
 /**
- * Decoración PRESENTACIONAL por slug (ilustración y rótulo japonés del prototipo). El contrato de categorías no la trae
- * (sin imágenes hasta F14): una subcategoría hereda la de su raíz; sin dato se usa `roll`.
+ * Decoración PRESENTACIONAL por slug (ilustración y rótulo japonés del prototipo; ver `lib/product-decor`). Una subcategoría
+ * hereda la de su raíz; sin dato se usa `roll`.
  */
-const DECOR: Readonly<Record<string, { art: FoodArtKind; jp?: string }>> = {
-  entradas: { art: 'dumpling', jp: '前菜' },
-  monchis: { art: 'burger', jp: 'おつまみ' },
-  rolls: { art: 'roll', jp: '巻き寿司' },
-  espirituosas: { art: 'sake', jp: 'お酒' },
-  relax: { art: 'shake', jp: 'ソフトドリンク' },
-  postres: { art: 'icecream', jp: 'デザート' },
-};
-
 export function categoryDecor(
   category: PublicCategory,
   path: readonly PublicCategory[] = [],
 ): { art: FoodArtKind; jp?: string } {
   for (const c of [category, ...[...path].reverse()]) {
-    const found = DECOR[c.slug];
+    const found = CATEGORY_DECOR[c.slug];
     if (found) return found;
   }
   return { art: 'roll' };
