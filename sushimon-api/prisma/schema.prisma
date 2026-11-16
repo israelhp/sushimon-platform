@@ -209,14 +209,18 @@ model Product {
 /// F11 (0012). UNIQUE (product_id, sort_order) es DEFERRABLE INITIALLY DEFERRED en SQL (Prisma no lo expresa: no usar
 /// upsert/ON CONFLICT sobre él). Tope de 8 por producto: trigger product_media_limit_trg.
 model ProductMedia {
-  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  productId String  @map("product_id") @db.Uuid
-  mediaUrl  String  @map("media_url")
-  altText   String? @map("alt_text")
-  sortOrder Int     @default(0) @map("sort_order")
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  id        String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId String      @map("product_id") @db.Uuid
+  mediaUrl  String      @map("media_url")
+  altText   String?     @map("alt_text")
+  sortOrder Int         @default(0) @map("sort_order")
+  /// F14 (0015). NULL = medio con URL externa previa a F14. FK ON DELETE RESTRICT: un asset en uso no se borra.
+  assetId   String?     @map("asset_id") @db.Uuid
+  product   Product     @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  asset     MediaAsset? @relation(fields: [assetId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([productId, sortOrder], map: "product_media_product_sort_key")
+  @@index([assetId], map: "product_media_asset_idx")
   @@map("product_media")
   @@schema("app")
 }
@@ -291,6 +295,7 @@ model StaffUser {
   creator      StaffUser?        @relation("StaffCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
   createdStaff StaffUser[]       @relation("StaffCreatedBy")
   assignments  StaffAssignment[]
+  mediaAssets  MediaAsset[]
 
   @@index([createdBy], map: "staff_users_created_by_idx")
   @@index([createdAt(sort: Desc)], map: "staff_users_created_at_idx")
@@ -394,6 +399,31 @@ model CustomerAddress {
   @@index([customerId, createdAt, id], map: "customer_addresses_customer_created_idx")
   @@index([municipalityId], map: "customer_addresses_municipality_id_idx")
   @@map("customer_addresses")
+  @@schema("app")
+}
+
+/// F14 (migración 0015). Objetos subidos a Cloudflare R2. No expresable en Prisma: UNIQUE parcial (kind, checksum_sha256)
+/// WHERE status='READY' (índice media_assets_ready_checksum_key; el servicio captura 23505), índice parcial de purga
+/// (status, expires_at) WHERE status='PENDING' y CHECKs: kind, formato de object_key (sin '..' ni '//'), mime, tamaño
+/// 1..5242880 (subir el tope exige migración), checksum hex64, status, READY => confirmed_at, PENDING => expires_at.
+model MediaAsset {
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kind             String
+  objectKey        String         @unique @map("object_key")
+  bucket           String
+  mimeType         String         @map("mime_type")
+  sizeBytes        BigInt         @map("size_bytes")
+  checksumSha256   String         @map("checksum_sha256")
+  status           String         @default("PENDING")
+  createdByStaffId String?        @map("created_by_staff_id") @db.Uuid
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  confirmedAt      DateTime?      @map("confirmed_at") @db.Timestamptz(6)
+  expiresAt        DateTime?      @map("expires_at") @db.Timestamptz(6)
+  createdBy        StaffUser?     @relation(fields: [createdByStaffId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  productMedia     ProductMedia[]
+
+  @@index([createdAt(sort: Desc), id], map: "media_assets_created_idx")
+  @@map("media_assets")
   @@schema("app")
 }
 
