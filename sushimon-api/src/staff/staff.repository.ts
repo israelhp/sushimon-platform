@@ -136,6 +136,15 @@ export class StaffRepository {
     return row ? toRecord(row) : null;
   }
 
+  /**
+   * `auth_user_id` del empleado (null = no vinculado o inexistente). ÚNICO punto que lo lee, solo para operaciones de
+   * identidad en el servidor (reinicio de MFA): nunca sale en respuestas, logs ni auditoría.
+   */
+  async findAuthUserId(tx: StaffTx, id: string): Promise<string | null> {
+    const row = await tx.staffUser.findUnique({ where: { id }, select: { authUserId: true } });
+    return row?.authUserId ?? null;
+  }
+
   async listStaff(f: StaffListFilter): Promise<{ items: StaffRecord[]; total: number }> {
     const q = f.q?.trim();
     const and: Prisma.StaffUserWhereInput[] = [];

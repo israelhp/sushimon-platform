@@ -14,7 +14,10 @@ export interface AuditEventInput {
   entityId: string;
   action: string;
   reason?: string | null;
-  /** Solo los campos que cambian (diff real), no el registro completo. */
+  /**
+   * Valores estructurales, NUNCA PII (nombre, correo, teléfono, dirección): si un cambio afecta datos personales
+   * se audita solo el nombre del campo (p. ej. `changedFields`) y los ids.
+   */
   oldValues?: AuditValues | null;
   newValues?: AuditValues | null;
 }
@@ -22,7 +25,7 @@ export interface AuditEventInput {
 /**
  * Escritura mínima en `app.audit_events` (F07; F36 la ampliará). Recibe el cliente de la transacción del
  * cambio: el evento y el cambio se confirman o se revierten juntos. No guarda PII ni secretos: el llamador
- * decide qué campos entran en el diff.
+ * decide qué entra (solo ids, estados y nombres de campo; las filas históricas y la tabla append-only no se tocan).
  */
 @Injectable()
 export class AuditService {

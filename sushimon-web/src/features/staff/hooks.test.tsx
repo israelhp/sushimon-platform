@@ -17,6 +17,7 @@ import {
   useCreateStaff,
   useReplaceRolePermissions,
   useReplaceStaffAssignments,
+  useResetStaffMfa,
   useSetStaffStatus,
   useUpdateStaff,
 } from './hooks';
@@ -202,6 +203,36 @@ describe('mutaciones', () => {
         .catch(() => undefined);
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe('restablecer MFA (F02)', () => {
+  it('204 sin invalidar ninguna consulta (el MFA por persona no se expone)', async () => {
+    const { spy, wrapper } = setup();
+    const { result } = renderHook(() => useResetStaffMfa(), { wrapper });
+    await act(async () => result.current.mutateAsync('u5'));
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('409 STAFF_NOT_LINKED y 503 MFA_RESET_UNAVAILABLE llegan como ApiError con código de negocio', async () => {
+    const { h, spy, wrapper } = setup();
+    const { result } = renderHook(() => useResetStaffMfa(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync('u10').catch(() => undefined);
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toMatchObject({ status: 409, businessCode: 'STAFF_NOT_LINKED' });
+    h.store.mfaResetUnavailable = true;
+    await act(async () => {
+      await result.current.mutateAsync('u5').catch(() => undefined);
+    });
+    await waitFor(() =>
+      expect(result.current.error).toMatchObject({
+        status: 503,
+        businessCode: 'MFA_RESET_UNAVAILABLE',
+      }),
+    );
     expect(spy).not.toHaveBeenCalled();
   });
 });

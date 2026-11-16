@@ -26,6 +26,9 @@ export default defineConfig({
           name: 'dom',
           include: ['src/**/*.test.tsx'],
           environment: 'jsdom',
+          // `findBy*`/`waitFor` esperan hasta 5 s (ver `setup-dom.ts`): el tope de la prueba debe superarlo para que un
+          // fallo real muestre el error de Testing Library y no un «Test timed out» sin contexto.
+          testTimeout: 15_000,
           setupFiles: ['./src/test/setup-dom.ts'],
         },
       },

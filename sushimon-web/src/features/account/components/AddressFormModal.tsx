@@ -6,16 +6,18 @@ import { useId, useState, type FormEvent } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
+import { isApiError } from '@/lib/data-access/errors';
 import type { Address } from '@/lib/data-access/models';
 import { useLocationOptions } from '@/features/delivery-coverage/hooks';
-import { requiresZone, zoneChoices } from '@/features/order-mode/draft';
-import { useStoreConfig } from '@/features/store/hooks';
+import { MAX_ZONE, requiresZone } from '@/features/order-mode/draft';
 import { useCreateAddress, useSetDefaultAddress, useUpdateAddress } from '../hooks';
 import {
   EMPTY_ADDRESS,
   MAX_ADDRESSES,
+  ZONE_FREE_MAX,
   hasErrors,
   validateAddress,
+  type AddressErrorKey,
   type AddressFormValues,
 } from '../validation';
 import { useAddressLabels } from '../use-address-labels';
@@ -27,6 +29,9 @@ export const LABEL_ICONS: Record<Address['label'], LucideIcon> = {
   work: Briefcase,
   other: MapPin,
 };
+
+/** Zonas de la ciudad de Guatemala: «Zona 1» … «Zona 25» (la API no excluye ninguna; ADR-0014 §13). */
+const CITY_ZONES = Array.from({ length: MAX_ZONE }, (_, i) => i + 1);
 
 const addressKey = (a: Pick<Address, 'line' | 'municipality' | 'zone'>) =>
   `${a.line.trim().toLowerCase()}|${a.municipality}|${a.zone}`;
@@ -55,7 +60,6 @@ export function AddressFormModal({
   const tCommon = useTranslations('common');
   const { notify } = useToast();
   const formId = useId();
-  const config = useStoreConfig();
   const create = useCreateAddress();
   const update = useUpdateAddress();
   const setDefault = useSetDefaultAddress();
@@ -76,8 +80,9 @@ export function AddressFormModal({
   const [makeDefault, setMakeDefault] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [serverError, setServerError] = useState('');
+  // La API rechazó la zona (400 ZONE_REQUIRED / ZONE_INVALID): se muestra en el campo, no solo en el aviso.
+  const [serverZone, setServerZone] = useState<AddressErrorKey | undefined>();
 
-  const nonexistent = config.data?.nonexistentZones ?? [];
   // F09: departamentos y municipios del catálogo público `locations`; la dirección guarda los NOMBRES.
   const locations = useLocationOptions(values.department);
   // Guatemala es el municipio por defecto hasta que el cliente elija otro (derivado, sin efectos).
@@ -88,10 +93,12 @@ export function AddressFormModal({
   const shown: AddressFormValues = guatemalaId
     ? { ...values, municipalityId: guatemalaId, municipality: 'Guatemala' }
     : values;
-  const zones = zoneChoices(nonexistent);
   const zoneApplies = requiresZone(shown.department, shown.municipality);
-  const errors = validateAddress(shown, nonexistent);
+  const errors = validateAddress(shown);
   const visible = submitted ? errors : {};
+  const zoneError = visible.zone ?? serverZone;
+  // Dirección antigua de la ciudad guardada sin zona (no se migra): hay que elegirla para poder guardar.
+  const zoneMissing = !!editing && zoneApplies && !values.zone.trim();
   const message = (key?: string) => (key ? tv(key as 'validation.name') : undefined);
   const busy = create.isPending || update.isPending || setDefault.isPending;
   const isNewFirst = !editing && addresses.length === 0;
@@ -103,6 +110,7 @@ export function AddressFormModal({
     event.preventDefault();
     setSubmitted(true);
     setServerError('');
+    setServerZone(undefined);
     if (hasErrors(errors)) {
       requestAnimationFrame(() =>
         document.querySelector<HTMLElement>(`[id="${formId}"] [aria-invalid="true"]`)?.focus(),
@@ -111,7 +119,7 @@ export function AddressFormModal({
     }
     const input: AddressFormValues = {
       ...shown,
-      zone: zoneApplies ? values.zone : '',
+      zone: values.zone.trim(),
       customLabel: values.label === 'other' ? values.customLabel.trim() : '',
       line: values.line.trim(),
       references: values.references.trim(),
@@ -132,6 +140,18 @@ export function AddressFormModal({
       notify(t('saved'));
       onClose();
     } catch (error) {
+      if (isApiError(error) && error.status === 400) {
+        const zoneCode = error.businessCode;
+        if (zoneCode === 'ZONE_REQUIRED' || zoneCode === 'ZONE_INVALID') {
+          setServerZone(
+            zoneCode === 'ZONE_REQUIRED' ? 'validation.zone' : 'validation.zoneInvalid',
+          );
+          requestAnimationFrame(() =>
+            document.querySelector<HTMLElement>(`[id="${formId}-zone"]`)?.focus(),
+          );
+          return;
+        }
+      }
       const conflict = (error as { status?: number }).status === 409;
       setServerError(
         conflict
@@ -270,15 +290,24 @@ export function AddressFormModal({
             </p>
           ) : null}
           {zoneApplies ? (
-            <Field id={`${formId}-zone`} label={tCheckout('zone')} error={message(visible.zone)}>
+            <Field
+              id={`${formId}-zone`}
+              label={tCheckout('zone')}
+              error={message(zoneError)}
+              help={zoneMissing ? t('zoneMissing') : undefined}
+            >
               {(props) => (
                 <select
                   {...props}
+                  required
                   value={values.zone}
-                  onChange={(e) => set({ zone: e.target.value })}
+                  onChange={(e) => {
+                    set({ zone: e.target.value });
+                    setServerZone(undefined);
+                  }}
                 >
                   <option value="">{tCheckout('select')}</option>
-                  {zones.map((n) => (
+                  {CITY_ZONES.map((n) => (
                     <option key={n} value={String(n)}>
                       {tCheckout('zone')} {n}
                     </option>
@@ -286,7 +315,28 @@ export function AddressFormModal({
                 </select>
               )}
             </Field>
-          ) : null}
+          ) : (
+            <Field
+              id={`${formId}-zone`}
+              label={`${tCheckout('zone')} (${tCommon('optional')})`}
+              error={message(zoneError)}
+            >
+              {(props) => (
+                <input
+                  {...props}
+                  type="text"
+                  autoComplete="off"
+                  maxLength={ZONE_FREE_MAX}
+                  placeholder={t('zoneFreePh')}
+                  value={values.zone}
+                  onChange={(e) => {
+                    set({ zone: e.target.value });
+                    setServerZone(undefined);
+                  }}
+                />
+              )}
+            </Field>
+          )}
           <Field
             id={`${formId}-line`}
             label={tCheckout('exactAddress')}

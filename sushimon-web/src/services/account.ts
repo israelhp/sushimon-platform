@@ -57,6 +57,33 @@ export function labelFromText(text: string): Pick<Address, 'label' | 'customLabe
   return { label: 'other', customLabel: text };
 }
 
+// Zona (ADR-0014 §13, decisión C2): en la ciudad de Guatemala la API usa «Zona N» (N de 1 a 25); la UI (checkout, pedido,
+// cobertura) trabaja con el NÚMERO como texto («10»). La conversión vive solo aquí. En los demás municipios la zona es
+// texto libre (≤ 60) y pasa tal cual.
+
+const isCity = (department: string, municipality: string) =>
+  department === 'Guatemala' && municipality === 'Guatemala';
+
+/** `«Zona 10»` (API) → `«10»` (UI) solo en la ciudad de Guatemala; cualquier otro valor se conserva. */
+export function zoneFromApi(zone: string | null, department: string, municipality: string): string {
+  if (!zone) return '';
+  const match = /^zona (\d{1,3})$/i.exec(zone.trim());
+  return match && isCity(department, municipality) ? String(Number(match[1])) : zone;
+}
+
+/**
+ * `«10»` (UI) → `«Zona 10»` (API). Sin lugar conocido (edición parcial) un número solo se entiende como zona de la ciudad.
+ * Vacío = `null` (la API responde `ZONE_REQUIRED` en la ciudad). Lo que no es un número se envía tal cual: el servidor
+ * decide (`ZONE_INVALID`).
+ */
+export function zoneToApi(zone: string, department?: string, municipality?: string): string | null {
+  const text = zone.trim().replace(/\s+/g, ' ');
+  if (!text) return null;
+  const city =
+    department === undefined || municipality === undefined || isCity(department, municipality);
+  return city && /^\d{1,3}$/.test(text) ? `Zona ${Number(text)}` : text;
+}
+
 /** Respuesta de la API → vista de la UI. */
 export function toAddress(r: CustomerAddressResponse): Address {
   return {
@@ -66,7 +93,7 @@ export function toAddress(r: CustomerAddressResponse): Address {
     municipalityId: r.municipality.id,
     department: r.department.name,
     municipality: r.municipality.name,
-    zone: r.zone ?? '',
+    zone: zoneFromApi(r.zone, r.department.name, r.municipality.name),
     line: r.addressLine,
     references: r.referenceNote ?? '',
     createdAt: r.createdAt,
@@ -78,7 +105,7 @@ export function toCreateRequest(input: AddressInput) {
   return {
     label: labelText(input),
     municipalityId: input.municipalityId,
-    zone: input.zone.trim() ? input.zone.trim() : null,
+    zone: zoneToApi(input.zone, input.department, input.municipality),
     addressLine: input.line.trim(),
     referenceNote: input.references?.trim() ? input.references.trim() : null,
   };
@@ -90,7 +117,9 @@ export function toUpdateRequest(input: Partial<AddressInput>) {
   if (input.label !== undefined)
     body['label'] = labelText({ label: input.label, customLabel: input.customLabel });
   if (input.municipalityId !== undefined) body['municipalityId'] = input.municipalityId;
-  if (input.zone !== undefined) body['zone'] = input.zone.trim() ? input.zone.trim() : null;
+  if (input.zone !== undefined) {
+    body['zone'] = zoneToApi(input.zone, input.department, input.municipality);
+  }
   if (input.line !== undefined) body['addressLine'] = input.line.trim();
   if (input.references !== undefined) {
     body['referenceNote'] = input.references.trim() ? input.references.trim() : null;

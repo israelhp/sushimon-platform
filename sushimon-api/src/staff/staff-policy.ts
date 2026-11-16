@@ -121,6 +121,20 @@ export function isManageable(
   });
 }
 
+/**
+ * Reinicio de MFA de otro empleado (F02): solo el alcance GLOBAL de `staff.update` (el administrador global; un permiso
+ * en una sucursal NO basta) y nunca sobre uno mismo (el único administrador que pierde su factor usa el procedimiento
+ * manual del panel de Supabase). Reutiliza el permiso `staff.update`: no hay permiso nuevo.
+ */
+export const MFA_RESET_PERMISSION = 'staff.update';
+
+export function assertCanResetMfa(grants: Grants, actorId: string, targetId: string): void {
+  if (!scopeOf(grants, MFA_RESET_PERMISSION).allBranches) {
+    throw new EscalationDenied('mfa_reset_requires_global_scope');
+  }
+  if (targetId === actorId) throw new EscalationDenied('self_modification');
+}
+
 export interface AssignmentDiff {
   /** Filas existentes a eliminar (ya sea retiradas o inactivas que se recrean). */
   remove: AssignmentRecord[];

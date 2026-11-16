@@ -13,4 +13,4 @@
 - [x] T020 Prueba manual real (Supabase de pruebas + Google + app TOTP, 2026-11-14): enrolar, verificar al reingresar, código incorrecto con reintento, cuenta no autorizada → access-denied, y `403 insufficient_aal` al enrolar un 2.º factor en aal1
 - [x] T020b Prueba manual (2026-11-14): URL directa del backoffice en aal1 redirige a verify sin mostrar el panel; sin bucles ni parpadeo
 - [ ] T021 E2E de navegador del flujo MFA contra Supabase local/cloud de pruebas
-- [ ] T022 (F03) Recuperación administrativa de MFA con auditoría y revocación de sesiones
+- [x] T022 (API) Recuperación administrativa de MFA: `POST /v1/admin/staff/{id}/mfa-reset` (administrador global, no a uno mismo, aal2, auditoría `staff.mfa_reset`; Supabase simulado en pruebas). Pendiente: verificación manual con `SUPABASE_SERVICE_ROLE_KEY` real, UI en Usuarios y revocación de sesiones (no soportada por id en la Admin API)

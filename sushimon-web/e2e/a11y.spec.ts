@@ -77,6 +77,18 @@ export const A11Y_ROUTES: RouteCase[] = [
     ready: { role: 'heading', name: 'Mis direcciones' },
     signedIn: true,
   },
+  {
+    path: '/cuenta/direcciones',
+    label: 'modal dirección con zona requerida',
+    ready: { role: 'heading', name: 'Mis direcciones' },
+    signedIn: true,
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Agregar dirección' }).first().click();
+      const dialog = page.getByRole('dialog', { name: 'Nueva dirección' });
+      await dialog.getByRole('button', { name: 'Guardar dirección' }).click();
+      await dialog.getByText('Indicá la zona.').waitFor();
+    },
+  },
   { path: '/cuenta/favoritos', ready: { role: 'heading', name: 'Mis favoritos' }, signedIn: true },
   { path: '/cuenta/pedidos', ready: { role: 'heading', name: 'Mis pedidos' }, signedIn: true },
   { path: '/cuenta/direcciones', ready: { role: 'heading', name: 'Mis direcciones' } },
@@ -466,6 +478,16 @@ export const A11Y_ROUTES: RouteCase[] = [
       await page.getByRole('dialog', { name: 'Nuevo usuario' }).waitFor();
       await page.getByRole('button', { name: 'Guardar usuario' }).click();
       await page.getByRole('dialog').getByRole('alert').first().waitFor();
+    },
+  },
+  {
+    path: '/backoffice/usuarios',
+    label: 'modal restablecer MFA',
+    ready: { role: 'heading', name: 'Usuarios' },
+    staff: 'admin',
+    step: async (page) => {
+      await page.getByRole('button', { name: 'Restablecer MFA de Cocina Zona 4' }).click();
+      await page.getByRole('dialog', { name: 'Restablecer MFA' }).waitFor();
     },
   },
   { path: '/backoffice/reportes', ready: { role: 'heading', name: 'Reportes' }, staff: 'admin' },

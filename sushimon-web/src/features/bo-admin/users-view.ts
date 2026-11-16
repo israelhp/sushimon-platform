@@ -250,6 +250,49 @@ export function staffServerError(error: unknown): StaffServerError {
   }
 }
 
+// ── Restablecer MFA (F02) ─────────────────────────────────────────────────────────────────
+
+/**
+ * ¿Se ofrece «Restablecer MFA» en esta fila? Solo con `staff.update` de alcance GLOBAL (administrador), nunca sobre la
+ * propia fila y solo para empleados vinculados (un pendiente de vincular aún no tiene factores). Cosmético: la API decide
+ * (403/404/409).
+ */
+export function canResetStaffMfa(
+  grants: Grants | null | undefined,
+  staff: Pick<AdminStaff, 'id' | 'identityStatus'>,
+  selfId: string | null | undefined,
+): boolean {
+  return (
+    canGlobally(grants, 'staff.update') && staff.id !== selfId && staff.identityStatus === 'LINKED'
+  );
+}
+
+/**
+ * Mensaje de negocio del restablecimiento de MFA. Por código de negocio (`businessCode`) y estado; nunca se muestra el
+ * texto del servidor (podría traer detalle del proveedor) ni se filtran datos del proveedor de identidad.
+ */
+export function mfaResetErrorMessage(error: unknown): string {
+  if (!isApiError(error)) return 'No se pudo restablecer el MFA. Inténtalo de nuevo.';
+  switch (error.status) {
+    case 0:
+      return 'Sin conexión. Revisa tu red e inténtalo de nuevo.';
+    case 403:
+      return 'No tienes permiso para restablecer el MFA de esta persona. Solo un administrador general puede hacerlo, y no sobre su propia cuenta.';
+    case 404:
+      return 'La persona ya no existe o no está dentro de tu alcance.';
+    case 409:
+      return 'Esta persona aún no vinculó su cuenta con Google, así que no tiene MFA que restablecer.';
+    case 429:
+      return 'Demasiados intentos. Espera un minuto e inténtalo de nuevo.';
+    case 502:
+      return 'El proveedor de identidad no pudo completar el restablecimiento. No se confirmó ningún cambio: inténtalo de nuevo en unos minutos.';
+    case 503:
+      return 'El restablecimiento de MFA no está disponible por ahora (configuración del servidor). Usa el procedimiento manual en Supabase o avisa a quien administra el sistema.';
+    default:
+      return 'No se pudo restablecer el MFA. Inténtalo de nuevo.';
+  }
+}
+
 // ── Filtros y listado ─────────────────────────────────────────────────────────────────────
 
 export type StaffStatusFilter = 'all' | 'active' | 'inactive';

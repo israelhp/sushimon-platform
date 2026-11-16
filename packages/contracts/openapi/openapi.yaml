@@ -389,6 +389,12 @@ paths:
         Valida el municipio contra el catálogo de F09 y normaliza los textos. Límite: 10 direcciones por
         cliente (409 `ADDRESS_LIMIT_REACHED`). Duplicado = misma línea normalizada, municipio y zona (409
         `ADDRESS_DUPLICATE`); la referencia no interviene. Guardar una dirección NO valida cobertura ni tarifa.
+
+        Zona (ADR-0014): en la ciudad de Guatemala (municipio «Guatemala» del departamento «Guatemala», comparados por nombre
+        sin tildes ni mayúsculas) la zona es OBLIGATORIA con formato «Zona N», N entero de 1 a 25; se normaliza (`zona 10`,
+        ` Zona  10 ` -> `Zona 10`) y es la misma etiqueta que usa la cobertura (F09 `zoneLabel`). Faltante o vacía => 400
+        `ZONE_REQUIRED`; fuera de formato o de rango => 400 `ZONE_INVALID` (ambos con `violations[0].path = zone`). En los
+        demás municipios la zona es opcional y de texto libre (máx. 60).
       tags: [me]
       security:
         - bearer: []
@@ -406,7 +412,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/CustomerAddress'
         '400':
-          description: Datos inválidos o municipio inexistente (violations[].code = MUNICIPALITY_NOT_FOUND)
+          description: Datos inválidos (`ADDRESS_INVALID`), municipio inexistente (`MUNICIPALITY_NOT_FOUND`) o zona de la ciudad de Guatemala ausente (`ZONE_REQUIRED`) o inválida (`ZONE_INVALID`)
           content:
             application/json:
               schema:
@@ -467,6 +473,8 @@ paths:
       description: |
         Actualización parcial con las mismas reglas de creación (duplicado excluyendo esta dirección).
         No cambia el propietario ni la predeterminada. No modifica pedidos históricos (F20 guarda su snapshot).
+        La regla de zona (`ZONE_REQUIRED`/`ZONE_INVALID`) se evalúa sobre el resultado fusionado: una dirección antigua de la
+        ciudad de Guatemala sin zona (guardada antes de la regla; no se migra) debe incluir `zone` al editarse.
       tags: [me]
       security:
         - bearer: []
@@ -484,7 +492,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/CustomerAddress'
         '400':
-          description: Datos inválidos, campo no permitido o municipio inexistente
+          description: Datos inválidos, campo no permitido, municipio inexistente o zona de la ciudad de Guatemala ausente (`ZONE_REQUIRED`) o inválida (`ZONE_INVALID`)
           content:
             application/json:
               schema:
@@ -1159,6 +1167,91 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: Dejaría al sistema sin administrador activo y vinculado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/staff/{id}/mfa-reset:
+    post:
+      operationId: resetAdminStaffMfa
+      summary: Reinicia el MFA TOTP de un empleado (recuperación por otro administrador)
+      description: |
+        F02 (recuperación de MFA). Elimina TODOS los factores MFA del empleado en Supabase Auth (Admin API, solo servidor
+        con `SUPABASE_SERVICE_ROLE_KEY`) para que en su próximo inicio de sesión el flujo F02 existente le exija enrolar
+        de nuevo (`MFA_REQUIRED` -> `/backoffice/mfa/setup`). No devuelve cuerpo ni datos del proveedor.
+
+        Autorización (permiso reutilizado: `staff.update`; sin permiso ni migración nuevos): JWT + personal activo + `aal2` +
+        `staff.update` + **alcance GLOBAL** (solo el administrador global; un permiso en una sola sucursal NO basta -> 403).
+        Nadie reinicia su propio MFA (403; el único administrador que pierde su factor usa el procedimiento manual del
+        panel de Supabase, `docs/security/mfa.md`). El objetivo debe existir y estar visible en el alcance del actor
+        (si no, 404 `STAFF_NOT_FOUND` sin distinguir). Debe estar vinculado (`linked`); si no, 409 `STAFF_NOT_LINKED`.
+        Las denegaciones por regla (no global, a uno mismo) responden 403 genérico y se auditan como `staff.denied_escalation`.
+
+        Idempotente: sin factores devuelve 204 igualmente. Un empleado INACTIVO también es un objetivo válido (sirve para el
+        procedimiento de robo de dispositivo: desactivar, reiniciar, reactivar). Throttle propio: 5 solicitudes por minuto por
+        ACTOR autenticado y 20 por minuto por IP (429 `RATE_LIMITED`). Antes de llamar al proveedor se reevalúa al actor y se
+        audita la intención `staff.mfa_reset_requested`. Se eliminan como máximo 20 factores por solicitud (si hay más: 502).
+        El proveedor tiene un plazo total de 15 s (si se agota: 502). Auditoría `staff.mfa_reset` (actor, objetivo y
+        `factorsRemoved`; SIN PII ni secretos) y, si el proveedor falla, `staff.mfa_reset_failed` (solo `factorsRemoved` parcial y
+        una categoría fija de error). Respuesta `no-store`.
+
+        Sin `SUPABASE_SERVICE_ROLE_KEY` configurada: 503 `MFA_RESET_UNAVAILABLE`. Fallo del proveedor: 502 `MFA_RESET_FAILED`
+        (mensaje fijo; nunca se filtra el detalle del proveedor). Ambos `code` son públicos en 5xx. Reintentar es seguro.
+        Un token `aal2` ya emitido al empleado puede seguir vigente hasta su `exp` (ver `docs/security/mfa.md`).
+      tags: [staff]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/StaffId'
+      responses:
+        '204':
+          description: MFA reiniciado (o el empleado no tenía factores). Sin cuerpo.
+        '400':
+          description: Identificador inválido (no es UUID)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: |
+            No es personal activo, falta `staff.update`, sesión no `aal2` (`MFA_REQUIRED`), el actor no tiene alcance global
+            o el objetivo es el propio actor (mensaje genérico `Acceso denegado`; el motivo queda en auditoría)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: El empleado no existe o está fuera del alcance del actor (`STAFF_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: El empleado aún no vinculó su cuenta de Auth (`STAFF_NOT_LINKED`); no hay factores que reiniciar
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Demasiadas solicitudes (`RATE_LIMITED`, 5 por minuto por actor o 20 por minuto por IP)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: El proveedor de identidad falló al listar o eliminar factores (`MFA_RESET_FAILED`, mensaje fijo)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Reinicio no disponible por configuración (`MFA_RESET_UNAVAILABLE`, falta la clave de servicio en el servidor)
           content:
             application/json:
               schema:
@@ -3835,7 +3928,11 @@ components:
       properties:
         label: { type: string, minLength: 1, maxLength: 40 }
         municipalityId: { type: string, format: uuid }
-        zone: { type: string, nullable: true, maxLength: 60 }
+        zone:
+          type: string
+          nullable: true
+          maxLength: 60
+          description: 'Obligatoria en la ciudad de Guatemala con formato «Zona N» (N 1..25); en otros municipios, texto libre opcional.'
         addressLine: { type: string, minLength: 1, maxLength: 200 }
         referenceNote: { type: string, nullable: true, maxLength: 200 }
         latitude: { type: number, nullable: true, minimum: -90, maximum: 90 }
@@ -3850,7 +3947,11 @@ components:
       properties:
         label: { type: string, minLength: 1, maxLength: 40 }
         municipalityId: { type: string, format: uuid }
-        zone: { type: string, nullable: true, maxLength: 60 }
+        zone:
+          type: string
+          nullable: true
+          maxLength: 60
+          description: 'Obligatoria en la ciudad de Guatemala con formato «Zona N» (N 1..25); en otros municipios, texto libre opcional.'
         addressLine: { type: string, minLength: 1, maxLength: 200 }
         referenceNote: { type: string, nullable: true, maxLength: 200 }
         latitude: { type: number, nullable: true, minimum: -90, maximum: 90 }

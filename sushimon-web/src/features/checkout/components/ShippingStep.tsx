@@ -89,8 +89,6 @@ export function ShippingStep({
   const client = useDataClient();
   const zoneWord = t('checkoutFlow.zoneInline');
   const money = (v: number) => formatMoney(v, locale);
-  const area = (b: { area: { es: string; en?: string } }) =>
-    (locale === 'en' ? b.area.en : undefined) ?? b.area.es;
 
   /** Cambia a "programar" con el primer horario disponible y vuelve a Entrega. */
   const schedule = () => {
@@ -132,7 +130,7 @@ export function ShippingStep({
                 onClick={() => dispatch({ type: 'pickup-branch', branchId: b.id })}
                 icon={<Store className="h-5 w-5" aria-hidden="true" />}
                 title={b.name}
-                sub={area(b)}
+                sub={b.address}
                 badge={
                   data.availability[b.id]?.isAcceptingOrders === false ? (
                     <span className="rounded-full bg-subtle px-2 py-0.5 text-[11px] font-extrabold text-muted">
@@ -213,7 +211,7 @@ export function ShippingStep({
                 }
                 icon={<Store className="h-5 w-5" aria-hidden="true" />}
                 title={b.name}
-                sub={area(b)}
+                sub={b.address}
                 badge={
                   b.id === autoBranchId ? (
                     <span

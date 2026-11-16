@@ -4,6 +4,7 @@
  *  - Máximo 10 direcciones por cliente (espejo de la UI del prototipo).
  *  - Duplicado = misma línea normalizada + mismo municipio + misma zona. La etiqueta y la referencia no cuentan.
  *  - Guardar una dirección NO valida cobertura ni tarifa: solo se valida formato y existencia del municipio.
+ *  - Zona: OBLIGATORIA en la ciudad de Guatemala («Zona N», N 1..25); libre y opcional (≤ 60) en los demás municipios.
  */
 
 export const ADDRESS_LIMIT = 10;
@@ -11,6 +12,8 @@ export const LABEL_MAX = 40;
 export const ADDRESS_LINE_MAX = 200;
 export const REFERENCE_MAX = 200;
 export const ZONE_MAX = 60;
+export const CITY_ZONE_MIN = 1;
+export const CITY_ZONE_MAX = 25;
 
 export interface AddressViolation {
   path: string;
@@ -166,4 +169,60 @@ export function duplicateKey(input: {
 /** Límite de direcciones: `count` ya guardadas; se permite crear mientras sea menor que el límite. */
 export function canAddAddress(count: number): boolean {
   return count < ADDRESS_LIMIT;
+}
+
+/** Minúsculas, sin tildes ni marcas diacríticas y con espacios colapsados: clave de comparación de nombres geográficos. */
+function geoKey(raw: string): string {
+  return raw.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * ¿Es la ciudad de Guatemala? El municipio «Guatemala» del departamento «Guatemala» (el catálogo F09 los siembra con
+ * esos nombres: migración 0007). Se identifica por nombre normalizado (sin tildes, mayúsculas ni espacios extra) y NO
+ * por id: los UUID se generan por entorno. «Guatemala» como municipio de otro departamento (si existiera) no cuenta.
+ */
+export function isGuatemalaCity(municipalityName: string, departmentName: string): boolean {
+  return geoKey(municipalityName) === 'guatemala' && geoKey(departmentName) === 'guatemala';
+}
+
+const CITY_ZONE_PATTERN = /^zona\s*(\d{1,2})$/i;
+
+/**
+ * Regla de zona según el municipio, sobre la zona ya normalizada por `normalizeAddressFields` (null = vacía).
+ *  - Ciudad de Guatemala: obligatoria (`ZONE_REQUIRED`), formato «Zona N» con N entero 1..25 (`ZONE_INVALID`) y se
+ *    canonicaliza (`zona 05`, ` Zona  10 ` → `Zona 10`): la misma etiqueta que usa F09 (`zoneLabel`).
+ *  - Otros municipios: sin cambios (opcional, texto libre ≤ 60).
+ */
+export function applyZoneRule(
+  zone: string | null,
+  cityOfGuatemala: boolean,
+): AddressNormalizeResult<string | null> {
+  if (!cityOfGuatemala) return { ok: true, value: zone };
+  if (zone === null) {
+    return {
+      ok: false,
+      violations: [
+        violation(
+          'zone',
+          'ZONE_REQUIRED',
+          'zone: obligatoria en la ciudad de Guatemala (Zona 1 a 25)',
+        ),
+      ],
+    };
+  }
+  const match = CITY_ZONE_PATTERN.exec(zone);
+  const n = match ? Number(match[1]) : NaN;
+  if (!Number.isInteger(n) || n < CITY_ZONE_MIN || n > CITY_ZONE_MAX) {
+    return {
+      ok: false,
+      violations: [
+        violation(
+          'zone',
+          'ZONE_INVALID',
+          `zone: debe tener el formato «Zona N» con N entre ${CITY_ZONE_MIN} y ${CITY_ZONE_MAX}`,
+        ),
+      ],
+    };
+  }
+  return { ok: true, value: `Zona ${n}` };
 }

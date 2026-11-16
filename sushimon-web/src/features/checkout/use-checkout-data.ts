@@ -2,8 +2,8 @@
 
 import { useMemo } from 'react';
 import type {
-  Branch,
   BranchHoursDay,
+  PublicBranch,
   PublicClosureWindow,
   OrderSchedule,
   Product,
@@ -11,6 +11,8 @@ import type {
 } from '@/lib/data-access/models';
 import { isScheduleValid } from '@/lib/schedule';
 import { useAddresses, useMe } from '@/features/account/hooks';
+import { useCustomerScope } from '@/features/session/customer-scope';
+import { useDemoSession } from '@/features/session/demo-session';
 import { defaultAddressIdOf } from '@/features/account/address-format';
 import { estimateSubtotal, type CartLine } from '@/features/cart/cart';
 import { useCart } from '@/features/cart/cart-context';
@@ -19,7 +21,8 @@ import { checkZone, requiresZone } from '@/features/order-mode/draft';
 import { useOrderMode } from '@/features/order-mode/order-mode-context';
 import { useBranchesAvailability, usePublicBranchHours } from '@/features/branch-schedule/hooks';
 import { useAddressCoverage } from '@/features/delivery-coverage/hooks';
-import { useBranches, useStoreConfig } from '@/features/store/hooks';
+import { usePublicBranches } from '@/features/branches/hooks';
+import { useStoreConfig } from '@/features/store/hooks';
 import {
   hasAnyError,
   validateAddress,
@@ -49,8 +52,13 @@ export function useCheckoutData() {
   const { draft } = useCheckoutDraft();
   const cart = useCart();
   const { mode } = useOrderMode();
+  // `useStoreConfig` es SIMULADO (reglas de programación, zonas inexistentes, hora del servidor: F10, sin API todavía).
   const configQuery = useStoreConfig();
-  const branchesQuery = useBranches();
+  // Sucursales activas: lista PÚBLICA real (F07). Disponibilidad (F08) y cobertura (F09) se consultan por su id.
+  const branchesQuery = usePublicBranches();
+  // Identidad del cliente (Supabase Auth real o sesión de demostración): habilita cuenta/direcciones y aísla su caché.
+  const identity = useCustomerScope();
+  const demo = useDemoSession();
   const addressesQuery = useAddresses();
   const meQuery = useMe();
   const config: StoreConfig | undefined = configQuery.data;
@@ -58,8 +66,9 @@ export function useCheckoutData() {
 
   const type = mode.type;
   const when: OrderSchedule = mode.when;
-  const activeBranches = useMemo<Branch[]>(
-    () => (branchesQuery.data ?? []).filter((b) => b.status === 'active'),
+  // `GET /v1/branches` ya devuelve solo las activas.
+  const activeBranches = useMemo<PublicBranch[]>(
+    () => branchesQuery.data ?? [],
     [branchesQuery.data],
   );
 
@@ -212,6 +221,12 @@ export function useCheckoutData() {
     needsZone,
     addresses,
     me: meQuery.data ?? null,
+    /** `ready` = hay cliente identificado; `scope` aísla lo que se guarde por cuenta. */
+    signedIn: identity.state === 'ready',
+    /** Sesión real autenticada pero identidad aún resolviéndose (no es invitado). */
+    identityPending: identity.state === 'pending',
+    scope: identity.state === 'ready' ? identity.scope : null,
+    signedInEmail: meQuery.data?.email || demo.customer?.email || '',
     defaultAddressId: defaultAddressIdOf(addresses),
     stepOk,
     productsQuery,

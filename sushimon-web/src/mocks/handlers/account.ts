@@ -8,7 +8,7 @@ import type {
   UpdateCustomerAddressRequest,
 } from '@/lib/data-access/models';
 import { DEPARTMENT_SEEDS, MUNICIPALITY_SEEDS, municipalityByName } from '../fixtures/geography';
-import { assertAddress, fail, failCode } from '../domain';
+import { fail, failCode, requiresZone } from '../domain';
 import { settleReviews } from './orders';
 import { body, now, requireCustomer, str, type Handler, type Req } from './shared';
 import { authStaffContext } from './staff';
@@ -152,6 +152,50 @@ function placeOf(municipalityId: string) {
   return municipality && department ? { municipality, department } : null;
 }
 
+const MAX_CITY_ZONE = 25;
+const MAX_FREE_ZONE = 60;
+
+/**
+ * Zona de la dirección en la forma de la API. Internamente el mock guarda el NÚMERO como texto («10») para la ciudad de
+ * Guatemala (así lo consumen checkout y pedidos); en la API es «Zona 10». Fuera de la ciudad es texto libre. Una dirección
+ * antigua de la ciudad sin zona sale con `zone = null` (no se migra).
+ */
+function zoneForApi(a: Pick<StoredAddress, 'department' | 'municipality' | 'zone'>): string | null {
+  if (!a.zone) return null;
+  return requiresZone(a) && /^\d+$/.test(a.zone) ? `Zona ${Number(a.zone)}` : a.zone;
+}
+
+/**
+ * Regla de zona de F05 (ADR-0014 §13, decisión C2). Ciudad de Guatemala: obligatoria, «Zona N» con N entero 1..25
+ * (normaliza `zona 05` → `Zona 5`) ⇒ 400 `ZONE_REQUIRED` / `ZONE_INVALID` con `violations[0].path = zone`. Resto: opcional,
+ * texto libre ≤ 60 (se recortan y colapsan espacios). No se valida contra las zonas de cobertura (F09) ni contra
+ * `nonexistentZones`. Devuelve el valor INTERNO (número como texto en la ciudad).
+ */
+function resolveZone(city: boolean, raw: string | null | undefined): string {
+  const text = (typeof raw === 'string' ? raw : '').normalize('NFC').trim().replace(/\s+/g, ' ');
+  if (!city) {
+    if (text.length > MAX_FREE_ZONE) {
+      failCode(400, 'ADDRESS_INVALID', `La zona admite hasta ${MAX_FREE_ZONE} caracteres`, [
+        { path: 'zone', code: 'ADDRESS_INVALID', message: 'Zona demasiado larga' },
+      ]);
+    }
+    return text;
+  }
+  if (!text) {
+    failCode(400, 'ZONE_REQUIRED', 'La zona es obligatoria en la ciudad de Guatemala', [
+      { path: 'zone', code: 'ZONE_REQUIRED', message: 'Indica la zona (Zona 1 a Zona 25)' },
+    ]);
+  }
+  const match = /^zona (\d{1,3})$/i.exec(text);
+  const n = match ? Number(match[1]) : Number.NaN;
+  if (!Number.isInteger(n) || n < 1 || n > MAX_CITY_ZONE) {
+    failCode(400, 'ZONE_INVALID', 'La zona debe tener el formato «Zona N», con N de 1 a 25', [
+      { path: 'zone', code: 'ZONE_INVALID', message: 'Zona inválida (Zona 1 a Zona 25)' },
+    ]);
+  }
+  return String(n);
+}
+
 /** Forma de la API (`CustomerAddress`) a partir de la dirección interna del mock. */
 function toAddressResponse(a: StoredAddress, defaultId: string | null): CustomerAddressResponse {
   const municipality = municipalityByName(a.department, a.municipality);
@@ -161,7 +205,7 @@ function toAddressResponse(a: StoredAddress, defaultId: string | null): Customer
     label: labelToText(a),
     department: { id: department?.id ?? '', name: a.department },
     municipality: { id: municipality?.id ?? '', name: a.municipality },
-    zone: a.zone || null,
+    zone: zoneForApi(a),
     addressLine: a.line,
     referenceNote: a.references || null,
     latitude: null,
@@ -188,15 +232,22 @@ function resolveFields(
       { path: 'municipalityId', code: 'MUNICIPALITY_NOT_FOUND', message: 'Municipio inexistente' },
     ]);
   }
-  const data = assertAddress(req.store, {
-    department: place ? place.department.name : (current?.department ?? ''),
-    municipality: place ? place.municipality.name : (current?.municipality ?? ''),
-    zone: b.zone !== undefined ? (b.zone ?? '') : (current?.zone ?? ''),
-    line: b.addressLine !== undefined ? b.addressLine : (current?.line ?? ''),
-    references:
-      b.referenceNote !== undefined ? (b.referenceNote ?? '') : (current?.references ?? ''),
-  });
-  return data;
+  const department = place ? place.department.name : (current?.department ?? '');
+  const municipality = place ? place.municipality.name : (current?.municipality ?? '');
+  if (!department || !municipality) {
+    failCode(400, 'ADDRESS_INVALID', 'Departamento y municipio son obligatorios');
+  }
+  // PATCH: la regla se evalúa sobre el resultado FUSIONADO (una dirección antigua de la ciudad sin zona debe traer `zone`).
+  const zone = resolveZone(
+    requiresZone({ department, municipality }),
+    b.zone !== undefined ? b.zone : current ? zoneForApi(current) : null,
+  );
+  const line = (b.addressLine !== undefined ? b.addressLine : (current?.line ?? '')).trim();
+  if (line.length < 5) failCode(400, 'ADDRESS_INVALID', 'La dirección es muy corta');
+  const references = (
+    b.referenceNote !== undefined ? (b.referenceNote ?? '') : (current?.references ?? '')
+  ).trim();
+  return { department, municipality, zone, line, references };
 }
 
 const ownAddresses = (req: Req) => requireCustomer(req);

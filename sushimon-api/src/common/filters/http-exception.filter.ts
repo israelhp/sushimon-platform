@@ -26,7 +26,12 @@ export interface ErrorBody {
  * Únicos `code` que se exponen en respuestas 5xx (F06 D9). El resto de 5xx nunca lleva `code` ni `violations`.
  * Añadir uno exige justificarlo en la spec: es un contrato público.
  */
-const PUBLIC_5XX_CODES: ReadonlySet<string> = new Set(['CATALOG_UNAVAILABLE', 'FAVORITES_BUSY']);
+const PUBLIC_5XX_CODES: ReadonlySet<string> = new Set([
+  'CATALOG_UNAVAILABLE',
+  'FAVORITES_BUSY',
+  'MFA_RESET_UNAVAILABLE',
+  'MFA_RESET_FAILED',
+]);
 
 /** Solo propaga violaciones bien formadas; descarta cualquier otro campo (nunca filtra datos internos). */
 function pickViolations(value: unknown): ErrorBody['violations'] {

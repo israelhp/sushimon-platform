@@ -483,3 +483,94 @@ describe('Roles y permisos', () => {
     expect(await screen.findByText('No tienes permiso para ver esta pantalla')).toBeVisible();
   });
 });
+
+describe('Usuarios · restablecer MFA (F02)', () => {
+  const openMfa = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
+    const row = await rowOf(name);
+    await user.click(within(row).getByRole('button', { name: `Restablecer MFA de ${name}` }));
+    return screen.findByRole('dialog', { name: 'Restablecer MFA' });
+  };
+
+  it('solo el administrador global lo ve; nunca en la fila propia ni en pendientes de vincular', async () => {
+    const user = userEvent.setup();
+    const view = await renderUsers('admin');
+    await screen.findByText('11 usuarios');
+    const ana = await rowOf('Ana Lucía Pérez');
+    expect(within(ana).queryByRole('button', { name: /Restablecer MFA/ })).toBeNull();
+    const cocina = await rowOf('Cocina Zona 4');
+    expect(
+      within(cocina).getByRole('button', { name: 'Restablecer MFA de Cocina Zona 4' }),
+    ).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Siguiente' }));
+    const valeria = await rowOf('Valeria Ixcoy');
+    expect(within(valeria).queryByRole('button', { name: /Restablecer MFA/ })).toBeNull();
+    view.unmount();
+
+    await renderUsers('manager');
+    await screen.findByText('4 usuarios');
+    expect(screen.queryByRole('button', { name: /Restablecer MFA/ })).toBeNull();
+  });
+
+  it('confirma con el texto del procedimiento, restablece (204), avisa con toast y no invalida nada', async () => {
+    const user = userEvent.setup();
+    await renderUsers('admin');
+    await screen.findByText('11 usuarios');
+    const dialog = await openMfa(user, 'Cocina Zona 4');
+    expect(within(dialog).getByText(/volver a enrolar su autenticador/)).toBeVisible();
+    expect(within(dialog).getByText(/único administrador general/)).toBeVisible();
+    expect(within(dialog).getByText('Simulación')).toBeVisible();
+    await user.click(within(dialog).getByRole('button', { name: 'Restablecer MFA' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(
+      await screen.findByText(/MFA de Cocina Zona 4 restablecido \(simulación\)/),
+    ).toBeVisible();
+  });
+
+  it('Cancelar cierra sin llamar a la API', async () => {
+    const user = userEvent.setup();
+    const view = await renderUsers('admin');
+    await screen.findByText('11 usuarios');
+    const spy = vi.spyOn(view.api().client, 'request');
+    const dialog = await openMfa(user, 'Cocina Zona 4');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(spy.mock.calls.some(([path]) => String(path).includes('mfa-reset'))).toBe(false);
+  });
+
+  it.each([
+    [
+      '503',
+      (s: MockStoreLike) => void (s.mfaResetUnavailable = true),
+      /no está disponible por ahora/,
+    ],
+    [
+      '409',
+      (s: MockStoreLike) => void (s.staff.find((u) => u.id === 'u5')!.linked = false),
+      /aún no vinculó/,
+    ],
+    [
+      '404',
+      (s: MockStoreLike) =>
+        void s.staff.splice(
+          s.staff.findIndex((u) => u.id === 'u5'),
+          1,
+        ),
+      /ya no existe/,
+    ],
+  ])('error %s: mensaje de negocio en el modal, que sigue abierto', async (_name, mutate, text) => {
+    const user = userEvent.setup();
+    const view = await renderUsers('admin');
+    await screen.findByText('11 usuarios');
+    const dialog = await openMfa(user, 'Cocina Zona 4');
+    mutate(view.api().store);
+    await user.click(within(dialog).getByRole('button', { name: 'Restablecer MFA' }));
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent(text);
+    expect(screen.getByRole('dialog', { name: 'Restablecer MFA' })).toBeVisible();
+    // Sigue pudiendo cancelar.
+    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+type MockStoreLike = import('@/mocks/store').MockStore;

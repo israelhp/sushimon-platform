@@ -5,12 +5,14 @@ import type { Grants } from '@/lib/permissions';
 import {
   GLOBAL_BRANCH,
   assignmentsChanged,
+  canResetStaffMfa,
   emptyStaffForm,
   firstStaffError,
   grantableRoles,
   hasFormErrors,
   hasStaffFilters,
   isValidEmail,
+  mfaResetErrorMessage,
   staffPageCount,
   staffServerError,
   toAssignmentInputs,
@@ -265,5 +267,38 @@ describe('filtros y paginación', () => {
     expect(staffPageCount(11, 10)).toBe(2);
     expect(hasStaffFilters(DEFAULT_STAFF_LIST)).toBe(false);
     expect(hasStaffFilters({ ...DEFAULT_STAFF_LIST, status: 'active' })).toBe(true);
+  });
+});
+
+describe('Restablecer MFA (F02)', () => {
+  const global: Grants = { 'staff.update': { allBranches: true, branchIds: [] } };
+  const scoped: Grants = { 'staff.update': { allBranches: false, branchIds: ['sucursal-1'] } };
+  const linked = { id: 'u5', identityStatus: 'LINKED' as const };
+
+  it('solo con staff.update GLOBAL, nunca sobre la fila propia y solo para vinculados', () => {
+    expect(canResetStaffMfa(global, linked, 'u1')).toBe(true);
+    expect(canResetStaffMfa(scoped, linked, 'u1')).toBe(false);
+    expect(canResetStaffMfa({}, linked, 'u1')).toBe(false);
+    expect(canResetStaffMfa(null, linked, 'u1')).toBe(false);
+    expect(canResetStaffMfa(global, { ...linked, id: 'u1' }, 'u1')).toBe(false);
+    expect(canResetStaffMfa(global, { ...linked, identityStatus: 'PENDING_LINK' }, 'u1')).toBe(
+      false,
+    );
+  });
+
+  it('mensajes de negocio por estado, sin filtrar el detalle del servidor', () => {
+    const err = (status: number) => new ApiError(status, 'x', 'DETALLE-INTERNO supabase 500');
+    for (const status of [0, 403, 404, 409, 429, 502, 503, 500]) {
+      expect(mfaResetErrorMessage(err(status))).not.toContain('DETALLE-INTERNO');
+    }
+    expect(mfaResetErrorMessage(err(403))).toMatch(/administrador general/);
+    expect(mfaResetErrorMessage(err(404))).toMatch(/ya no existe/);
+    expect(mfaResetErrorMessage(err(409))).toMatch(/aún no vinculó/);
+    expect(mfaResetErrorMessage(err(429))).toMatch(/Demasiados intentos/);
+    expect(mfaResetErrorMessage(err(502))).toMatch(/proveedor de identidad/);
+    expect(mfaResetErrorMessage(err(503))).toMatch(/no está disponible/);
+    expect(mfaResetErrorMessage(new Error('boom'))).toBe(
+      'No se pudo restablecer el MFA. Inténtalo de nuevo.',
+    );
   });
 });

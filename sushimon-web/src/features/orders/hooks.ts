@@ -11,11 +11,12 @@ import {
   lookupOrder,
   payWithCard,
 } from '@/services/orders';
-import { queryKeys } from '../query-keys';
+import { customerOrdersPredicate, queryKeys } from '../query-keys';
 
 /** Invalida todo lo derivado de pedidos (detalle, cliente, backoffice, reportes, panel). */
 export function invalidateOrders(qc: QueryClient) {
   void qc.invalidateQueries({ queryKey: queryKeys.orders.all });
+  void qc.invalidateQueries({ predicate: customerOrdersPredicate });
   void qc.invalidateQueries({ queryKey: ['backoffice', 'dashboard'] });
 }
 

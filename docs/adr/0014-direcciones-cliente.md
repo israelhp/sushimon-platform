@@ -41,9 +41,22 @@ is_default`. Las mutaciones toman `SELECT … FOR UPDATE` sobre la fila del clie
     `entity_type = customer_address`. No registra contenido de la dirección (es PII): solo `customerId`, los
     campos que cambiaron por nombre y el valor de predeterminada.
 12. **Errores**: `ADDRESS_NOT_FOUND` 404, `ADDRESS_LIMIT_REACHED` y `ADDRESS_DUPLICATE` 409,
-    `MUNICIPALITY_NOT_FOUND` y `ADDRESS_INVALID` 400 (con `violations[]`). Ningún error incluye identificadores de
-    otros clientes.
-13. **F04**: `addresses` sale de `pendingSections` de `GET /v1/me/storefront`. Los contadores siguen sin existir.
+    `MUNICIPALITY_NOT_FOUND`, `ZONE_REQUIRED`, `ZONE_INVALID` y `ADDRESS_INVALID` 400 (con `violations[]`). Ningún
+    error incluye identificadores de otros clientes.
+13. **Zona (decisión C2, regla b)**: la zona es **obligatoria en la ciudad de Guatemala** con formato «Zona N», N entero
+    de 1 a 25; en los demás municipios es opcional y de texto libre (≤ 60). La ciudad se identifica por el municipio
+    «Guatemala» del departamento «Guatemala» comparados por **nombre normalizado** (sin tildes, mayúsculas ni espacios
+    extra: `isGuatemalaCity`), no por UUID, porque los ids se generan por entorno y el seed de F09 (migración 0007) fija
+    esos nombres. Se canonicaliza (`zona 10`, `Zona  10`, `zona 05` → `Zona 10`/`Zona 5`): es la misma etiqueta que
+    usan F09 `zoneLabel` y la comprobación de cobertura. Errores 400: `ZONE_REQUIRED` (vacía o ausente) y `ZONE_INVALID`
+    (formato o rango), con `violations[0].path = zone`. En PATCH la regla se evalúa sobre el resultado fusionado
+    (mover una dirección a la ciudad exige zona). **Las direcciones ya guardadas no se migran**: una dirección antigua
+    de la ciudad sin zona se sigue listando, pero una edición posterior sí exigirá la regla. La zona no se valida contra
+    las zonas de reparto de F09 (esas son solo de entrega propia).
+14. **Lecturas sin efectos**: solo `POST /v1/me/addresses` crea la fila de cliente (`IdentityService.ensureCustomer`). Las
+    demás operaciones usan `findCustomer`: sin fila, `GET` de la lista responde `{ items: [] }` y el resto `404
+ADDRESS_NOT_FOUND`; ninguna escribe en `customers` (auditoría F00–F09).
+15. **F04**: `addresses` sale de `pendingSections` de `GET /v1/me/storefront`. Los contadores siguen sin existir.
 
 ## Consecuencias
 

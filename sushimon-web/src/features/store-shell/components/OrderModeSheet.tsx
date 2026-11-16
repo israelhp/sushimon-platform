@@ -8,7 +8,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { cn } from '@/lib/cn';
 import type {
-  Branch,
+  PublicBranch,
   BranchHoursDay,
   FulfillmentType,
   OrderSchedule,
@@ -36,7 +36,7 @@ import { dateOptions, firstSlot, type WhenLabels } from '@/features/order-mode/w
 import { CoverageNotice } from '@/features/delivery-coverage/components/CoverageNotice';
 import { useAddressCoverage, useLocationOptions } from '@/features/delivery-coverage/hooks';
 import type { CoverageOutcome } from '@/features/delivery-coverage/summary';
-import { useBranches, useStoreConfig } from '@/features/store/hooks';
+import { useStoreConfig } from '@/features/store/hooks';
 import { STORE_ROUTES } from '../nav';
 import {
   useOrderSheet,
@@ -133,16 +133,12 @@ function OrderModeSheetDialog({
   const uid = useId();
   const { mode, setMode } = useOrderMode();
   const configQuery = useStoreConfig();
-  // Cobertura SIMULADA (F09) y lista PÚBLICA real (F07: solo activas). «Abierta ahora» y horario vienen del servidor (F08).
-  const branchesQuery = useBranches();
+  // Lista PÚBLICA real (F07: solo activas). «Abierta ahora» y horario vienen del servidor (F08) y la cobertura (F09)
+  // también; solo `useStoreConfig` (reglas de programación/zonas inexistentes: F10) sigue siendo simulado.
   const publicQuery = usePublicBranches();
   const invalidateOnBranchChange = useBranchChangeInvalidation();
   const config = configQuery.data;
   const publicBranches = useMemo(() => publicQuery.data ?? [], [publicQuery.data]);
-  const branches = useMemo(
-    () => (branchesQuery.data ?? []).filter((b) => b.status === 'active'),
-    [branchesQuery.data],
-  );
 
   const availability = useBranchesAvailability(publicBranches.map((b) => b.id));
   const accepting = (id: string) => availability.byId[id]?.isAcceptingOrders;
@@ -181,10 +177,9 @@ function OrderModeSheetDialog({
     best?.kind === 'confirmed' && best.provider === 'OWN' && best.fee !== null
       ? best.branchId
       : null;
-  const assignedBranch: Branch | undefined =
-    type === 'delivery' && assignedId ? branches.find((b) => b.id === assignedId) : undefined;
-  const branchNameOf = (id: string) =>
-    publicBranches.find((b) => b.id === id)?.name ?? branches.find((b) => b.id === id)?.name ?? id;
+  const assignedBranch: PublicBranch | undefined =
+    type === 'delivery' && assignedId ? publicBranches.find((b) => b.id === assignedId) : undefined;
+  const branchNameOf = (id: string) => publicBranches.find((b) => b.id === id)?.name ?? id;
 
   // Sucursal de recogida: la elegida (si sigue activa en la lista pública) o la primera abierta (simulado).
   const pickupChoice =
@@ -192,7 +187,7 @@ function OrderModeSheetDialog({
     publicBranches.find((b) => accepting(b.id)) ??
     publicBranches[0] ??
     null;
-  const pickupBranch = pickupChoice ? branches.find((b) => b.id === pickupChoice.id) : undefined;
+  const pickupBranch = pickupChoice ?? undefined;
   const activeBranch =
     type === 'delivery' ? assignedBranch : type === 'pickup' ? pickupBranch : null;
 
@@ -237,8 +232,8 @@ function OrderModeSheetDialog({
   const allClosed =
     view === 'now' &&
     !!type &&
-    branches.length > 0 &&
-    branches.every((b) => accepting(b.id) === false);
+    publicBranches.length > 0 &&
+    publicBranches.every((b) => accepting(b.id) === false);
 
   const setDeliveryField = (patch: Partial<DeliveryDraft>) => {
     setDelivery((d) => ({ ...d, ...patch }));
@@ -300,8 +295,7 @@ function OrderModeSheetDialog({
   const fieldId = (name: string) => `${uid}-${name}`;
   const typeErrorId = fieldId('type-error');
   const loadFailed = configQuery.isError || publicQuery.isError;
-  const loading =
-    !loadFailed && (configQuery.isPending || publicQuery.isPending || branchesQuery.isPending);
+  const loading = !loadFailed && (configQuery.isPending || publicQuery.isPending);
   const err = (key: DraftErrors[keyof DraftErrors]) => (key ? t(key) : undefined);
 
   return (
@@ -316,9 +310,7 @@ function OrderModeSheetDialog({
           type="button"
           className="btn btn-primary w-full"
           onClick={submit}
-          disabled={
-            !config || !publicQuery.data || (branchesQuery.isPending && !branchesQuery.isError)
-          }
+          disabled={!config || !publicQuery.data}
         >
           {t('mode.seeMenu')}
         </button>

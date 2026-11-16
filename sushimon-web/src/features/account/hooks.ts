@@ -14,37 +14,50 @@ import {
   updateMe,
   type CustomerUpdate,
 } from '@/services/account';
-import { useDemoSession } from '../session/demo-session';
+import { useCustomerScope } from '../session/customer-scope';
 import { queryKeys } from '../query-keys';
 
 /**
- * Cuenta del cliente. Las consultas se habilitan solo con sesión de cliente (simulada en la
- * Etapa 1); sin sesión, la API respondería 401.
+ * Cuenta del cliente (F04/F05). Las consultas se habilitan SOLO con una identidad de cliente resuelta
+ * (`useCustomerScope`): id de Supabase Auth con `AUTH_SOURCE=supabase`, o `demo:<correo>` con la sesión simulada.
+ * Sin sesión (o con la identidad aún resolviéndose) no se consulta nada: la API respondería 401. Las claves llevan el
+ * `scope` en la raíz, así otra cuenta jamás lee la caché ajena; `useCustomerCacheGuard` la descarta al cambiar/salir.
  */
-function useSignedIn() {
-  return !!useDemoSession().customer;
+/** Valor del `scope` cuando no hay identidad: la consulta queda deshabilitada y nunca se llena. */
+const NO_SCOPE = 'none';
+
+function useAccountScope(): { scope: string; enabled: boolean } {
+  const identity = useCustomerScope();
+  return identity.state === 'ready'
+    ? { scope: identity.scope, enabled: true }
+    : { scope: NO_SCOPE, enabled: false };
 }
 
 export function useMe() {
   const client = useDataClient();
-  const enabled = useSignedIn();
-  return useQuery({ queryKey: queryKeys.account.me, queryFn: () => getMe(client), enabled });
+  const { scope, enabled } = useAccountScope();
+  return useQuery({
+    queryKey: queryKeys.customer.account.me(scope),
+    queryFn: () => getMe(client),
+    enabled,
+  });
 }
 
 export function useUpdateMe() {
   const client = useDataClient();
   const qc = useQueryClient();
+  const { scope } = useAccountScope();
   return useMutation({
     mutationFn: (input: CustomerUpdate) => updateMe(client, input),
-    onSuccess: (me) => qc.setQueryData(queryKeys.account.me, me),
+    onSuccess: (me) => qc.setQueryData(queryKeys.customer.account.me(scope), me),
   });
 }
 
 export function useAddresses() {
   const client = useDataClient();
-  const enabled = useSignedIn();
+  const { scope, enabled } = useAccountScope();
   return useQuery({
-    queryKey: queryKeys.account.addresses,
+    queryKey: queryKeys.customer.account.addresses(scope),
     queryFn: () => listAddresses(client),
     enabled,
   });
@@ -52,11 +65,12 @@ export function useAddresses() {
 
 function useAddressMutation<T, R>(fn: (args: T) => Promise<R>) {
   const qc = useQueryClient();
+  const { scope } = useAccountScope();
   return useMutation({
     mutationFn: fn,
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: queryKeys.account.addresses });
-      void qc.invalidateQueries({ queryKey: queryKeys.account.me });
+      void qc.invalidateQueries({ queryKey: queryKeys.customer.account.addresses(scope) });
+      void qc.invalidateQueries({ queryKey: queryKeys.customer.account.me(scope) });
     },
   });
 }
@@ -84,12 +98,14 @@ export function useSetDefaultAddress() {
   return useAddressMutation((id: string) => setDefaultAddress(client, id));
 }
 
-/** Pedidos del cliente con sesión. */
-export function useMyOrders() {
+/** Pedidos del cliente con sesión. SIMULADOS hasta F20 (la API aún no expone `/v1/me/orders`). */
+export function useMyOrders({ enabled: wanted = true }: { enabled?: boolean } = {}) {
   const client = useDataClient();
-  const enabled = useSignedIn();
+  const account = useAccountScope();
+  const scope = account.scope;
+  const enabled = account.enabled && wanted;
   return useQuery({
-    queryKey: queryKeys.orders.mine,
+    queryKey: queryKeys.customer.orders.mine(scope),
     queryFn: () => listMyOrders(client),
     enabled,
   });

@@ -376,6 +376,7 @@ describe('Personal, roles y permisos (e2e)', () => {
       expect(res.headers['cache-control']).toBe('no-store');
       expect(repo.audit.map((e) => e.action)).toEqual(['staff.created']);
       expect(repo.audit[0]).toMatchObject({ actorId: ACTOR, entityType: 'staff_user' });
+      expect(JSON.stringify(repo.audit)).not.toContain('@sushimon.test');
     });
 
     it('correo duplicado → 409 (con otra capitalización)', async () => {
@@ -457,7 +458,7 @@ describe('Personal, roles y permisos (e2e)', () => {
   });
 
   describe('PATCH /v1/admin/staff/{id}', () => {
-    it('actualiza nombre y audita el diff', async () => {
+    it('actualiza nombre y audita solo el nombre del campo (sin PII)', async () => {
       const res = await http()
         .patch(`/v1/admin/staff/${T1}`)
         .set('Authorization', await as('manager', [BRANCH_A]))
@@ -466,9 +467,9 @@ describe('Personal, roles y permisos (e2e)', () => {
       expect(res.body).toMatchObject({ fullName: 'Ana María' });
       expect(repo.audit[0]).toMatchObject({
         action: 'staff.updated',
-        oldValues: { fullName: 'Ana Cocina' },
-        newValues: { fullName: 'Ana María' },
+        newValues: { changedFields: ['fullName'] },
       });
+      expect(JSON.stringify(repo.audit)).not.toMatch(/Ana/);
     });
 
     it('empleado de otra sucursal → 404; correo vinculado → 409; campos no permitidos → 400', async () => {

@@ -37,6 +37,6 @@ FR-008 verificar el código no concede acceso: solo `STAFF_AUTHORIZED` (API) red
 
 ## Fuera de alcance / pendiente
 
-Verificación real con Supabase + Google + app TOTP (T020) · recuperación administrativa de MFA (requiere F03, ver
-`docs/security/mfa.md`) · auditoría persistente · E2E de navegador con Supabase local · endpoints administrativos
+Verificación real con Supabase + Google + app TOTP (T020) · recuperación administrativa de MFA (API ✅ `POST /v1/admin/staff/{id}/mfa-reset` con Supabase simulado; falta
+verificación real y la UI en Usuarios; revocación de sesiones no incluida; ver `docs/security/mfa.md`) · auditoría persistente · E2E de navegador con Supabase local · endpoints administrativos
 reales (cada uno hereda `@RequireStaff`).

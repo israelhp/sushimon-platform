@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { AuditService, type AuditValues } from '../audit/audit.service.js';
+import { AuditService } from '../audit/audit.service.js';
 import { scopeCovers } from '../auth/authorization.js';
 import { AuthorizationService } from '../auth/authorization.service.js';
 import { BranchesQueryService } from '../branches/branches-query.service.js';
@@ -103,8 +103,7 @@ export class StaffCommandsService {
           entityId: created,
           action: 'staff.created',
           newValues: {
-            fullName,
-            email,
+            // Sin PII: ni nombre ni correo; el id de la fila identifica al empleado.
             identityStatus: 'PENDING_LINK',
             assignments: this.describeInputs(input.assignments, roles),
           },
@@ -142,17 +141,11 @@ export class StaffCommandsService {
         }
 
         const data: UpdateStaffInput = {};
-        const oldValues: AuditValues = {};
-        const newValues: AuditValues = {};
         if (patch.fullName !== undefined && patch.fullName !== current.fullName) {
           data.fullName = patch.fullName;
-          oldValues['fullName'] = current.fullName;
-          newValues['fullName'] = patch.fullName;
         }
         if (emailChanges && patch.email !== undefined) {
           data.email = patch.email;
-          oldValues['email'] = current.email;
-          newValues['email'] = patch.email;
         }
         if (Object.keys(data).length === 0) return this.viewOf(actor, current); // sin cambios reales
 
@@ -162,8 +155,8 @@ export class StaffCommandsService {
           entityType: ENTITY,
           entityId: id,
           action: 'staff.updated',
-          oldValues,
-          newValues,
+          // Sin PII: solo los NOMBRES de los campos modificados, nunca valores de nombre o correo.
+          newValues: { changedFields: Object.keys(data).sort() },
         });
         this.logger.log(`Empleado actualizado (id=${id}, staff=${actor.staffId})`);
         return this.viewOf(actor, await this.requireStaff(id, tx));

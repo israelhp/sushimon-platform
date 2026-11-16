@@ -70,6 +70,44 @@ test('admin: crea un usuario, edita y desactiva una sucursal', async ({ page }) 
   await expect(page.getByText('Inactiva · oculta en la tienda')).toHaveCount(3);
 });
 
+test('admin: restablece el MFA de un empleado vinculado (simulado); no en su propia fila ni en pendientes', async ({
+  page,
+}) => {
+  await enterAs(page, /Ana Lucía Pérez/);
+  await page.goto('/backoffice/usuarios');
+  await expect(page.getByText('11 usuarios', { exact: true })).toBeVisible();
+  const table = page.getByRole('table', { name: 'Usuarios internos' });
+  const rowOf = (name: string) => table.getByRole('row').filter({ hasText: name });
+  await expect(
+    rowOf('Ana Lucía Pérez').getByRole('button', { name: /Restablecer MFA/ }),
+  ).toHaveCount(0);
+
+  await rowOf('Cocina Zona 4')
+    .getByRole('button', { name: 'Restablecer MFA de Cocina Zona 4' })
+    .click();
+  const dialog = page.getByRole('dialog', { name: 'Restablecer MFA' });
+  await expect(dialog.getByText(/volver a enrolar su autenticador/)).toBeVisible();
+  await expect(dialog.getByText('Simulación')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cancelar' }).click();
+  await expect(dialog).toBeHidden();
+
+  await rowOf('Cocina Zona 4')
+    .getByRole('button', { name: 'Restablecer MFA de Cocina Zona 4' })
+    .click();
+  await dialog.getByRole('button', { name: 'Restablecer MFA' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(
+    page.locator('.toast', { hasText: 'MFA de Cocina Zona 4 restablecido (simulación)' }),
+  ).toBeVisible();
+
+  // Un empleado pendiente de vincular no tiene factores: no se ofrece la acción.
+  await page.getByRole('searchbox', { name: 'Buscar usuarios' }).fill('valeria');
+  await expect(rowOf('Valeria Ixcoy')).toBeVisible();
+  await expect(rowOf('Valeria Ixcoy').getByRole('button', { name: /Restablecer MFA/ })).toHaveCount(
+    0,
+  );
+});
+
 test('admin: crea una sucursal sin tope y rechaza un código duplicado', async ({ page }) => {
   await enterAs(page, /Ana Lucía Pérez/);
   await page.goto('/backoffice/sucursales');
@@ -107,6 +145,8 @@ test('encargado: ve Reportes, Usuarios y Sucursales de su sucursal, sin crear su
   await page.goto('/backoffice/usuarios');
   await expect(page.getByText('4 usuarios', { exact: true })).toBeVisible();
   await expect(page.getByText('Karla Rodríguez')).toHaveCount(0);
+  // Restablecer MFA es solo del administrador general (alcance global).
+  await expect(page.getByRole('button', { name: /Restablecer MFA/ })).toHaveCount(0);
   // Sucursales: solo la suya y en modo lectura.
   await page.goto('/backoffice/sucursales');
   await expect(page.getByText('1 sucursal', { exact: true })).toBeVisible();

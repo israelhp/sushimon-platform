@@ -78,8 +78,8 @@ export function DemoSessionProvider({ children }: { children: ReactNode }) {
   const resetCaches = useCallback(
     (zone: 'customer' | 'staff') => {
       // Los datos dependen de la identidad: se descartan los de la sesión anterior.
-      qc.removeQueries({ queryKey: zone === 'customer' ? ['account'] : ['backoffice'] });
-      if (zone === 'customer') qc.removeQueries({ queryKey: ['orders', 'mine'] });
+      // Cuenta, direcciones, pedidos y favoritos del cliente viven bajo `['customer', scope, …]` (F04–F06).
+      qc.removeQueries({ queryKey: zone === 'customer' ? ['customer'] : ['backoffice'] });
       void qc.invalidateQueries({ queryKey: ['orders'] });
     },
     [qc],

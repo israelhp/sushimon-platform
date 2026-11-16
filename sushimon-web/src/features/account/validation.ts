@@ -1,5 +1,5 @@
 import type { AddressInput } from '@/lib/data-access/models';
-import { checkZone, MIN_ADDRESS_LENGTH, requiresZone } from '../order-mode/draft';
+import { MAX_ZONE, MIN_ADDRESS_LENGTH, requiresZone } from '../order-mode/draft';
 
 /**
  * Validación de formularios de la cuenta. Puras y sin React: devuelven CLAVES de mensajes
@@ -40,7 +40,8 @@ export type AddressErrorKey =
   | 'validation.department'
   | 'validation.municipality'
   | 'validation.zone'
-  | 'mode.errZoneInvalid'
+  | 'validation.zoneInvalid'
+  | 'validation.zoneTooLong'
   | 'validation.address';
 
 export type AddressErrors = Partial<
@@ -60,19 +61,33 @@ export const EMPTY_ADDRESS: AddressFormValues = {
   references: '',
 };
 
-export function validateAddress(
-  values: AddressFormValues,
-  nonexistentZones: readonly number[],
-): AddressErrors {
+/** Zona libre (fuera de la ciudad de Guatemala): máximo de caracteres (ADR-0014 §13). */
+export const ZONE_FREE_MAX = 60;
+
+/**
+ * Zona de una dirección (F05, decisión C2). Ciudad de Guatemala: OBLIGATORIA, número entero de 1 a 25 (la API la guarda
+ * como «Zona N»). Demás municipios: opcional, texto libre ≤ 60. No se compara con las zonas de cobertura de F09 ni con
+ * las zonas «inexistentes» de la configuración: esa regla es del checkout (pedido), no de la libreta de direcciones.
+ */
+export function checkAddressZone(
+  values: Pick<AddressFormValues, 'department' | 'municipality' | 'zone'>,
+): AddressErrorKey | undefined {
+  const text = values.zone.trim();
+  if (!requiresZone(values.department, values.municipality)) {
+    return text.length > ZONE_FREE_MAX ? 'validation.zoneTooLong' : undefined;
+  }
+  if (!text) return 'validation.zone';
+  const n = Number(text);
+  return /^\d{1,3}$/.test(text) && n >= 1 && n <= MAX_ZONE ? undefined : 'validation.zoneInvalid';
+}
+
+export function validateAddress(values: AddressFormValues): AddressErrors {
   const errors: AddressErrors = {};
   if (!values.department) errors.department = 'validation.department';
   if (!values.municipality || !values.municipalityId)
     errors.municipality = 'validation.municipality';
-  if (requiresZone(values.department, values.municipality)) {
-    const zone = checkZone(values.zone, nonexistentZones);
-    if (zone === 'required') errors.zone = 'validation.zone';
-    if (zone === 'invalid') errors.zone = 'mode.errZoneInvalid';
-  }
+  const zone = checkAddressZone(values);
+  if (zone) errors.zone = zone;
   if (values.line.trim().length < MIN_ADDRESS_LENGTH) errors.line = 'validation.address';
   return errors;
 }

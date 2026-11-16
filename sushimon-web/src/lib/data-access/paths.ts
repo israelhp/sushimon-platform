@@ -76,6 +76,8 @@ export const paths = {
   adminStaffMember: (id: string) => `/v1/admin/staff/${seg(id)}`,
   adminStaffStatus: (id: string) => `/v1/admin/staff/${seg(id)}/status`,
   adminStaffAssignments: (id: string) => `/v1/admin/staff/${seg(id)}/assignments`,
+  /** F02: restablece el segundo factor (MFA) de un empleado vinculado. Solo administrador global. 204 sin cuerpo. */
+  adminStaffMfaReset: (id: string) => `/v1/admin/staff/${seg(id)}/mfa-reset`,
   adminRoles: () => '/v1/admin/roles',
   adminRole: (id: string) => `/v1/admin/roles/${seg(id)}`,
   adminRolePermissions: (id: string) => `/v1/admin/roles/${seg(id)}/permissions`,

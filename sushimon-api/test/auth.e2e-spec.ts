@@ -219,6 +219,17 @@ describe('Autenticación y autorización (e2e)', () => {
   });
 
   describe('GET /v1/auth/context (autenticación ≠ autorización)', () => {
+    it('Cache-Control: no-store en 200 y en 401', async () => {
+      db.customer.count.mockResolvedValue(1);
+      const ok = await http()
+        .get('/v1/auth/context')
+        .set('Authorization', await bearer())
+        .expect(200);
+      expect(ok.headers['cache-control']).toBe('no-store');
+      const denied = await http().get('/v1/auth/context').expect(401);
+      expect(denied.headers['cache-control']).toBe('no-store');
+    });
+
     it('cliente autenticado sin rol interno: backofficeAccess=false', async () => {
       db.customer.count.mockResolvedValue(1);
       const res = await http()

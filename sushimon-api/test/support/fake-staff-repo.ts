@@ -152,6 +152,15 @@ export class FakeStaffRepo {
     return Promise.resolve(this.roles.has(id));
   }
 
+  /** `auth_user_id` simulado: determinista y distinto del id del empleado; null si no está vinculado. */
+  authUserIdOf(id: string): string | null {
+    return this.staff.get(id)?.linked ? `aaaaaaaa-1111-4111-8111-${id.slice(-12)}` : null;
+  }
+
+  findAuthUserId(_tx: StaffTx, id: string): Promise<string | null> {
+    return Promise.resolve(this.authUserIdOf(id));
+  }
+
   findStaff(id: string): Promise<StaffRecord | null> {
     const r = this.staff.get(id);
     return Promise.resolve(r ? structuredClone(r) : null);

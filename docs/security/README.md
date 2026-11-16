@@ -22,13 +22,29 @@ con falla al arrancar · `.env` fuera de Git · escáner de secretos (`pnpm secr
 `no-store`, `Retry-After`); el resto usa el tope global (`RATE_LIMIT_*`). El contador es en memoria por instancia y la IP sale de
 `req.ip`: **detrás de un proxy/CDN (Vercel, Render, Fly…) `TRUST_PROXY_HOPS` debe ser >= 1; con 0 todos los clientes comparten la IP
 del proxy y el límite se aplica al conjunto (o es evadible por cabeceras).** Es un **requisito bloqueante de despliegue**. No se
-exige en `env.ts` (dejaría de arrancar entornos F00-F08 existentes); verificarlo en la checklist de despliegue. Antes de F29
+bloquea en `env.ts` (dejaría de arrancar entornos F00-F08 existentes): con `NODE_ENV=production` y `TRUST_PROXY_HOPS=0` la API
+arranca pero registra un **warning** claro; verificarlo igualmente en la checklist de despliegue. Antes de F29
 (PedidosYa real) revisar un almacenamiento compartido del contador.
+
+`NODE_ENV` ausente no salta las comprobaciones de producción: si falta y `DATABASE_URL` apunta a un host que no es
+`localhost`/`127.0.0.1`/`::1` (o hay una variable de plataforma como `VERCEL`, `RENDER`, `FLY_APP_NAME`, `K_SERVICE`), la API
+**no arranca** y exige `NODE_ENV` explícito. Sin `DATABASE_URL` remota (desarrollo, test, CI) el default `development` no cambia.
 
 El mock de cobertura de PedidosYa solo arranca con `NODE_ENV` explícitamente `development` o `test`.
 
 Los campos `reason` (cierres F08, estado de zonas F09) son texto libre de operador, se guardan en auditoría y NO deben contener
 datos personales.
+
+**Auditoría sin PII.** `app.audit_events` guarda solo ids, estados y nombres de campo (`changedFields`), nunca nombre, correo,
+teléfono ni dirección. `staff.created` y `staff.updated` ya no registran `fullName`/`email`. Las filas históricas anteriores a
+este cambio pueden conservarlos: la tabla es append-only y no se reescribe (retención/anonimización: pendiente).
+
+**Enumeración de empleados (F03, riesgo aceptado).** `POST /v1/admin/staff` responde `409` si el correo ya es empleado. Lo exige el
+contrato y solo lo ve quien tiene `staff.create` con `aal2`, por lo que no se cambia. Un administrador puede así comprobar si
+un correo es personal; el endpoint está protegido por rol, alcance, MFA y rate limit y cada intento queda auditado.
+
+**Prueba de arquitectura.** `test/admin-routes-guards.e2e-spec.ts` recorre todos los controladores y falla si una ruta `/v1/admin/*`
+no lleva `StaffGuard` y `MfaGuard` (`@RequireStaff`).
 
 ## Pendiente (📐)
 

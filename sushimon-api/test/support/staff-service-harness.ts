@@ -6,8 +6,10 @@ import type { IdentityService } from '../../src/identity/identity.service.js';
 import { RolesService } from '../../src/staff/roles.service.js';
 import { StaffCommandGuard } from '../../src/staff/staff-command-guard.js';
 import { StaffCommandsService } from '../../src/staff/staff-commands.service.js';
+import { StaffMfaResetService } from '../../src/staff/staff-mfa-reset.service.js';
 import { StaffQueriesService } from '../../src/staff/staff-queries.service.js';
 import type { StaffRepository } from '../../src/staff/staff.repository.js';
+import { FakeAuthAdmin } from './fake-auth-admin.js';
 import { FakeStaffRepo } from './fake-staff-repo.js';
 import { BRANCH_A, BRANCH_B, BRANCH_C } from './staff-fixtures.js';
 
@@ -33,8 +35,11 @@ export function staffHarness() {
     ),
   };
   const guard = new StaffCommandGuard(real, audit);
+  const authAdmin = new FakeAuthAdmin();
   return {
     repo,
+    authAdmin,
+    mfaReset: new StaffMfaResetService(real, audit, authorization, guard, authAdmin),
     revoked,
     branches,
     commands: new StaffCommandsService(

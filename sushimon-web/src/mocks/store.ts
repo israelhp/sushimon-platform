@@ -99,6 +99,11 @@ export interface MockStore {
    * que fallarán con 503 antes de que una funcione. Opcional: ausente = 0.
    */
   favoritesBusy?: number;
+  /**
+   * F02: simula que el reinicio de MFA no está disponible (falta la clave de servicio del servidor ⇒ 503
+   * `MFA_RESET_UNAVAILABLE`). Opcional: ausente/false = disponible. Solo existe en el mock.
+   */
+  mfaResetUnavailable?: boolean;
   categories: Category[];
   products: ProductRecord[];
   promotions: PromotionSeed[];

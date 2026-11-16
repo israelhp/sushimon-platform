@@ -77,13 +77,13 @@ describe('AuthProvider', () => {
   });
   afterEach(() => vi.clearAllMocks());
 
-  it('cerrar sesión limpia explícitamente la caché del cliente (`customer`), la de cuenta y la de auth', async () => {
+  it('cerrar sesión limpia explícitamente la caché del cliente (`customer`: cuenta, direcciones, favoritos) y la de auth', async () => {
     fake.state.session = { access_token: 'tok' };
     render(wrap(<Probe />, config));
     await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('authenticated'));
     for (const key of [
       ['customer', 'uid-1', 'favorites', 'ids'],
-      ['account', 'me'],
+      ['customer', 'uid-1', 'account', 'me'],
       ['auth', 'me'],
       ['store', 'config'],
     ]) {
@@ -91,7 +91,7 @@ describe('AuthProvider', () => {
     }
     await act(async () => screen.getByText('logout').click());
     expect(currentQc.getQueryData(['customer', 'uid-1', 'favorites', 'ids'])).toBeUndefined();
-    expect(currentQc.getQueryData(['account', 'me'])).toBeUndefined();
+    expect(currentQc.getQueryData(['customer', 'uid-1', 'account', 'me'])).toBeUndefined();
     expect(currentQc.getQueryData(['auth', 'me'])).toBeUndefined();
     expect(currentQc.getQueryData(['store', 'config'])).toEqual({ x: 1 }); // lo público no se toca
   });

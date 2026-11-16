@@ -180,7 +180,8 @@ describe('business-time', () => {
           }
         }
       }
-    });
+      // Barrido exhaustivo (~38k comparaciones por zona con Intl): bajo carga supera los 5 s por defecto.
+    }, 30_000);
 
     it('instantOf con resolver memoizado = sin resolver (incluida la medianoche 24:00)', () => {
       const memo = memoizedOffsets('America/New_York');

@@ -14,11 +14,13 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentStaff } from '../auth/current-user.decorator.js';
 import { RequireStaff } from '../auth/staff.guard.js';
 import type { StaffContext } from '../identity/identity.types.js';
@@ -30,8 +32,11 @@ import {
   UpdateStaffRequest,
   UpdateStaffStatusRequest,
 } from './dto/staff-requests.dto.js';
+import { MFA_RESET_THROTTLE } from '../common/throttle/app-throttler.guard.js';
 import { StaffCommandsService } from './staff-commands.service.js';
+import { StaffMfaResetService } from './staff-mfa-reset.service.js';
 import { StaffQueriesService } from './staff-queries.service.js';
+import { MFA_RESET_PERMISSION } from './staff-policy.js';
 
 const UNAUTHORIZED = { status: 401, description: 'Token ausente, inválido o expirado' } as const;
 const NOT_FOUND = { status: 404, description: 'No existe o fuera de alcance' } as const;
@@ -50,6 +55,7 @@ export class AdminStaffController {
   constructor(
     @Inject(StaffQueriesService) private readonly queries: StaffQueriesService,
     @Inject(StaffCommandsService) private readonly commands: StaffCommandsService,
+    @Inject(StaffMfaResetService) private readonly mfaReset: StaffMfaResetService,
   ) {}
 
   @Get()
@@ -154,5 +160,28 @@ export class AdminStaffController {
     @Body() body: ReplaceStaffAssignmentsRequest,
   ): Promise<AdminStaffDto> {
     return this.commands.replaceAssignments(staff, id, body);
+  }
+
+  @Post(':id/mfa-reset')
+  @HttpCode(204)
+  @Throttle(MFA_RESET_THROTTLE)
+  @RequireStaff(MFA_RESET_PERMISSION)
+  @ApiOperation({
+    operationId: 'resetAdminStaffMfa',
+    summary: 'Reinicia el MFA TOTP de un empleado (solo administrador global, nunca a uno mismo)',
+  })
+  @ApiNoContentResponse({ description: 'MFA reiniciado (o el empleado no tenía factores)' })
+  @ApiResponse(BAD_REQUEST)
+  @ApiResponse(UNAUTHORIZED)
+  @ApiResponse(NOT_FOUND)
+  @ApiResponse({ status: 409, description: 'El empleado aún no vinculó su cuenta de Auth' })
+  @ApiResponse({ status: 429, description: 'Demasiadas solicitudes' })
+  @ApiResponse({ status: 502, description: 'El proveedor de identidad falló' })
+  @ApiResponse({ status: 503, description: 'Reinicio no disponible por configuración' })
+  async resetMfa(
+    @CurrentStaff() staff: StaffContext,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.mfaReset.reset(staff, id);
   }
 }

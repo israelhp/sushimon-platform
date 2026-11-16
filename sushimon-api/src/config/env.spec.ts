@@ -1,4 +1,4 @@
-import { validateEnv } from './env.js';
+import { envWarnings, validateEnv } from './env.js';
 
 const prod = {
   NODE_ENV: 'production',
@@ -17,6 +17,58 @@ describe('validateEnv', () => {
 
   it('trata variables vacías como no definidas', () => {
     expect(validateEnv({ DATABASE_URL: '', HEALTH_READY_TOKEN: '' }).DATABASE_URL).toBeUndefined();
+  });
+
+  it('SUPABASE_SERVICE_ROLE_KEY es opcional: ausente o vacía = no definida; muy corta falla sin revelar el valor', () => {
+    expect(validateEnv({}).SUPABASE_SERVICE_ROLE_KEY).toBeUndefined();
+    expect(
+      validateEnv({ SUPABASE_SERVICE_ROLE_KEY: '' }).SUPABASE_SERVICE_ROLE_KEY,
+    ).toBeUndefined();
+    expect(
+      validateEnv({ ...prod, SUPABASE_SERVICE_ROLE_KEY: '' }).SUPABASE_SERVICE_ROLE_KEY,
+    ).toBeUndefined();
+    expect(
+      validateEnv({ SUPABASE_SERVICE_ROLE_KEY: 'k'.repeat(40) }).SUPABASE_SERVICE_ROLE_KEY,
+    ).toBe('k'.repeat(40));
+    expect(() => validateEnv({ SUPABASE_SERVICE_ROLE_KEY: 'corta-secreta' })).toThrow(
+      /SUPABASE_SERVICE_ROLE_KEY/,
+    );
+    try {
+      validateEnv({ SUPABASE_SERVICE_ROLE_KEY: 'corta-secreta' });
+    } catch (e) {
+      expect(String((e as Error).message)).not.toContain('corta-secreta');
+    }
+  });
+
+  it('SUPABASE_ADMIN_TIMEOUT_MS: default 8000, vacío = default, fuera de rango falla', () => {
+    expect(validateEnv({}).SUPABASE_ADMIN_TIMEOUT_MS).toBe(8000);
+    expect(validateEnv({ SUPABASE_ADMIN_TIMEOUT_MS: '' }).SUPABASE_ADMIN_TIMEOUT_MS).toBe(8000);
+    expect(() => validateEnv({ SUPABASE_ADMIN_TIMEOUT_MS: '10' })).toThrow(
+      /SUPABASE_ADMIN_TIMEOUT_MS/,
+    );
+  });
+
+  it('SUPABASE_URL en producción: solo https sin credenciales, query ni fragmento; http en desarrollo/test', () => {
+    expect(validateEnv(prod).SUPABASE_URL).toBe('https://abcdefgh.supabase.co');
+    for (const bad of [
+      'http://abcdefgh.supabase.co',
+      'https://user:pw@abcdefgh.supabase.co',
+      'https://abcdefgh.supabase.co?x=1',
+      'https://abcdefgh.supabase.co#frag',
+    ]) {
+      expect(() => validateEnv({ ...prod, SUPABASE_URL: bad }), bad).toThrow(/SUPABASE_URL/);
+    }
+    try {
+      validateEnv({ ...prod, SUPABASE_URL: 'https://user:secreto@abcdefgh.supabase.co' });
+    } catch (e) {
+      expect(String((e as Error).message)).not.toContain('secreto');
+    }
+    expect(
+      validateEnv({ NODE_ENV: 'development', SUPABASE_URL: 'http://127.0.0.1:54341' }).SUPABASE_URL,
+    ).toBe('http://127.0.0.1:54341');
+    expect(
+      validateEnv({ NODE_ENV: 'test', SUPABASE_URL: 'http://127.0.0.1:54341' }).SUPABASE_URL,
+    ).toBe('http://127.0.0.1:54341');
   });
 
   it('BUSINESS_TIMEZONE: default Guatemala, vacío = default, IANA inválida falla', () => {
@@ -156,5 +208,53 @@ describe('validateEnv', () => {
       expect(() => validateEnv({ PEDIDOSYA_COVERAGE_TIMEOUT_MS: '10001' })).toThrow();
       expect(() => validateEnv({ PEDIDOSYA_COVERAGE_TIMEOUT_MS: '1.5' })).toThrow();
     });
+  });
+});
+
+describe('NODE_ENV ausente en un despliegue (M3)', () => {
+  const remote = 'postgresql://u:p@db.example.invalid:6543/postgres';
+
+  it('sin NODE_ENV y DATABASE_URL remota => falla pidiendo NODE_ENV explícito (sin filtrar la URL)', () => {
+    const attempt = () => validateEnv({ DATABASE_URL: remote });
+    expect(attempt).toThrow(/NODE_ENV: debe definirse explícitamente/);
+    expect(attempt).not.toThrow(/db\.example|u:p/);
+    expect(() => validateEnv({ NODE_ENV: '', DATABASE_URL: remote })).toThrow(/NODE_ENV/);
+  });
+
+  it.each(['localhost', '127.0.0.1', '[::1]'])(
+    'sin NODE_ENV y DATABASE_URL en %s => arranca',
+    (h) => {
+      expect(validateEnv({ DATABASE_URL: `postgresql://u:p@${h}:5432/db` }).NODE_ENV).toBe(
+        'development',
+      );
+    },
+  );
+
+  it('sin NODE_ENV y sin DATABASE_URL (dev/test/CI) => arranca con development', () => {
+    expect(validateEnv({}).NODE_ENV).toBe('development');
+  });
+
+  it('sin NODE_ENV con variable de plataforma => falla', () => {
+    expect(() => validateEnv({ VERCEL: '1' })).toThrow(/VERCEL/);
+    expect(() => validateEnv({ RENDER: 'true' })).toThrow(/NODE_ENV/);
+  });
+
+  it('con NODE_ENV explícito y base remota no cambia nada', () => {
+    expect(validateEnv({ NODE_ENV: 'development', DATABASE_URL: remote }).NODE_ENV).toBe(
+      'development',
+    );
+    expect(validateEnv({ NODE_ENV: 'test', DATABASE_URL: remote }).NODE_ENV).toBe('test');
+  });
+});
+
+describe('envWarnings (M2)', () => {
+  it('producción con TRUST_PROXY_HOPS=0 => aviso (no falla el arranque)', () => {
+    const env = validateEnv({ ...prod, TRUST_PROXY_HOPS: '0' });
+    expect(envWarnings(env)).toEqual([expect.stringContaining('TRUST_PROXY_HOPS=0')]);
+  });
+
+  it('producción con >= 1, o desarrollo con 0 => sin avisos', () => {
+    expect(envWarnings(validateEnv({ ...prod, TRUST_PROXY_HOPS: '1' }))).toEqual([]);
+    expect(envWarnings(validateEnv({}))).toEqual([]);
   });
 });
