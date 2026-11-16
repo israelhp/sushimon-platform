@@ -32,6 +32,18 @@ describe('paths', () => {
     expect(paths.adminCategoriesReorder()).toBe('/v1/admin/categories/reorder');
   });
 
+  it('F12: rutas de modificadores (grupos, opciones y asociación a productos)', () => {
+    expect(paths.adminModifierGroups()).toBe('/v1/admin/modifier-groups');
+    expect(paths.adminModifierGroup('g 1')).toBe('/v1/admin/modifier-groups/g%201');
+    expect(paths.adminModifierGroupOptions('g1')).toBe('/v1/admin/modifier-groups/g1/modifiers');
+    expect(paths.adminModifierGroupReorder('g1')).toBe(
+      '/v1/admin/modifier-groups/g1/modifiers/reorder',
+    );
+    expect(paths.adminModifier('m1')).toBe('/v1/admin/modifiers/m1');
+    expect(paths.adminProductModifiers('p1')).toBe('/v1/admin/products/p1/modifiers');
+    expect(paths.adminProductModifierGroups('p1')).toBe('/v1/admin/products/p1/modifier-groups');
+  });
+
   it('F09: rutas de catálogos, zonas, configuración de entrega y cobertura', () => {
     expect(paths.locationDepartments()).toBe('/v1/locations/departments');
     expect(paths.locationMunicipalities()).toBe('/v1/locations/municipalities');

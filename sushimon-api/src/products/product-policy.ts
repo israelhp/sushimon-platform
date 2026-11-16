@@ -299,8 +299,13 @@ export function toPublicDetail(
   row: ProductRow,
   info: VisibleCategoryInfo,
   media: readonly MediaRow[],
+  modifierGroups: PublicProductDetailView['modifierGroups'],
 ): PublicProductDetailView {
-  return { ...toPublicView(row, info.ref, media), categoryAncestors: info.ancestors };
+  return {
+    ...toPublicView(row, info.ref, media),
+    categoryAncestors: info.ancestors,
+    modifierGroups,
+  };
 }
 
 /** Une filas y media en una sola pasada (sin N+1); omite los productos cuya categoría no está en `visible`. */

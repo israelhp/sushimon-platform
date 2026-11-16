@@ -173,6 +173,15 @@ describe('AllExceptionsFilter', () => {
     });
   });
 
+  it('5xx: MODIFIERS_BUSY es público (F12)', () => {
+    const res = fakeRes();
+    new AllExceptionsFilter().catch(
+      codedException(503, 'MODIFIERS_BUSY', 'reintenta'),
+      hostWith(res),
+    );
+    expect(res.json.mock.calls[0]?.[0]).toMatchObject({ code: 'MODIFIERS_BUSY' });
+  });
+
   it('5xx: FAVORITES_BUSY es público; un 503 fuera de la lista no expone code ni mensaje interno', () => {
     vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     const busy = fakeRes();

@@ -8,13 +8,14 @@ const screensOf = (grants: Grants) =>
 const grantsOf = (userId: string) => demoStaffFromSeed(userId).grants;
 
 describe('menú por permisos (grants del contexto administrativo)', () => {
-  it('administrador ve las 10 pantallas en 3 secciones', () => {
+  it('administrador ve las 11 pantallas en 3 secciones', () => {
     expect(screensOf(grantsOf('u1'))).toEqual([
       'panel',
       'pedidos',
       'entregas',
       'productos',
       'categorias',
+      'modificadores',
       'promociones',
       'sucursales',
       'usuarios',
@@ -28,13 +29,14 @@ describe('menú por permisos (grants del contexto administrativo)', () => {
     ]);
   });
 
-  it('encargado ve operación, productos, categorías (lectura, F10), su sucursal, usuarios, roles (lectura) y reportes', () => {
+  it('encargado ve operación, productos, categorías y extras (lectura, F10/F12), su sucursal, usuarios, roles (lectura) y reportes', () => {
     expect(screensOf(grantsOf('u2'))).toEqual([
       'panel',
       'pedidos',
       'entregas',
       'productos',
       'categorias',
+      'modificadores',
       'sucursales',
       'usuarios',
       'roles',

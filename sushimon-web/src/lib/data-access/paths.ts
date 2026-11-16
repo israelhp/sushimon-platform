@@ -80,6 +80,19 @@ export const paths = {
   /** F11 (contrato): productos del backoffice (`catalog.read|create|update` + aal2; escrituras con alcance global). */
   adminProducts: () => '/v1/admin/products',
   adminProduct: (id: string) => `/v1/admin/products/${seg(id)}`,
+  /**
+   * F12 (contrato): grupos y opciones de modificadores y su asociación a productos (`catalog.read|create|update` + aal2;
+   * escrituras con alcance global). Sin borrado físico.
+   */
+  adminModifierGroups: () => '/v1/admin/modifier-groups',
+  adminModifierGroup: (id: string) => `/v1/admin/modifier-groups/${seg(id)}`,
+  adminModifierGroupOptions: (id: string) => `/v1/admin/modifier-groups/${seg(id)}/modifiers`,
+  adminModifierGroupReorder: (id: string) =>
+    `/v1/admin/modifier-groups/${seg(id)}/modifiers/reorder`,
+  adminModifier: (id: string) => `/v1/admin/modifiers/${seg(id)}`,
+  adminProductModifiers: (productId: string) => `/v1/admin/products/${seg(productId)}/modifiers`,
+  adminProductModifierGroups: (productId: string) =>
+    `/v1/admin/products/${seg(productId)}/modifier-groups`,
   /** F03 (contrato): empleados, asignaciones, roles y permisos granulares (JWT + `staff.*`/`roles.*` + aal2). */
   adminContext: () => '/v1/admin/me/context',
   adminStaff: () => '/v1/admin/staff',

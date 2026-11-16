@@ -15,6 +15,7 @@ import {
 } from './fixtures/schedule';
 import { DELIVERY_SETTINGS_SEEDS, DELIVERY_ZONE_SEEDS, seedDeliveryFee } from './fixtures/delivery';
 import { HIDDEN_DEMO_SEEDS, PRODUCT_SEEDS } from './fixtures/products';
+import { MODIFIER_GROUP_SEEDS, PRODUCT_MODIFIER_GROUP_SEEDS } from './fixtures/modifiers';
 import { PROMOTION_SEEDS } from './fixtures/promotions';
 import { ROLE_SEEDS } from './fixtures/rbac';
 import { RIDER_SEEDS, STAFF_SEEDS } from './fixtures/staff';
@@ -80,6 +81,39 @@ function buildProducts(scenario: MockScenario): ProductRecord[] {
       })),
     }),
   );
+}
+
+/** F12: grupos, opciones y asociaciones sembradas (escenario `empty`: sin ninguno). */
+function buildModifiers(
+  scenario: MockScenario,
+): Pick<MockStore, 'modifierGroups' | 'modifiers' | 'productModifierGroups'> {
+  if (scenario === 'empty') return { modifierGroups: [], modifiers: [], productModifierGroups: {} };
+  return {
+    modifierGroups: MODIFIER_GROUP_SEEDS.map((g) => ({
+      id: g.id,
+      name: g.name,
+      minSelect: g.minSelect,
+      maxSelect: g.maxSelect,
+      active: g.active,
+      createdAt: PRODUCT_SEED_AT,
+      updatedAt: PRODUCT_SEED_AT,
+    })),
+    modifiers: MODIFIER_GROUP_SEEDS.flatMap((g) =>
+      g.options.map((o, sortOrder) => ({
+        id: o.id,
+        groupId: g.id,
+        name: o.name,
+        extraPrice: o.extraPrice,
+        active: o.active,
+        sortOrder,
+        createdAt: PRODUCT_SEED_AT,
+        updatedAt: PRODUCT_SEED_AT,
+      })),
+    ),
+    productModifierGroups: Object.fromEntries(
+      Object.entries(PRODUCT_MODIFIER_GROUP_SEEDS).map(([id, groups]) => [id, [...groups]]),
+    ),
+  };
 }
 
 export function buildSeedOrder(seed: OrderSeed, base: Date, scenario: MockScenario): Order {
@@ -273,6 +307,7 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
     categories: empty ? [] : structuredClone(CATEGORY_SEEDS),
     menuCategories: empty ? [] : structuredClone([...MENU_CATEGORY_SEEDS]),
     products: buildProducts(scenario),
+    ...buildModifiers(scenario),
     promotions,
     orders,
     roles: ROLE_SEEDS.map((r) => ({ ...r, permissions: [...r.permissions] })),
@@ -302,6 +337,8 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
       address: 1,
       product: 1,
       media: 1,
+      modifierGroup: 1,
+      modifier: 1,
       category: 1,
       menuCategory: 1,
       promotion: 1,

@@ -41,6 +41,7 @@ export const NAV: readonly NavSectionDef[] = [
     items: [
       { screen: 'productos', icon: 'fork' },
       { screen: 'categorias', icon: 'grid' },
+      { screen: 'modificadores', icon: 'layers' },
       { screen: 'promociones', icon: 'tag' },
     ],
   },

@@ -7,6 +7,7 @@ import * as branches from './branches';
 import * as categories from './categories';
 import * as delivery from './delivery';
 import * as favorites from './favorites';
+import * as modifiers from './modifiers';
 import * as orders from './orders';
 import * as products from './products';
 import * as pub from './public';
@@ -107,6 +108,16 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'POST /v1/admin/products': products.createAdminProduct,
   'GET /v1/admin/products/:id': products.getAdminProduct,
   'PATCH /v1/admin/products/:id': products.updateAdminProduct,
+  // F12: grupos y opciones de modificadores y su asociación a productos (contrato)
+  'GET /v1/admin/modifier-groups': modifiers.listAdminModifierGroups,
+  'POST /v1/admin/modifier-groups': modifiers.createAdminModifierGroup,
+  'GET /v1/admin/modifier-groups/:id': modifiers.getAdminModifierGroup,
+  'PATCH /v1/admin/modifier-groups/:id': modifiers.updateAdminModifierGroup,
+  'POST /v1/admin/modifier-groups/:id/modifiers': modifiers.createAdminModifier,
+  'PUT /v1/admin/modifier-groups/:id/modifiers/reorder': modifiers.reorderAdminModifiers,
+  'PATCH /v1/admin/modifiers/:id': modifiers.updateAdminModifier,
+  'GET /v1/admin/products/:id/modifiers': modifiers.getAdminProductModifiers,
+  'PUT /v1/admin/products/:id/modifier-groups': modifiers.replaceAdminProductModifierGroups,
   // F03: empleados, roles y permisos (contrato)
   'GET /v1/admin/me/context': staff.getAdminContext,
   'GET /v1/admin/staff': staff.listAdminStaff,

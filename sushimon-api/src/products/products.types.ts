@@ -1,3 +1,5 @@
+import type { PublicModifierGroupView } from '../modifiers/modifiers.types.js';
+
 /** Fila de producto tal como la usan servicios y vistas (precio ya como cadena decimal exacta). */
 export interface ProductRow {
   id: string;
@@ -48,6 +50,8 @@ export interface PublicProductView {
 
 export interface PublicProductDetailView extends PublicProductView {
   categoryAncestors: CategoryRef[];
+  /** F12: solo grupos ofrecibles y opciones activas. */
+  modifierGroups: PublicModifierGroupView[];
 }
 
 export interface PublicProductPageView {

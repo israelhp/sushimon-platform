@@ -114,12 +114,37 @@ describe('Arquitectura: toda ruta /v1/admin exige StaffGuard y MfaGuard', () => 
   it('las 4 rutas admin de productos (F11) están registradas y protegidas', async () => {
     const { moduleRef, controllers, StaffGuard, MfaGuard } = await loadApp();
     try {
-      const routes = adminRoutes(controllers).filter((r) => r.label.includes('/admin/products'));
+      const routes = adminRoutes(controllers).filter((r) =>
+        r.label.startsWith('AdminProductsController.'),
+      );
       expect(routes.map((r) => r.label).sort()).toEqual([
         'AdminProductsController.create (/admin/products)',
         'AdminProductsController.get (/admin/products/:id)',
         'AdminProductsController.list (/admin/products)',
         'AdminProductsController.update (/admin/products/:id)',
+      ]);
+      expect(violations(routes, StaffGuard, MfaGuard)).toEqual([]);
+    } finally {
+      await moduleRef.close();
+    }
+  });
+
+  it('las 9 rutas admin de modificadores (F12) están registradas y protegidas', async () => {
+    const { moduleRef, controllers, StaffGuard, MfaGuard } = await loadApp();
+    try {
+      const routes = adminRoutes(controllers).filter((r) =>
+        r.label.startsWith('AdminModifiersController.'),
+      );
+      expect(routes.map((r) => r.label).sort()).toEqual([
+        'AdminModifiersController.createGroup (/admin/modifier-groups)',
+        'AdminModifiersController.createModifier (/admin/modifier-groups/:id/modifiers)',
+        'AdminModifiersController.getGroup (/admin/modifier-groups/:id)',
+        'AdminModifiersController.getProductModifiers (/admin/products/:id/modifiers)',
+        'AdminModifiersController.listGroups (/admin/modifier-groups)',
+        'AdminModifiersController.reorder (/admin/modifier-groups/:id/modifiers/reorder)',
+        'AdminModifiersController.replaceProductGroups (/admin/products/:id/modifier-groups)',
+        'AdminModifiersController.updateGroup (/admin/modifier-groups/:id)',
+        'AdminModifiersController.updateModifier (/admin/modifiers/:id)',
       ]);
       expect(violations(routes, StaffGuard, MfaGuard)).toEqual([]);
     } finally {

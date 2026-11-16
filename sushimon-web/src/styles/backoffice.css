@@ -1266,6 +1266,15 @@
   [data-zone='bo'] .cols-prod {
     grid-template-columns: 72px minmax(180px, 1.6fr) minmax(130px, 1fr) 100px 170px 60px;
   }
+  /* F12: grupos de modificadores (nombre, regla, opciones, productos, estado, acciones). */
+  [data-zone='bo'] .cols-mod {
+    grid-template-columns:
+      minmax(160px, 1.3fr) minmax(150px, 1fr) 120px 100px 110px
+      minmax(220px, 1fr);
+  }
+  [data-zone='bo'] .min-mod {
+    min-width: 920px;
+  }
   [data-zone='bo'] .min-orders {
     min-width: 1060px;
   }
@@ -3287,6 +3296,7 @@
     [data-zone='bo'] .min-del,
     [data-zone='bo'] .min-users,
     [data-zone='bo'] .min-zones,
+    [data-zone='bo'] .min-mod,
     [data-zone='bo'] .min-prod {
       min-width: 0;
     }

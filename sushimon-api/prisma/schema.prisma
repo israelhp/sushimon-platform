@@ -182,20 +182,21 @@ model Category {
 
 /// F11 (0012). CHECK de sku/slug/nombre/longitudes/precio solo en SQL.
 model Product {
-  id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  sku         String?            @unique
-  categoryId  String             @map("category_id") @db.Uuid
-  slug        String             @unique
-  name        String
-  description String?
-  basePrice   Decimal            @map("base_price") @db.Decimal(12, 2)
-  active      Boolean            @default(true)
-  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  id             String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sku            String?                @unique
+  categoryId     String                 @map("category_id") @db.Uuid
+  slug           String                 @unique
+  name           String
+  description    String?
+  basePrice      Decimal                @map("base_price") @db.Decimal(12, 2)
+  active         Boolean                @default(true)
+  createdAt      DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   /// La mantiene la API en el UPDATE (sin trigger).
-  updatedAt   DateTime           @default(now()) @map("updated_at") @db.Timestamptz(6)
-  category    Category           @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  media       ProductMedia[]
-  favorites   CustomerFavorite[]
+  updatedAt      DateTime               @default(now()) @map("updated_at") @db.Timestamptz(6)
+  category       Category               @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  media          ProductMedia[]
+  favorites      CustomerFavorite[]
+  modifierGroups ProductModifierGroup[]
 
   @@index([categoryId, active, name, id], map: "products_category_active_name_idx")
   @@index([active, name, id], map: "products_active_name_idx")
@@ -215,6 +216,59 @@ model ProductMedia {
 
   @@unique([productId, sortOrder], map: "product_media_product_sort_key")
   @@map("product_media")
+  @@schema("app")
+}
+
+/// F12 (0013). UNIQUE sobre lower(btrim(name)) (índice modifier_groups_name_lower_key) no es expresable en Prisma:
+/// el servicio captura 23505. CHECK: 0 <= min_select <= max_select <= 20, max_select >= 1.
+model ModifierGroup {
+  id        String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  minSelect Int                    @default(0) @map("min_select") @db.SmallInt
+  maxSelect Int                    @default(1) @map("max_select") @db.SmallInt
+  active    Boolean                @default(true)
+  createdAt DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// La mantiene la API en el UPDATE (sin trigger).
+  updatedAt DateTime               @default(now()) @map("updated_at") @db.Timestamptz(6)
+  modifiers Modifier[]
+  products  ProductModifierGroup[]
+
+  @@map("modifier_groups")
+  @@schema("app")
+}
+
+/// F12 (0013). UNIQUE (group_id, sort_order) es DEFERRABLE INITIALLY DEFERRED en SQL (no usar upsert/ON CONFLICT).
+/// UNIQUE (group_id, lower(btrim(name))) = índice modifiers_group_name_lower_key (no expresable). Tope de 30 por
+/// grupo: trigger modifiers_limit_trg (23514, modifier_group_max_options). extra_price 0..9999.99 (CHECK).
+model Modifier {
+  id         String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  groupId    String        @map("group_id") @db.Uuid
+  name       String
+  extraPrice Decimal       @default(0) @map("extra_price") @db.Decimal(12, 2)
+  active     Boolean       @default(true)
+  sortOrder  Int           @default(0) @map("sort_order")
+  createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
+  group      ModifierGroup @relation(fields: [groupId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([groupId, sortOrder], map: "modifiers_group_sort_key")
+  @@map("modifiers")
+  @@schema("app")
+}
+
+/// F12 (0013). UNIQUE (product_id, sort_order) DEFERRABLE INITIALLY DEFERRED (no usar upsert). Tope de 10 grupos por
+/// producto: trigger product_modifier_groups_limit_trg (23514, product_max_modifier_groups).
+model ProductModifierGroup {
+  productId String        @map("product_id") @db.Uuid
+  groupId   String        @map("group_id") @db.Uuid
+  sortOrder Int           @default(0) @map("sort_order")
+  product   Product       @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  group     ModifierGroup @relation(fields: [groupId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@id([productId, groupId])
+  @@unique([productId, sortOrder], map: "product_modifier_groups_product_sort_key")
+  @@index([groupId], map: "product_modifier_groups_group_idx")
+  @@map("product_modifier_groups")
   @@schema("app")
 }
 

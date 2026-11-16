@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CategoriesQueryService } from '../categories/categories-query.service.js';
+import { ModifiersQueryService } from '../modifiers/modifiers-query.service.js';
 import type { AdminCategoryView } from '../categories/categories.types.js';
 import {
   buildPublicViews,
@@ -57,6 +58,7 @@ export class ProductsQueryService {
   constructor(
     @Inject(ProductsRepository) private readonly repo: ProductsRepository,
     @Inject(CategoriesQueryService) private readonly categories: CategoriesQueryService,
+    @Inject(ModifiersQueryService) private readonly modifiers: ModifiersQueryService,
   ) {}
 
   async getPublicList(query: PublicProductsQuery): Promise<PublicProductPageView> {
@@ -98,8 +100,12 @@ export class ProductsQueryService {
     if (!row?.active) return null;
     const info = indexVisibleTree(tree).get(row.categoryId);
     if (!info) return null;
-    const media = await this.repo.findMediaByProductIds([row.id]);
-    return toPublicDetail(row, info, media);
+    // Media y modificadores en paralelo; los modificadores son UNA consulta (producto → grupos → opciones).
+    const [media, modifierGroups] = await Promise.all([
+      this.repo.findMediaByProductIds([row.id]),
+      this.modifiers.findPublicGroupsForProduct(row.id),
+    ]);
+    return toPublicDetail(row, info, media, modifierGroups);
   }
 
   /** Resumen de los productos VISIBLES entre `ids` (los demás faltan del mapa). Una consulta por tabla, sin N+1. */

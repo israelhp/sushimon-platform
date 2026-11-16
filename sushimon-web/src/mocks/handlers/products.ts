@@ -33,6 +33,7 @@ import {
 import { availableAt, badRequest, fail, failCode } from '../domain';
 import type { CategoryRecord } from '../fixtures/categories';
 import type { MockStore, ProductRecord } from '../store';
+import { offerableGroupsOf } from './modifiers';
 import { now, requireStaff, staffBranchIds, type Handler, type Req } from './shared';
 
 /**
@@ -196,7 +197,12 @@ export const getStoreProduct: Handler = (req): PublicProductDetail => {
     failCode(404, 'PRODUCT_NOT_FOUND', 'Producto no encontrado');
   }
   const ancestors = ancestorsOf(store.menuCategories, product.categoryId).reverse();
-  return { ...publicView(store, product), categoryAncestors: ancestors.map(refOf) };
+  return {
+    ...publicView(store, product),
+    categoryAncestors: ancestors.map(refOf),
+    // F12: solo grupos ofrecibles y opciones activas (la lista pública no los incluye).
+    modifierGroups: offerableGroupsOf(store, product.id),
+  };
 };
 
 // ── Autorización ───────────────────────────────────────────────────────────────────────────

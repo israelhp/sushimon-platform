@@ -95,6 +95,23 @@ export type AdminProductMedia = S['AdminProductMedia'];
 export type ProductMediaInput = S['ProductMediaInput'];
 export type CreateProductRequest = S['CreateProductRequest'];
 export type UpdateProductRequest = S['UpdateProductRequest'];
+/** F12: modificadores (grupos y opciones). Los importes extra son CADENAS decimales (`"5.00"`). */
+export type ModifierExtraPrice = S['ModifierExtraPrice'];
+export type PublicModifierOption = S['PublicModifierOption'];
+export type PublicModifierGroup = S['PublicModifierGroup'];
+export type AdminModifier = S['AdminModifier'];
+export type AdminModifierList = S['AdminModifierList'];
+export type AdminModifierGroupSummary = S['AdminModifierGroupSummary'];
+export type AdminModifierGroup = S['AdminModifierGroup'];
+export type AdminModifierGroupPage = S['AdminModifierGroupPage'];
+export type AdminProductModifiers = S['AdminProductModifiers'];
+export type ModifierOptionInput = S['ModifierOptionInput'];
+export type CreateModifierGroupRequest = S['CreateModifierGroupRequest'];
+export type UpdateModifierGroupRequest = S['UpdateModifierGroupRequest'];
+export type CreateModifierRequest = S['CreateModifierRequest'];
+export type UpdateModifierRequest = S['UpdateModifierRequest'];
+export type ReorderModifiersRequest = S['ReorderModifiersRequest'];
+export type ReplaceProductModifierGroupsRequest = S['ReplaceProductModifierGroupsRequest'];
 /** Disponibilidad de un PRODUCTO por sucursal (borrador del catálogo; no confundir con `BranchAvailability`, F08). */
 export type ProductBranchAvailability = S['DraftBranchAvailability'];
 export type Promotion = S['Promotion'];
@@ -239,7 +256,7 @@ export type FavoriteProductStatus = S['FavoriteProductStatus'];
 
 /**
  * SIMULADO (solo mock, `/v1/demo/catalog/product-extras`): lo que F11 NO provee y la tienda sigue necesitando hasta que
- * lleguen F12 (modificadores), F13 (disponibilidad/precio por sucursal), F15 (insignias) y los textos por idioma. Nunca existe
+ * lleguen F13 (disponibilidad/precio por sucursal), F15 (insignias) y los textos por idioma. Nunca existe
  * en la API real: en http la UI usa valores por defecto.
  */
 export interface SimulatedProductExtras {
