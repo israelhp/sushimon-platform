@@ -84,6 +84,17 @@ describe('paths', () => {
     }
   });
 
+  it('F14: rutas de medios (intent, complete, biblioteca) y de imágenes de producto; el PUT simulado solo en /v1/demo', () => {
+    expect(paths.adminMediaUploadIntents()).toBe('/v1/admin/media/upload-intents');
+    expect(paths.adminMediaComplete()).toBe('/v1/admin/media/complete');
+    expect(paths.adminMediaList()).toBe('/v1/admin/media');
+    expect(paths.adminMedia('m 1')).toBe('/v1/admin/media/m%201');
+    expect(paths.adminProductMediaList('p1')).toBe('/v1/admin/products/p1/media');
+    expect(paths.adminProductMediaOrder('p1')).toBe('/v1/admin/products/p1/media/order');
+    expect(paths.adminProductMediaItem('p1', 'x/y')).toBe('/v1/admin/products/p1/media/x%2Fy');
+    expect(paths.demoMediaObject('a1')).toBe('/v1/demo/media/objects/a1');
+  });
+
   it('F13: rutas de precio y disponibilidad por sucursal; la demo de disponibilidad se retiró', () => {
     expect(paths.storeMenu()).toBe('/v1/store/menu');
     expect(paths.adminBranchProducts('b 1')).toBe('/v1/admin/branches/b%201/products');

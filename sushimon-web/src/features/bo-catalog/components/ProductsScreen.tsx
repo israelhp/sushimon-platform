@@ -36,6 +36,8 @@ import { BranchProductsMatrix } from './BranchProductsMatrix';
 import { ProductBranchesModal } from './ProductBranchesModal';
 import { ProductModal } from './ProductModal';
 import { firstProductImage } from '@/features/catalog/components/product-art';
+import { displayMediaSrc } from '@/lib/media-simulated';
+import { MediaThumb } from './MediaThumb';
 
 type View = 'grid' | 'tabla';
 /** F13: «Catálogo» (productos) o «Por sucursal» (matriz de precio y disponibilidad de una sucursal). */
@@ -178,16 +180,10 @@ export function ProductsScreen() {
   const look = (p: AdminProduct) => categoryLook(categorySlugChain(p, categories));
   const photo = (p: AdminProduct, variant?: 'thumb') => {
     const image = firstProductImage(p);
+    const src = displayMediaSrc(image?.url);
     const l = look(p);
-    return image ? (
-      // eslint-disable-next-line @next/next/no-img-element -- URL https del catálogo (F14 aportará la subida)
-      <img
-        src={image.url}
-        alt={image.altText ?? ''}
-        loading="lazy"
-        referrerPolicy="no-referrer"
-        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-      />
+    return image && src ? (
+      <MediaThumb url={image.url} alt={image.altText ?? p.name} fill />
     ) : (
       <BoProductArt kind={l.art} variant={variant} />
     );

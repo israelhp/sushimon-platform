@@ -3,18 +3,15 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useId, useRef, useState, type FormEvent } from 'react';
-import { IconChevronDown, IconChevronUp, IconFork, IconPlus } from '@/components/icons/bo';
+import { IconFork } from '@/components/icons/bo';
 import { Banner } from '@/components/ui/Banner';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { queryKeys } from '@/features/query-keys';
 import { useCreateProduct, useUpdateProduct } from '@/features/products/hooks';
-import { moveWithin } from '@/lib/category-tree';
 import type { AdminCategory, AdminProduct } from '@/lib/data-access/models';
 import {
-  PRODUCT_ALT_MAX,
   PRODUCT_DESCRIPTION_MAX,
-  PRODUCT_MEDIA_MAX,
   PRODUCT_NAME_MAX,
   PRODUCT_SKU_MAX,
   PRODUCT_SLUG_MAX,
@@ -22,7 +19,6 @@ import {
 import {
   emptyProductForm,
   firstProductError,
-  newMediaRow,
   productServerError,
   productToForm,
   selectableCategories,
@@ -33,6 +29,7 @@ import {
   type ProductFormErrors,
   type ProductFormValues,
 } from '../products-view';
+import { ProductMediaSection } from './ProductMediaSection';
 import { ProductBranchesSection } from './ProductBranchesSection';
 import { ProductModifiersSection } from './ProductModifiersSection';
 
@@ -48,12 +45,13 @@ type FieldEl = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTML
 
 /**
  * Alta y edición de un producto (F11): nombre, slug (vacío al crear = se genera), SKU opcional, categoría (solo ACTIVAS),
- * precio (cadena decimal; se envía `"85.00"`), descripción de texto plano, estado inicial (alta) y hasta 8 imágenes por URL
- * https con texto alternativo, reordenables. Las imágenes SE REFERENCIAN: la subida de archivos es F14. Editar con `media`
- * REEMPLAZA la lista. Los errores del servidor se muestran por campo y en un aviso sin cerrar el modal (por `code`).
+ * precio (cadena decimal; se envía `"85.00"`), descripción de texto plano y estado inicial (alta). Las imágenes (F14) se
+ * gestionan solo al EDITAR con `ProductMediaSection` (subida firmada, biblioteca, orden, alt): efecto inmediato, fuera del
+ * botón «Guardar»; este formulario nunca envía `media`. Los errores del servidor se muestran por campo y en un aviso sin cerrar el modal (por `code`).
  */
 export function ProductModal({ product, categories, onClose }: ProductModalProps) {
   const t = useTranslations('backoffice.products.form');
+  const tm = useTranslations('backoffice.media');
   const toast = useToast();
   const queryClient = useQueryClient();
   const create = useCreateProduct();
@@ -143,18 +141,6 @@ export function ProductModal({ product, categories, onClose }: ProductModalProps
         {errors[f]}
       </span>
     ) : null;
-
-  const moveRow = (key: string, dir: -1 | 1) => {
-    const keys = moveWithin(
-      values.media.map((m) => m.key),
-      key,
-      dir,
-    );
-    if (!keys) return;
-    set({ media: keys.map((k) => values.media.find((m) => m.key === k)!) }, 'media');
-  };
-  const patchRow = (key: string, change: { url?: string; altText?: string }) =>
-    set({ media: values.media.map((m) => (m.key === key ? { ...m, ...change } : m)) }, 'media');
 
   return (
     <Modal
@@ -328,100 +314,13 @@ export function ProductModal({ product, categories, onClose }: ProductModalProps
           {fieldError('description')}
         </div>
 
-        <fieldset
-          className="field span-2"
-          style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
-          aria-describedby={describedBy('media', true)}
-        >
-          <legend className="flabel">{t('media')}</legend>
-          <span id={hintId('media')} className="xs muted" style={{ fontWeight: 600 }}>
-            {t('mediaHint', { max: PRODUCT_MEDIA_MAX })}
-          </span>
-          <ul className="m-0 flex list-none flex-col gap-2 p-0" aria-label={t('media')}>
-            {values.media.map((row, i) => (
-              <li
-                key={row.key}
-                className="grid items-start gap-2"
-                style={{ gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr) auto' }}
-              >
-                <input
-                  ref={
-                    i === 0
-                      ? (el) => {
-                          refs.current.media = el;
-                        }
-                      : undefined
-                  }
-                  className="inp"
-                  type="url"
-                  inputMode="url"
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder="https://"
-                  aria-label={t('mediaUrl', { n: i + 1 })}
-                  value={row.url}
-                  onChange={(e) => patchRow(row.key, { url: e.target.value })}
-                  aria-invalid={errors.media ? true : undefined}
-                />
-                <input
-                  className="inp"
-                  type="text"
-                  autoComplete="off"
-                  maxLength={PRODUCT_ALT_MAX * 2}
-                  placeholder={t('mediaAltPlaceholder')}
-                  aria-label={t('mediaAlt', { n: i + 1 })}
-                  value={row.altText}
-                  onChange={(e) => patchRow(row.key, { altText: e.target.value })}
-                />
-                <span className="row gap8">
-                  <button
-                    type="button"
-                    className="icon-btn bordered"
-                    aria-label={t('mediaUp', { n: i + 1 })}
-                    disabled={i === 0}
-                    onClick={() => moveRow(row.key, -1)}
-                  >
-                    <IconChevronUp size="sm" />
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-btn bordered"
-                    aria-label={t('mediaDown', { n: i + 1 })}
-                    disabled={i === values.media.length - 1}
-                    onClick={() => moveRow(row.key, 1)}
-                  >
-                    <IconChevronDown size="sm" />
-                  </button>
-                  <button
-                    type="button"
-                    className="btn sm"
-                    aria-label={t('mediaRemove', { n: i + 1 })}
-                    onClick={() =>
-                      set({ media: values.media.filter((m) => m.key !== row.key) }, 'media')
-                    }
-                  >
-                    {t('mediaRemoveShort')}
-                  </button>
-                </span>
-              </li>
-            ))}
-          </ul>
-          <div>
-            <button
-              type="button"
-              className="btn sm"
-              disabled={values.media.length >= PRODUCT_MEDIA_MAX}
-              onClick={() => set({ media: [...values.media, newMediaRow()] }, 'media')}
-            >
-              <IconPlus size="sm" />
-              {t('mediaAdd')}
-            </button>
-            <span className="xs muted" style={{ fontWeight: 600, marginLeft: 8 }}>
-              {values.media.length}/{PRODUCT_MEDIA_MAX}
-            </span>
-          </div>
-          {fieldError('media')}
-        </fieldset>
+        {product ? (
+          <ProductMediaSection product={product} />
+        ) : (
+          <p className="xs muted span-2" style={{ margin: 0 }}>
+            {tm('createHint')}
+          </p>
+        )}
 
         {product ? <ProductModifiersSection productId={product.id} /> : null}
         {product ? <ProductBranchesSection productId={product.id} /> : null}

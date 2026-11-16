@@ -8,6 +8,7 @@ import * as branchProducts from './branch-products';
 import * as categories from './categories';
 import * as delivery from './delivery';
 import * as favorites from './favorites';
+import * as media from './media';
 import * as modifiers from './modifiers';
 import * as orders from './orders';
 import * as products from './products';
@@ -111,6 +112,16 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'POST /v1/admin/products': products.createAdminProduct,
   'GET /v1/admin/products/:id': products.getAdminProduct,
   'PATCH /v1/admin/products/:id': products.updateAdminProduct,
+  // F14: medios (intent firmado, confirmación, biblioteca) y vínculo con productos (contrato)
+  'POST /v1/admin/media/upload-intents': media.createUploadIntent,
+  'POST /v1/admin/media/complete': media.completeUpload,
+  'GET /v1/admin/media': media.listAdminMedia,
+  'GET /v1/admin/media/:id': media.getAdminMedia,
+  'DELETE /v1/admin/media/:id': media.deleteAdminMedia,
+  'POST /v1/admin/products/:id/media': media.attachProductMedia,
+  'PUT /v1/admin/products/:id/media/order': media.reorderProductMedia,
+  'PATCH /v1/admin/products/:id/media/:mediaId': media.updateProductMedia,
+  'DELETE /v1/admin/products/:id/media/:mediaId': media.detachProductMedia,
   // F13: matrices administrativas y escrituras de precio/disponibilidad por sucursal (contrato)
   'GET /v1/admin/branches/:id/products': branchProducts.listAdminBranchProducts,
   'GET /v1/admin/products/:id/branches': branchProducts.listAdminProductBranches,
@@ -146,6 +157,8 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   // 🎭 Solo simulación
   'GET /v1/demo/branches/operations': branches.listBranchOperations,
   // F15/otros SIMULADOS: lo que F11 no provee de cada producto
+  // F14 SIMULADO: el almacén recibe el objeto del PUT (en http el PUT va directo a R2)
+  'PUT /v1/demo/media/objects/:assetId': media.putSimulatedObject,
   'GET /v1/demo/catalog/product-extras': products.listProductExtras,
   'GET /v1/demo/delivery/pedidosya-coverage': delivery.getPedidosyaCoverageScenario,
   'PUT /v1/demo/delivery/pedidosya-coverage': delivery.setPedidosyaCoverageScenario,

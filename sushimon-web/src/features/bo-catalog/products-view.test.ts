@@ -5,7 +5,6 @@ import {
   BUSY_MESSAGE,
   categorySlugChain,
   emptyProductForm,
-  newMediaRow,
   productServerError,
   productToForm,
   selectableCategories,
@@ -39,9 +38,9 @@ const product: AdminProduct = {
 const valid: ProductFormValues = { ...emptyProductForm('c1'), name: 'Roll Mon', price: '48,5' };
 
 describe('formulario de producto', () => {
-  it('productToForm ordena las imágenes por sortOrder', () => {
+  it('productToForm no incluye imágenes (F14: se gestionan aparte)', () => {
     const form = productToForm(product);
-    expect(form.media.map((m) => m.url)).toEqual(['https://a.test/1.jpg', 'https://a.test/2.jpg']);
+    expect(form).not.toHaveProperty('media');
     expect(form).toMatchObject({ price: '48.50', sku: 'ABC-1', active: true });
   });
 
@@ -71,29 +70,7 @@ describe('formulario de producto', () => {
     expect(validateProductForm({ ...valid, slug: '' }, 'create').slug).toBeUndefined();
   });
 
-  it('valida las imágenes: https, alt ≤ 200 y máximo 8', () => {
-    const row = (url: string, alt = '') => newMediaRow(url, alt);
-    expect(
-      validateProductForm({ ...valid, media: [row('http://a.test/x.jpg')] }, 'create').media,
-    ).toMatch(/Imagen 1/);
-    expect(
-      validateProductForm(
-        { ...valid, media: [row('https://a.test/x.jpg', 'a'.repeat(201))] },
-        'create',
-      ).media,
-    ).toMatch(/texto alternativo/);
-    expect(
-      validateProductForm(
-        { ...valid, media: Array.from({ length: 9 }, () => row('https://a.test/x.jpg')) },
-        'create',
-      ).media,
-    ).toMatch(/Máximo 8/);
-    expect(
-      validateProductForm({ ...valid, media: [row('https://a.test/x.jpg')] }, 'create').media,
-    ).toBeUndefined();
-  });
-
-  it('toCreateRequest: precio "48.50", SKU en mayúsculas, sin slug/SKU vacíos y media solo si hay', () => {
+  it('toCreateRequest: precio "48.50", SKU en mayúsculas, sin slug/SKU vacíos y nunca `media`', () => {
     expect(toCreateRequest(valid)).toEqual({
       name: 'Roll Mon',
       description: null,
@@ -106,17 +83,16 @@ describe('formulario de producto', () => {
       slug: ' roll-mon ',
       sku: 'rm-1',
       description: ' d ',
-      media: [newMediaRow(' https://a.test/x.jpg ', ' alt ')],
     });
     expect(full).toMatchObject({
       slug: 'roll-mon',
       sku: 'RM-1',
       description: 'd',
-      media: [{ url: 'https://a.test/x.jpg', altText: 'alt' }],
     });
+    expect(full).not.toHaveProperty('media');
   });
 
-  it('toUpdateRequest envía solo lo cambiado; media solo si cambia; sin cambios => null', () => {
+  it('toUpdateRequest envía solo lo cambiado (nunca media); sin cambios => null', () => {
     expect(toUpdateRequest(productToForm(product), product)).toBeNull();
     const form = productToForm(product);
     expect(toUpdateRequest({ ...form, price: '60' }, product)).toEqual({ basePrice: '60.00' });
@@ -125,14 +101,6 @@ describe('formulario de producto', () => {
       description: null,
       active: false,
     });
-    const reordered = { ...form, media: [...form.media].reverse() };
-    expect(toUpdateRequest(reordered, product)).toEqual({
-      media: [
-        { url: 'https://a.test/2.jpg', altText: null },
-        { url: 'https://a.test/1.jpg', altText: 'uno' },
-      ],
-    });
-    expect(toUpdateRequest({ ...form, media: [] }, product)).toEqual({ media: [] });
   });
 });
 
@@ -190,11 +158,16 @@ describe('errores del servidor por code (nunca por message)', () => {
     ['PRODUCT_SLUG_TAKEN', 409, 'slugTaken', 'slug', false],
     ['PRODUCT_SKU_TAKEN', 409, 'skuTaken', 'sku', false],
     ['PRODUCT_CATEGORY_INVALID', 422, 'categoryInvalid', 'categoryId', true],
-    ['PRODUCT_MEDIA_INVALID', 422, 'mediaInvalid', 'media', false],
   ] as const)('%s', (code, status, kind, field, reload) => {
     const e = productServerError(api(status, code));
     expect(e).toMatchObject({ kind, reload });
     expect(e.fields[field]).toBeDefined();
+  });
+
+  it('PRODUCT_MEDIA_INVALID: aviso general sin campo (las imágenes se gestionan aparte)', () => {
+    const e = productServerError(api(422, 'PRODUCT_MEDIA_INVALID'));
+    expect(e).toMatchObject({ kind: 'mediaInvalid', reload: false, fields: {} });
+    expect(e.message).toMatch(/máximo 8/);
   });
 
   it('PRODUCTS_BUSY, 404, 401, 403, 400 con campos y otros', () => {
@@ -212,7 +185,7 @@ describe('errores del servidor por code (nunca por message)', () => {
       api(400, undefined, ['basePrice: cadena inválida', 'media[0]: mala']),
     );
     expect(bad.kind).toBe('invalid');
-    expect(Object.keys(bad.fields).sort()).toEqual(['media', 'price']);
+    expect(Object.keys(bad.fields).sort()).toEqual(['price']);
     expect(productServerError(new Error('x'))).toMatchObject({ kind: 'other', message: 'x' });
   });
 

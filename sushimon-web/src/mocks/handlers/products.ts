@@ -9,6 +9,7 @@ import type {
   SimulatedProductExtras,
 } from '@/lib/data-access/models';
 import { ancestorsOf, descendantIds, isEffectivelyVisible } from '@/lib/category-tree';
+import { SIMULATED_MEDIA_HOST } from '@/lib/media-rules';
 import { artForCategorySlugs, isFoodArt } from '@/lib/product-decor';
 import {
   PRODUCT_ALT_MAX,
@@ -32,6 +33,7 @@ import {
 import { badRequest, fail, failCode } from '../domain';
 import type { CategoryRecord } from '../fixtures/categories';
 import type { MockStore, ProductRecord } from '../store';
+import { assetPublicUrl } from './media';
 import { offerableGroupsOf } from './modifiers';
 import { now, requireStaff, type Handler, type Req } from './shared';
 
@@ -406,8 +408,12 @@ const skuTaken = () =>
     { path: 'sku', code: 'SKU_TAKEN', message: 'El SKU ya está en uso' },
   ]);
 
+/** F14: asset READY cuya URL pública coincide (enlace automático por `PATCH media`, D11). */
+const readyAssetFor = (store: MockStore, url: string) =>
+  store.mediaAssets.find((a) => a.status === 'READY' && assetPublicUrl(a) === url);
+
 /** 422 `PRODUCT_MEDIA_INVALID`: más de 8, URL que no es https absoluta ≤ 2048 o `altText` > 200. */
-function assertMedia(media: readonly MediaShape[]): void {
+function assertMedia(store: MockStore, media: readonly MediaShape[]): void {
   if (media.length > PRODUCT_MEDIA_MAX) {
     failCode(422, 'PRODUCT_MEDIA_INVALID', `Máximo ${PRODUCT_MEDIA_MAX} imágenes por producto`);
   }
@@ -415,6 +421,12 @@ function assertMedia(media: readonly MediaShape[]): void {
     if (!isValidMediaUrl(m.url)) {
       failCode(422, 'PRODUCT_MEDIA_INVALID', 'Cada imagen debe ser una URL https válida', [
         { path: `media[${i}].url`, code: 'URL_INVALID', message: 'URL https inválida' },
+      ]);
+    }
+    // F14 (D11): una URL bajo el host de medios sin asset READY es inválida (no se aceptan URLs de R2 «sueltas»).
+    if (new URL(m.url).hostname === SIMULATED_MEDIA_HOST && !readyAssetFor(store, m.url)) {
+      failCode(422, 'PRODUCT_MEDIA_INVALID', 'La imagen no corresponde a un archivo confirmado', [
+        { path: `media[${i}].url`, code: 'ASSET_NOT_FOUND', message: 'Imagen sin confirmar' },
       ]);
     }
     if (m.altText !== null && m.altText.length > PRODUCT_ALT_MAX) {
@@ -442,6 +454,7 @@ function toMedia(store: MockStore, media: readonly MediaShape[]): AdminProductMe
     url: m.url,
     altText: m.altText,
     sortOrder: index,
+    assetId: readyAssetFor(store, m.url)?.id ?? null,
   }));
 }
 
@@ -465,7 +478,7 @@ export const createAdminProduct: Handler = (req): AdminProduct => {
   if (missing.length > 0) badRequest(missing.map((k) => `${k}: obligatorio`));
   const { store } = req;
   assertCategory(store, input.categoryId as string);
-  assertMedia(input.media ?? []);
+  assertMedia(store, input.media ?? []);
   const taken = new Set(store.products.map((p) => p.slug));
   let slug: string;
   if (input.slug !== undefined) {
@@ -531,7 +544,7 @@ export const updateAdminProduct: Handler = (req): AdminProduct => {
   if (input.categoryId !== undefined && input.categoryId !== current.categoryId) {
     assertCategory(store, input.categoryId);
   }
-  if (input.media !== undefined) assertMedia(input.media);
+  if (input.media !== undefined) assertMedia(store, input.media);
   if (
     input.slug !== undefined &&
     input.slug !== current.slug &&

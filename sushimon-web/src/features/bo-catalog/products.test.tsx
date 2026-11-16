@@ -152,7 +152,7 @@ describe('Productos F11: crear y editar', () => {
     expect(within(dialog).getByText(/precio mayor a Q0\.00/)).toBeVisible();
   });
 
-  it('crea un producto con slug generado, SKU, imágenes y aparece en la lista', async () => {
+  it('crea un producto con slug generado y SKU; las imágenes se añaden al editar (F14) y aparece en la lista', async () => {
     await renderScreen(<ProductsScreen />, 'admin');
     await screen.findByText('Dumplings');
     const dialog = await openNew();
@@ -163,15 +163,11 @@ describe('Productos F11: crear y editar', () => {
     );
     await userEvent.type(within(dialog).getByLabelText(/^Precio/), '48,5');
     await userEvent.type(within(dialog).getByRole('textbox', { name: /^SKU/ }), 'rm-1');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Agregar imagen' }));
-    await userEvent.type(
-      within(dialog).getByRole('textbox', { name: 'URL de la imagen 1' }),
-      'https://cdn.ejemplo.com/roll.jpg',
-    );
-    await userEvent.type(
-      within(dialog).getByRole('textbox', { name: 'Texto alternativo de la imagen 1' }),
-      'Roll Mon',
-    );
+    // F14: sin campo de URL; las imágenes se gestionan al editar.
+    expect(within(dialog).queryByRole('textbox', { name: /URL de la imagen/ })).toBeNull();
+    expect(
+      within(dialog).getByText('Guarda el producto para poder añadir imágenes.'),
+    ).toBeVisible();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Guardar producto' }));
     expect(await screen.findByText('Producto «Roll Mon» creado')).toBeVisible();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -180,13 +176,9 @@ describe('Productos F11: crear y editar', () => {
     const item = created.closest('.pcard') as HTMLElement;
     expect(within(item).getByText('Q48.50')).toBeVisible();
     expect(within(item).getByText('roll-mon', { exact: false })).toBeVisible();
-    expect(within(item).getByRole('img', { name: 'Roll Mon' })).toHaveAttribute(
-      'src',
-      'https://cdn.ejemplo.com/roll.jpg',
-    );
   });
 
-  it('409 por slug: error en el campo sin cerrar el modal; imágenes reordenables y con tope de 8', async () => {
+  it('409 por slug: error en el campo sin cerrar el modal', async () => {
     await renderScreen(<ProductsScreen />, 'admin');
     await screen.findByText('Dumplings');
     const dialog = await openNew();
@@ -201,28 +193,9 @@ describe('Productos F11: crear y editar', () => {
     expect(await within(dialog).findByText('Este slug ya está en uso.')).toBeVisible();
     expect(within(dialog).getByRole('textbox', { name: /^Slug/ })).toHaveFocus();
     expect(screen.getByRole('dialog', { name: 'Nuevo producto' })).toBeVisible();
-
-    const add = within(dialog).getByRole('button', { name: 'Agregar imagen' });
-    await userEvent.click(add);
-    await userEvent.click(add);
-    await userEvent.type(
-      within(dialog).getByRole('textbox', { name: 'URL de la imagen 1' }),
-      'https://a.test/1.jpg',
-    );
-    await userEvent.type(
-      within(dialog).getByRole('textbox', { name: 'URL de la imagen 2' }),
-      'https://a.test/2.jpg',
-    );
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Bajar la imagen 1' }));
-    expect(within(dialog).getByRole('textbox', { name: 'URL de la imagen 1' })).toHaveValue(
-      'https://a.test/2.jpg',
-    );
-    for (let i = 0; i < 6; i++) await userEvent.click(add);
-    expect(within(dialog).getByText('8/8')).toBeVisible();
-    expect(add).toBeDisabled();
   });
 
-  it('409 por SKU y 422 de categoría/imágenes se mapean por code', async () => {
+  it('409 por SKU y 422 de categoría se mapean por code', async () => {
     const { api } = await renderScreen(<ProductsScreen />, 'admin');
     await screen.findByText('Dumplings');
     // Un SKU ya usado (creado «desde otra sesión») y una URL http: la validación local la detiene antes.
@@ -239,17 +212,8 @@ describe('Productos F11: crear y editar', () => {
     expect(await within(dialog).findByText('Este SKU ya está en uso.')).toBeVisible();
 
     await userEvent.clear(within(dialog).getByRole('textbox', { name: /^SKU/ }));
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Agregar imagen' }));
-    await userEvent.type(
-      within(dialog).getByRole('textbox', { name: 'URL de la imagen 1' }),
-      'http://a.test/x.jpg',
-    );
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Guardar producto' }));
-    expect(await within(dialog).findByText(/Imagen 1: escribe una URL https válida/)).toBeVisible();
 
     // Categoría desactivada «en otra sesión» tras abrir el modal: 422 PRODUCT_CATEGORY_INVALID.
-    await userEvent.clear(within(dialog).getByRole('textbox', { name: 'URL de la imagen 1' }));
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Quitar la imagen 1' }));
     api().store.menuCategories.find((c) => c.slug === 'entradas')!.active = false;
     await userEvent.click(within(dialog).getByRole('button', { name: 'Guardar producto' }));
     expect(

@@ -163,6 +163,13 @@ export function ProductSheet({
             <ProductArt
               product={product}
               media={image}
+              sizing={{
+                width: 430,
+                height: 340,
+                sizes: '(min-width: 768px) 430px, 100vw',
+                priority: true,
+              }}
+              altFallback={productName(product, locale)}
               className={cn(!available && 'opacity-60 grayscale')}
             />
           ) : (
