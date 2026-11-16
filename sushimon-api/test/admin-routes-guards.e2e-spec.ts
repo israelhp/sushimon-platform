@@ -95,6 +95,22 @@ describe('Arquitectura: toda ruta /v1/admin exige StaffGuard y MfaGuard', () => 
     }
   });
 
+  it('las 4 rutas admin de categorías (F10) están registradas y protegidas', async () => {
+    const { moduleRef, controllers, StaffGuard, MfaGuard } = await loadApp();
+    try {
+      const routes = adminRoutes(controllers).filter((r) => r.label.includes('/admin/categories'));
+      expect(routes.map((r) => r.label).sort()).toEqual([
+        'AdminCategoriesController.create (/admin/categories)',
+        'AdminCategoriesController.list (/admin/categories)',
+        'AdminCategoriesController.reorder (/admin/categories/reorder)',
+        'AdminCategoriesController.update (/admin/categories/:id)',
+      ]);
+      expect(violations(routes, StaffGuard, MfaGuard)).toEqual([]);
+    } finally {
+      await moduleRef.close();
+    }
+  });
+
   it('prueba negativa: una ruta admin sin @RequireStaff se detecta', async () => {
     const { moduleRef, StaffGuard, MfaGuard } = await loadApp();
     try {
