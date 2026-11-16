@@ -93,7 +93,7 @@ describe.skipIf(!url)('Migración 0016: promociones (base desechable)', () => {
     (
       await q<{ id: string }>(
         `INSERT INTO app.branches (code, name, address) VALUES ($1,'B','dir') RETURNING id`,
-        [`B${++seq}`],
+        [`suc-${++seq}`],
       )
     ).rows[0]?.id as string;
   const product = async () => {
