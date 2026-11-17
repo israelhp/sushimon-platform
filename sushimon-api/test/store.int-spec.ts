@@ -217,8 +217,10 @@ describe.skipIf(!url || !ready)('Agregados públicos de la tienda contra Postgre
     const [a, b] = [await newBranch(), await newBranch()];
     const root = await newCategory('Raíz');
     const child = await newCategory('Hija', root.id);
-    const off = await newCategory('Apagada', null, false);
+    // La API no permite crear una hija bajo una categoría inactiva: se crean activas y luego se apaga el padre.
+    const off = await newCategory('Apagada');
     const underOff = await newCategory('BajoApagada', off.id);
+    await categories.update(staff, off.id, { active: false });
     const [p1] = await newProducts(child.id, 1, 'visible', { description: 'Salmón fresco' });
     const [hidden] = await newProducts(underOff.id, 1, 'oculto');
     const [inactive] = await newProducts(child.id, 1, 'inactivo', { active: false });
@@ -316,16 +318,14 @@ describe.skipIf(!url || !ready)('Agregados públicos de la tienda contra Postgre
     expect(pos(containsId)).toBeLessThan(pos(descId));
     expect(pos(inCategory)).toBeGreaterThan(pos(containsId)); // solo por el nombre de la categoría (grupo 3)
     expect(ids).not.toContain(hiddenId);
-    // `%` y `_` son literales: ninguno coincide con todo
-    for (const q of ['%%', '__', '\\\\']) {
-      const lit = await catalog.search({ q, page: 1, pageSize: 50 });
-      expect(
-        lit.items.every(
-          (i) =>
-            `${i.name}${i.summary ?? ''}`.includes(q.slice(0, 1)) ||
-            i.category.name.includes(q.slice(0, 1)),
-        ),
-      ).toBe(true);
+    // `%`, `_` y `\\` son literales: «salmon%» o «salmon_» no coinciden con nada (como comodín coincidirían con «salmon…»).
+    // Un `q` sin letras ni dígitos (`%%`, `__`) lo rechaza la validación con 400.
+    for (const q of ['salmon%', 'salmon_', 'salmon\\\\']) {
+      expect((await catalog.search({ q, page: 1, pageSize: 50 })).items).toEqual([]);
+    }
+    for (const q of ['%%', '__']) {
+      const err = await failure(catalog.search({ q, page: 1, pageSize: 5 }));
+      expect((err as { status?: number } | null)?.status).toBe(400);
     }
     // inyección: texto inerte
     expect(
