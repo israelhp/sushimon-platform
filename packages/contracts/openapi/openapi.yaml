@@ -7868,6 +7868,47 @@ components:
           minItems: 1
           maxItems: 30
           items: { $ref: '#/components/schemas/PublicModifierOption' }
+    CartQuoteSelectionInput:
+      type: object
+      description: |
+        F18 (spec 019, ADR-0024). Una opción de modificador elegida en una línea del carrito. SOLO ids: nunca nombres ni precios (el servidor los resuelve y recalcula).
+        `quantity` es la cantidad de ESA opción por unidad de la línea; en la v1 de F12 cada opción se elige 0 o 1 vez, por eso `maximum: 1` (el campo existe para no
+        romper el contrato si negocio admite «doble porción»; subirlo exigirá F12 + F19).
+      required: [groupId, optionId, quantity]
+      additionalProperties: false
+      properties:
+        groupId: { type: string, format: uuid }
+        optionId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1, maximum: 1 }
+    CartQuoteLineInput:
+      type: object
+      description: |
+        F18 (spec 019). Línea de carrito en el formato de entrada de la cotización de checkout (F19). SIN precios, nombres, imágenes ni notas: la API recalcula todo.
+        Una configuración idéntica (producto + selecciones) aparece UNA sola vez con la cantidad sumada. `selections` ordenadas por `groupId` y luego `optionId`.
+      required: [productId, quantity, selections]
+      additionalProperties: false
+      properties:
+        productId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1, maximum: 99 }
+        selections:
+          type: array
+          maxItems: 30
+          items: { $ref: '#/components/schemas/CartQuoteSelectionInput' }
+    CartQuoteInput:
+      type: object
+      description: |
+        F18 (spec 019, ADR-0024). Entrada reutilizable para `POST /v1/checkout/quote` (F19; la operación AÚN NO EXISTE ni está en este contrato). Una sola sucursal por carrito.
+        Lo produce la función pura `toQuoteInput(cart)` de la web; las líneas van en orden determinista (`productId`, luego clave canónica de selecciones). F19 puede ampliar el
+        cuerpo (modo, dirección, cupón) con un esquema propio que COMPONGA este, sin cambiar sus campos.
+      required: [branchId, lines]
+      additionalProperties: false
+      properties:
+        branchId: { type: string, format: uuid }
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items: { $ref: '#/components/schemas/CartQuoteLineInput' }
     AdminModifier:
       type: object
       required: [id, groupId, name, extraPrice, active, sortOrder, createdAt, updatedAt]

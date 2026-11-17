@@ -3584,6 +3584,38 @@ export interface components {
             required: boolean;
             options: components["schemas"]["PublicModifierOption"][];
         };
+        /**
+         * @description F18 (spec 019, ADR-0024). Una opción de modificador elegida en una línea del carrito. SOLO ids: nunca nombres ni precios (el servidor los resuelve y recalcula).
+         *     `quantity` es la cantidad de ESA opción por unidad de la línea; en la v1 de F12 cada opción se elige 0 o 1 vez, por eso `maximum: 1` (el campo existe para no
+         *     romper el contrato si negocio admite «doble porción»; subirlo exigirá F12 + F19).
+         */
+        CartQuoteSelectionInput: {
+            /** Format: uuid */
+            groupId: string;
+            /** Format: uuid */
+            optionId: string;
+            quantity: number;
+        };
+        /**
+         * @description F18 (spec 019). Línea de carrito en el formato de entrada de la cotización de checkout (F19). SIN precios, nombres, imágenes ni notas: la API recalcula todo.
+         *     Una configuración idéntica (producto + selecciones) aparece UNA sola vez con la cantidad sumada. `selections` ordenadas por `groupId` y luego `optionId`.
+         */
+        CartQuoteLineInput: {
+            /** Format: uuid */
+            productId: string;
+            quantity: number;
+            selections: components["schemas"]["CartQuoteSelectionInput"][];
+        };
+        /**
+         * @description F18 (spec 019, ADR-0024). Entrada reutilizable para `POST /v1/checkout/quote` (F19; la operación AÚN NO EXISTE ni está en este contrato). Una sola sucursal por carrito.
+         *     Lo produce la función pura `toQuoteInput(cart)` de la web; las líneas van en orden determinista (`productId`, luego clave canónica de selecciones). F19 puede ampliar el
+         *     cuerpo (modo, dirección, cupón) con un esquema propio que COMPONGA este, sin cambiar sus campos.
+         */
+        CartQuoteInput: {
+            /** Format: uuid */
+            branchId: string;
+            lines: components["schemas"]["CartQuoteLineInput"][];
+        };
         AdminModifier: {
             /** Format: uuid */
             id: string;

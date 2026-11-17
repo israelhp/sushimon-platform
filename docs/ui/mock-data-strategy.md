@@ -105,7 +105,7 @@ src/features/          query-keys · <dominio>/hooks.ts · cart/ · order-mode/ 
 1. Fixtures tipadas con `@sushimon/contracts` (vía `lib/data-access/models.ts`); factories con semilla fija.
 2. Nada de arreglos gigantes en componentes: los datos viven en `mocks/fixtures`.
 3. Simulaciones de PedidosYa/NeoNet y rutas `/v1/demo/*`: insignia **"Simulación"**; `useIsSimulation()` indica el modo.
-4. `localStorage` solo preferencias (carrito `monsushi-cart-v1`, modo `monsushi-order-mode-v1`). La sesión de
+4. `localStorage` solo preferencias (carrito `monsushi-cart-v2`, modo `monsushi-order-mode-v1`). La sesión de
    demostración (`monsushi-demo-session-v1`, sessionStorage) **no autoriza**: el adaptador mock la lee como lo haría el
    servidor con su cookie; con `http` la identidad la decide el servidor (Supabase Auth, Etapa 3).
 5. El total de un pedido lo calcula el handler (el cliente nunca envía precios). De una tarjeta solo se guardan marca,
@@ -438,6 +438,22 @@ Implementado: (A2) la búsqueda conserva los resultados previos SOLO si cambia e
 Aceptado / NO implementado: **M7** (vitrina de producto en el Inicio sin destacados: decisión de producto ligada a P23); **B5** (aviso visible de `degraded`: las secciones fallidas salen vacías sin avisar al cliente; aceptado); **B4** (`money()` fija el locale `es` también en inglés: pendiente, afecta a más pantallas que F17); **B6** (colores fuera de tokens sobre la imagen del carrusel).
 
 **Qué NO se probó**: API real, CDN/`Cache-Control` desplegado, límite de tasa 429 (solo la UI con un cliente simulado), concurrencia real ni rendimiento SQL. Defectos del contrato anotados en la spec 018.
+
+## F18 — Carrito local (spec 019, ADR-0024)
+
+Estado web: `MOCK_ONLY`/`CONTRACT_DEFINED` (esquemas `CartQuote*Input` en el contrato, sin operación). **F18 NO es `READY`**: no hay endpoint ni tabla de carrito, y todo se probó con el adaptador mock. El carrito es local del navegador (`monsushi-cart-v2`, anónimo, sin sync a backend).
+
+| Pieza                                                                                                              | Estado                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Modelo, `lineId`, topes, centavos, lectura estricta, TTL 7 días, v1 descartada, `planBranchSwitch`, `toQuoteInput` | **Implementado** (`lib/cart-rules.ts`, función pura, con pruebas)                                                                                                                                                                                                  |
+| Store (`cart-context.tsx`), sincronización entre pestañas (`storage`), avisos, `clearAfterOrder`                   | **Implementado**; `clearAfterOrder` **no existe todavía** (se añade en F20 con un pedido confirmado por el servidor; lo vigila una prueba)                                                                                                                         |
+| Agregar con extras reales de F12, tarjeta que consulta la ficha, edición de línea                                  | **Implementado** sobre `useStoreProduct`/`getStoreProduct` (mock). Las tarjetas del menú no dicen si hay extras: se consulta la ficha al pulsar «Agregar» (defecto del contrato F17)                                                                               |
+| Revalidación sin endpoints nuevos (`useBranchLive`, `useCartView`)                                                 | **Implementado**: menú de la sucursal del carrito (misma consulta que menú y checkout) + UNA ficha por producto único; al abrir cajón/resumen/checkout, por `staleTime`/foco y al cambiar de sucursal; nunca al cambiar cantidades                                 |
+| Política de sucursal (`CartBranchGuard`)                                                                           | **Implementado**: plan por línea, «Conservar las válidas», «Vaciar y empezar» (con confirmación) o «Mantener» la anterior; nunca vacía en silencio                                                                                                                 |
+| Checkout / «Repetir pedido»                                                                                        | Usan el carrito nuevo. El checkout sigue **SIMULADO** (`MOCK_ONLY`): «Continuar» navega a `/checkout`; la confirmación es de demostración, no crea pedidos reales y vacía con `clear()` (no `clearAfterOrder`). Los pedidos anteriores no guardan extras (F20/F23) |
+| Cotización F19 / pedidos F20, cupones, envío real                                                                  | **Pendiente**: `toQuoteInput` existe y está probada pero nadie la envía todavía                                                                                                                                                                                    |
+
+Qué simula el mock: precios y disponibilidad por sucursal (`PRICE_OVERRIDE_AT`, `UNAVAILABLE_AT`, escenario `product-unavailable`), fichas y extras de F12, 404 `PRODUCT_NOT_FOUND`. **No verificado**: API/SQL reales de F12/F13/F17, coste de hasta 30 fichas en red real, `localStorage` en modo privado de Safari, evento `storage` en navegadores móviles, valores de TTL y topes (P30/P31 provisionales sin confirmar con negocio).
 
 ## Corrección de la auditoría F00–F09 (web)
 
