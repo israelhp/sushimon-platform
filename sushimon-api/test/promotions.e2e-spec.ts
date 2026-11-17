@@ -220,6 +220,24 @@ describe('Promociones, cupones y Happy Hour (e2e)', () => {
       expect(res.headers['cache-control']).toBe('public, max-age=5, s-maxage=30');
     });
 
+    it('compact=true (F17): sin items ni productIds; compact=false o ausente = respuesta completa; inválido => 400', async () => {
+      happy();
+      const full = await http().get(`/v1/store/promotions?branchId=${A}`).expect(200);
+      const first = json(full).items?.[0] ?? {};
+      expect(first).toHaveProperty('items');
+      expect(first).toHaveProperty('productIds');
+      const compact = await http()
+        .get(`/v1/store/promotions?branchId=${A}&compact=true`)
+        .expect(200);
+      expect(json(compact).items).toHaveLength(1);
+      const slim = json(compact).items?.[0] ?? {};
+      expect(slim).not.toHaveProperty('items');
+      expect(slim).not.toHaveProperty('productIds');
+      const off = await http().get(`/v1/store/promotions?branchId=${A}&compact=false`).expect(200);
+      expect(json(off).items?.[0] ?? {}).toHaveProperty('items');
+      await http().get(`/v1/store/promotions?branchId=${A}&compact=si`).expect(400);
+    });
+
     it('state=upcoming; state desconocido => 400', async () => {
       clock.current = local('2026-11-16T10:00:00');
       happy();
@@ -243,8 +261,8 @@ describe('Promociones, cupones y Happy Hour (e2e)', () => {
     });
 
     it('el resto de la API conserva su ETag: solo se quita en promociones', async () => {
-      const menu = await http().get(`/v1/store/menu?branchId=${A}`).expect(200);
-      expect(menu.headers['etag']).toBeDefined();
+      const categories = await http().get('/v1/store/categories').expect(200);
+      expect(categories.headers['etag']).toBeDefined();
     });
 
     it('límite de tasa propio: 60 por minuto por IP', async () => {

@@ -5,7 +5,6 @@ import type {
   BranchStatus,
   MatrixFilter,
   MatrixRow,
-  OverlayRow,
   ProductBranchRow,
   ProductFacts,
   ResolveRow,
@@ -208,24 +207,6 @@ export class FakeBranchProductsRepo {
             priceOverride: r?.priceOverride ?? null,
             available: r?.available ?? true,
             updatedAt: r?.updatedAt ?? null,
-          };
-        }),
-    );
-  }
-
-  findOverlay(branchId: string, categoryIds: readonly string[]): Promise<OverlayRow[]> {
-    this.calls.push('findOverlay');
-    return Promise.resolve(
-      [...this.products.values()]
-        .filter((p) => p.active && categoryIds.includes(p.categoryId))
-        .sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : a.id < b.id ? -1 : 1))
-        .map((p) => {
-          const r = this.rowOf(branchId, p.id);
-          return {
-            id: p.id,
-            slug: p.slug,
-            price: r?.priceOverride ?? p.basePrice,
-            available: r?.available ?? true,
           };
         }),
     );

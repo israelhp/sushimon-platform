@@ -13,13 +13,6 @@ import { PageQuery, toBoolean } from '../../products/dto/product-requests.dto.js
 import { SEARCH_MAX } from '../../products/product-policy.js';
 import { PRICE_PATTERN } from '../branch-product-policy.js';
 
-/** `GET /store/menu?branchId=`: ausente o no UUID => 400. */
-export class StoreBranchMenuQuery {
-  @ApiProperty({ type: String, format: 'uuid' })
-  @IsUUID()
-  branchId!: string;
-}
-
 export class ListAdminBranchProductsQuery extends PageQuery {
   @ApiPropertyOptional({ type: String, maxLength: SEARCH_MAX })
   @IsOptional()

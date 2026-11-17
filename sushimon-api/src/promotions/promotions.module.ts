@@ -16,7 +16,7 @@ import { PublicPromotionsService } from './public-promotions.service.js';
 
 /**
  * F15. Exporta `PromotionEvaluator` (puro) y `PromotionCandidatesService` para F19 (cotización); F15 no calcula
- * totales ni crea pedidos. No modifica `ProductsModule`, `ModifiersModule` ni `BranchProductsModule`.
+ * totales ni crea pedidos. F17 consume `PublicPromotionsService` (lector público exportado). No modifica `ProductsModule`, `ModifiersModule` ni `BranchProductsModule`.
  */
 @Module({
   imports: [AuditModule, BranchProductsModule, CategoriesModule],
@@ -36,6 +36,6 @@ import { PublicPromotionsService } from './public-promotions.service.js';
         config.get('BUSINESS_TIMEZONE', { infer: true }),
     },
   ],
-  exports: [PromotionEvaluator, PromotionCandidatesService],
+  exports: [PromotionEvaluator, PromotionCandidatesService, PublicPromotionsService],
 })
 export class PromotionsModule {}

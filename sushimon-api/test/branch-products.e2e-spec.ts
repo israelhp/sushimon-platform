@@ -8,6 +8,7 @@ import {
   fakeProduct,
   FakeBranchProductsRepo,
 } from './support/fake-branch-products-repo.js';
+import { branchDelegate, FakeStoreCatalogRepo } from './support/fake-store-catalog-repo.js';
 import { CAT, seedCategories } from './support/products-harness.js';
 import { createTestKeys, type TestKeys } from './support/tokens.js';
 
@@ -27,7 +28,6 @@ const P2 = bpid(2); // categoría oculta
 const P3 = bpid(3); // inactivo
 const MISSING = bpid(99);
 const ALL_PERMS = ['catalog.read', 'catalog.update', 'catalog.manage_availability'];
-const MENU_CACHE = 'public, max-age=15';
 
 function fakeDb(categories: ReturnType<typeof seedCategories>) {
   const db = {
@@ -90,6 +90,8 @@ async function createApp(
   const { JWKS_RESOLVER } = await import('../src/auth/jwt-verifier.service.js');
   const { BranchProductsRepository } =
     await import('../src/branch-products/branch-products.repository.js');
+  const { StoreCatalogRepository } = await import('../src/store/store-catalog.repository.js');
+  const { PromotionsRepository } = await import('../src/promotions/promotions.repository.js');
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(PrismaService)
     .useValue(db)
@@ -97,6 +99,10 @@ async function createApp(
     .useValue(keys.jwks)
     .overrideProvider(BranchProductsRepository)
     .useValue(repo)
+    .overrideProvider(PromotionsRepository)
+    .useValue({ findCandidates: () => Promise.resolve([]) })
+    .overrideProvider(StoreCatalogRepository)
+    .useValue(new FakeStoreCatalogRepo(repo))
     .compile();
   const app = moduleRef.createNestApplication<NestExpressApplication>();
   configureApp(app, { corsOrigins: ['http://localhost:3000'] });
@@ -145,6 +151,7 @@ describe('Precio y disponibilidad por sucursal (e2e)', () => {
   beforeEach(async () => {
     db = fakeDb(seedCategories());
     repo = new FakeBranchProductsRepo();
+    Object.assign(db, { branch: branchDelegate(repo) });
     repo.seedBranch(A, { name: 'Zona 10' });
     repo.seedBranch(B, { name: 'Antigua' });
     repo.seedBranch(INACTIVE, { active: false, name: 'Cerrada' });
@@ -157,61 +164,6 @@ describe('Precio y disponibilidad por sucursal (e2e)', () => {
   });
   afterEach(async () => {
     await app.close();
-  });
-
-  describe('GET /v1/store/menu (público)', () => {
-    it('devuelve solo productos visibles con precio de ESA sucursal, orden slug y cache 15 s', async () => {
-      repo.seedRow(A, P1, { priceOverride: '45.00' });
-      repo.seedRow(B, P1, { priceOverride: '77.00', available: false });
-      repo.seedRow(A, P2, { priceOverride: '1.00' });
-      const res = await http().get(`/v1/store/menu?branchId=${A}`).expect(200);
-      expect(res.headers['cache-control']).toBe(MENU_CACHE);
-      expect(res.body).toEqual({
-        branchId: A,
-        items: [{ productId: P1, slug: 'roll-california', price: '45.00', available: true }],
-      });
-      expect(JSON.stringify(res.body)).not.toContain('77.00');
-      expect(JSON.stringify(res.body)).not.toContain('basePrice');
-      const other = await http().get(`/v1/store/menu?branchId=${B}`).expect(200);
-      expect(json(other).items[0]).toMatchObject({ price: '77.00', available: false });
-    });
-
-    it('no requiere JWT y no filtra productos inactivos ni de categorías ocultas', async () => {
-      const res = await http().get(`/v1/store/menu?branchId=${A}`).expect(200);
-      const ids = (json(res).items as { productId: string }[]).map((i) => i.productId);
-      expect(ids).toEqual([P1]);
-      expect(ids).not.toContain(P2);
-      expect(ids).not.toContain(P3);
-    });
-
-    it('branchId ausente o mal formado => 400 sin caché pública', async () => {
-      for (const url of [
-        '/v1/store/menu',
-        '/v1/store/menu?branchId=x',
-        '/v1/store/menu?branchId=',
-      ]) {
-        const res = await http().get(url).expect(400);
-        expect(res.headers['cache-control'] ?? '').not.toContain('public');
-      }
-    });
-
-    it('sucursal inexistente o inactiva => 404 BRANCH_NOT_FOUND idéntico, sin caché pública', async () => {
-      const missing = await http()
-        .get(`/v1/store/menu?branchId=${bid(99)}`)
-        .expect(404);
-      const inactive = await http().get(`/v1/store/menu?branchId=${INACTIVE}`).expect(404);
-      expect(json(missing).code).toBe('BRANCH_NOT_FOUND');
-      expect({ ...inactive.body, requestId: 0 }).toEqual({ ...missing.body, requestId: 0 });
-      expect(inactive.headers['cache-control'] ?? '').not.toContain('public');
-    });
-
-    it('límite de tasa propio: 60 por minuto por IP', async () => {
-      let last = 200;
-      for (let i = 0; i < 61; i += 1) {
-        last = (await http().get(`/v1/store/menu?branchId=${A}`)).status;
-      }
-      expect(last).toBe(429);
-    });
   });
 
   describe('autenticación y autorización', () => {

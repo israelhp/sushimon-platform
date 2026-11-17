@@ -19,7 +19,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { INSTANT_PATTERN } from '../../branch-schedule/business-time.js';
-import { PageQuery } from '../../products/dto/product-requests.dto.js';
+import { PageQuery, toBoolean } from '../../products/dto/product-requests.dto.js';
 import { SEARCH_MAX } from '../../products/product-policy.js';
 import { MONEY_PATTERN } from '../promotion-money.js';
 import {
@@ -315,4 +315,14 @@ export class StorePromotionsQuery {
   @IsOptional()
   @IsIn(['live', 'upcoming'])
   state?: 'live' | 'upcoming';
+
+  @ApiPropertyOptional({
+    type: Boolean,
+    default: false,
+    description: 'F17: `true` = sin `items` ni `productIds` (no lee productos).',
+  })
+  @IsOptional()
+  @Transform(toBoolean)
+  @IsBoolean()
+  compact?: boolean;
 }

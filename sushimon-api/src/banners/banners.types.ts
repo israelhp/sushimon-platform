@@ -190,4 +190,6 @@ export interface ActiveBanners {
 export interface FindActiveBannersInput {
   branchId?: string | null;
   locale: BannerLocale;
+  /** F17 (aditivo): el llamador ya validó la sucursal en esta solicitud; no se repite la lectura. */
+  branchValidated?: boolean;
 }

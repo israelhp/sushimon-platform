@@ -5,7 +5,6 @@ import type { TestContext } from 'vitest';
 import { AuditService } from '../src/audit/audit.service.js';
 import { AuthorizationService } from '../src/auth/authorization.service.js';
 import { AdminBranchProductsService } from '../src/branch-products/admin-branch-products.service.js';
-import { BranchMenuQueryService } from '../src/branch-products/branch-menu-query.service.js';
 import { BranchOffersService } from '../src/branch-products/branch-offers.service.js';
 import { BranchProductsRepository } from '../src/branch-products/branch-products.repository.js';
 import { AdminCategoriesService } from '../src/categories/admin-categories.service.js';
@@ -51,7 +50,6 @@ describe.skipIf(!url || !ready)(
     );
     let prisma: PrismaService;
     let admin: AdminBranchProductsService;
-    let menu: BranchMenuQueryService;
     let offers: BranchOffersService;
     let products: AdminProductsService;
     let categories: AdminCategoriesService;
@@ -122,7 +120,6 @@ describe.skipIf(!url || !ready)(
       const catQuery = new CategoriesQueryService(catRepo);
       const repo = new BranchProductsRepository(prisma);
       admin = new AdminBranchProductsService(repo, audit, authorization, catQuery);
-      menu = new BranchMenuQueryService(repo, catQuery);
       offers = new BranchOffersService(repo, catQuery);
       categories = new AdminCategoriesService(catRepo, audit, authorization);
       products = new AdminProductsService(
@@ -152,8 +149,8 @@ describe.skipIf(!url || !ready)(
       });
       expect(await rows(a, p.id)).toEqual([{ price_override: '45.50', available: true }]);
       expect(await rows(b, p.id)).toEqual([]);
-      expect((await menu.getMenu(a)).items.find((i) => i.productId === p.id)?.price).toBe('45.50');
-      expect((await menu.getMenu(b)).items.find((i) => i.productId === p.id)?.price).toBe('50.00');
+      expect((await offers.resolve(a, [p.id])).get(p.id)?.price).toBe('45.50');
+      expect((await offers.resolve(b, [p.id])).get(p.id)?.price).toBe('50.00');
       await admin.setPricing(staff, a, p.id, { priceOverride: null });
       expect(await rows(a, p.id)).toEqual([]);
     });
@@ -262,19 +259,6 @@ describe.skipIf(!url || !ready)(
         priceOverride: null,
         updatedAt: null,
       });
-    });
-
-    it('overlay público: solo visibles, sucursal inactiva 404, producto inactivo ausente aunque tenga fila', async (ctx) => {
-      skipUnlessReady(ctx);
-      const a = await newBranch();
-      const inactive = await newBranch(false);
-      const visible = await newProduct('Visible');
-      const hidden = await newProduct('Oculto', '10.00', false);
-      await admin.setPricing(staff, a, hidden.id, { priceOverride: '5.00' });
-      const items = (await menu.getMenu(a)).items.map((i) => i.productId);
-      expect(items).toContain(visible.id);
-      expect(items).not.toContain(hidden.id);
-      expect(code(await failure(menu.getMenu(inactive)))).toBe('BRANCH_NOT_FOUND');
     });
 
     it('BranchOffersService: resolve en una consulta y assertOrderable con violaciones', async (ctx) => {

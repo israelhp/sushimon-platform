@@ -67,18 +67,6 @@ export interface AdminProductBranchesView {
   items: AdminProductBranchRowView[];
 }
 
-export interface StoreBranchMenuItemView {
-  productId: string;
-  slug: string;
-  price: string;
-  available: boolean;
-}
-
-export interface StoreBranchMenuView {
-  branchId: string;
-  items: StoreBranchMenuItemView[];
-}
-
 /** Fila cruda de la matriz por sucursal (productos LEFT JOIN branch_products). */
 export interface MatrixRow {
   id: string;
@@ -112,13 +100,6 @@ export interface ProductBranchRow {
   priceOverride: string | null;
   available: boolean;
   updatedAt: Date | null;
-}
-
-export interface OverlayRow {
-  id: string;
-  slug: string;
-  price: string;
-  available: boolean;
 }
 
 /** Resultado de `resolve`/`assertOrderable` para un producto existente. */
