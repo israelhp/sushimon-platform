@@ -5,7 +5,6 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Portal } from '@/components/ui/Portal';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { useToast } from '@/components/ui/Toast';
 import { useDialog } from '@/components/ui/use-dialog';
 import { cn } from '@/lib/cn';
 import { formatMoney } from '@/lib/format';
@@ -17,17 +16,17 @@ import type {
   SimulatedProductExtras,
 } from '@/lib/data-access/models';
 import { priceToNumber } from '@/lib/product-rules';
-import type { ModifierSelection } from '@/lib/modifier-rules';
 import { safeMediaUrl } from '@/lib/product-rules';
 import { useCategoryLabel } from '@/features/menu/category-label';
-import { MAX_NOTE_LENGTH, MAX_QUANTITY } from '@/features/cart/cart';
-import { useCart } from '@/features/cart/cart-context';
+import { MAX_NOTE_LENGTH, MAX_QUANTITY } from '@/lib/cart-rules';
+import { useAddToCart } from '@/features/cart/use-add-to-cart';
+import { focusCartLine } from '@/features/cart/focus-line';
 import { useOptionalOrderMode } from '@/features/order-mode/order-mode-context';
 import { detailToCatalogProduct, productSlug, type CatalogProduct } from '../catalog-product';
 import { useProducts, useStoreProduct } from '../hooks';
 import { productDescription, productName, tileClass } from '../localized';
 import { estimatedUnitCents, useModifierSelection } from '../modifier-selection';
-import { useProductSheet } from '../product-sheet-context';
+import { useProductSheet, type SheetEdit } from '../product-sheet-context';
 import { FavoriteButton } from './favorite-button';
 import { ModifierSelector } from './modifier-selector';
 import { ProductArt } from './product-art';
@@ -43,7 +42,7 @@ const money = (value: number) => formatMoney(value, 'es', { decimals: 'auto' });
  * se carga solo entonces (carga perezosa). Lo que ya esté en caché se usa para abrir al instante y conservar los extras simulados.
  */
 export function ProductSheetHost() {
-  const { productId, slug, seed: originSeed, closeProduct } = useProductSheet();
+  const { productId, slug, seed: originSeed, edit, closeProduct } = useProductSheet();
   const branchId = useOptionalOrderMode()?.mode.branchId ?? null;
   const open = Boolean(productId);
   const cached = useProducts({ enabled: open && !slug });
@@ -89,6 +88,7 @@ export function ProductSheetHost() {
       key={product.id}
       product={product}
       catalog={cached.data ?? [product]}
+      edit={edit}
       onClose={closeProduct}
     />
   );
@@ -205,35 +205,26 @@ type ProductWithCatalogFields = Product &
  * prototipo). Cantidad 1–99, observaciones (no cambian el precio) y "Agregar" con el total, que es solo
  * una referencia: el precio definitivo lo calcula el servidor al crear el pedido.
  */
-/** Lo que la ficha entrega al agregar: producto, cantidad, nota y la selección ESTRUCTURADA de extras (F12; F18 la consume). */
-export interface SheetAddPayload {
-  productId: string;
-  quantity: number;
-  note: string;
-  modifiers: ModifierSelection[];
-}
-
 const NO_GROUPS: readonly PublicModifierGroup[] = [];
 
 export function ProductSheet({
   product,
   catalog,
+  edit = null,
   onClose,
-  onAdd,
 }: {
   product: Product;
   catalog: readonly Product[];
+  /** Línea del carrito en edición: la ficha parte de su selección y, al guardar, la reemplaza. */
+  edit?: SheetEdit | null;
   onClose: () => void;
-  /**
-   * Reemplaza la acción de agregar. Por defecto agrega el producto BASE al carrito mock: el carrito aún no transporta extras
-   * (F18); la selección validada llega en `modifiers` para quien la consuma.
-   */
-  onAdd?: (payload: SheetAddPayload) => void;
 }) {
   const t = useTranslations();
   const locale = useLocale();
-  const cart = useCart();
-  const { notify } = useToast();
+  const { addProduct } = useAddToCart();
+  const missingId = useId();
+  // «Obligatorio» no se marca como error hasta el primer intento de agregar.
+  const [attempted, setAttempted] = useState(false);
   const categoryLabel = useCategoryLabel();
   const detailSlug = (product as ProductWithCatalogFields).slug ?? null;
   const branchId = useOptionalOrderMode()?.mode.branchId ?? null;
@@ -241,8 +232,8 @@ export function ProductSheet({
   const ref = useDialog<HTMLDivElement>(true, onClose);
   const noteId = useId();
   const titleId = useId();
-  const [quantity, setQuantity] = useState(1);
-  const [note, setNote] = useState('');
+  const [quantity, setQuantity] = useState(edit?.quantity ?? 1);
+  const [note, setNote] = useState(edit?.note ?? '');
 
   const name = productName(product, locale);
   const extra = product as ProductWithCatalogFields;
@@ -262,12 +253,13 @@ export function ProductSheet({
 
   // F12: extras de la ficha del servidor (solo grupos ofrecibles y opciones activas). Sin ficha (sin slug) no hay extras.
   const groups = useMemo(() => detail.data?.modifierGroups ?? NO_GROUPS, [detail.data]);
-  const selection = useModifierSelection(groups);
+  const selection = useModifierSelection(groups, edit?.chosen);
   // F17: la promoción pública INDICATIVA (la de mayor ahorro) la decide el servidor; aquí solo se muestra.
   const promo = detail.data?.promotions?.[0] ?? extra.promo ?? null;
   const modifiersLoading = Boolean(detailSlug) && detail.isPending;
   const modifiersFailed = detail.isError && !gone;
-  const canAdd = available && !modifiersLoading && !modifiersFailed && selection.valid;
+  const readyToAdd = available && Boolean(detailSlug) && !modifiersLoading && !modifiersFailed;
+  const canAdd = readyToAdd && selection.valid;
   // F13: la estimación parte del precio EFECTIVO de la sucursal elegida (override o base), nunca del de otra.
   const basePrice = extra.effectivePrice ?? extra.basePrice ?? null;
   const unitCents =
@@ -275,11 +267,23 @@ export function ProductSheet({
     Math.round(product.price * 100) + selection.extraCents;
 
   const submit = () => {
-    if (!canAdd) return;
-    if (onAdd) onAdd({ productId: product.id, quantity, note, modifiers: selection.selections });
-    else cart.add(product.id, quantity, note);
-    notify(t('product.addedQty', { a: quantity, b: name }));
+    if (!canAdd) {
+      // Faltan grupos obligatorios: el botón sigue enfocable (`aria-disabled`) y el intento hace visible el motivo.
+      if (readyToAdd) setAttempted(true);
+      return;
+    }
+    const added = addProduct({
+      product: product as CatalogProduct,
+      quantity,
+      note,
+      groups,
+      selections: selection.selections,
+      replaceLineId: edit?.lineId,
+    });
+    if (!added) return;
     onClose();
+    // Editar (ficha ENCIMA del cajón): el foco vuelve a la fila resultante aunque la configuración haya cambiado.
+    if (edit) focusCartLine(added.lineId);
   };
 
   return (
@@ -455,7 +459,11 @@ export function ProductSheet({
             </div>
           ) : null}
           {!selection.valid && available ? (
-            <p role="status" className="m-0 text-[13px] font-bold text-danger">
+            <p
+              id={missingId}
+              role={attempted ? 'alert' : undefined}
+              className={cn('m-0 text-[13px]', attempted ? 'font-bold text-danger' : 'text-muted')}
+            >
               {t('product.modifiers.missing')}
             </p>
           ) : null}
@@ -473,6 +481,7 @@ export function ProductSheet({
               disabled={!available}
             />
             <p className="mt-1.5 text-[13px] text-muted">{t('product.notesHelp')}</p>
+            <p className="mt-1 text-[13px] text-muted">{t('product.notesPrivacy')}</p>
           </div>
           <div className="sticky bottom-0 -mx-6 -mb-6 mt-auto flex items-center gap-3 border-t border-line bg-surface px-6 pb-[calc(14px+env(safe-area-inset-bottom))] pt-3 md:-mx-7 md:-mb-7 md:px-7">
             <div
@@ -504,11 +513,13 @@ export function ProductSheet({
             </div>
             <button
               type="button"
-              className="btn btn-primary min-w-0 flex-1 !justify-between !px-5"
+              className="btn btn-primary min-w-0 flex-1 !justify-between !px-5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
               onClick={submit}
-              disabled={!canAdd}
+              disabled={!readyToAdd}
+              aria-disabled={!canAdd}
+              aria-describedby={!selection.valid && available ? missingId : undefined}
             >
-              <span>{t('common.add')}</span>
+              <span>{edit ? t('product.saveChanges') : t('common.add')}</span>
               <span className="font-display">{money((unitCents * quantity) / 100)}</span>
             </button>
           </div>

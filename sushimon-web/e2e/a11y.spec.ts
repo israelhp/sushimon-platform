@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { demoStaffFromSeed } from '../src/mocks/fixtures/staff';
+import { CART_KEY, DUMPLINGS, cartV2, pickupMode } from './support/cart';
 
 /**
  * Accesibilidad automática (axe) por ruta y tema. Sin violaciones serias ni críticas.
@@ -26,13 +27,8 @@ interface RouteCase {
 
 /** Checkout (bloque 4): carrito con un producto, modo "recoger" y el paso pedido (borrador no sensible). */
 const CHECKOUT_LOCAL = {
-  'monsushi-cart-v1': JSON.stringify([{ productId: 'dumplings', quantity: 1, note: '' }]),
-  'monsushi-order-mode-v1': JSON.stringify({
-    type: 'pickup',
-    when: { kind: 'now' },
-    branchId: null,
-    address: null,
-  }),
+  [CART_KEY]: cartV2('sucursal-1', [DUMPLINGS]),
+  'monsushi-order-mode-v1': pickupMode('sucursal-1'),
 };
 const checkoutStep = (step: number, payment: 'card' | 'cash' = 'card') => ({
   'monsushi-checkout-v1': JSON.stringify({

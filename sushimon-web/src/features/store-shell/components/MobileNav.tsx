@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
-import { useCart } from '@/features/cart/cart-context';
+import { useCartCount } from '@/features/cart/cart-context';
 import { useDemoSession } from '@/features/session/demo-session';
 import {
   isMoreActive,
@@ -15,6 +15,7 @@ import {
   STORE_ROUTES,
 } from '../nav';
 import { useStoreShell } from '../store-shell-context';
+import { CountBadge } from './CountBadge';
 import { Avatar } from './Avatar';
 
 const itemClass = (active: boolean) =>
@@ -32,7 +33,7 @@ const pillClass = (active: boolean) =>
 export function MobileNav() {
   const t = useTranslations('nav');
   const pathname = usePathname();
-  const { count } = useCart();
+  const count = useCartCount();
   const { cartOpen, openCart } = useStoreShell();
   const { customer } = useDemoSession();
   const OrderIcon = ORDER_ICON;
@@ -71,14 +72,10 @@ export function MobileNav() {
         >
           <span className={pillClass(cartOpen)}>
             <OrderIcon className="h-[22px] w-[22px]" aria-hidden="true" />
-            {count > 0 ? (
-              <span
-                key={count}
-                aria-hidden="true"
-                className="anim-bump absolute -right-0.5 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-surface bg-primary px-1 text-[10px] text-onprimary after:content-[attr(data-count)]"
-                data-count={count}
-              ></span>
-            ) : null}
+            <CountBadge
+              count={count}
+              className="absolute -right-0.5 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-surface bg-primary px-1 text-[10px] text-onprimary"
+            />
           </span>
           {t('order')}
         </button>

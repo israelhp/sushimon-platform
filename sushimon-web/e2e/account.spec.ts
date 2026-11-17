@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { pickupMode } from './support/cart';
 
 /**
  * Flujos de Cuenta (Google SIMULADO), Más, Trabaja con nosotros y 404 con datos mock y sin red externa.
@@ -32,6 +33,11 @@ test.describe('cuenta (Google simulado)', () => {
   }) => {
     // Compilación en frío de varias rutas en el servidor de desarrollo.
     test.setTimeout(150_000);
+    // F18: «Pedir de nuevo» agrega con la sucursal elegida (sin ella se abre la hoja de modo de pedido).
+    await page.addInitScript(
+      (mode) => localStorage.setItem('monsushi-order-mode-v1', mode),
+      pickupMode('sucursal-1'),
+    );
     await signInWithDemoGoogle(page);
     await expect(page.getByRole('link', { name: /Mis direcciones/ })).toContainText(
       /2 direcciones guardadas/,

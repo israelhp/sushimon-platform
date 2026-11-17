@@ -1,4 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
+import { DUMPLINGS, cartV2, pickupMode } from './support/cart';
 import { expect, test, type Page } from '@playwright/test';
 
 /**
@@ -13,16 +14,13 @@ import { expect, test, type Page } from '@playwright/test';
  * menú), y desde el inicio: carrito → Continuar → checkout.
  */
 async function toCheckout(page: Page) {
-  await page.addInitScript(() => {
-    localStorage.setItem(
-      'monsushi-cart-v1',
-      JSON.stringify([{ productId: 'dumplings', quantity: 1, note: '' }]),
-    );
-    localStorage.setItem(
-      'monsushi-order-mode-v1',
-      JSON.stringify({ type: 'pickup', when: { kind: 'now' }, branchId: null, address: null }),
-    );
-  });
+  await page.addInitScript(
+    ([cart, mode]) => {
+      localStorage.setItem('monsushi-cart-v2', cart!);
+      localStorage.setItem('monsushi-order-mode-v1', mode!);
+    },
+    [cartV2('sucursal-1', [DUMPLINGS]), pickupMode('sucursal-1')],
+  );
   await page.goto('/');
   await page.getByRole('heading', { name: /hambre/i }).waitFor();
   await page
@@ -70,11 +68,11 @@ test('pedido en efectivo de punta a punta: confirma, vacía el carrito y recuerd
 
   // Carrito vacío y datos del pedido guardados para "Tu último pedido" (sin datos de tarjeta).
   const stored = await page.evaluate(() => ({
-    cart: localStorage.getItem('monsushi-cart-v1'),
+    cart: localStorage.getItem('monsushi-cart-v2'),
     last: localStorage.getItem('monsushi-last-order-v1'),
     draft: sessionStorage.getItem('monsushi-checkout-v1'),
   }));
-  expect(JSON.parse(stored.cart ?? '[]')).toEqual([]);
+  expect(JSON.parse(stored.cart ?? '{"lines":[]}').lines).toEqual([]);
   expect(JSON.parse(stored.last!).id).toBe(number);
   expect(stored.draft).toBeNull();
 
@@ -111,8 +109,8 @@ test('tarjeta rechazada: reintento y cambio a efectivo sin perder el carrito', a
   await dialog.getByRole('button', { name: 'Cambiar método de pago' }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByRole('heading', { level: 1, name: 'Pago' })).toBeVisible();
-  const cart = await page.evaluate(() => localStorage.getItem('monsushi-cart-v1'));
-  expect(JSON.parse(cart!)).toHaveLength(1);
+  const cart = await page.evaluate(() => localStorage.getItem('monsushi-cart-v2'));
+  expect(JSON.parse(cart!).lines).toHaveLength(1);
 
   await page.getByRole('radio', { name: /Efectivo/ }).click();
   await next(page, /Continuar a confirmación/i);

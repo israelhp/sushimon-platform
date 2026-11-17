@@ -3,7 +3,6 @@
 import { ArrowRight, Loader2, Pencil } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatMoney } from '@/lib/format';
-import { productName } from '@/features/catalog/localized';
 import type { CheckoutData } from '../use-checkout-data';
 
 export interface SummaryAction {
@@ -44,24 +43,31 @@ export function OrderSummary({
         <button
           type="button"
           onClick={onEdit}
-          className="inline-flex min-h-[36px] items-center gap-1 text-sm font-extrabold text-secondary"
+          className="inline-flex min-h-[44px] items-center gap-1 text-sm font-extrabold text-secondary"
         >
           <Pencil className="h-3.5 w-3.5" aria-hidden="true" /> {t('common.edit')}
         </button>
       </div>
       <ul className="m-0 list-none px-4 pt-2">
-        {rows.map(({ line, product, subtotal: lineTotal }) => (
+        {rows.map(({ line, name, subtotalCents }) => (
           <li
-            key={`${line.productId}|${line.note}`}
+            key={line.lineId}
             className="flex justify-between gap-3 border-b border-dashed border-line py-2 text-[14px] last:border-0"
           >
             <span className="min-w-0">
-              <strong>{line.quantity}×</strong> {productName(product, locale)}
+              <strong>{line.quantity}×</strong> {name}
+              {line.display.options.map((o) => (
+                <small key={`${o.groupId}:${o.optionId}`} className="block text-[12px] text-muted">
+                  + {o.optionName}
+                </small>
+              ))}
               {line.note ? (
-                <small className="block truncate text-[12px] text-muted">{line.note}</small>
+                <small className="block truncate text-[12px] text-muted" title={line.note}>
+                  {line.note}
+                </small>
               ) : null}
             </span>
-            <span className="flex-none font-bold">{money(lineTotal)}</span>
+            <span className="flex-none font-bold">{money(subtotalCents / 100)}</span>
           </li>
         ))}
       </ul>

@@ -43,8 +43,10 @@ export interface ModifierSelectionState {
 
 export function useModifierSelection(
   groups: readonly PublicModifierGroup[],
+  /** Selección inicial (edición de una línea del carrito). Los ids que ya no existen en los grupos se ignoran, sin avisar solos. */
+  initial: Readonly<Record<string, readonly string[]>> = {},
 ): ModifierSelectionState {
-  const [chosen, setChosen] = useState<Record<string, readonly string[]>>({});
+  const [chosen, setChosen] = useState<Record<string, readonly string[]>>({ ...initial });
 
   // Solo se consideran ids que existen en los grupos actuales (los datos pueden cambiar tras un refresco).
   const effective = useMemo(() => {

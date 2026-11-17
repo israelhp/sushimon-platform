@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/data-access/errors';
 import { withShortcuts, type RequestOptions } from '@/lib/data-access/types';
 import { createSpyClient } from '@/test/spy-client';
+import { cartInput } from '@/test/cart';
 import { renderStore } from '@/test/store-providers';
 import { MenuScreen } from './menu-screen';
 
@@ -87,12 +88,13 @@ describe('MenuScreen · categorías y URL', () => {
 
 describe('MenuScreen · pedido', () => {
   it('agrega con "Agregar" y cambia a control de cantidad que suma y quita', async () => {
-    const view = await renderStore(<MenuScreen />);
+    const view = await renderStore(<MenuScreen />, { branchId: 'sucursal-1' });
     const add = (
       await screen.findAllByRole('button', { name: 'Agregar Dumplings a tu pedido' })
     )[0]!;
     fireEvent.click(add);
-    expect(view.api().cart.quantityOf('dumplings')).toBe(1);
+    // F18: la tarjeta consulta la ficha (¿tiene extras?) antes de agregar.
+    await waitFor(() => expect(view.api().cart.quantityOf('dumplings')).toBe(1));
 
     const plus = (await screen.findAllByRole('button', { name: 'Agregar uno de Dumplings' }))[0]!;
     fireEvent.click(plus);
@@ -108,10 +110,10 @@ describe('MenuScreen · pedido', () => {
   });
 
   it('con productos en el pedido aparece la barra "Ver pedido" y el total estimado', async () => {
-    const view = await renderStore(<MenuScreen />);
+    const view = await renderStore(<MenuScreen />, { branchId: 'sucursal-1' });
     await screen.findByRole('heading', { name: /^Entradas/ });
     expect(screen.queryByRole('button', { name: /Ver pedido/ })).not.toBeInTheDocument();
-    await act(async () => view.api().cart.add('dumplings', 2));
+    await act(async () => view.api().cart.add(cartInput('dumplings', 2)));
     const bar = await screen.findByRole('button', { name: /Ver pedido/ });
     expect(bar).toHaveTextContent('2 productos · Q106');
     fireEvent.click(bar);

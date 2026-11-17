@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/data-access/errors';
 import { createSpyClient } from '@/test/spy-client';
+import { cartInput } from '@/test/cart';
 import { renderStore } from '@/test/store-providers';
 import { CheckoutProvider } from '../checkout-context';
 import { CHECKOUT_STORAGE_KEY } from '../checkout-model';
@@ -41,11 +42,11 @@ async function setup(draft = storedDraft(2)) {
     { wrapClient: spy.wrap },
   );
   await act(async () => {
-    view.api().cart.add('dumplings', 1);
+    view.api().cart.add(cartInput('dumplings', 1));
     view.api().mode.setMode({
       type: 'delivery',
       when: { kind: 'now' },
-      branchId: null,
+      branchId: 'sucursal-1',
       address: null,
     });
     view.api().session.signInCustomer(NEW_USER);

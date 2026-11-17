@@ -4,7 +4,7 @@ import { ApiError } from '@/lib/data-access/errors';
 import { withShortcuts } from '@/lib/data-access/types';
 import { findLoadedDialog } from '@/test/sheet';
 import { renderStore } from '@/test/store-providers';
-import { MAX_QUANTITY } from '@/features/cart/cart';
+import { MAX_QUANTITY } from '@/lib/cart-rules';
 import { useProductSheet } from '../product-sheet-context';
 import { ProductSheetHost } from './product-sheet-host';
 
@@ -74,15 +74,15 @@ describe('ProductSheet', () => {
   });
 
   it('agrega con cantidad y nota, avisa y cierra', async () => {
-    const { view } = await openSheet();
+    const { view } = await openSheet('dumplings', { branchId: 'sucursal-1' });
     fireEvent.click(increase());
     fireEvent.click(increase());
     fireEvent.change(screen.getByLabelText('Observaciones'), {
       target: { value: 'Sin ajonjolí' },
     });
     fireEvent.click(screen.getByRole('button', { name: /^Agregar\s*Q159$/ }));
-    expect(view.api().cart.lines).toEqual([
-      { productId: 'dumplings', quantity: 3, note: 'Sin ajonjolí' },
+    expect(view.api().cart.lines).toMatchObject([
+      { productId: 'dumplings', quantity: 3, note: 'Sin ajonjolí', selections: [] },
     ]);
     expect(await screen.findByText('3 × Dumplings agregado a tu pedido')).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

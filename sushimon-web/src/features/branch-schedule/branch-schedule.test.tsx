@@ -2,6 +2,7 @@ import { act, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CartDrawer } from '@/features/store-shell/components/CartDrawer';
+import { cartInput } from '@/test/cart';
 import { renderStore } from '@/test/store-providers';
 import { BranchHoursDisclosure, BranchHoursPanel } from './components/BranchHoursPanel';
 import { useBranchAvailability } from './hooks';
@@ -116,7 +117,7 @@ describe('carrito: sucursal que no recibe pedidos (solo UI)', () => {
   async function openCart(scenario: 'default' | 'branch-closed') {
     const view = await renderStore(<CartDrawer />, { scenario });
     await act(async () => {
-      view.api().cart.add('dumplings', 1);
+      view.api().cart.add(cartInput('dumplings', 1));
       view.api().mode.setMode({
         type: 'pickup',
         when: { kind: 'now' },
@@ -145,7 +146,7 @@ describe('carrito: sucursal que no recibe pedidos (solo UI)', () => {
   it('un pedido programado no muestra el aviso de «ahora»', async () => {
     const view = await renderStore(<CartDrawer />, { scenario: 'branch-closed' });
     await act(async () => {
-      view.api().cart.add('dumplings', 1);
+      view.api().cart.add(cartInput('dumplings', 1));
       view.api().mode.setMode({
         type: 'pickup',
         when: { kind: 'scheduled', date: '2026-11-13', time: '15:00' },
