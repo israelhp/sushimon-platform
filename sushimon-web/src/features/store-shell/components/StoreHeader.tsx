@@ -7,7 +7,7 @@ import { Logo } from '@/components/brand/Logo';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import { LocaleToggle } from '@/i18n/LocaleToggle';
 import { cn } from '@/lib/cn';
-import { useCart } from '@/features/cart/cart-context';
+import { useCartCount } from '@/features/cart/cart-context';
 import {
   isMoreActive,
   isRouteActive,
@@ -17,6 +17,7 @@ import {
   STORE_ROUTES,
 } from '../nav';
 import { useStoreShell } from '../store-shell-context';
+import { CountBadge } from './CountBadge';
 import { AccountButton } from './AccountButton';
 import { OrderModeButton } from './OrderModeButton';
 
@@ -30,7 +31,7 @@ const navItemClass = (active: boolean) =>
 export function StoreHeader() {
   const t = useTranslations('nav');
   const pathname = usePathname();
-  const { count } = useCart();
+  const count = useCartCount();
   const { cartOpen, openCart } = useStoreShell();
   const OrderIcon = ORDER_ICON;
   const MoreIcon = MORE_ICON;
@@ -72,14 +73,10 @@ export function StoreHeader() {
           >
             <span className="relative inline-flex">
               <OrderIcon className="h-5 w-5" aria-hidden="true" />
-              {count > 0 ? (
-                <span
-                  key={count}
-                  aria-hidden="true"
-                  className="anim-bump absolute -right-2.5 -top-2 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-extrabold text-onprimary after:content-[attr(data-count)]"
-                  data-count={count}
-                ></span>
-              ) : null}
+              <CountBadge
+                count={count}
+                className="absolute -right-2.5 -top-2 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-extrabold text-onprimary"
+              />
             </span>
             {t('order')}
           </button>

@@ -1,14 +1,13 @@
 import { act, fireEvent, renderHook, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ApiError } from '@/lib/data-access/errors';
 import type { PublicModifierGroup } from '@/lib/data-access/models';
 import { withShortcuts, type RequestOptions } from '@/lib/data-access/types';
 import { findLoadedDialog } from '@/test/sheet';
 import { renderStore } from '@/test/store-providers';
 import { useModifierSelection, estimatedUnitCents } from '../modifier-selection';
-import { useProducts } from '../hooks';
 import { useProductSheet } from '../product-sheet-context';
-import { ProductSheet, ProductSheetHost, type SheetAddPayload } from './product-sheet-host';
+import { ProductSheetHost } from './product-sheet-host';
 
 function Opener({ id }: { id: string }) {
   const { openProduct } = useProductSheet();
@@ -19,21 +18,6 @@ function Opener({ id }: { id: string }) {
       </button>
       <ProductSheetHost />
     </>
-  );
-}
-
-/** Monta la ficha DIRECTAMENTE con `onAdd` para observar la selección estructurada que recibirá F18. */
-function DirectSheet({ id, onAdd }: { id: string; onAdd: (p: SheetAddPayload) => void }) {
-  const products = useProducts();
-  const product = products.data?.find((p) => p.id === id);
-  if (!product) return null;
-  return (
-    <ProductSheet
-      product={product}
-      catalog={products.data ?? []}
-      onClose={() => {}}
-      onAdd={onAdd}
-    />
   );
 }
 
@@ -108,14 +92,14 @@ describe('Ficha pública F12: selector de extras', () => {
     expect(within(salsa).getByText('Elige 1')).toBeVisible();
     const radios = within(salsa).getAllByRole('radio');
     expect(radios).toHaveLength(3);
-    expect(addButton()).toBeDisabled();
+    expect(addButton()).toHaveAttribute('aria-disabled', 'true');
     const live = within(salsa).getByRole('status');
     expect(live).toHaveTextContent('Elige al menos 1 opción en «Salsa».');
     expect(
       within(dialog).getByText('Completa los grupos obligatorios para agregar al pedido.'),
     ).toBeVisible();
     fireEvent.click(within(salsa).getByRole('radio', { name: /Mayo spicy/ }));
-    expect(addButton()).toBeEnabled();
+    expect(addButton()).toHaveAttribute('aria-disabled', 'false');
     expect(live).not.toHaveTextContent('Elige al menos');
     fireEvent.click(within(salsa).getByRole('radio', { name: /Ponzu/ }));
     expect(within(salsa).getByRole('radio', { name: /Ponzu/ })).toBeChecked();
@@ -157,37 +141,71 @@ describe('Ficha pública F12: selector de extras', () => {
     expect(within(dialog).getByText('+Q0.00', { selector: 'dd' })).toBeVisible();
   });
 
-  it('agregar con el flujo actual (carrito mock): agrega el producto base y avisa que el carrito aún no lleva extras', async () => {
-    const { view, dialog } = await openSheet('sushi-pizza');
+  it('agregar guarda los extras REALES en la línea (F18) y la precio por unidad los incluye', async () => {
+    const { view, dialog } = await openSheet('sushi-pizza', { branchId: 'sucursal-1' });
     const salsa = await within(dialog).findByRole('group', { name: /Salsa/ });
     fireEvent.click(within(salsa).getByRole('radio', { name: /Ponzu/ }));
-    expect(
-      within(dialog).getByText(/El carrito de esta versión aún no incluye extras/),
-    ).toBeVisible();
+    const extras = within(dialog).getByRole('group', { name: /Extras/ });
+    fireEvent.click(within(extras).getByRole('checkbox', { name: /Queso crema/ }));
+    expect(within(dialog).getByText(/Los extras elegidos se guardan en tu pedido/)).toBeVisible();
     fireEvent.click(addButton());
-    expect(view.api().cart.lines).toEqual([{ productId: 'sushi-pizza', quantity: 1, note: '' }]);
+    await waitFor(() => expect(view.api().cart.lines).toHaveLength(1));
+    const line = view.api().cart.lines[0]!;
+    expect(line.productId).toBe('sushi-pizza');
+    // Ordenadas por grupo y opción (independiente del orden en que se eligieron).
+    expect(line.selections).toEqual([
+      { groupId: 'mgroup-extras', optionId: 'mopt-queso-crema', quantity: 1 },
+      { groupId: 'mgroup-salsa', optionId: 'mopt-ponzu', quantity: 1 },
+    ]);
+    expect(line.display.options.map((o) => [o.optionName, o.extraCents])).toEqual([
+      ['Queso crema', 500],
+      ['Ponzu', 0],
+    ]);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('onAdd recibe la selección ESTRUCTURADA {groupId, modifierIds[]} (solo grupos con elección)', async () => {
-    const onAdd = vi.fn();
-    await renderStore(<DirectSheet id="sushi-pizza" onAdd={onAdd} />);
-    const dialog = await findLoadedDialog();
-    const salsa = await within(dialog).findByRole('group', { name: /Salsa/ });
-    fireEvent.click(within(salsa).getByRole('radio', { name: /Salsa de anguila/ }));
-    const extras = within(dialog).getByRole('group', { name: /Extras/ });
-    fireEvent.click(within(extras).getByRole('checkbox', { name: /Salsa extra/ }));
-    fireEvent.click(within(extras).getByRole('checkbox', { name: /Queso crema/ }));
+  it('con el grupo obligatorio sin cumplir «Agregar» está deshabilitado y no agrega', async () => {
+    const { view } = await openSheet('sushi-pizza', { branchId: 'sucursal-1' });
+    await screen.findByRole('group', { name: /Salsa/ });
+    expect(addButton()).toHaveAttribute('aria-disabled', 'true');
+    // Neutro hasta el primer intento; el botón enlaza el motivo.
+    const hint = screen.getByText(/Completa los grupos obligatorios/);
+    expect(hint).not.toHaveAttribute('role');
+    expect(addButton()).toHaveAttribute('aria-describedby', hint.id);
     fireEvent.click(addButton());
-    expect(onAdd).toHaveBeenCalledWith({
-      productId: 'sushi-pizza',
-      quantity: 1,
-      note: '',
-      modifiers: [
-        { groupId: 'mgroup-salsa', modifierIds: ['mopt-anguila'] },
-        { groupId: 'mgroup-extras', modifierIds: ['mopt-salsa-extra', 'mopt-queso-crema'] },
-      ],
-    });
+    expect(view.api().cart.lines).toEqual([]);
+    // Tras el intento el motivo se vuelve alerta.
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Completa los grupos obligatorios/);
+  });
+
+  it('misma configuración se unifica; otra opción es otra línea', async () => {
+    const view = await renderStore(<Opener id="sushi-pizza" />, { branchId: 'sucursal-1' });
+    const addWith = async (option: RegExp) => {
+      fireEvent.click(screen.getByRole('button', { name: 'abrir' }));
+      const dialog = await findLoadedDialog();
+      const salsa = await within(dialog).findByRole('group', { name: /Salsa/ });
+      fireEvent.click(within(salsa).getByRole('radio', { name: option }));
+      fireEvent.click(addButton());
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    };
+    await addWith(/Ponzu/);
+    await addWith(/Ponzu/);
+    await addWith(/Mayo spicy/);
+    expect(
+      view
+        .api()
+        .cart.lines.map((l) => l.quantity)
+        .sort(),
+    ).toEqual([1, 2]);
+    expect(view.api().cart.count).toBe(3);
+  });
+
+  it('sin sucursal elegida no agrega: abre la hoja de modo de pedido', async () => {
+    const { view } = await openSheet('dumplings');
+    await waitFor(() => expect(addButton()).toBeEnabled());
+    fireEvent.click(addButton());
+    expect(view.api().cart.lines).toEqual([]);
+    await waitFor(() => expect(view.api().shell.orderSheet).not.toBeNull());
   });
 
   it('error al cargar la ficha (no 404): avisa, ofrece reintentar y no deja agregar a ciegas', async () => {

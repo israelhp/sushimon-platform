@@ -1,3 +1,4 @@
+import { DUMPLINGS, cartV2, pickupMode } from './support/cart';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
@@ -113,21 +114,13 @@ test('cierre de emergencia: la tienda lo refleja y el admin lo termina', async (
   await expect(page.getByText('Cierre extraordinario').first()).toBeVisible();
 
   // Tienda: estado, mensaje en el carrito y SIN el motivo
-  await page.evaluate(() => {
-    localStorage.setItem(
-      'monsushi-cart-v1',
-      JSON.stringify([{ productId: 'dumplings', quantity: 1, note: '' }]),
-    );
-    localStorage.setItem(
-      'monsushi-order-mode-v1',
-      JSON.stringify({
-        type: 'pickup',
-        when: { kind: 'now' },
-        branchId: 'sucursal-1',
-        address: null,
-      }),
-    );
-  });
+  await page.evaluate(
+    ([cart, mode]) => {
+      localStorage.setItem('monsushi-cart-v2', cart!);
+      localStorage.setItem('monsushi-order-mode-v1', mode!);
+    },
+    [cartV2('sucursal-1', [DUMPLINGS]), pickupMode('sucursal-1')],
+  );
   await page.goto('/');
   await page.getByRole('heading', { name: /hambre/i }).waitFor();
   await page

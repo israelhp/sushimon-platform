@@ -1,52 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { Order, Product } from '@/lib/data-access/models';
 import { createSeedStore } from '@/mocks/seed';
-import { mergeIntoCart, planReorder } from './account/reorder';
-import {
-  addLine,
-  changeQuantity,
-  estimateSubtotal,
-  itemCount,
-  parseCart,
-  quantityOf,
-  removeOne,
-  setNote,
-} from './cart/cart';
+import { planReorder } from './account/reorder';
 import { priceToNumber } from '@/lib/product-rules';
 import { DEFAULT_ORDER_MODE, normalizeSchedule, parseOrderMode } from './order-mode/order-mode';
-
-describe('carrito', () => {
-  it('suma la misma combinación producto+nota y limita a 99', () => {
-    let lines = addLine([], 'california-roll', 2, ' Sin pepino ');
-    lines = addLine(lines, 'california-roll', 1, 'Sin pepino');
-    lines = addLine(lines, 'california-roll', 1);
-    expect(lines).toEqual([
-      { productId: 'california-roll', quantity: 3, note: 'Sin pepino' },
-      { productId: 'california-roll', quantity: 1, note: '' },
-    ]);
-    expect(quantityOf(lines, 'california-roll')).toBe(4);
-    expect(itemCount(addLine(lines, 'california-roll', 500, 'Sin pepino'))).toBe(100);
-    expect(addLine([], 'x', 0)).toEqual([]);
-  });
-
-  it('incrementa, decrementa, elimina en 0 y quita una unidad', () => {
-    let lines = addLine(addLine([], 'a', 1), 'b', 2);
-    lines = changeQuantity(lines, 0, -1);
-    expect(lines).toEqual([{ productId: 'b', quantity: 2, note: '' }]);
-    lines = removeOne(lines, 'b');
-    expect(lines[0]?.quantity).toBe(1);
-    expect(setNote(lines, 0, 'x'.repeat(200))[0]?.note).toHaveLength(140);
-    expect(estimateSubtotal(addLine(lines, 'c', 2), { b: 57, c: 22.5 })).toBe(102);
-  });
-
-  it('sanea lo guardado', () => {
-    expect(parseCart('no-json')).toEqual([]);
-    expect(parseCart('{"a":1}')).toEqual([]);
-    expect(
-      parseCart('[{"productId":"a","quantity":"3"},{"quantity":2},{"productId":"b","quantity":0}]'),
-    ).toEqual([{ productId: 'a', quantity: 3, note: '' }]);
-  });
-});
 
 describe('modo de pedido', () => {
   it('lee preferencias válidas y descarta basura', () => {
@@ -106,15 +63,10 @@ describe('repetir pedido', () => {
     ]);
   });
 
-  it('no agrega productos no disponibles y fusiona en modo agregar', () => {
+  it('no agrega productos no disponibles', () => {
     const unavailable = products.map((p) =>
       p.id === 'loco-ribs' ? { ...p, available: false } : p,
     );
     expect(planReorder(old, unavailable).skippedCount).toBe(2);
-    const merged = mergeIntoCart(
-      [{ productId: 'la-suegra-roll', quantity: 1, note: 'Salsa aparte' }],
-      planReorder(old, products).lines,
-    );
-    expect(merged[0]).toEqual({ productId: 'la-suegra-roll', quantity: 2, note: 'Salsa aparte' });
   });
 });

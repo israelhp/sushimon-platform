@@ -1,6 +1,8 @@
 import { act, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cartInput } from '@/test/cart';
+import { createSpyClient } from '@/test/spy-client';
 import { renderStore } from '@/test/store-providers';
 import { MobileNav } from './MobileNav';
 import { StoreHeader } from './StoreHeader';
@@ -58,8 +60,8 @@ describe('StoreHeader', () => {
     const user = userEvent.setup();
     const view = await renderStore(<StoreHeader />);
     await act(async () => {
-      view.api().cart.add('california-roll', 2);
-      view.api().cart.add('dumplings', 1);
+      view.api().cart.add(cartInput('california-roll', 2));
+      view.api().cart.add(cartInput('dumplings', 1));
     });
     const nav = screen.getByRole('navigation', { name: 'Principal' });
     expect(
@@ -99,5 +101,34 @@ describe('MobileNav', () => {
     expect(within(nav).getByRole('link', { name: /Inicio/ })).not.toHaveAttribute('aria-current');
     await act(async () => view.api().shell.openCart());
     expect(within(nav).getByRole('link', { name: /Promos/ })).not.toHaveAttribute('aria-current');
+  });
+});
+
+describe('contadores del carrito en UNIDADES (#27)', () => {
+  it('el encabezado y la barra móvil cuentan unidades (no líneas), sin llamadas HTTP', async () => {
+    const spy = createSpyClient();
+    const view = await renderStore(
+      <>
+        <StoreHeader />
+        <MobileNav />
+      </>,
+      { wrapClient: spy.wrap },
+    );
+    await act(async () => {
+      view
+        .api()
+        .cart.add([
+          cartInput('california-roll', 5),
+          cartInput('dumplings', 2),
+          cartInput('dumplings', 1, 'x'),
+        ]);
+    });
+    const header = within(screen.getByRole('navigation', { name: 'Principal' }));
+    const mobile = within(screen.getByRole('navigation', { name: 'Navegación principal' }));
+    expect(header.getByRole('button', { name: 'Ver tu pedido, 8 productos' })).toBeInTheDocument();
+    expect(mobile.getByRole('button', { name: 'Ver tu pedido, 8 productos' })).toBeInTheDocument();
+    expect(view.api().cart.lines).toHaveLength(3);
+    // Actualizar el contador no pide nada a la red.
+    expect(spy.calls.filter((c) => /store\/(menu|products)/.test(c.path))).toHaveLength(0);
   });
 });

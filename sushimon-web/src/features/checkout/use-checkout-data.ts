@@ -6,7 +6,6 @@ import type {
   PublicBranch,
   PublicClosureWindow,
   OrderSchedule,
-  Product,
   StoreConfig,
 } from '@/lib/data-access/models';
 import { isScheduleValid } from '@/lib/schedule';
@@ -14,9 +13,9 @@ import { useAddresses, useMe } from '@/features/account/hooks';
 import { useCustomerScope } from '@/features/session/customer-scope';
 import { useDemoSession } from '@/features/session/demo-session';
 import { defaultAddressIdOf } from '@/features/account/address-format';
-import { estimateSubtotal, type CartLine } from '@/features/cart/cart';
+import { amountToCents, isBlockingStatus } from '@/lib/cart-rules';
 import { useCart } from '@/features/cart/cart-context';
-import { useProducts } from '@/features/catalog/hooks';
+import { useCartView } from '@/features/cart/use-cart-view';
 import { checkZone, requiresZone } from '@/features/order-mode/draft';
 import { useOrderMode } from '@/features/order-mode/order-mode-context';
 import { useBranchesAvailability, usePublicBranchHours } from '@/features/branch-schedule/hooks';
@@ -35,14 +34,6 @@ import { useCheckoutDraft } from './checkout-context';
 
 const NO_HOURS: BranchHoursDay[] = [];
 const NO_CLOSURES: PublicClosureWindow[] = [];
-
-export interface CheckoutRow {
-  line: CartLine;
-  /** Índice en el carrito (para cantidades y eliminar). */
-  index: number;
-  product: Product;
-  subtotal: number;
-}
 
 /**
  * Datos derivados del checkout (carrito + catálogo + modo de pedido + borrador + cotización).
@@ -143,34 +134,25 @@ export function useCheckoutData() {
     (!!config && !!now && isScheduleValid(config.schedule, hours, when, now, closures));
 
   // ── Productos ───────────────────────────────────────────────────────────────────────────
-  // F13: precio y disponibilidad de la sucursal ASIGNADA al pedido (en domicilio la decide la cobertura, que puede diferir de la
-  // elegida en el selector); sin sucursal asignada, ninguna (precios base).
-  const productsQuery = useProducts({ branchId });
-  const rows = useMemo<CheckoutRow[]>(() => {
-    const byId = new Map<string, Product>((productsQuery.data ?? []).map((p) => [p.id, p]));
-    return cart.lines.flatMap((line, index) => {
-      const product = byId.get(line.productId);
-      return product ? [{ line, index, product, subtotal: product.price * line.quantity }] : [];
-    });
-  }, [cart.lines, productsQuery.data]);
-  /** Disponibilidad en la sucursal asignada (overlay F13 ya aplicado por `useProducts`). */
-  const unavailable = rows.filter((r) => !r.product.available);
-  const prices = Object.fromEntries((productsQuery.data ?? []).map((p) => [p.id, p.price]));
-  const subtotal = estimateSubtotal(
-    rows.map((r) => r.line),
-    prices,
-  );
-  const units = rows.reduce((n, r) => n + r.line.quantity, 0);
-  // Solo para MOSTRAR (el servidor recalcula y congela el `baseFee` al crear el pedido): string decimal → número de pantalla.
-  const shipping = type === 'delivery' ? (coveredFee !== null ? Number(coveredFee) : null) : 0;
-  const total = subtotal + (shipping ?? 0);
+  // F18: las líneas, su revalidación y el subtotal ESTIMADO salen de la MISMA fuente que el cajón (`useCartView`, sucursal del
+  // carrito). El total final lo calcula el servidor (F19/F20); aquí todo es provisional y el checkout sigue SIMULADO.
+  const view = useCartView({ enabled: true });
+  const rows = view.rows;
+  /** Líneas que no se pueden pedir (agotadas, inexistentes, extras inválidos, otra sucursal). */
+  const unavailable = rows.filter((r) => r.evaluation && isBlockingStatus(r.evaluation.status));
+  const subtotal = view.subtotalCents / 100;
+  const units = cart.count;
+  // Solo para MOSTRAR (el servidor recalcula y congela el `baseFee` al crear el pedido): string decimal → centavos → pantalla.
+  const shippingCents = coveredFee !== null ? amountToCents(coveredFee) : null;
+  const shipping = type === 'delivery' ? (shippingCents !== null ? shippingCents / 100 : null) : 0;
+  const total = (view.subtotalCents + (shipping === null ? 0 : (shippingCents ?? 0))) / 100;
 
   const addresses = addressesQuery.data ?? [];
 
   const stepOk = (step: CheckoutStep): boolean => {
     switch (step) {
       case 1:
-        return rows.length > 0 && unavailable.length === 0;
+        return view.canContinue;
       case 2:
         return (
           !!type &&
@@ -226,7 +208,7 @@ export function useCheckoutData() {
     signedInEmail: meQuery.data?.email || demo.customer?.email || '',
     defaultAddressId: defaultAddressIdOf(addresses),
     stepOk,
-    productsQuery,
+    view,
     configQuery,
     branchesQuery,
     cartLinesCount: cart.lines.length,

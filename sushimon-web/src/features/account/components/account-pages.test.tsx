@@ -262,7 +262,10 @@ describe('pedidos y "Volver a pedir"', () => {
 
   it('con un producto no disponible avisa y agrega solo lo disponible al carrito', async () => {
     const user = userEvent.setup();
-    const view = await renderStore(<OrdersPage />, { scenario: 'product-unavailable' });
+    const view = await renderStore(<OrdersPage />, {
+      scenario: 'product-unavailable',
+      branchId: 'sucursal-1',
+    });
     await signIn(view);
     await user.click(await screen.findByRole('tab', { name: /Historial/ }));
     const all = await screen.findAllByRole('button', { name: /Volver a pedir: MON-/ });

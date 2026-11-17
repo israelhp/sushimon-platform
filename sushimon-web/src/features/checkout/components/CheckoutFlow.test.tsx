@@ -3,6 +3,7 @@ import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockScenario } from '@/mocks/scenarios';
 import type { MockStore } from '@/mocks/store';
+import { cartInput } from '@/test/cart';
 import { renderStore } from '@/test/store-providers';
 import { CheckoutPage } from './CheckoutPage';
 
@@ -35,16 +36,19 @@ async function openCheckout({
 }: OpenOptions = {}) {
   const view = await renderStore(<CheckoutPage />, { scenario, prepareStore });
   await act(async () => {
-    for (const [id, qty] of lines) view.api().cart.add(id, qty);
-    view.api().mode.setMode({ type, when: { kind: 'now' }, branchId: null, address: null });
+    for (const [id, qty] of lines) view.api().cart.add(cartInput(id, qty));
+    view.api().mode.setMode({ type, when: { kind: 'now' }, branchId: 'sucursal-1', address: null });
   });
   return view;
 }
 
 const heading = () => screen.getByRole('heading', { level: 1 });
 /** El botón de acción existe dos veces (resumen de escritorio y barra móvil); basta con una. */
-const next = (user: UserEvent, name: RegExp) =>
-  user.click(screen.getAllByRole('button', { name })[0]!);
+const next = async (user: UserEvent, name: RegExp) => {
+  // F18: «Continuar» espera la revalidación del carrito (precios, disponibilidad y extras de la sucursal).
+  await waitFor(() => expect(screen.getAllByRole('button', { name })[0]).toBeEnabled());
+  await user.click(screen.getAllByRole('button', { name })[0]!);
+};
 
 async function toStep(user: UserEvent, target: 'Entrega' | 'Envío' | 'Pago' | 'Confirmación') {
   const order = ['Entrega', 'Envío', 'Pago', 'Confirmación'] as const;
@@ -98,7 +102,7 @@ describe('checkout · estados de pantalla', () => {
       scenario: 'product-unavailable',
     });
     expect(await screen.findByText(/ya no están disponibles/)).toBeInTheDocument();
-    expect(screen.getByText('No disponible por ahora')).toBeInTheDocument();
+    expect(screen.getByText('Agotado en esta sucursal')).toBeInTheDocument();
     await next(user, /Continuar a entrega/i);
     expect(heading()).toHaveTextContent('Tu pedido');
 
@@ -115,6 +119,74 @@ describe('checkout · estados de pantalla', () => {
     await user.click(screen.getByRole('button', { name: 'Agregar uno de Dumplings' }));
     await waitFor(() =>
       expect(screen.getAllByTestId('summary-total')[0]).toHaveTextContent('Q106.00'),
+    );
+  });
+});
+
+describe('checkout · paso 1 explica SIEMPRE el bloqueo (U2)', () => {
+  it('línea agotada: «Continuar» no avanza, el motivo es una alerta y recibe el foco; el texto va en tuteo', async () => {
+    const user = userEvent.setup();
+    await openCheckout({ lines: [['platanito-roll', 1]], scenario: 'product-unavailable' });
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/ya no están disponibles en tu sucursal/);
+    expect(alert).toHaveTextContent('Quítalos');
+    expect(alert).not.toHaveTextContent('Quitalos');
+    await user.click(screen.getAllByRole('button', { name: /Continuar a entrega/i })[0]!);
+    expect(heading()).toHaveTextContent('Tu pedido');
+    await waitFor(() => expect(alert).toHaveFocus());
+  });
+
+  it('sucursal del carrito distinta a la del modo de pedido: texto propio que apunta a la sucursal', async () => {
+    const user = userEvent.setup();
+    const view = await openCheckout();
+    await waitFor(() =>
+      expect(screen.getAllByRole('button', { name: /Continuar a entrega/i })[0]).toBeEnabled(),
+    );
+    await act(async () => view.api().mode.update({ branchId: 'sucursal-2' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Tu pedido es de otra sucursal');
+    expect(alert).not.toHaveTextContent(/Quít?alos/);
+    await user.click(screen.getAllByRole('button', { name: /Continuar a entrega/i })[0]!);
+    expect(heading()).toHaveTextContent('Tu pedido');
+  });
+
+  it('sin sucursal elegida: lo dice y no avanza', async () => {
+    const view = await openCheckout();
+    await act(async () => view.api().mode.update({ branchId: null }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Elige una sucursal para continuar.',
+    );
+  });
+
+  it('el resumen lista los extras de cada línea (solo lectura) y su «Editar» mide ≥ 44 px', async () => {
+    const view = await renderStore(<CheckoutPage />, { branchId: 'sucursal-1' });
+    await act(async () => {
+      view.api().cart.add(
+        cartInput('sushi-pizza', 1, '', {
+          unitCents: 7200,
+          selections: [{ groupId: 'mgroup-salsa', optionId: 'mopt-ponzu', quantity: 1 }],
+          options: [
+            {
+              groupId: 'mgroup-salsa',
+              optionId: 'mopt-ponzu',
+              groupName: 'Salsa',
+              optionName: 'Ponzu',
+              extraCents: 0,
+            },
+          ],
+        }),
+      );
+      view.api().mode.setMode({
+        type: 'pickup',
+        when: { kind: 'now' },
+        branchId: 'sucursal-1',
+        address: null,
+      });
+    });
+    const summary = (await screen.findAllByRole('region', { name: /Resumen/i }))[0]!;
+    expect(within(summary).getByText('+ Ponzu')).toBeInTheDocument();
+    expect(within(summary).getByRole('button', { name: /Editar/ }).className).toContain(
+      'min-h-[44px]',
     );
   });
 });
@@ -571,11 +643,11 @@ describe('checkout · persistencia del progreso', () => {
     // Recarga de la pestaña: carrito y modo son preferencias persistentes aparte; el borrador sale de sessionStorage.
     const again = await renderStore(<CheckoutPage />);
     await act(async () => {
-      again.api().cart.add('dumplings', 1);
+      again.api().cart.add(cartInput('dumplings', 1));
       again.api().mode.setMode({
         type: 'pickup',
         when: { kind: 'now' },
-        branchId: null,
+        branchId: 'sucursal-1',
         address: null,
       });
     });
@@ -588,10 +660,13 @@ describe('checkout · inglés', () => {
   it('muestra los textos en inglés', async () => {
     const view = await renderStore(<CheckoutPage />, { locale: 'en' });
     await act(async () => {
-      view.api().cart.add('dumplings', 1);
-      view
-        .api()
-        .mode.setMode({ type: 'pickup', when: { kind: 'now' }, branchId: null, address: null });
+      view.api().cart.add(cartInput('dumplings', 1));
+      view.api().mode.setMode({
+        type: 'pickup',
+        when: { kind: 'now' },
+        branchId: 'sucursal-1',
+        address: null,
+      });
     });
     expect(await screen.findByText('Step 1 of 5')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /Continue to delivery/i }).length).toBeGreaterThan(

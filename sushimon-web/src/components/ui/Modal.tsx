@@ -30,10 +30,12 @@ export interface ModalProps {
   className?: string;
   /** Tienda: tamaño del título (por defecto `text-[24px]`; las hojas de "Pedir ahora" e "Iniciar sesión" usan 26). */
   titleClassName?: string;
+  /** `alertdialog` para decisiones que exigen respuesta (confirmar un borrado, cambiar de sucursal). */
+  role?: 'dialog' | 'alertdialog';
 }
 
 /**
- * Diálogo modal accesible (role="dialog", aria-modal, foco atrapado, Esc, bloqueo de scroll).
+ * Diálogo modal accesible (role="dialog"|"alertdialog", aria-modal, foco atrapado, Esc, bloqueo de scroll).
  * Tienda: hoja inferior en móvil y centrado desde `md` (como `Jc` del prototipo).
  * Backoffice: `.modal-root` + `.overlay` + `.modal` (hoja inferior ≤ 640 px por CSS).
  */
@@ -51,6 +53,7 @@ export function Modal({
   description,
   className,
   titleClassName,
+  role = 'dialog',
 }: ModalProps) {
   const t = useTranslations('ui');
   const ref = useDialog<HTMLDivElement>(open, onClose);
@@ -71,7 +74,7 @@ export function Modal({
           <div
             ref={ref}
             tabIndex={-1}
-            role="dialog"
+            role={role}
             aria-modal="true"
             aria-labelledby={titleId}
             className={cn('modal', size !== 'default' && size, 'outline-none', className)}
@@ -114,7 +117,7 @@ export function Modal({
       <div
         ref={ref}
         tabIndex={-1}
-        role="dialog"
+        role={role}
         aria-modal="true"
         aria-labelledby={titleId}
         className={cn(

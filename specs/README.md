@@ -28,6 +28,7 @@ feature lo fija el backlog tras la auditoría F00–F09 (`docs/AUDITORIA_F00_F09
 | `016-promotions-happy-hour`       | F15 Promociones, cupones y Happy Hour       | `IN_PROGRESS` (contrato `CONTRACT_DEFINED`; API `API_IMPLEMENTED` con BD simulada en pruebas; migración 0016 sin aplicar)                                                                                         |
 | `017-banners-campaigns`           | F16 Banners, contenido editorial y campañas | `IN_PROGRESS` (contrato `CONTRACT_DEFINED`; API `API_IMPLEMENTED` con BD simulada en pruebas; migración 0017 sin aplicar; web en paralelo)                                                                        |
 | `018-store-aggregates`            | F17 Agregados públicos de tienda y búsqueda | `API_IMPLEMENTED` (API `src/store/` con dobles en memoria; SQL real NO verificado: `test/store.int-spec.ts` escrito y sin ejecutar; destacados `featured=[]` sin migración (P23); web en paralelo, sin verificar) |
+| `019-shopping-cart`               | F18 Carrito local y su contrato de datos    | `CONTRACT_DEFINED` (spec + ADR-0024 + esquemas `CartQuote*Input`; web `MOCK_ONLY` hasta implementar; sin API ni migración)                                                                                        |
 
 Sin carpeta de spec en este índice: **F04** (perfil de cliente; ver ADR-0012) y **F05** (direcciones; el código cita `specs/009-customer-addresses`, que
-no existe en `develop`; ver ADR-0014). El número `009` quedó libre; la siguiente spec nueva usa `019`.
+no existe en `develop`; ver ADR-0014). El número `009` quedó libre; la siguiente spec nueva usa `020`.

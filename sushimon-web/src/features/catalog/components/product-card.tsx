@@ -1,13 +1,15 @@
 'use client';
 
-import { Minus, Plus } from 'lucide-react';
+import { Loader2, Minus, Plus } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
-import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
 import { formatMoney } from '@/lib/format';
 import type { Product } from '@/lib/data-access/models';
-import { useCart } from '@/features/cart/cart-context';
-import { productSlug } from '../catalog-product';
+import { useCartActions, useCartProductShape, useCartQuantity } from '@/features/cart/cart-context';
+import { useCartDrawer } from '@/features/store-shell/store-shell-context';
+import { useToast } from '@/components/ui/Toast';
+import { REJECTION_KEY, useAddToCart } from '@/features/cart/use-add-to-cart';
+import { productSlug, type CatalogProduct } from '../catalog-product';
 import { productDescription, productName, tileClass } from '../localized';
 import { useProductSheet } from '../product-sheet-context';
 import { FavoriteButton } from './favorite-button';
@@ -93,11 +95,38 @@ function TileCard({ product, catalog, className }: Omit<ProductCardProps, 'varia
 function RowCard({ product, catalog, className }: Omit<ProductCardProps, 'variant'>) {
   const locale = useLocale();
   const t = useTranslations();
-  const cart = useCart();
-  const { notify } = useToast();
+  const cart = useCartActions();
   const { openProduct } = useProductSheet();
+  const { notify } = useToast();
+  const { quickAdd, busy } = useAddToCart();
+  const bump = () => {
+    const result = cart.incrementProduct(product.id);
+    if (!result.ok) notify(t(REJECTION_KEY[result.reason]), { tone: 'warn' });
+  };
+  // «−» desde 1 quita la línea: con «Deshacer» (mismo criterio que el cajón).
+  const lessOne = () => {
+    if (quantity > 1) {
+      cart.decrementProduct(product.id);
+      return;
+    }
+    const removed = cart.removeProduct(product.id);
+    if (!removed) return;
+    notify(t('product.removed', { a: productName(product, locale) }), {
+      action: {
+        label: t('cart.undo'),
+        onAction: () => {
+          const result = cart.restore(removed);
+          if (!result.ok) notify(t(REJECTION_KEY[result.reason]), { tone: 'warn' });
+        },
+      },
+    });
+  };
   const name = productName(product, locale);
-  const quantity = cart.quantityOf(product.id);
+  const quantity = useCartQuantity(product.id);
+  const shape = useCartProductShape(product.id);
+  const drawer = useCartDrawer();
+  // Con varias configuraciones (líneas con extras o notas distintas) un «+/−» sería ambiguo: se remite al pedido.
+  const complex = shape.lineCount > 1 || shape.hasSelections;
   const description = productDescription(product, locale);
   return (
     <article
@@ -158,16 +187,52 @@ function RowCard({ product, catalog, className }: Omit<ProductCardProps, 'varian
           ) : quantity === 0 ? (
             <button
               type="button"
-              onClick={() => {
-                cart.add(product.id, 1);
-                notify(t('product.added', { a: name }));
-              }}
-              aria-label={t('product.addTo', { a: name })}
-              className="inline-flex h-11 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-extrabold text-onprimary transition hover:brightness-95 active:scale-95"
+              onClick={() => void quickAdd(product as CatalogProduct)}
+              disabled={busy}
+              aria-busy={busy}
+              aria-label={busy ? t('product.checkingExtras') : t('product.addTo', { a: name })}
+              className="inline-flex h-11 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-extrabold text-onprimary transition hover:brightness-95 active:scale-95 disabled:opacity-60"
             >
-              <Plus className="h-4 w-4" aria-hidden="true" />
+              {busy ? (
+                <>
+                  <Loader2
+                    className="h-4 w-4 animate-spin motion-reduce:animate-none"
+                    aria-hidden="true"
+                  />
+                  <span className="sr-only">{t('product.checkingExtras')}</span>
+                </>
+              ) : (
+                <Plus className="h-4 w-4" aria-hidden="true" />
+              )}
               {t('common.add')}
             </button>
+          ) : complex ? (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={drawer.open}
+                aria-label={`${t('cart.inCart', { a: quantity })}. ${t('cart.viewInCart')}`}
+                className="inline-flex h-11 items-center rounded-full bg-deep px-4 text-sm font-extrabold text-ondeep hover:brightness-110"
+              >
+                {t('cart.inCart', { a: quantity })}
+              </button>
+              <button
+                type="button"
+                onClick={() => void quickAdd(product as CatalogProduct)}
+                disabled={busy}
+                aria-label={busy ? t('product.checkingExtras') : t('product.addTo', { a: name })}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-primary text-onprimary hover:brightness-95 disabled:opacity-60"
+              >
+                {busy ? (
+                  <Loader2
+                    className="h-4 w-4 animate-spin motion-reduce:animate-none"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                )}
+              </button>
+            </div>
           ) : (
             <div
               role="group"
@@ -176,7 +241,7 @@ function RowCard({ product, catalog, className }: Omit<ProductCardProps, 'varian
             >
               <button
                 type="button"
-                onClick={() => cart.removeOne(product.id)}
+                onClick={lessOne}
                 aria-label={t('product.removeOneOf', { a: name })}
                 className="inline-flex h-full w-11 items-center justify-center hover:bg-white/10"
               >
@@ -187,7 +252,7 @@ function RowCard({ product, catalog, className }: Omit<ProductCardProps, 'varian
               </span>
               <button
                 type="button"
-                onClick={() => cart.add(product.id, 1)}
+                onClick={bump}
                 aria-label={t('product.addOneOf', { a: name })}
                 className="inline-flex h-full w-11 items-center justify-center hover:bg-white/10"
               >

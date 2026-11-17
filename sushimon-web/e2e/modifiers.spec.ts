@@ -1,10 +1,11 @@
 import AxeBuilder from '@axe-core/playwright';
+import { pickupMode } from './support/cart';
 import { expect, test, type Page } from '@playwright/test';
 
 /**
  * F12 — Extras (modificadores) con datos simulados fieles al contrato: administración (grupos, opciones, asociación al
  * producto) y selector de la ficha pública. El estado del mock vive en la pestaña (sessionStorage): lo que el administrador
- * cambia lo ve la tienda en la misma sesión. El carrito AÚN no transporta extras (F18/F19).
+ * cambia lo ve la tienda en la misma sesión. Desde F18 el carrito guarda los extras elegidos.
  *   CI=1 NEXT_PUBLIC_AUTH_SOURCE=mock NEXT_PUBLIC_DATA_SOURCE=mock E2E_PORT=3210 pnpm --filter sushimon-web exec playwright test --project=e2e modifiers
  */
 
@@ -30,6 +31,11 @@ const nav = (page: Page) => page.getByRole('navigation', { name: 'Menú principa
 test('tienda: la ficha de Sushi Pizza exige la salsa (radio), limita los extras y estima el total', async ({
   page,
 }) => {
+  // F18: agregar exige sucursal elegida en el modo de pedido.
+  await page.addInitScript(
+    (mode) => localStorage.setItem('monsushi-order-mode-v1', mode),
+    pickupMode('sucursal-1'),
+  );
   await page.goto('/menu');
   await page
     .getByRole('button', { name: /^Sushi Pizza/ })
@@ -41,11 +47,11 @@ test('tienda: la ficha de Sushi Pizza exige la salsa (radio), limita los extras 
   await expect(salsa.getByText('Obligatorio')).toBeVisible();
   await expect(salsa.getByText('Elige 1')).toBeVisible();
   const add = dialog.getByRole('button', { name: /^Agregar\s*Q/ });
-  await expect(add).toBeDisabled();
+  await expect(add).toHaveAttribute('aria-disabled', 'true');
   await expect(dialog.getByText('Completa los grupos obligatorios')).toBeVisible();
 
   await salsa.getByRole('radio', { name: /Ponzu/ }).check();
-  await expect(add).toBeEnabled();
+  await expect(add).toHaveAttribute('aria-disabled', 'false');
 
   const extras = dialog.getByRole('group', { name: /Extras/ });
   await expect(extras.getByText('Elige hasta 3')).toBeVisible();
@@ -58,11 +64,18 @@ test('tienda: la ficha de Sushi Pizza exige la salsa (radio), limita los extras 
   await expect(dialog.getByText(/el servidor recalcula el precio/)).toBeVisible();
   await expectNoSeriousA11y(page, '[role="dialog"]');
 
-  // Quitar un extra recalcula el estimado; con la salsa elegida se agrega el producto base (el carrito aún no lleva extras).
+  // Quitar un extra recalcula el estimado; la línea del carrito guarda la salsa y los extras elegidos (F18).
   await extras.getByRole('checkbox', { name: /Aguacate/ }).uncheck();
   await expect(dialog.getByText('+Q8.00')).toBeVisible();
   await add.click();
   await expect(page.getByText('1 × Sushi Pizza agregado a tu pedido')).toBeVisible();
+  const saved = await page.evaluate(() => localStorage.getItem('monsushi-cart-v2'));
+  const [line] = JSON.parse(saved!).lines;
+  expect(line.selections.map((x: { optionId: string }) => x.optionId).sort()).toEqual([
+    'mopt-ponzu',
+    'mopt-queso-crema',
+    'mopt-salsa-extra',
+  ]);
 });
 
 test('backoffice: crea un grupo con opciones, las reordena, lo asocia a Dumplings y la tienda lo ofrece', async ({
@@ -130,7 +143,10 @@ test('backoffice: crea un grupo con opciones, las reordena, lo asocia a Dumpling
   const group = sheet.getByRole('group', { name: /Término/ });
   await expect(group.getByText('Obligatorio')).toBeVisible();
   await expect(group.getByText('+Q2.50')).toBeVisible();
-  await expect(sheet.getByRole('button', { name: /^Agregar\s*Q/ })).toBeDisabled();
+  await expect(sheet.getByRole('button', { name: /^Agregar\s*Q/ })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
 });
 
 test('el encargado ve los grupos en solo lectura con aviso', async ({ page }) => {

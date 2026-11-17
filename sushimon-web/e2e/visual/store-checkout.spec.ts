@@ -1,3 +1,4 @@
+import { DUMPLINGS, cartV2 } from '../support/cart';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
@@ -134,18 +135,15 @@ for (const theme of ['light', 'dark'] as const) {
         test.skip(!existsSync(file), `Falta la captura del prototipo: ${file}`);
         await preparePage(page, { theme, viewport, frozenAt: FROZEN_AT }, BASE);
         await page.addInitScript(
-          ([theme, type, step, payment, address]) => {
+          ([theme, type, step, payment, address, cart]) => {
             localStorage.setItem('monsushi-theme', theme!);
-            localStorage.setItem(
-              'monsushi-cart-v1',
-              JSON.stringify([{ productId: 'dumplings', quantity: 1, note: '' }]),
-            );
+            localStorage.setItem('monsushi-cart-v2', cart!);
             localStorage.setItem(
               'monsushi-order-mode-v1',
               JSON.stringify({
                 type,
                 when: { kind: 'now' },
-                branchId: null,
+                branchId: 'sucursal-1',
                 address: type === 'delivery' ? JSON.parse(address!) : null,
               }),
             );
@@ -169,6 +167,7 @@ for (const theme of ['light', 'dark'] as const) {
             String(sc.step),
             sc.payment ?? 'card',
             JSON.stringify(DEMO_ADDRESS),
+            cartV2('sucursal-1', [DUMPLINGS]),
           ] as const,
         );
         await page.goto(`${BASE}/checkout`);

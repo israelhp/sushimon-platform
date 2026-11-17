@@ -1,3 +1,4 @@
+import { DUMPLINGS, cartV2 } from './support/cart';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
@@ -180,11 +181,9 @@ test.describe('F17 · solicitudes por pantalla (mock fiel)', () => {
   }) => {
     await instrument(page);
     await pickBranch(page, 'sucursal-1');
-    await page.addInitScript(() =>
-      localStorage.setItem(
-        'monsushi-cart-v1',
-        JSON.stringify([{ productId: 'dumplings', quantity: 1, note: '' }]),
-      ),
+    await page.addInitScript(
+      (cart) => localStorage.setItem('monsushi-cart-v2', cart),
+      cartV2('sucursal-1', [DUMPLINGS]),
     );
     await page.goto('/menu');
     await expect(page.getByRole('heading', { name: /^Entradas/ })).toBeVisible({ timeout: 90_000 });
@@ -203,10 +202,15 @@ test.describe('F17 · solicitudes por pantalla (mock fiel)', () => {
     await settle(page);
     const delta = (await requests(page)).slice(before.length);
     report('Menú + carrito abierto (delta)', delta);
-    expect(delta.map(route).sort()).toEqual(
-      ['GET /v1/branches/sucursal-1/availability', 'GET /v1/store/menu'].slice(0, delta.length),
-    );
-    expect(count(delta, /store\/products/)).toBe(0);
+    // F18: abrir el carrito revalida contra la sucursal DEL CARRITO con lo que el Menú ya tiene en caché (menú: sin petición extra
+    // mientras esté fresco) + UNA ficha por producto único (extras) + la disponibilidad de la sucursal. Nunca una solicitud por línea
+    // ni el catálogo completo (`/store/products` sin slug).
+    expect(count(delta, /^GET \/v1\/store\/menu/)).toBeLessThanOrEqual(1);
+    // En escritorio el resumen del menú ya revalidó al cargar: abrir el cajón reutiliza esa caché (ficha: UNA en total).
+    const unique = (list: string[]) => new Set(list.filter((r) => /products\/dumplings/.test(r)));
+    expect(unique([...before, ...delta]).size).toBe(1); // `next dev` (StrictMode) puede repetir una consulta recién montada
+    expect(count(delta, /^GET \/v1\/store\/products\/dumplings/)).toBe(0);
+    expect(count(delta, /^GET \/v1\/store\/products(\?|$)/)).toBe(0);
     expect(count(delta, /availability/)).toBe(1);
   });
 
@@ -250,7 +254,8 @@ test.describe('F17 · solicitudes por pantalla (mock fiel)', () => {
     await settle(page);
     const delta = (await requests(page)).slice(before.length);
     report('Ficha (delta)', delta);
-    expect(delta.map(route)).toEqual(['GET /v1/store/products/dumplings']);
+    // Una ficha por slug (en `next dev`, StrictMode puede repetir la consulta recién montada: se comparan las distintas).
+    expect([...new Set(delta.map(route))]).toEqual(['GET /v1/store/products/dumplings']);
     expect(delta[0]).toMatch(/branchId=sucursal-1/);
   });
 });

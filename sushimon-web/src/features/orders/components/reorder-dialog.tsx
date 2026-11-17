@@ -8,13 +8,16 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
 import { formatMoney } from '@/lib/format';
-import { mergeIntoCart, planReorder } from '@/features/account/reorder';
+import { planReorder } from '@/features/account/reorder';
+import { buildAddInput } from '@/features/cart/add-input';
 import { useCart } from '@/features/cart/cart-context';
-import { estimateSubtotal } from '@/features/cart/cart';
+import { REJECTION_KEY } from '@/features/cart/use-add-to-cart';
+import { useOrderMode } from '@/features/order-mode/order-mode-context';
+import { amountToCents } from '@/lib/cart-rules';
 import { useProducts } from '@/features/catalog/hooks';
 import { productName } from '@/features/catalog/localized';
 import { ErrorNotice } from '@/features/store-shell/components/ErrorNotice';
-import { useCartDrawer } from '@/features/store-shell/store-shell-context';
+import { useCartDrawer, useOrderSheet } from '@/features/store-shell/store-shell-context';
 import type { LastOrderSummary } from '../last-order';
 
 const money = (value: number) => formatMoney(value, 'es');
@@ -32,30 +35,55 @@ export function ReorderDialog({
   onClose: () => void;
 }) {
   const t = useTranslations('reorder');
+  const tCart = useTranslations();
   const locale = useLocale();
   const { notify } = useToast();
   const cart = useCart();
   const cartDrawer = useCartDrawer();
   const products = useProducts();
+  const { mode } = useOrderMode();
+  const orderSheet = useOrderSheet();
   const [merge, setMerge] = useState<'replace' | 'append'>('replace');
 
   const plan = products.data ? planReorder(order, products.data) : null;
-  const prices = Object.fromEntries((products.data ?? []).map((p) => [p.id, p.price]));
+  const priceCents = (productId: string): number => {
+    const product = products.data?.find((p) => p.id === productId);
+    return product ? (amountToCents(product.effectivePrice) ?? 0) : 0;
+  };
   const nameOf = (productId: string, fallback: string) => {
     const product = products.data?.find((p) => p.id === productId);
     return product ? productName(product, locale) : fallback;
   };
-  const newSubtotal = plan ? estimateSubtotal(plan.lines, prices) : 0;
+  const newSubtotal =
+    (plan ? plan.lines.reduce((sum, l) => sum + priceCents(l.productId) * l.quantity, 0) : 0) / 100;
   const skippedIds = new Set(plan?.skipped.map((x) => x.productId));
   const priceChanges = new Map((plan?.priceChanges ?? []).map((c) => [c.productId, c]));
 
   const confirm = () => {
     if (!plan || plan.lines.length === 0) return;
-    cart.replace(
-      merge === 'append' && cart.lines.length > 0
-        ? mergeIntoCart(cart.lines, plan.lines)
-        : plan.lines,
-    );
+    // F18: el pedido anterior no guarda extras; cada línea entra con la sucursal ELEGIDA y el precio vigente del menú.
+    if (!mode.branchId) {
+      orderSheet.open('now');
+      notify(t('needBranch'));
+      return;
+    }
+    const inputs = plan.lines.flatMap((l) => {
+      const product = products.data?.find((p) => p.id === l.productId);
+      const input = product
+        ? buildAddInput({
+            product,
+            branchId: mode.branchId as string,
+            quantity: l.quantity,
+            note: l.note,
+          })
+        : null;
+      return input ? [input] : [];
+    });
+    const result = cart.add(inputs, { replace: merge === 'replace' || cart.count === 0 });
+    if (!result.ok) {
+      notify(tCart(REJECTION_KEY[result.reason]));
+      return;
+    }
     notify(t('added'));
     onClose();
     cartDrawer.open();
@@ -137,7 +165,9 @@ export function ReorderDialog({
                       ) : null}
                     </span>
                     <span className="flex-none font-bold">
-                      {unavailable ? '—' : money((prices[line.productId] ?? 0) * line.quantity)}
+                      {unavailable
+                        ? '—'
+                        : money((priceCents(line.productId) * line.quantity) / 100)}
                     </span>
                   </li>
                 );

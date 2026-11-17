@@ -4,7 +4,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
 import { formatMoney } from '@/lib/format';
 import type { Product } from '@/lib/data-access/models';
-import { useCart } from '@/features/cart/cart-context';
+import { useCartQuantity } from '@/features/cart/cart-context';
 import { FavoriteButton } from '@/features/catalog/components/favorite-button';
 import { ProductArt } from '@/features/catalog/components/product-art';
 import { productDescription, productName, tileClass } from '@/features/catalog/localized';
@@ -28,9 +28,8 @@ export function ProductListItem({
   const locale = useLocale();
   const t = useTranslations();
   const { openProduct } = useProductSheet();
-  const cart = useCart();
   const name = productName(product, locale);
-  const quantity = cart.quantityOf(product.id);
+  const quantity = useCartQuantity(product.id);
   const text =
     productDescription(product, locale) ||
     (product.featured ? t('product.favoriteSub') : t('product.tapToCustomize'));

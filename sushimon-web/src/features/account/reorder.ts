@@ -1,13 +1,19 @@
 import type { Order, Product } from '@/lib/data-access/models';
-import type { CartLine } from '../cart/cart';
 
 /**
  * "Repetir pedido": arma las líneas de carrito a partir de un pedido anterior con el catálogo
  * actual. Informa cuántos productos no se agregarán (inexistentes o no disponibles) y cuáles
  * cambiaron de precio, para el aviso del prototipo.
  */
+/** Línea a reordenar: los pedidos anteriores no guardan extras (llegan con F20/F23), solo producto, cantidad y nota. */
+export interface ReorderLine {
+  productId: string;
+  quantity: number;
+  note: string;
+}
+
 export interface ReorderPlan {
-  lines: CartLine[];
+  lines: ReorderLine[];
   /** Unidades de productos que no se agregarán. */
   skippedCount: number;
   skipped: { productId: string; name: string; quantity: number }[];
@@ -35,15 +41,4 @@ export function planReorder(order: Pick<Order, 'lines'>, products: Product[]): R
     }
   }
   return plan;
-}
-
-/** Fusiona con el carrito actual (modo "agregar"); en modo "reemplazar" usar `plan.lines`. */
-export function mergeIntoCart(current: CartLine[], incoming: CartLine[]): CartLine[] {
-  const out = current.map((l) => ({ ...l }));
-  for (const l of incoming) {
-    const existing = out.find((x) => x.productId === l.productId && x.note === l.note);
-    if (existing) existing.quantity = Math.min(99, existing.quantity + l.quantity);
-    else out.push({ ...l });
-  }
-  return out;
 }

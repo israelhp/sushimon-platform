@@ -253,6 +253,7 @@ export function CheckoutFlow() {
     }
     setNeonetOpen(false);
     setPending(null);
+    // SIMULADO (MOCK_ONLY): vacía solo por el flujo de demostración. `clearAfterOrder` queda reservado para F20 (pedido real).
     cart.clear();
     discard();
     setConfirmed(order);
@@ -315,13 +316,13 @@ export function CheckoutFlow() {
   if (confirmed) return <Confirmation order={confirmed} onOrderChange={setConfirmed} />;
 
   const loadFailed =
-    data.configQuery.isError || data.branchesQuery.isError || data.productsQuery.isError;
+    data.configQuery.isError || data.branchesQuery.isError || data.view.status === 'error';
   const loading =
     !loadFailed &&
     (!ready ||
       data.configQuery.isPending ||
       data.branchesQuery.isPending ||
-      (data.cartLinesCount > 0 && data.productsQuery.isPending));
+      (data.cartLinesCount > 0 && data.view.status === 'pending'));
 
   if (data.cartLinesCount === 0 && ready) {
     return (
@@ -439,7 +440,7 @@ export function CheckoutFlow() {
               onRetry={() => {
                 if (data.configQuery.isError) void data.configQuery.refetch();
                 if (data.branchesQuery.isError) void data.branchesQuery.refetch();
-                if (data.productsQuery.isError) void data.productsQuery.refetch();
+                if (data.view.status === 'error') data.view.retry();
               }}
             />
           ) : loading ? (

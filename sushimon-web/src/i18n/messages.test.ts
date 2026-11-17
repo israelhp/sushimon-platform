@@ -50,3 +50,28 @@ describe('mensajes i18n', () => {
     expect(duplicateKeys(source)).toEqual(['línea 4: "x"']);
   });
 });
+
+describe('mensajes del carrito (F18, #37)', () => {
+  const read = (locale: string) =>
+    JSON.parse(readFileSync(join(__dirname, 'messages', `${locale}.json`), 'utf8')) as {
+      cart: Record<string, unknown>;
+    };
+  const flatten = (value: unknown, prefix = ''): string[] =>
+    typeof value === 'object' && value !== null
+      ? Object.entries(value).flatMap(([k, v]) => flatten(v, `${prefix}${k}.`))
+      : [prefix.slice(0, -1)];
+
+  it('es y en tienen EXACTAMENTE las mismas claves cart.*', () => {
+    expect(flatten(read('en').cart).sort()).toEqual(flatten(read('es').cart).sort());
+  });
+
+  it('ninguna clave cart.* está vacía', () => {
+    for (const locale of ['es', 'en']) {
+      const walk = (v: unknown): void => {
+        if (typeof v === 'string') expect(v.trim().length).toBeGreaterThan(0);
+        else if (v && typeof v === 'object') Object.values(v).forEach(walk);
+      };
+      walk(read(locale).cart);
+    }
+  });
+});

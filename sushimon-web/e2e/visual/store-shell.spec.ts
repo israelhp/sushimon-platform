@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import { DUMPLINGS, cartV2 } from '../support/cart';
 import { VIEWPORTS, capture, compareAndAttach, preparePage } from './harness';
 
 /**
@@ -17,9 +18,9 @@ const MAX_RATIO = Number(process.env.VISUAL_MAX_RATIO ?? 0.12);
 
 type Step = (page: Page) => Promise<void>;
 
-const CART_FIXTURE = JSON.stringify([
-  { productId: 'dumplings', quantity: 1, note: '' },
-  { productId: 'loco-ribs', quantity: 1, note: '' },
+const CART_FIXTURE = cartV2('sucursal-1', [
+  DUMPLINGS,
+  { productId: 'loco-ribs', name: 'Loco Ribs', unitCents: 4200 },
 ]);
 
 async function ready(page: Page) {
@@ -67,7 +68,18 @@ for (const theme of ['light', 'dark'] as const) {
         await page.addInitScript(
           ([theme, cart]) => {
             localStorage.setItem('monsushi-theme', theme!);
-            if (cart) localStorage.setItem('monsushi-cart-v1', cart);
+            if (cart) {
+              localStorage.setItem('monsushi-cart-v2', cart);
+              localStorage.setItem(
+                'monsushi-order-mode-v1',
+                JSON.stringify({
+                  type: 'pickup',
+                  when: { kind: 'now' },
+                  branchId: 'sucursal-1',
+                  address: null,
+                }),
+              );
+            }
           },
           [theme, name === 'cart-drawer' ? CART_FIXTURE : ''] as const,
         );
