@@ -26,7 +26,7 @@ function invalid(details: string[]): never {
 
 const asPhone = (seed: BranchSeed) => (seed.phone.trim() ? seed.phone : null);
 
-const publicView = (b: BranchSeed): PublicBranch => ({
+export const publicView = (b: BranchSeed): PublicBranch => ({
   id: b.id,
   code: b.code,
   name: b.name,

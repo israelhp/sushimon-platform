@@ -90,6 +90,9 @@ const isHappyHourOf = (p: PromotionRecord) => p.code === null && p.schedule.leng
 
 // ── Público ────────────────────────────────────────────────────────────────────────────────
 
+/** `full` = F15; `noItems` = bootstrap F17 (sin `items`); `compact` = `?compact=true` (sin `items` ni `productIds`). */
+export type PromotionListMode = 'full' | 'noItems' | 'compact';
+
 function storeItems(store: MockStore, p: PromotionRecord, branchId: string): StorePromotionItem[] {
   if (p.code !== null || p.productScope !== 'SELECTED') return [];
   return p.productIds
@@ -113,6 +116,7 @@ function storeView(
   branchId: string,
   state: 'live' | 'upcoming',
   at: Date,
+  mode: PromotionListMode = 'full',
 ): StorePromotion {
   const times = promotionTimes(p, at);
   const requiresCode = p.code !== null;
@@ -135,9 +139,10 @@ function storeView(
   if (!requiresCode) {
     view.kind = p.kind;
     view.value = p.value;
-    if (p.productScope === 'SELECTED') {
+    // `compact` (F17): sin `items` NI `productIds` (no lee productos). `noItems` (bootstrap): sin `items`.
+    if (p.productScope === 'SELECTED' && mode !== 'compact') {
       view.productIds = [...p.productIds];
-      const items = storeItems(store, p, branchId);
+      const items = mode === 'full' ? storeItems(store, p, branchId) : [];
       if (items.length > 0) view.items = items;
     }
   }
@@ -153,11 +158,33 @@ export const listStorePromotions: Handler = (req): StorePromotionList => {
   if (stateRaw !== 'live' && stateRaw !== 'upcoming') problems.push('state: live o upcoming');
   if (problems.length > 0) badRequest(problems);
   const state = stateRaw as 'live' | 'upcoming';
+  const compactRaw = req.query.get('compact');
+  if (compactRaw !== null && compactRaw !== 'true' && compactRaw !== 'false') {
+    badRequest(['compact: debe ser true o false']);
+  }
   const { store } = req;
   const branch = store.branches.find((b) => b.id === branchId);
   if (!branch || !branch.active) failCode(404, 'BRANCH_NOT_FOUND', 'Sucursal no encontrada');
-  const at = now(req);
+  return publicPromotionList(
+    store,
+    branch,
+    state,
+    now(req),
+    compactRaw === 'true' ? 'compact' : 'full',
+  );
+};
 
+/**
+ * Lista pública de promociones de una sucursal ACTIVA en `at` (la misma que `GET /v1/store/promotions`). `mode` `noItems` es el
+ * modo del bootstrap (F17): `noItems`. Un único cálculo: el bootstrap NO duplica las reglas de F15.
+ */
+export function publicPromotionList(
+  store: MockStore,
+  branch: { id: string },
+  state: 'live' | 'upcoming',
+  at: Date,
+  mode: PromotionListMode,
+): StorePromotionList {
   const applicable = store.promotions.filter((p) => p.active && appliesToBranch(p, branch.id));
   const matches = applicable
     .filter((p) => {
@@ -173,9 +200,9 @@ export const listStorePromotions: Handler = (req): StorePromotionList => {
     truncated: matches.length > STORE_PROMOTIONS_MAX,
     items: matches
       .slice(0, STORE_PROMOTIONS_MAX)
-      .map((p) => storeView(store, p, branch.id, state, at)),
+      .map((p) => storeView(store, p, branch.id, state, at, mode)),
   };
-};
+}
 
 // ── Administración: vistas y alcance ───────────────────────────────────────────────────────
 

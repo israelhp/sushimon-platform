@@ -21,12 +21,16 @@ describe('claves de invalidación de sucursales', () => {
     ]);
   });
 
-  it('actualizar: añade el detalle admin de esa sucursal', () => {
+  it('actualizar: añade el detalle admin de esa sucursal y los agregados públicos de la tienda (F17)', () => {
     expect(branchInvalidationKeys('update', 'b1')).toEqual([
       queryKeys.backoffice.adminBranchLists,
       queryKeys.store.publicBranches,
       queryKeys.store.branchOperations,
       queryKeys.backoffice.adminBranch('b1'),
+      queryKeys.store.bootstrapAll,
+      queryKeys.store.menuAll,
+      queryKeys.store.searchAll,
+      queryKeys.products.storeDetails,
     ]);
   });
 
@@ -40,7 +44,7 @@ describe('claves de invalidación de sucursales', () => {
         expect(key.length, JSON.stringify(key)).toBeGreaterThanOrEqual(
           key[0] === 'deliveryCoverage' ? 1 : 2,
         );
-        expect(['store', 'backoffice', 'deliveryCoverage']).toContain(key[0]);
+        expect(['store', 'backoffice', 'deliveryCoverage', 'products']).toContain(key[0]);
       }
     }
   });

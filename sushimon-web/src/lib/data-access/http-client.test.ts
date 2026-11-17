@@ -124,4 +124,43 @@ describe('createHttpClient (contrato F00)', () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
   });
+
+  describe('lecturas públicas (F17)', () => {
+    const ok = () => Promise.resolve(Response.json({ status: 'ok' }));
+    const session = {
+      getAccessToken: () => Promise.resolve('tok-secreto'),
+      onUnauthorized: () => Promise.resolve(false),
+    };
+    const initOf = (fetchMock: ReturnType<typeof vi.fn>, call: number) =>
+      fetchMock.mock.calls[call]?.[1] as RequestInit;
+
+    it('con `public: true` no adjunta Authorization ni fuerza cache no-store (respeta el Cache-Control del servidor)', async () => {
+      const fetchMock = vi.fn().mockImplementation(ok);
+      const client = createHttpClient('http://api.test', fetchMock, session);
+      await client.get('/v1/store/bootstrap', { public: true });
+      const init = initOf(fetchMock, 0);
+      expect(init.headers).toBeUndefined();
+      expect(init).not.toHaveProperty('cache');
+      expect(init.credentials).toBe('omit');
+    });
+
+    it('las lecturas privadas siguen con Authorization y sin caché del navegador', async () => {
+      const fetchMock = vi.fn().mockImplementation(ok);
+      const client = createHttpClient('http://api.test', fetchMock, session);
+      await client.get('/v1/me/favorites');
+      const init = initOf(fetchMock, 0);
+      expect((init.headers as Record<string, string>).authorization).toBe('Bearer tok-secreto');
+      expect(init.cache).toBe('no-store');
+    });
+
+    it('una lectura pública no consulta la sesión (la respuesta no puede depender de ella)', async () => {
+      const getAccessToken = vi.fn().mockResolvedValue('tok');
+      const client = createHttpClient('http://api.test', vi.fn().mockImplementation(ok), {
+        getAccessToken,
+        onUnauthorized: () => Promise.resolve(false),
+      });
+      await client.get('/v1/store/menu', { public: true });
+      expect(getAccessToken).not.toHaveBeenCalled();
+    });
+  });
 });

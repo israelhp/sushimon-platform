@@ -17,6 +17,7 @@ import * as promotions from './promotions';
 import * as pub from './public';
 import * as schedule from './schedule';
 import * as staff from './staff';
+import * as storeAggregates from './store-aggregates';
 
 /**
  * Tabla de rutas del adaptador mock: las mismas de docs/contracts/planned-endpoints.md
@@ -35,9 +36,12 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'GET /v1/catalog/categories': pub.listCategories,
   // F11: productos visibles y ficha por slug (contrato)
   'GET /v1/store/products': products.listStoreProducts,
-  'GET /v1/store/products/:slug': products.getStoreProduct,
+  'GET /v1/store/products/:slug': storeAggregates.getStoreProduct,
   // F13: overlay público de precio efectivo y disponibilidad de una sucursal (contrato)
-  'GET /v1/store/menu': branchProducts.getStoreBranchMenu,
+  'GET /v1/store/menu': storeAggregates.getStoreBranchMenu,
+  // F17: búsqueda pública y agregado de arranque del Inicio (contrato)
+  'GET /v1/store/search': storeAggregates.searchStoreProducts,
+  'GET /v1/store/bootstrap': storeAggregates.getStoreBootstrap,
   // F15: promociones y Happy Hour de una sucursal (contrato, público)
   'GET /v1/store/promotions': promotions.listStorePromotions,
   // F16: banners publicados del Inicio por sucursal e idioma (contrato, público)

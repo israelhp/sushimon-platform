@@ -3,7 +3,6 @@ import type {
   AdminBranchProductRow,
   AdminBranchProductState,
   AdminProductBranches,
-  StoreBranchMenu,
 } from '@/lib/data-access/models';
 import { isEffectivelyVisible } from '@/lib/category-tree';
 import { checkOverrideBody, effectivePrice, isOffered } from '@/lib/branch-pricing-rules';
@@ -15,8 +14,7 @@ import { now, requireStaff, type Handler, type Req, type StaffActor } from './sh
 
 /**
  * F13 — Precio y disponibilidad por sucursal (spec 014, ADR-0019). El mock EMULA al servidor:
- * - Overlay público `GET /v1/store/menu?branchId=`: todos los productos VISIBLES (F11/F10) con el precio EFECTIVO y `available` de
- *   ESA sucursal; sin precio base ni indicio de override. 400 sin `branchId`; 404 `BRANCH_NOT_FOUND` si no existe o está inactiva.
+ * - El menú público (`GET /v1/store/menu`) vive desde F17 en `store-aggregates.ts` (tarjetas, paginación, `branchId` opcional).
  * - Admin: `catalog.read` (matrices), `catalog.update` (precio) y `catalog.manage_availability` (disponibilidad), todos con
  *   alcance POR SUCURSAL: fuera de alcance = inexistente = 404 `BRANCH_NOT_FOUND` (el manager de A no ve ni modifica B). Un manager
  *   (sin `catalog.update`) recibe 403 al fijar precio.
@@ -27,8 +25,6 @@ import { now, requireStaff, type Handler, type Req, type StaffActor } from './sh
  * NO simula auditoría, cabeceras de caché (`max-age=15`), throttling ni la forma UUID (los ids del mock son legibles).
  */
 
-const bySlugThenId = (a: ProductRecord, b: ProductRecord) =>
-  a.slug.localeCompare(b.slug) || a.id.localeCompare(b.id);
 const byNameThenId = (a: ProductRecord, b: ProductRecord) =>
   a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }) || a.id.localeCompare(b.id);
 const foldText = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -66,28 +62,6 @@ function stateOf(store: MockStore, product: ProductRecord, branchId: string) {
 }
 
 // ── Público ────────────────────────────────────────────────────────────────────────────────
-
-/** GET /v1/store/menu?branchId= — overlay de una sucursal ACTIVA. */
-export const getStoreBranchMenu: Handler = (req): StoreBranchMenu => {
-  const branchId = req.query.get('branchId');
-  if (!branchId) badRequest(['branchId: obligatorio']);
-  const { store } = req;
-  const branch = store.branches.find((b) => b.id === branchId);
-  if (!branch || !branch.active) branchNotFound();
-  const items = store.products
-    .filter((p) => isProductVisible(store, p))
-    .sort(bySlugThenId)
-    .map((p) => {
-      const row = branchRowOf(store, branchId as string, p.id);
-      return {
-        productId: p.id,
-        slug: p.slug,
-        price: effectivePrice(p.basePrice, row?.priceOverride ?? null),
-        available: row?.available ?? true,
-      };
-    });
-  return { branchId: branchId as string, items };
-};
 
 // ── Administración: lecturas ───────────────────────────────────────────────────────────────
 

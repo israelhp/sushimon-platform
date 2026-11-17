@@ -1,4 +1,4 @@
-import type { ProductFilters } from './catalog/catalog-product';
+import type { StoreMenuParams } from '@/lib/store-rules';
 import type { AdminProductFilters } from '@/services/products';
 import type { DeliveryZoneFilters } from '@/services/delivery-zones';
 import type { BackofficeOrderFilters, DeliveryFilters } from '@/services/backoffice-orders';
@@ -29,6 +29,26 @@ export const queryKeys = {
     publicBranch: (id: string) => ['store', 'branches', 'public', id] as const,
     /** Operación SIMULADA (horario, abierta ahora, cobertura: F08/F09). */
     branchOperations: ['store', 'branches', 'operations'] as const,
+    /**
+     * F17 (spec 018 D6d): agregados PÚBLICOS. La clave lleva sucursal (`'none'` = sin sucursal), idioma/filtros/página: cambiar de
+     * sucursal o de idioma cambia la clave (nunca se mezclan precios). Los prefijos `bootstrapAll`/`menuAll`/`searchAll` los
+     * invalida el backoffice tras cada mutación (`invalidateStoreAggregates`). SIN HydrationBoundary: la sucursal vive en localStorage.
+     */
+    bootstrapAll: ['store', 'bootstrap'] as const,
+    bootstrap: (branchId: string | null, locale: string) =>
+      ['store', 'bootstrap', branchId ?? 'none', locale] as const,
+    menuAll: ['store', 'menu'] as const,
+    /** Menú COMPLETO (todas las páginas) o una página: `filters.page` = número o `'all'`. */
+    menu: (
+      branchId: string | null,
+      filters: Omit<StoreMenuParams, 'branchId' | 'page'> & { page?: number | 'all' },
+    ) => ['store', 'menu', branchId ?? 'none', filters] as const,
+    searchAll: ['store', 'search'] as const,
+    search: (
+      branchId: string | null,
+      q: string,
+      filters: { categorySlug?: string; available?: boolean },
+    ) => ['store', 'search', branchId ?? 'none', q, filters] as const,
   },
   /**
    * F08 (spec 007 D16): horario y disponibilidad PÚBLICOS por sucursal, jerárquicos: `branches.byId(id)` invalida los dos.
@@ -87,10 +107,10 @@ export const queryKeys = {
    */
   products: {
     all: ['products'] as const,
-    storeSearch: (q: string) => ['products', 'store', 'search', q] as const,
     /** Prefijo de TODAS las fichas públicas (F12: los `modifierGroups` viajan en la ficha). */
     storeDetails: ['products', 'store', 'detail'] as const,
-    storeDetail: (slug: string) => ['products', 'store', 'detail', slug] as const,
+    storeDetail: (slug: string, branchId: string | null) =>
+      ['products', 'store', 'detail', slug, branchId ?? 'none'] as const,
     adminLists: ['products', 'admin'] as const,
     admin: (filters: AdminProductFilters = {}) => ['products', 'admin', filters] as const,
     /** SIMULADO (solo mock): disponibilidad por sucursal, ilustración y textos en inglés de cada producto. */
@@ -106,14 +126,6 @@ export const queryKeys = {
     groups: (filters: ModifierGroupFilters = {}) => ['modifiers', 'groups', filters] as const,
     group: (id: string) => ['modifiers', 'group', id] as const,
     product: (productId: string) => ['modifiers', 'product', productId] as const,
-  },
-  /**
-   * F13 (spec 014 D5): overlay PÚBLICO de precio efectivo y disponibilidad por sucursal (`['store-menu', branchId]`). La caché HTTP
-   * dura ≤ 15 s: `staleTime` ≤ 15 s + invalidación al cambiar de sucursal, al volver al foco y tras cada cambio en el backoffice.
-   */
-  storeMenu: {
-    all: ['store-menu'] as const,
-    branch: (branchId: string) => ['store-menu', branchId] as const,
   },
   /** F13: matrices ADMIN. `byBranch` = por sucursal (con filtros); `byProduct` = por producto. Toda mutación invalida `all`. */
   branchProducts: {
@@ -135,21 +147,20 @@ export const queryKeys = {
   catalog: {
     all: ['catalog'] as const,
     categories: ['catalog', 'categories'] as const,
-    products: (filters: ProductFilters = {}) => ['catalog', 'products', filters] as const,
     /**
      * F15: promociones PÚBLICAS por sucursal y estado (`live|upcoming`). `promotions` es el prefijo de todas; la caché HTTP dura ≤ 30 s
      * y el servidor da `nextChangeAt`: refetch en ese instante y al cambiar de sucursal.
      */
     promotions: ['catalog', 'promotions'] as const,
-    storePromotions: (branchId: string, state: 'live' | 'upcoming') =>
-      ['catalog', 'promotions', branchId, state] as const,
+    storePromotions: (branchId: string, state: 'live' | 'upcoming', compact = false) =>
+      compact
+        ? (['catalog', 'promotions', branchId, state, 'compact'] as const)
+        : (['catalog', 'promotions', branchId, state] as const),
     /**
-     * F16: banners PÚBLICOS del Inicio por sucursal (`'all'` = sin sucursal) e idioma. `banners` es el prefijo de todos; la caché
-     * HTTP dura ≤ 30 s y el servidor da `nextChangeAt`: refetch en ese instante y al cambiar de sucursal o de idioma.
+     * F16: prefijo de los banners PÚBLICOS. Desde F17 el Inicio los recibe dentro del bootstrap (`store.bootstrap`); el prefijo se
+     * conserva para invalidar lo que pudiera existir tras una mutación de banners.
      */
     banners: ['catalog', 'banners'] as const,
-    storeBanners: (branchId: string | null, locale: string) =>
-      ['catalog', 'banners', branchId ?? 'all', locale] as const,
   },
   orders: {
     all: ['orders'] as const,

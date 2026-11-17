@@ -76,10 +76,12 @@ describe('datos públicos', () => {
     expect(
       rolls.items.every((p) => ['rolls', 'rolls-frios', 'rolls-tempura'].includes(p.category.slug)),
     ).toBe(true);
-    const s3 = await branchProducts.getStoreBranchMenu(client, 'sucursal-3');
+    const s3 = await branchProducts.getStoreBranchMenu(client, { branchId: 'sucursal-3' });
     expect(s3.items.find((p) => p.productId === 'joselito-roll')?.available).toBe(false);
     expect(s3.items.find((p) => p.productId === 'california-roll')?.available).toBe(true);
-    expect((await apiError(branchProducts.getStoreBranchMenu(client, 'zzz'))).status).toBe(404);
+    expect(
+      (await apiError(branchProducts.getStoreBranchMenu(client, { branchId: 'zzz' }))).status,
+    ).toBe(404);
   });
 
   it('postulación válida y errores de validación', async () => {

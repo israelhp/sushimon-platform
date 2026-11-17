@@ -38,11 +38,15 @@ export function CartDrawer() {
   const locale = useLocale();
   const { notify } = useToast();
   const cart = useCart();
-  const products = useProducts();
+  // F17 (carga perezosa; autorizado por el orquestador, F18 sigue fuera de alcance): el menú solo se consulta con el cajón ABIERTO y
+  // con líneas en el carrito; antes se cargaba el catálogo completo en cada página pública. El carrito no cambia de comportamiento.
+  const products = useProducts({ enabled: isOpen && cart.lines.length > 0 });
   // F08: aviso (solo UI) si la sucursal elegida no recibe pedidos ahora; lo calcula el servidor.
   const { mode } = useOrderMode();
   const publicBranches = usePublicBranches();
-  const branchAvailability = useBranchAvailability(mode.when.kind === 'now' ? mode.branchId : null);
+  const branchAvailability = useBranchAvailability(
+    isOpen && mode.when.kind === 'now' ? mode.branchId : null,
+  );
   const branchName = publicBranches.data?.find((b) => b.id === mode.branchId)?.name ?? '';
 
   const byId = new Map<string, Product>((products.data ?? []).map((p) => [p.id, p]));

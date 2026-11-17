@@ -12,6 +12,7 @@ import {
 } from '@/services/products';
 import { queryKeys } from '../query-keys';
 import { useDemoSession } from '../session/demo-session';
+import { invalidateStoreAggregates } from '../store/invalidate';
 
 /**
  * F11 — Hooks de productos del backoffice. La lista solo corre con sesión de personal (la API decide: 401/403) y conserva la
@@ -34,6 +35,7 @@ function useInvalidate() {
     Promise.all([
       qc.invalidateQueries({ queryKey: queryKeys.products.all }),
       qc.invalidateQueries({ queryKey: queryKeys.catalog.all }),
+      invalidateStoreAggregates(qc),
     ]);
 }
 

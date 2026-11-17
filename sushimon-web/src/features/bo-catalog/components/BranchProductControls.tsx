@@ -16,6 +16,7 @@ import type { AdminBranchProductState } from '@/lib/data-access/models';
 import { formatDateTime, formatMoney } from '@/lib/format';
 import { priceToNumber } from '@/lib/product-rules';
 import { branchProductServerError, validateOverrideDraft } from '../branch-products-view';
+import { invalidateStoreAggregates } from '@/features/store/invalidate';
 
 interface Props {
   state: AdminBranchProductState;
@@ -53,7 +54,7 @@ export function BranchProductControls({ state, label, canPrice, canAvailability 
     setError(parsed.message);
     if (parsed.reload) {
       void qc.invalidateQueries({ queryKey: queryKeys.branchProducts.all });
-      void qc.invalidateQueries({ queryKey: queryKeys.storeMenu.all });
+      void invalidateStoreAggregates(qc);
     }
   };
 

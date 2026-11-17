@@ -1,11 +1,17 @@
 'use client';
 
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import type { Product } from '@/lib/data-access/models';
 
 export interface ProductSheetApi {
   /** Id del producto con la ficha abierta (o null). */
   productId: string | null;
-  openProduct: (id: string) => void;
+  /** Slug conocido al abrir (la tarjeta lo trae); `null` = hay que resolverlo (carga perezosa del menú). */
+  slug: string | null;
+  /** Producto de la tarjeta de origen (nombre, imagen, precio) para pintar la ficha al instante mientras llega el detalle. */
+  seed: Product | null;
+  /** `slug` es opcional: con él la ficha se pide de inmediato (`getStoreProduct`) sin cargar el menú. `seed` = la tarjeta de origen. */
+  openProduct: (id: string, slug?: string | null, seed?: Product | null) => void;
   closeProduct: () => void;
 }
 
@@ -16,14 +22,20 @@ const ProductSheetContext = createContext<ProductSheetApi | null>(null);
  * (`features/catalog/components/product-sheet-host.tsx`), que lee `productId` de este contexto.
  */
 export function ProductSheetProvider({ children }: { children: ReactNode }) {
-  const [productId, setProductId] = useState<string | null>(null);
+  const [open, setOpen] = useState<{
+    id: string;
+    slug: string | null;
+    seed: Product | null;
+  } | null>(null);
   const api = useMemo<ProductSheetApi>(
     () => ({
-      productId,
-      openProduct: (id) => setProductId(id),
-      closeProduct: () => setProductId(null),
+      productId: open?.id ?? null,
+      slug: open?.slug ?? null,
+      seed: open?.seed ?? null,
+      openProduct: (id, slug = null, seed = null) => setOpen({ id, slug, seed }),
+      closeProduct: () => setOpen(null),
     }),
-    [productId],
+    [open],
   );
   return <ProductSheetContext.Provider value={api}>{children}</ProductSheetContext.Provider>;
 }

@@ -13,9 +13,8 @@ import {
 } from 'react';
 import { cn } from '@/lib/cn';
 import { isBannerLocale } from '@/lib/banner-rules';
-import { useStoreBanners } from '@/features/banners/hooks';
+import { useHomeBootstrap } from '@/features/store/hooks';
 import { useProductSheet } from '@/features/catalog/product-sheet-context';
-import { useOptionalOrderMode } from '@/features/order-mode/order-mode-context';
 import { bannerAction } from '../banner-href';
 import {
   BANNER_HEIGHT_CLASSES,
@@ -52,7 +51,7 @@ const FOCUS_ON_PAGE =
 const CTA_CLASS = `btn mt-1 !min-h-[40px] self-start !border-transparent !bg-white !px-4 text-sm !text-[rgb(var(--on-band-amber))] sm:mt-1.5 sm:!min-h-[42px] ${FOCUS_ON_IMAGE}`;
 
 /**
- * Carrusel del Inicio (F16): banners REALES de `GET /v1/store/banners` para la sucursal activa y el idioma activo (desplazamiento por
+ * Carrusel del Inicio (F16): banners REALES (dentro de `GET /v1/store/bootstrap`, F17) para la sucursal activa y el idioma activo (desplazamiento por
  * *scroll snap*). El servidor decide qué se publica (vigencia, sucursal, promoción vinculada); esta pieza solo lo muestra y vuelve a
  * pedirlo en `nextChangeAt` (medido con la hora del servidor), al cambiar de sucursal/idioma y al volver a la pestaña.
  * Avanza cada 6 s, salvo si el usuario lo pausó, pasa el puntero/foco por encima o pidió reducir el movimiento. Un solo banner =
@@ -63,8 +62,8 @@ export function PromoCarousel() {
   const t = useTranslations('home');
   const rawLocale = useLocale();
   const locale = isBannerLocale(rawLocale) ? rawLocale : 'es';
-  const branchId = useOptionalOrderMode()?.mode.branchId ?? null;
-  const banners = useStoreBanners(branchId, locale);
+  // F17: los banners llegan en el bootstrap del Inicio (una sola solicitud; NO se pide `/store/banners` aparte).
+  const banners = useHomeBootstrap();
   const { openProduct } = useProductSheet();
   const reduced = usePrefersReducedMotion();
   const [index, setIndex] = useState(0);
@@ -79,7 +78,7 @@ export function PromoCarousel() {
   const scroller = useRef<HTMLDivElement>(null);
   /** Destino de un desplazamiento programático en curso (evita que los eventos de scroll intermedios retrocedan el índice). */
   const pendingScroll = useRef<{ left: number; until: number } | null>(null);
-  const items = banners.data?.items;
+  const items = banners.data?.banners;
   const count = items?.length ?? 0;
   /** La lista puede encogerse al refrescarse: nunca apuntar fuera de ella. */
   const current = count === 0 ? 0 : Math.min(index, count - 1);

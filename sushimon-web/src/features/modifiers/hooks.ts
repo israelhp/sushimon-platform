@@ -22,6 +22,7 @@ import {
 } from '@/services/modifiers';
 import { queryKeys } from '../query-keys';
 import { useDemoSession } from '../session/demo-session';
+import { invalidateStoreAggregates } from '../store/invalidate';
 
 /**
  * F12 — Hooks de modificadores del backoffice. Las lecturas solo corren con sesión de personal (la API decide: 401/403).
@@ -66,7 +67,7 @@ function useInvalidate() {
   return () =>
     Promise.all([
       qc.invalidateQueries({ queryKey: queryKeys.modifiers.all }),
-      qc.invalidateQueries({ queryKey: queryKeys.products.storeDetails }),
+      invalidateStoreAggregates(qc),
     ]);
 }
 

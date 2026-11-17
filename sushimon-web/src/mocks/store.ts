@@ -13,7 +13,7 @@ import type {
 } from '@/lib/data-access/models';
 import type { DemoSessionState } from '@/lib/demo-session';
 import type { BranchSeed } from './fixtures/branches';
-import type { BranchHoursDay } from '@/lib/data-access/models';
+import type { BranchHoursDay, StoreBootstrapSection } from '@/lib/data-access/models';
 import type { CategoryRecord } from './fixtures/categories';
 import type { ClosureRecord } from './fixtures/schedule';
 import type { DeliverySettingsRecord } from './fixtures/delivery';
@@ -29,7 +29,7 @@ import type { MockScenario } from './scenarios';
  * el historial de días anteriores lo genera `factories/history.ts` de forma determinista.
  * NUNCA contiene PAN completo, CVV ni PIN: de una tarjeta solo marca, últimos 4 y referencia.
  */
-export const MOCK_STORE_VERSION = 13;
+export const MOCK_STORE_VERSION = 14;
 
 /**
  * Producto del mock. Los campos F11 (`id`…`updatedAt`) reproducen `app.products` + `app.product_media`; el bloque «SIMULADO»
@@ -215,6 +215,10 @@ export interface MockStore {
   promotionsBusy?: number;
   /** F16: simulación DETERMINISTA de `BANNERS_BUSY`: nº de escrituras de banners (alta, edición, estado, reordenado) y de lecturas públicas que fallarán con 503 antes de que una funcione. */
   bannersBusy?: number;
+  /** F17: simulación DETERMINISTA de `STORE_BUSY`: nº de lecturas de los agregados públicos (bootstrap, menú, búsqueda, ficha con sucursal) que fallarán con 503 antes de que una funcione. */
+  storeBusy?: number;
+  /** F17: secciones NO críticas del bootstrap que se simulan fallidas (`degraded`): su sección sale vacía/`null`. Opcional: ausente = ninguna. */
+  storeDegraded?: StoreBootstrapSection[];
   /**
    * F02: simula que el reinicio de MFA no está disponible (falta la clave de servicio del servidor ⇒ 503
    * `MFA_RESET_UNAVAILABLE`). Opcional: ausente/false = disponible. Solo existe en el mock.

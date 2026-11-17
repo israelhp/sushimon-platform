@@ -30,6 +30,7 @@ export const listStoreBanners = (
 ) =>
   client.get<StoreBannerList>(paths.storeBanners(), {
     query: { branchId: branchId ?? undefined, locale },
+    public: true,
   });
 
 export interface AdminBannerFilters {

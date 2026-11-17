@@ -161,6 +161,8 @@ export function invalidateBranchSchedule(queryClient: QueryClient, branchId: str
     queryClient.invalidateQueries({ queryKey: queryKeys.branches.hours(branchId) }),
     queryClient.invalidateQueries({ queryKey: queryKeys.branches.availability(branchId) }),
     queryClient.invalidateQueries({ queryKey: queryKeys.backoffice.branchSchedule(branchId) }),
+    // F17: el bootstrap lleva la disponibilidad (apertura/cierre) de la sucursal.
+    queryClient.invalidateQueries({ queryKey: queryKeys.store.bootstrapAll }),
   ]);
 }
 

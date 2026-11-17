@@ -70,6 +70,8 @@ export function useAdminBranch(id: string | null) {
  * - crear: lista admin + lista pública + operación simulada (aparece la nueva fila);
  * - actualizar: detalle admin + listas admin + públicas (nombre/dirección/teléfono) + operación;
  * - estado: lo mismo y, además, la cobertura de entrega (el conjunto de sucursales activas cambió).
+ * F17: actualizar y cambiar estado también invalidan los agregados públicos (el bootstrap lleva la sucursal; menú, búsqueda y ficha
+ * dependen de que esté activa).
  */
 export function branchInvalidationKeys(
   kind: 'create' | 'update' | 'status',
@@ -81,6 +83,14 @@ export function branchInvalidationKeys(
     queryKeys.store.branchOperations,
   ];
   if (kind !== 'create' && id) keys.push(queryKeys.backoffice.adminBranch(id));
+  if (kind !== 'create') {
+    keys.push(
+      queryKeys.store.bootstrapAll,
+      queryKeys.store.menuAll,
+      queryKeys.store.searchAll,
+      queryKeys.products.storeDetails,
+    );
+  }
   if (kind === 'status') keys.push(queryKeys.deliveryCoverage.all);
   return keys;
 }

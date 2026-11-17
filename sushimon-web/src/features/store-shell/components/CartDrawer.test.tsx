@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import { createSpyClient } from '@/test/spy-client';
 import { renderStore } from '@/test/store-providers';
 import { CartDrawer } from './CartDrawer';
 
@@ -21,6 +22,22 @@ async function openCart(
   });
   return view;
 }
+
+describe('CartDrawer · carga perezosa (F17)', () => {
+  it('cerrado NO pide el menú ni la disponibilidad (antes cargaba el catálogo completo en cada página)', async () => {
+    const spy = createSpyClient();
+    const view = await renderStore(<CartDrawer />, {
+      branchId: 'sucursal-1',
+      wrapClient: spy.wrap,
+    });
+    await act(async () => view.api().cart.add('dumplings', 1));
+    expect(spy.count('GET', /store\/(menu|products)|availability/)).toBe(0);
+    await act(async () => view.api().shell.openCart());
+    await screen.findByText('Q53 × 1 = Q53');
+    expect(spy.count('GET', /^\/v1\/store\/menu$/)).toBe(1);
+    expect(spy.count('GET', /store\/products$/)).toBe(0);
+  });
+});
 
 describe('CartDrawer', () => {
   it('muestra el estado vacío con enlace al menú', async () => {

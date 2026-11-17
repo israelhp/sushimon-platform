@@ -20,11 +20,11 @@ import { paths } from '@/lib/data-access/paths';
 
 /** Horario semanal público (7 días ISO 1–7) + cierres próximos SIN motivo. 404 si no existe o está inactiva. */
 export const getBranchHours = (client: DataClient, id: string) =>
-  client.get<PublicBranchHours>(paths.branchHours(id));
+  client.get<PublicBranchHours>(paths.branchHours(id), { public: true });
 
 /** Estado actual compacto (`isOpenNow`, `reason`, `nextOpensAt`, `nextTransitionAt`…). 404 si inactiva. */
 export const getBranchAvailability = (client: DataClient, id: string) =>
-  client.get<BranchAvailability>(paths.branchAvailability(id));
+  client.get<BranchAvailability>(paths.branchAvailability(id), { public: true });
 
 /** Horario administrativo con `version` (`branches.read`). */
 export const getAdminBranchHours = (client: DataClient, id: string) =>

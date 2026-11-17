@@ -8,6 +8,8 @@ import { useCart } from '@/features/cart/cart-context';
 import { FavoriteButton } from '@/features/catalog/components/favorite-button';
 import { ProductArt } from '@/features/catalog/components/product-art';
 import { productDescription, productName, tileClass } from '@/features/catalog/localized';
+import { productSlug } from '@/features/catalog/catalog-product';
+import { SoldOutBadge } from '@/features/catalog/components/product-card';
 import { useProductSheet } from '@/features/catalog/product-sheet-context';
 
 const money = (value: number) => formatMoney(value, 'es', { decimals: 'auto' });
@@ -36,7 +38,7 @@ export function ProductListItem({
     <div className="relative">
       <button
         type="button"
-        onClick={() => openProduct(product.id)}
+        onClick={() => openProduct(product.id, productSlug(product), product)}
         className="group flex w-full items-center gap-3.5 rounded-xl border-b border-line py-3 pl-2 pr-12 text-left transition hover:bg-surface focus-visible:bg-surface"
       >
         <span
@@ -69,9 +71,7 @@ export function ProductListItem({
           <span className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-muted">{text}</span>
           <span className="mt-1 flex items-baseline gap-2">
             <span className="font-display text-[15px]">{money(product.price)}</span>
-            {!product.available ? (
-              <span className="text-[12px] font-bold text-danger">{t('product.soldOut')}</span>
-            ) : null}
+            {!product.available ? <SoldOutBadge /> : null}
           </span>
         </span>
       </button>

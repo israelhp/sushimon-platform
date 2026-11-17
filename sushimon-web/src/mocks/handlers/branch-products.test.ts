@@ -23,8 +23,8 @@ const as = (role: 'admin' | 'manager', userId?: string) => {
 describe('F13 mock · overlay público', () => {
   it('trae el precio EFECTIVO de ESA sucursal y nunca el de otra ni el base como indicio', async () => {
     const h = createHarness();
-    const s1 = await bp.getStoreBranchMenu(h.client, 'sucursal-1');
-    const s2 = await bp.getStoreBranchMenu(h.client, 'sucursal-2');
+    const s1 = await bp.getStoreBranchMenu(h.client, { branchId: 'sucursal-1' });
+    const s2 = await bp.getStoreBranchMenu(h.client, { branchId: 'sucursal-2' });
     const price = (m: typeof s1, id: string) => m.items.find((i) => i.productId === id)?.price;
     expect(price(s1, 'dynamita-roll')).toBe('82.00');
     expect(price(s2, 'dynamita-roll')).toBe('86.00');
@@ -36,19 +36,22 @@ describe('F13 mock · overlay público', () => {
   });
   it('solo productos visibles (inactivo o categoría oculta no se ofrece, aunque tengan fila)', async () => {
     const h = createHarness();
-    const menu = await bp.getStoreBranchMenu(h.client, 'sucursal-1');
+    const menu = await bp.getStoreBranchMenu(h.client, { branchId: 'sucursal-1' });
     expect(menu.items).toHaveLength(29);
     expect(menu.items.map((i) => i.productId)).not.toContain('gyoza-vegetal');
     expect(menu.items.map((i) => i.productId)).not.toContain('roll-edicion-limitada');
   });
-  it('400 sin branchId; 404 BRANCH_NOT_FOUND con sucursal inexistente o inactiva', async () => {
+  it('F17: branchId OPCIONAL (precio base y available=null); 404 BRANCH_NOT_FOUND con sucursal inexistente o inactiva', async () => {
     const h = createHarness();
-    expect(await failure(h.client.get('/v1/store/menu'))).toMatchObject({ status: 400 });
-    expect(await failure(bp.getStoreBranchMenu(h.client, 'zzz'))).toEqual({
+    const anonymous = await bp.getStoreBranchMenu(h.client);
+    expect(anonymous.branchId).toBeNull();
+    expect(anonymous.items.every((i) => i.available === null)).toBe(true);
+    expect(anonymous.items.find((i) => i.productId === 'dynamita-roll')?.price).toBe('82.00');
+    expect(await failure(bp.getStoreBranchMenu(h.client, { branchId: 'zzz' }))).toEqual({
       status: 404,
       code: 'BRANCH_NOT_FOUND',
     });
-    expect(await failure(bp.getStoreBranchMenu(h.client, 'sucursal-4'))).toEqual({
+    expect(await failure(bp.getStoreBranchMenu(h.client, { branchId: 'sucursal-4' }))).toEqual({
       status: 404,
       code: 'BRANCH_NOT_FOUND',
     });
@@ -56,7 +59,7 @@ describe('F13 mock · overlay público', () => {
   it('escenario product-unavailable: agotado en todas las sucursales activas', async () => {
     const h = createHarness('product-unavailable');
     for (const id of ['sucursal-1', 'sucursal-2', 'sucursal-3']) {
-      const menu = await bp.getStoreBranchMenu(h.client, id);
+      const menu = await bp.getStoreBranchMenu(h.client, { branchId: id });
       expect(menu.items.find((i) => i.productId === 'calientito-roll')?.available).toBe(false);
     }
   });
@@ -252,12 +255,12 @@ describe('F13 mock · escrituras', () => {
     const h = as('admin');
     await bp.setAdminBranchProductPricing(h.client, 'sucursal-2', 'dumplings', '60.00');
     expect(
-      (await bp.getStoreBranchMenu(h.client, 'sucursal-2')).items.find(
+      (await bp.getStoreBranchMenu(h.client, { branchId: 'sucursal-2' })).items.find(
         (i) => i.productId === 'dumplings',
       )?.price,
     ).toBe('60.00');
     expect(
-      (await bp.getStoreBranchMenu(h.client, 'sucursal-1')).items.find(
+      (await bp.getStoreBranchMenu(h.client, { branchId: 'sucursal-1' })).items.find(
         (i) => i.productId === 'dumplings',
       )?.price,
     ).toBe('53.00');
@@ -276,7 +279,7 @@ describe('F13 mock · escrituras', () => {
       '40.00',
     );
     expect(priced).toMatchObject({ priceOverride: '40.00', offered: false });
-    const menu = await bp.getStoreBranchMenu(h.client, 'sucursal-1');
+    const menu = await bp.getStoreBranchMenu(h.client, { branchId: 'sucursal-1' });
     expect(menu.items.map((i) => i.productId)).not.toContain('gyoza-vegetal');
   });
 });

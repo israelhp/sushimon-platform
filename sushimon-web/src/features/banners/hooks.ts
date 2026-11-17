@@ -1,9 +1,8 @@
 'use client';
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
 import { isApiError } from '@/lib/data-access/errors';
-import type { BannerLocale, StoreBannerList, UpdateBannerRequest } from '@/lib/data-access/models';
+import type { UpdateBannerRequest } from '@/lib/data-access/models';
 import { useDataClient } from '@/lib/data-access/provider';
 import { isBannerExpiredByDate, moveId, sanitizeReason } from '@/lib/banner-rules';
 import {
@@ -11,73 +10,21 @@ import {
   getAdminBanner,
   listAdminBanners,
   listAllAdminBanners,
-  listStoreBanners,
   reorderAdminBanners,
   updateAdminBanner,
   updateAdminBannerStatus,
   type AdminBannerFilters,
   type CreateBannerInput,
 } from '@/services/banners';
-import { msUntilNextChange } from '../promotions/hooks';
 import { queryKeys } from '../query-keys';
 import { useDemoSession } from '../session/demo-session';
+import { invalidateStoreAggregates } from '../store/invalidate';
 
 /**
- * F16 — Hooks de banners. Tienda: por sucursal e idioma, con refetch programado en `nextChangeAt` (medido con `generatedAt` del
- * SERVIDOR, no con el reloj del dispositivo) y al cambiar de sucursal o idioma (la clave los lleva). Backoffice: solo con sesión de
- * personal (la API decide 401/403/404); toda mutación invalida los banners admin y los públicos (aunque la caché pública tarde hasta
- * 30 s en el servidor) y la biblioteca de medios (conteo de usos).
+ * F16 — Hooks de banners del backoffice: solo con sesión de personal (la API decide 401/403/404); toda mutación invalida los banners
+ * admin, los agregados públicos (F17: el Inicio recibe los banners dentro del bootstrap; la caché compartida tarda ≤ 15 s) y la
+ * biblioteca de medios (conteo de usos). La lectura pública del carrusel pasó a `useStoreBootstrap` (`features/store/hooks.ts`).
  */
-
-/** Ventana de obsolescencia de la lista pública (≤ la caché HTTP de 30 s de la API). */
-export const STORE_BANNERS_STALE_MS = 15_000;
-
-/** Vuelve a pedir la lista cuando llegue `nextChangeAt` (sin sondeo). Se reprograma con cada respuesta. */
-function useRefetchAtNextChange(
-  data: StoreBannerList | undefined,
-  dataUpdatedAt: number,
-  refetch: () => unknown,
-): void {
-  useEffect(() => {
-    if (!data) return;
-    const wait = msUntilNextChange(data, dataUpdatedAt, Date.now());
-    if (wait === null) return;
-    const timer = setTimeout(() => void refetch(), wait);
-    return () => clearTimeout(timer);
-  }, [data, dataUpdatedAt, refetch]);
-}
-
-/**
- * Banners publicados para la sucursal activa (`null` = sin sucursal: solo los de todas) y el idioma activo. Si la sucursal guardada
- * en el navegador ya no existe o está inactiva (404 `BRANCH_NOT_FOUND`) se reintenta SIN sucursal en vez de dejar el Inicio sin
- * carrusel. 4xx no se reintenta.
- */
-export function useStoreBanners(branchId: string | null, locale: BannerLocale) {
-  const client = useDataClient();
-  const query = useQuery({
-    queryKey: queryKeys.catalog.storeBanners(branchId, locale),
-    queryFn: async () => {
-      try {
-        return await listStoreBanners(client, branchId, locale);
-      } catch (error) {
-        if (
-          branchId !== null &&
-          isApiError(error) &&
-          error.status === 404 &&
-          error.businessCode === 'BRANCH_NOT_FOUND'
-        ) {
-          return await listStoreBanners(client, null, locale);
-        }
-        throw error;
-      }
-    },
-    staleTime: STORE_BANNERS_STALE_MS,
-    refetchOnWindowFocus: true,
-    retry: (count, error) => !(isApiError(error) && error.status < 500) && count < 2,
-  });
-  useRefetchAtNextChange(query.data, query.dataUpdatedAt, query.refetch);
-  return query;
-}
 
 export function useAdminBanners(filters: AdminBannerFilters = {}) {
   const client = useDataClient();
@@ -122,6 +69,7 @@ function useInvalidate() {
     Promise.all([
       qc.invalidateQueries({ queryKey: queryKeys.backoffice.banners }),
       qc.invalidateQueries({ queryKey: queryKeys.catalog.banners }),
+      invalidateStoreAggregates(qc),
       qc.invalidateQueries({ queryKey: queryKeys.media.all }),
     ]);
 }

@@ -7,6 +7,7 @@ import { cn } from '@/lib/cn';
 import { formatMoney } from '@/lib/format';
 import type { Product } from '@/lib/data-access/models';
 import { useCart } from '@/features/cart/cart-context';
+import { productSlug } from '../catalog-product';
 import { productDescription, productName, tileClass } from '../localized';
 import { useProductSheet } from '../product-sheet-context';
 import { FavoriteButton } from './favorite-button';
@@ -26,6 +27,19 @@ export interface ProductCardProps {
   className?: string;
 }
 
+const SOLD_OUT_CLASS =
+  'inline-flex items-center rounded-full border border-danger/50 bg-danger-soft font-extrabold text-danger';
+
+/** Insignia «Agotado» ÚNICA (texto visible, no solo color) para la tarjeta vertical y la fila; solo la imagen se atenúa. */
+export function SoldOutBadge() {
+  const t = useTranslations();
+  return (
+    <span className={cn(SOLD_OUT_CLASS, 'mt-1 w-fit px-2.5 py-0.5 text-[12px]')}>
+      {t('product.soldOut')}
+    </span>
+  );
+}
+
 /** Tarjeta de producto reutilizable (Inicio, menú, promociones). Sin datos propios: recibe el producto. */
 export function ProductCard({ product, catalog, variant = 'tile', className }: ProductCardProps) {
   return variant === 'tile' ? (
@@ -37,14 +51,13 @@ export function ProductCard({ product, catalog, variant = 'tile', className }: P
 
 function TileCard({ product, catalog, className }: Omit<ProductCardProps, 'variant'>) {
   const locale = useLocale();
-  const t = useTranslations();
   const { openProduct } = useProductSheet();
   const name = productName(product, locale);
   return (
     <div className={cn('relative w-[150px] flex-none snap-start sm:w-auto', className)}>
       <button
         type="button"
-        onClick={() => openProduct(product.id)}
+        onClick={() => openProduct(product.id, productSlug(product), product)}
         className="flex w-full flex-col overflow-hidden rounded-2xl border border-line bg-surface text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-lift"
       >
         <span
@@ -64,9 +77,7 @@ function TileCard({ product, catalog, className }: Omit<ProductCardProps, 'varia
         <span className="flex flex-col gap-0.5 p-3">
           <span className="text-[15px] font-extrabold leading-tight">{name}</span>
           <span className="font-display text-base">{money(product.price)}</span>
-          {!product.available ? (
-            <span className="text-[12px] font-bold text-danger">{t('product.soldOut')}</span>
-          ) : null}
+          {!product.available ? <SoldOutBadge /> : null}
         </span>
       </button>
       <FavoriteButton
@@ -92,13 +103,12 @@ function RowCard({ product, catalog, className }: Omit<ProductCardProps, 'varian
     <article
       className={cn(
         'flex gap-3 rounded-2xl border border-line bg-surface p-2.5 shadow-card transition hover:-translate-y-0.5 hover:shadow-lift sm:gap-4 sm:p-3',
-        !product.available && 'opacity-80',
         className,
       )}
     >
       <button
         type="button"
-        onClick={() => openProduct(product.id)}
+        onClick={() => openProduct(product.id, productSlug(product), product)}
         aria-label={t('product.viewDetail', { a: name })}
         className={cn(
           tileClass(catalog, product.id),
@@ -117,7 +127,7 @@ function RowCard({ product, catalog, className }: Omit<ProductCardProps, 'varian
         <div className="-mr-1 -mt-1 flex items-start justify-between gap-1">
           <button
             type="button"
-            onClick={() => openProduct(product.id)}
+            onClick={() => openProduct(product.id, productSlug(product), product)}
             className="min-w-0 pt-1 text-left"
           >
             <h3 className="m-0 text-base font-extrabold leading-tight hover:underline sm:text-[17px]">
@@ -141,7 +151,7 @@ function RowCard({ product, catalog, className }: Omit<ProductCardProps, 'varian
               type="button"
               disabled
               aria-label={t('product.soldOutAria', { a: name })}
-              className="inline-flex h-11 cursor-not-allowed items-center rounded-full border border-line px-4 text-sm font-extrabold text-muted"
+              className={cn(SOLD_OUT_CLASS, 'h-11 cursor-not-allowed px-4 text-sm')}
             >
               {t('product.soldOut')}
             </button>

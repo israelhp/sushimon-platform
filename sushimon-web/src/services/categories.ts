@@ -26,7 +26,7 @@ export interface CategoryFilters {
 
 /** Público: árbol anidado (máx. 3 niveles) SOLO con categorías visibles (ella y todos sus ancestros activos). */
 export const listStoreCategories = (client: DataClient) =>
-  client.get<PublicCategoryTree>(paths.storeCategories());
+  client.get<PublicCategoryTree>(paths.storeCategories(), { public: true });
 
 /** Lista PLANA (activas e inactivas) en orden depth-first con `depth` y `effectivelyVisible`. Tope 500. */
 export const listAdminCategories = (client: DataClient, filters: CategoryFilters = {}) =>

@@ -129,6 +129,13 @@ export type ProductBranchAvailability = S['DraftBranchAvailability'];
 /** F13: precio y disponibilidad por sucursal (overlay público, matrices administrativas y escrituras). */
 export type StoreBranchMenu = S['StoreBranchMenu'];
 export type StoreBranchMenuItem = S['StoreBranchMenuItem'];
+/** F17: agregados públicos (bootstrap del Inicio, búsqueda, oferta y promociones de la ficha). */
+export type StoreBootstrap = S['StoreBootstrap'];
+export type StoreBootstrapCategory = S['StoreBootstrapCategory'];
+export type StoreBootstrapSection = S['StoreBootstrapSection'];
+export type StoreSearchPage = S['StoreSearchPage'];
+export type StoreProductPromo = S['StoreProductPromo'];
+export type StoreProductOffer = S['StoreProductOffer'];
 export type AdminBranchProductState = S['AdminBranchProductState'];
 export type AdminBranchProductRow = S['AdminBranchProductRow'];
 export type AdminBranchProductPage = S['AdminBranchProductPage'];

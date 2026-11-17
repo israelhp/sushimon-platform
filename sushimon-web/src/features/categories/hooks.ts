@@ -17,6 +17,7 @@ import {
 } from '@/services/categories';
 import { queryKeys } from '../query-keys';
 import { useDemoSession } from '../session/demo-session';
+import { invalidateStoreAggregates } from '../store/invalidate';
 
 /**
  * F10 — Hooks de categorías. El árbol público no requiere sesión y se refresca poco (el servidor lo cachea 60 s). La lista
@@ -47,7 +48,11 @@ export function useAdminCategories(filters: CategoryFilters = {}) {
 
 function useInvalidate() {
   const qc = useQueryClient();
-  return () => qc.invalidateQueries({ queryKey: queryKeys.categories.all });
+  return () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: queryKeys.categories.all }),
+      invalidateStoreAggregates(qc),
+    ]);
 }
 
 export function useCreateCategory() {

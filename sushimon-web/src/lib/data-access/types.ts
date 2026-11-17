@@ -12,6 +12,11 @@ export interface RequestOptions {
   query?: Query;
   body?: unknown;
   signal?: AbortSignal;
+  /**
+   * Lectura PÚBLICA (F17): sin `Authorization` y sin forzar `cache: 'no-store'`, para que el navegador y la CDN respeten el
+   * `Cache-Control` del servidor. La respuesta no puede depender de la sesión. Las lecturas privadas (`/me/...`) no lo usan.
+   */
+  public?: boolean;
 }
 
 type ReadOptions = Omit<RequestOptions, 'method' | 'body'>;

@@ -17,13 +17,18 @@ import type { components } from '@sushimon/contracts';
 
 /** Sucursales activas (público, solo campos públicos). */
 export async function listPublicBranches(client: DataClient): Promise<PublicBranch[]> {
-  const res = await client.get<components['schemas']['PublicBranchListResponse']>(paths.branches());
+  const res = await client.get<components['schemas']['PublicBranchListResponse']>(
+    paths.branches(),
+    {
+      public: true,
+    },
+  );
   return res.items;
 }
 
 /** Detalle público: 404 si no existe o está inactiva. */
 export const getPublicBranch = (client: DataClient, id: string) =>
-  client.get<PublicBranch>(paths.branch(id));
+  client.get<PublicBranch>(paths.branch(id), { public: true });
 
 export interface AdminBranchFilters {
   /** Nombre o código (contiene); máx. 100 caracteres. */

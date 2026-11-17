@@ -1,21 +1,16 @@
 'use client';
 
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useDataClient } from '@/lib/data-access/provider';
-import { isApiError } from '@/lib/data-access/errors';
-import { PRODUCT_SEARCH_MAX } from '@/lib/product-rules';
+import { STORE_AGGREGATE_STALE_MS, type StoreMenuParams } from '@/lib/store-rules';
+import { getStoreProduct } from '@/services/products';
 import { listCategories } from '@/services/store';
-import { getStoreProduct, listStoreProducts } from '@/services/products';
 import { queryKeys } from '../query-keys';
-import { useStoreBranchMenu } from '../branch-products/hooks';
 import { useOptionalOrderMode } from '../order-mode/order-mode-context';
-import {
-  applyBranchMenu,
-  loadCatalog,
-  type CatalogProduct,
-  type ProductFilters,
-} from './catalog-product';
+import { useRefetchAtNextChange } from '../promotions/hooks';
+import { useClientReady } from '../store/client-ready';
+import { loadStoreMenu, type ProductFilters } from './catalog-product';
 
 /** Categorías visibles (incluye la de acceso a Happy Hour, `kind: 'happy_hour'`). */
 export function useCategories() {
@@ -26,74 +21,69 @@ export function useCategories() {
   });
 }
 
+export type StoreMenuFilters = Omit<StoreMenuParams, 'branchId' | 'page' | 'pageSize'> & {
+  /** `null` = sin sucursal (precios base, `available=null`). */
+  branchId: string | null;
+  /** `false` = no consulta (carga perezosa). */
+  enabled?: boolean;
+};
+
 /**
- * Catálogo completo de la tienda: los productos visibles de `GET /v1/store/products` (F11, todas las páginas) COMBINADOS con el
- * overlay de la sucursal elegida `GET /v1/store/menu?branchId=` (F13: precio efectivo y `available`). Lo comparten menú, ficha,
- * carrito, checkout, favoritos y reorden, por eso el precio nunca es el de otra sucursal.
- * - Sin sucursal: precios base (F11) y todo «disponible».
- * - Con sucursal: mientras el overlay carga el catálogo sigue «pendiente»; si el overlay FALLA, se muestran los precios base
- *   y `overlayFailed=true` (la pantalla avisa y el servidor recalcula al pedir). Lo que el overlay no trae no se oferta.
+ * F17 — Menú de UNA sucursal (`GET /v1/store/menu`, tarjetas) reunido en todas sus páginas, con filtros por categoría, orden y
+ * disponibilidad. Reemplaza «catálogo completo + overlay»: una solicitud (de 100 en 100 solo si hay más). La clave lleva sucursal y
+ * filtros: cambiar de sucursal NO reutiliza ni mezcla los precios de otra. 4xx (p. ej. sucursal inexistente) no se reintenta ni cae a
+ * precios base: el error se muestra. Refetch en `nextChangeAt`, al volver al foco y tras mutaciones del backoffice (prefijo `store.menu`).
+ */
+export function useStoreMenu({ branchId, enabled = true, ...filters }: StoreMenuFilters) {
+  const client = useDataClient();
+  // Hasta hidratar no se conoce la sucursal guardada (localStorage): evita una solicitud «sin sucursal» que se descarta enseguida.
+  const ready = useClientReady();
+  const query = useQuery({
+    queryKey: queryKeys.store.menu(branchId, { ...filters, page: 'all' }),
+    queryFn: ({ signal }) => loadStoreMenu(client, { ...filters, branchId }, signal),
+    enabled: enabled && ready,
+    staleTime: STORE_AGGREGATE_STALE_MS,
+    refetchOnWindowFocus: true,
+  });
+  useRefetchAtNextChange(query);
+  return query;
+}
+
+/**
+ * Catálogo de la tienda para menú, carrito, checkout, favoritos y reorden: las tarjetas de `GET /v1/store/menu` de la sucursal
+ * elegida (precio efectivo, disponibilidad y promoción que decide el servidor). Sin sucursal: precios base y todo «disponible»
+ * (`available=null`). `enabled: false` (carga perezosa) no consulta pero sí lee lo que ya esté en caché.
  */
 export function useProducts(filters: ProductFilters = {}) {
-  const client = useDataClient();
   const selected = useOptionalOrderMode()?.mode.branchId ?? null;
   const branchId = filters.branchId === undefined ? selected : filters.branchId;
-  const base = useQuery<CatalogProduct[]>({
-    queryKey: queryKeys.catalog.products(),
-    queryFn: () => loadCatalog(client),
-  });
-  const menu = useStoreBranchMenu(branchId);
-  const data = useMemo(() => {
-    if (!base.data) return undefined;
-    return branchId && menu.data ? applyBranchMenu(base.data, menu.data) : base.data;
-  }, [base.data, branchId, menu.data]);
-  const overlayFailed = Boolean(branchId) && menu.isError;
-  const { refetch: refetchBase } = base;
-  const { refetch: refetchMenu } = menu;
+  const menu = useStoreMenu({ branchId, enabled: filters.enabled ?? true });
+  const data = useMemo(() => menu.data?.items, [menu.data]);
+  const { refetch } = menu;
   return {
     data,
-    isPending: base.isPending || (Boolean(branchId) && menu.isPending),
-    isError: base.isError,
-    error: base.error,
-    /** F13: el overlay de la sucursal falló: se muestran precios base con aviso. */
-    overlayFailed,
+    isPending: menu.isPending,
+    isError: menu.isError,
+    error: menu.error,
     branchId,
-    refetch: () => Promise.all([refetchBase(), branchId ? refetchMenu() : Promise.resolve()]),
+    refetch: () => refetch(),
   };
 }
 
-const SEARCH_PAGE_SIZE = 20;
-
 /**
- * Búsqueda en el servidor (`q`: nombre, descripción o SKU) con paginación «Ver más». Solo corre con texto (≤ 80); pasa el valor
- * YA con debounce.
+ * Ficha pública por slug (`GET /v1/store/products/{slug}?branchId`): trae `categoryAncestors`, los extras (F12) y, con sucursal,
+ * `offer` y `promotions`. Sin sucursal (`null`) es la ficha de F11/F12. 404 `PRODUCT_NOT_FOUND` o `BRANCH_NOT_FOUND` no se reintenta.
+ * La clave lleva la sucursal. Refetch en `nextChangeAt` (solo con sucursal) y al volver al foco.
  */
-export function useStoreProductSearch(q: string) {
+export function useStoreProduct(slug: string | null, branchId: string | null = null) {
   const client = useDataClient();
-  const text = q.trim().slice(0, PRODUCT_SEARCH_MAX);
-  return useInfiniteQuery({
-    queryKey: queryKeys.products.storeSearch(text),
-    queryFn: ({ pageParam }) =>
-      listStoreProducts(client, { q: text, page: pageParam, pageSize: SEARCH_PAGE_SIZE }),
-    initialPageParam: 1,
-    getNextPageParam: (last) =>
-      last.page * last.pageSize < last.total ? last.page + 1 : undefined,
-    enabled: text.length > 0,
-    staleTime: 30_000,
-  });
-}
-
-/**
- * Ficha pública por slug (`GET /v1/store/products/{slug}`): trae `categoryAncestors` para el breadcrumb. 404
- * `PRODUCT_NOT_FOUND` no se reintenta (inactivo, categoría oculta o inexistente).
- */
-export function useStoreProduct(slug: string | null) {
-  const client = useDataClient();
-  return useQuery({
-    queryKey: queryKeys.products.storeDetail(slug ?? ''),
-    queryFn: () => getStoreProduct(client, slug as string),
+  const query = useQuery({
+    queryKey: queryKeys.products.storeDetail(slug ?? '', branchId),
+    queryFn: ({ signal }) => getStoreProduct(client, slug as string, branchId, signal),
     enabled: Boolean(slug),
-    staleTime: 30_000,
-    retry: (count, error) => !(isApiError(error) && error.status === 404) && count < 2,
+    staleTime: STORE_AGGREGATE_STALE_MS,
+    refetchOnWindowFocus: true,
   });
+  useRefetchAtNextChange(query);
+  return query;
 }

@@ -54,7 +54,7 @@ describe('Mis favoritos (F06)', () => {
 
   it('las filas con resumen de la API se pintan sin esperar al catálogo completo', async () => {
     const spy = createSpyClient();
-    const catalog = spy.hold('GET', /^\/v1\/store\/products$/); // antes de montar: el catálogo carga al montar
+    const catalog = spy.hold('GET', /^\/v1\/store\/menu$/); // antes de montar: el catálogo carga al montar
     const view = await renderStore(<FavoritesPage />, { wrapClient: spy.wrap });
     await signIn(view);
     const list = await screen.findByRole('list', { name: 'Tus productos favoritos' });

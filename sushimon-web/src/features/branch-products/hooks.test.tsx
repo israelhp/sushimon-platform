@@ -5,11 +5,8 @@ import { useProducts } from '@/features/catalog/hooks';
 import { queryKeys } from '@/features/query-keys';
 import { createSpyClient } from '@/test/spy-client';
 import { renderStore } from '@/test/store-providers';
-import {
-  STORE_MENU_STALE_MS,
-  useSetBranchProductPricing,
-  useSetProductAvailability,
-} from './hooks';
+import { STORE_AGGREGATE_STALE_MS } from '@/lib/store-rules';
+import { useSetBranchProductPricing, useSetProductAvailability } from './hooks';
 
 function Probe() {
   const products = useProducts();
@@ -52,26 +49,31 @@ function Probe() {
   );
 }
 
-describe('F13 · caché del overlay público', () => {
+describe('F13/F17 · caché del menú público por sucursal', () => {
   it('la ventana de obsolescencia es ≤ 15 s (igual que el max-age del servidor)', () => {
-    expect(STORE_MENU_STALE_MS).toBeLessThanOrEqual(15_000);
+    expect(STORE_AGGREGATE_STALE_MS).toBeLessThanOrEqual(15_000);
   });
 
-  it('la clave es por sucursal y el overlay se pide una vez por sucursal elegida', async () => {
+  it('la clave es por sucursal y el menú se pide una vez por sucursal elegida', async () => {
     const spy = createSpyClient();
     const view = await renderStore(<Probe />, { branchId: 'sucursal-1', wrapClient: spy.wrap });
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('listo'));
-    expect(view.queryClient.getQueryState(queryKeys.storeMenu.branch('sucursal-1'))).toBeDefined();
+    expect(
+      view.queryClient.getQueryState(queryKeys.store.menu('sucursal-1', { page: 'all' })),
+    ).toBeDefined();
     expect(spy.count('GET', /\/v1\/store\/menu/)).toBe(1);
     await act(async () => view.api().mode.update({ branchId: 'sucursal-2' }));
     await waitFor(() =>
-      expect(view.queryClient.getQueryState(queryKeys.storeMenu.branch('sucursal-2'))?.status).toBe(
-        'success',
-      ),
+      expect(
+        view.queryClient.getQueryState(queryKeys.store.menu('sucursal-2', { page: 'all' }))?.status,
+      ).toBe('success'),
     );
     expect(spy.count('GET', /\/v1\/store\/menu/)).toBe(2);
-    // El catálogo base (F11) NO se vuelve a pedir por cambiar de sucursal: solo el overlay.
-    expect(spy.count('GET', /^\/v1\/store\/products$/)).toBeGreaterThan(0);
+    // F17: ya no hay «catálogo completo + overlay»: ni `/store/products` ni claves compartidas entre sucursales.
+    expect(spy.count('GET', /^\/v1\/store\/products$/)).toBe(0);
+    expect(
+      view.queryClient.getQueryData(queryKeys.store.menu('sucursal-1', { page: 'all' })),
+    ).toBeDefined();
   });
 
   it('un cambio de disponibilidad en el backoffice invalida el overlay y la tienda lo refleja sin recargar', async () => {

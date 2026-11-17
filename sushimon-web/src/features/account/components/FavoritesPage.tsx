@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { ProductCard } from '@/features/catalog/components/product-card';
 import { useProducts } from '@/features/catalog/hooks';
 import { productName } from '@/features/catalog/localized';
+import { productSlug } from '@/features/catalog/catalog-product';
 import { useProductSheet } from '@/features/catalog/product-sheet-context';
 import { RemoveFavoriteButton } from '@/features/favorites/components/RemoveFavoriteButton';
 import { useFavoritesList } from '@/features/favorites/hooks';
@@ -51,7 +52,12 @@ export function FavoritesPage() {
     body = <ErrorNotice message={t('error')} onRetry={() => void list.refetch()} />;
   } else if (!data) {
     body = (
-      <div aria-busy="true" aria-label={tUi('loading')} className="grid gap-2.5 lg:grid-cols-2">
+      <div
+        role="status"
+        aria-busy="true"
+        aria-label={tUi('loading')}
+        className="grid gap-2.5 lg:grid-cols-2"
+      >
         <Skeleton className="h-[112px] w-full rounded-2xl" />
         <Skeleton className="h-[112px] w-full rounded-2xl" />
       </div>
@@ -192,7 +198,7 @@ function FavoriteRow({
         {product && orderable ? (
           <button
             type="button"
-            onClick={() => openProduct(product.id)}
+            onClick={() => openProduct(product.id, productSlug(product), product)}
             className="block max-w-full truncate text-left font-extrabold hover:underline"
           >
             {name}
