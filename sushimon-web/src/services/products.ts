@@ -32,6 +32,7 @@ export interface StoreProductFilters {
 /** Público: productos activos con categoría efectivamente visible, orden `name, id`. Sin SKU. */
 export const listStoreProducts = (client: DataClient, filters: StoreProductFilters = {}) =>
   client.get<PublicProductPage>(paths.storeProducts(), {
+    public: true,
     query: {
       categorySlug: filters.categorySlug,
       q: filters.q?.trim() || undefined,
@@ -40,9 +41,21 @@ export const listStoreProducts = (client: DataClient, filters: StoreProductFilte
     },
   });
 
-/** Ficha pública: 404 `PRODUCT_NOT_FOUND` si no existe, está inactivo o su categoría no es visible. */
-export const getStoreProduct = (client: DataClient, slug: string) =>
-  client.get<PublicProductDetail>(paths.storeProduct(slug));
+/**
+ * Ficha pública (F17, ampliada): 404 `PRODUCT_NOT_FOUND` si no existe, está inactivo o su categoría no es visible. Con `branchId`
+ * (OPCIONAL) la respuesta añade `offer`, `promotions`, `generatedAt` y `nextChangeAt`; inexistente o inactiva => 404 `BRANCH_NOT_FOUND`.
+ */
+export const getStoreProduct = (
+  client: DataClient,
+  slug: string,
+  branchId?: string | null,
+  signal?: AbortSignal,
+) =>
+  client.get<PublicProductDetail>(paths.storeProduct(slug), {
+    query: { branchId: branchId ?? undefined },
+    signal,
+    public: true,
+  });
 
 /** Tope de páginas al cargar el catálogo completo (10 × 100 = 1 000 productos; el negocio maneja decenas). */
 export const CATALOG_MAX_PAGES = 10;

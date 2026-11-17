@@ -13,13 +13,12 @@ describe('selección de sucursal', () => {
     expect(isBranchAvailable('a', [])).toBe(false);
   });
 
-  it('al cambiar de sucursal invalida catálogo y cotizaciones, no toda la app', async () => {
+  it('al cambiar de sucursal invalida catálogo y cotizaciones (los agregados de tienda cambian de clave por sucursal), no toda la app', async () => {
     const queryClient = new QueryClient();
     const spy = vi.spyOn(queryClient, 'invalidateQueries');
     await invalidateBranchScopedQueries(queryClient);
     expect(spy.mock.calls.map(([f]) => f?.queryKey)).toEqual([
       queryKeys.catalog.all,
-      queryKeys.storeMenu.all,
       queryKeys.deliveryCoverage.all,
     ]);
   });

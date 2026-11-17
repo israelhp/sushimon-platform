@@ -1,15 +1,9 @@
 'use client';
 
-import {
-  keepPreviousData,
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type UseQueryResult,
-} from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { isApiError } from '@/lib/data-access/errors';
-import type { StorePromotionList, UpdatePromotionRequest } from '@/lib/data-access/models';
+import type { UpdatePromotionRequest } from '@/lib/data-access/models';
 import { useDataClient } from '@/lib/data-access/provider';
 import {
   createAdminPromotion,
@@ -24,6 +18,7 @@ import {
 } from '@/services/promotions';
 import { queryKeys } from '../query-keys';
 import { useDemoSession } from '../session/demo-session';
+import { invalidateStoreAggregates } from '../store/invalidate';
 
 /**
  * F15 — Hooks de promociones. Tienda: por sucursal y estado, con refetch programado en `nextChangeAt` y al cambiar de sucursal
@@ -44,11 +39,11 @@ const REFETCH_SLACK_MS = 1_000;
  * `null` si no hay próximo cambio.
  */
 export function msUntilNextChange(
-  list: Pick<StorePromotionList, 'generatedAt' | 'nextChangeAt'>,
+  list: { generatedAt?: string; nextChangeAt?: string | null },
   receivedAtMs: number,
   nowMs: number,
 ): number | null {
-  if (!list.nextChangeAt) return null;
+  if (!list.nextChangeAt || !list.generatedAt) return null;
   const serverGap = Date.parse(list.nextChangeAt) - Date.parse(list.generatedAt);
   const elapsed = Math.max(0, nowMs - receivedAtMs);
   if (Number.isNaN(serverGap)) return null;
@@ -56,7 +51,11 @@ export function msUntilNextChange(
 }
 
 /** Vuelve a pedir la lista cuando llegue `nextChangeAt` (sin sondeo). Se reprograma con cada respuesta. */
-export function useRefetchAtNextChange(query: UseQueryResult<StorePromotionList>): void {
+export function useRefetchAtNextChange(query: {
+  data?: { generatedAt?: string; nextChangeAt?: string | null };
+  dataUpdatedAt: number;
+  refetch: () => unknown;
+}): void {
   const { data, dataUpdatedAt, refetch } = query;
   useEffect(() => {
     if (!data) return;
@@ -68,11 +67,17 @@ export function useRefetchAtNextChange(query: UseQueryResult<StorePromotionList>
 }
 
 /** Promociones de la sucursal (`null` = ninguna: no consulta). 4xx no se reintenta. */
-export function useStorePromotions(branchId: string | null, state: StorePromotionState = 'live') {
+export function useStorePromotions(
+  branchId: string | null,
+  state: StorePromotionState = 'live',
+  /** F17: sin `items` ni `productIds` (el servidor no lee productos): para el banner de Happy Hour del menú. */
+  options: { compact?: boolean } = {},
+) {
+  const compact = options.compact === true;
   const client = useDataClient();
   const query = useQuery({
-    queryKey: queryKeys.catalog.storePromotions(branchId ?? '', state),
-    queryFn: () => listStorePromotions(client, branchId as string, state),
+    queryKey: queryKeys.catalog.storePromotions(branchId ?? '', state, compact),
+    queryFn: () => listStorePromotions(client, branchId as string, state, { compact }),
     enabled: Boolean(branchId),
     staleTime: STORE_PROMOTIONS_STALE_MS,
     refetchOnWindowFocus: true,
@@ -113,6 +118,7 @@ function useInvalidate() {
     Promise.all([
       qc.invalidateQueries({ queryKey: queryKeys.backoffice.promotions }),
       qc.invalidateQueries({ queryKey: queryKeys.catalog.promotions }),
+      invalidateStoreAggregates(qc),
     ]);
 }
 

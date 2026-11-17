@@ -21,7 +21,7 @@ import * as staff from '@/services/staff';
 import * as store from '@/services/store';
 import { ApiError, codeForStatus } from './errors';
 import { createHttpClient } from './http-client';
-import type { DataClient } from './types';
+import { withShortcuts, type DataClient } from './types';
 
 /**
  * Paridad de adaptadores (SC-005): los MISMOS services contra
@@ -129,7 +129,7 @@ const newOrder = {
 };
 
 const storeSteps: ((c: DataClient) => Promise<unknown>)[] = [
-  (c) => store.getStoreConfig(c),
+  // `store.getStoreConfig` ya no se compara: con http NO emite solicitud (ver el caso «F17: config» más abajo).
   (c) => store.listBranches(c),
   (c) => store.listCategories(c),
   (c) => products.listStoreProducts(c, { categorySlug: 'rolls', pageSize: 5 }),
@@ -431,8 +431,8 @@ describe('paridad mock ↔ http', () => {
     const p = pair();
     for (const h of [p.mock, p.backend]) h.store.branchProductsBusy = 1;
     const anon: ((c: DataClient) => Promise<unknown>)[] = [
-      (c) => branchProducts.getStoreBranchMenu(c, 'sucursal-2'),
-      (c) => branchProducts.getStoreBranchMenu(c, 'sucursal-4'), // 404 BRANCH_NOT_FOUND (inactiva)
+      (c) => branchProducts.getStoreBranchMenu(c, { branchId: 'sucursal-2' }),
+      (c) => branchProducts.getStoreBranchMenu(c, { branchId: 'sucursal-4' }), // 404 BRANCH_NOT_FOUND (inactiva)
       (c) => branchProducts.listAdminBranchProducts(c, 'sucursal-1'), // 401
     ];
     expect(await run(anon, p.http)).toEqual(await run(anon, p.mock.client));
@@ -469,7 +469,7 @@ describe('paridad mock ↔ http', () => {
           branchId: 'sucursal-1',
           available: false,
         }),
-      (c) => branchProducts.getStoreBranchMenu(c, 'sucursal-1'),
+      (c) => branchProducts.getStoreBranchMenu(c, { branchId: 'sucursal-1' }),
       (c) => branchProducts.setAdminBranchProductPricing(c, 'sucursal-1', 'dumplings', null),
       (c) =>
         branchProducts.setAdminProductAvailability(c, 'dumplings', {
@@ -1045,6 +1045,58 @@ describe('paridad mock ↔ http', () => {
       [503, 'MFA_RESET_UNAVAILABLE'],
       [403, undefined],
     ]);
+  });
+
+  it('F17: config — con http no emite solicitud (la ruta no existe en la API) y falla con el 404 que ya manejaban las pantallas', async () => {
+    const p = pair();
+    let requests = 0;
+    const http = withShortcuts('http', async (path, options) => {
+      requests++;
+      return p.http.request(path, options);
+    });
+    await expect(store.getStoreConfig(http)).rejects.toMatchObject({ status: 404 });
+    expect(requests).toBe(0);
+    expect(await store.getStoreConfig(p.mock.client)).toMatchObject({ currency: 'GTQ' });
+  });
+
+  it('F17: bootstrap, menú paginado, búsqueda y ficha con sucursal producen los mismos resultados y errores (200/400/404/503)', async () => {
+    const p = pair();
+    for (const h of [p.mock, p.backend]) h.store.storeBusy = 1;
+    const reads: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => store.getStoreBootstrap(c, { branchId: 'sucursal-1' }), // 503 STORE_BUSY (determinista)
+      (c) => store.getStoreBootstrap(c, { branchId: 'sucursal-1' }),
+      (c) => store.getStoreBootstrap(c, { branchId: 'sucursal-2', locale: 'en' }),
+      (c) => store.getStoreBootstrap(c),
+      (c) => store.getStoreBootstrap(c, { branchId: 'zzz' }), // 404
+      (c) => store.getStoreBootstrap(c, { branchId: 'sucursal-4' }), // 404 inactiva
+      (c) =>
+        branchProducts.getStoreBranchMenu(c, { branchId: 'sucursal-1', pageSize: 10, page: 3 }),
+      (c) => branchProducts.getStoreBranchMenu(c, { branchId: 'sucursal-1', page: 99 }), // vacía
+      (c) => branchProducts.getStoreBranchMenu(c, { sort: 'price', order: 'desc', pageSize: 5 }),
+      (c) =>
+        branchProducts.getStoreBranchMenu(c, { categorySlug: 'rolls', branchId: 'sucursal-2' }),
+      (c) => branchProducts.getStoreBranchMenu(c, { categorySlug: 'no-existe' }), // lista vacía
+      (c) => branchProducts.getStoreBranchMenu(c, { available: true }), // 400: exige sucursal
+      (c) => branchProducts.getStoreBranchMenu(c, { branchId: 'sucursal-2', available: true }),
+      (c) => store.searchStoreProducts(c, { q: 'salmon', branchId: 'sucursal-1' }),
+      (c) => store.searchStoreProducts(c, { q: '  ROLL ', pageSize: 5, page: 2 }),
+      (c) => store.searchStoreProducts(c, { q: 'zzzz-sin-resultados' }), // 200 vacío
+      (c) => store.searchStoreProducts(c, { q: 'a' }), // 400 q corto
+      (c) => store.searchStoreProducts(c, { q: 'x'.repeat(81) }), // 400 q largo
+      (c) => store.searchStoreProducts(c, { q: '100%_\\' }), // comodines literales
+      (c) => store.searchStoreProducts(c, { q: 'roll', available: true }), // 400
+      (c) => store.searchStoreProducts(c, { q: 'roll', branchId: 'zzz' }), // 404
+      (c) => products.getStoreProduct(c, 'dynamita-roll'),
+      (c) => products.getStoreProduct(c, 'dynamita-roll', 'sucursal-2'),
+      (c) => products.getStoreProduct(c, 'dynamita-roll', 'zzz'), // 404 BRANCH_NOT_FOUND
+      (c) => products.getStoreProduct(c, 'no-existe', 'sucursal-1'), // 404 PRODUCT_NOT_FOUND
+    ];
+    const expected = await run(reads, p.mock.client);
+    expect(await run(reads, p.http)).toEqual(expected);
+    // Sanidad: el 503 salió una vez y hubo 200, 400 y 404 de verdad (la prueba no es vacía).
+    const codes = expected.map((x) => ('error' in x ? x.error.status : 200));
+    expect(codes[0]).toBe(503);
+    expect(codes).toEqual(expect.arrayContaining([200, 400, 404]));
   });
 
   it.each(['offline', 'error', 'forbidden', 'request-rejected', 'rider-unavailable'] as const)(

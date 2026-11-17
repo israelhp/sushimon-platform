@@ -94,7 +94,7 @@ const iso = (ms: number | Date) => new Date(ms).toISOString();
 
 type Violation = { path: string; code: string; message: string };
 
-function failBusy(store: MockStore): void {
+export function failBusy(store: MockStore): void {
   if ((store.bannersBusy ?? 0) > 0) {
     store.bannersBusy = (store.bannersBusy ?? 0) - 1;
     failCode(503, 'BANNERS_BUSY', 'Hay otra edición en curso; reintenta en unos segundos');
@@ -222,8 +222,19 @@ export const listStoreBanners: Handler = (req): StoreBannerList => {
     branchId = branch.id;
   }
   failBusy(store);
-  const at = now(req);
+  return publicBannerList(store, branchId, locale, now(req));
+};
 
+/**
+ * Banners públicos elegibles para una sucursal ACTIVA (o ninguna) en `at`: los mismos de `GET /v1/store/banners`. Los reutiliza el
+ * bootstrap (F17) sin duplicar las reglas de F16. El llamador valida la sucursal y decide si aplica `bannersBusy`.
+ */
+export function publicBannerList(
+  store: MockStore,
+  branchId: string | null,
+  locale: BannerLocale,
+  at: Date,
+): StoreBannerList {
   // Candidatos: activos y que aplican a la consulta (sin `branchId` solo `ALL`).
   const candidates = store.banners.filter(
     (b) => b.active && (branchId === null ? b.branchScope === 'ALL' : appliesToBranch(b, branchId)),
@@ -250,7 +261,7 @@ export const listStoreBanners: Handler = (req): StoreBannerList => {
     nextChangeAt: next ? iso(next) : null,
     items,
   };
-};
+}
 
 // ── Administración: vistas y alcance ───────────────────────────────────────────────────────
 

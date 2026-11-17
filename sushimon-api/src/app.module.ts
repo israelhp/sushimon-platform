@@ -24,6 +24,7 @@ import { BranchProductsModule } from './branch-products/branch-products.module.j
 import { PromotionsModule } from './promotions/promotions.module.js';
 import { BannersModule } from './banners/banners.module.js';
 import { BranchesModule } from './branches/branches.module.js';
+import { StoreModule } from './store/store.module.js';
 import { StaffModule } from './staff/staff.module.js';
 import { CustomersModule } from './customers/customers.module.js';
 import { FavoritesModule } from './favorites/favorites.module.js';
@@ -67,6 +68,7 @@ import { HealthTokenGuard } from './health/health-token.guard.js';
     BranchProductsModule,
     PromotionsModule,
     BannersModule,
+    StoreModule,
     BranchScheduleModule,
     LocationsModule,
     DeliveryCoverageModule,

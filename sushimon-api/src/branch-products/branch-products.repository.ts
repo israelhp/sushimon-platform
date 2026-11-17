@@ -7,7 +7,6 @@ import type {
   BranchStatus,
   MatrixFilter,
   MatrixRow,
-  OverlayRow,
   ProductBranchRow,
   ProductFacts,
   ResolveRow,
@@ -229,18 +228,6 @@ export class BranchProductsRepository {
       available: r.available,
       updatedAt: r.updated_at,
     }));
-  }
-
-  /** Overlay público: productos ACTIVOS de esas categorías con precio efectivo y disponibilidad de UNA sucursal. */
-  async findOverlay(branchId: string, categoryIds: readonly string[]): Promise<OverlayRow[]> {
-    if (categoryIds.length === 0) return [];
-    return this.prisma.$queryRaw<OverlayRow[]>`
-      SELECT p.id, p.slug, coalesce(bp.price_override, p.base_price)::text AS price,
-             coalesce(bp.available, true) AS available
-        FROM app.products p
-        LEFT JOIN app.branch_products bp ON bp.product_id = p.id AND bp.branch_id = ${branchId}::uuid
-       WHERE p.active AND p.category_id = ANY(${[...categoryIds]}::uuid[])
-       ORDER BY p.slug ASC, p.id ASC`;
   }
 
   /** Precio efectivo y disponibilidad de varios productos en UNA consulta (ids inexistentes no aparecen). */

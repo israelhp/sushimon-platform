@@ -211,7 +211,14 @@
       "retry": "Reintentar"
     },
     "soldOut": "Agotado",
-    "soldOutAria": "{a}: agotado, no se puede agregar"
+    "soldOutAria": "{a}: agotado, no se puede agregar",
+    "promoLabel": "Promoción",
+    "promoDineIn": "Solo consumo en el local",
+    "promoIndicative": "Precio promocional indicativo: el servidor lo confirma al cotizar.",
+    "loadError": "No pudimos abrir este producto. Inténtalo de nuevo.",
+    "loadingProduct": "Cargando producto…",
+    "detailOffline": "No hay conexión: no pudimos cargar este producto.",
+    "fromPrice": "desde"
   },
   "cart": {
     "title": "Tu pedido",
@@ -258,13 +265,14 @@
     "jobsTitle": "Trabaja con nosotros",
     "jobsText": "Unite al equipo MON: cocina, salón y entregas. Aplicá en un minuto.",
     "apply": "Aplicar",
-    "footnote": "{a} productos en el menú · Precios en quetzales",
+    "footnote": "{a, plural, one {# producto en el menú} other {# productos en el menú}} · Precios en quetzales",
     "noProducts": "Todavía no hay productos para mostrar.",
     "pause": "Pausar carrusel",
     "play": "Reanudar carrusel",
     "banner": {
       "cta": "Ver más"
-    }
+    },
+    "yourFavorites": "Tus favoritos"
   },
   "menu": {
     "title": "Menú",
@@ -285,7 +293,19 @@
     "searchEmptyTitle": "Sin resultados para «{q}»",
     "searchEmptySub": "Prueba con otro nombre o ingrediente.",
     "searchMore": "Ver más",
-    "overlayFailed": "No pudimos cargar los precios y la disponibilidad de tu sucursal. Mostramos los precios base; el precio final lo confirma el servidor al pedir."
+    "searchTooShort": "Escribe al menos 2 caracteres para buscar.",
+    "searchRateLimited": "Hiciste muchas búsquedas seguidas. Espera un momento e inténtalo de nuevo.",
+    "searchUpdating": "Actualizando resultados…",
+    "searchHint": "La búsqueda pide al menos 2 caracteres.",
+    "resultsIn": "Resultados en {branch}",
+    "menuOf": "Menú de {branch}",
+    "searchOffline": "No hay conexión. Revisa tu internet y vuelve a intentar.",
+    "searchBusy": "La búsqueda no está disponible por un momento. Inténtalo de nuevo.",
+    "searchMoreError": "No pudimos cargar más resultados.",
+    "searchLoading": "Buscando…",
+    "soldOutNote": "No disponible por ahora en tu sucursal",
+    "pageLoading": "Cargando el menú…",
+    "noBranchMenu": "Menú"
   },
   "promos": {
     "daysRange": "{a} a {b}",
@@ -983,7 +1003,8 @@
     "count": "{count, plural, one {# elemento} other {# elementos}}",
     "emptyTitle": "Nada por aquí todavía",
     "errorTitle": "Algo salió mal",
-    "retry": "Reintentar"
+    "retry": "Reintentar",
+    "retryIn": "Reintentar en {a} s"
   },
   "uiKit": {
     "title": "Kit de componentes",

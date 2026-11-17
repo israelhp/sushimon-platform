@@ -1,18 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-export class StoreBranchMenuItemDto {
-  @ApiProperty({ type: String, format: 'uuid' }) productId!: string;
-  @ApiProperty({ type: String }) slug!: string;
-  @ApiProperty({ type: String, example: '85.00', description: 'Precio EFECTIVO en la sucursal.' })
-  price!: string;
-  @ApiProperty({ type: Boolean }) available!: boolean;
-}
-
-export class StoreBranchMenuDto {
-  @ApiProperty({ type: String, format: 'uuid' }) branchId!: string;
-  @ApiProperty({ type: () => [StoreBranchMenuItemDto] }) items!: StoreBranchMenuItemDto[];
-}
-
 export class AdminBranchProductStateDto {
   @ApiProperty({ type: String, format: 'uuid' }) branchId!: string;
   @ApiProperty({ type: String, format: 'uuid' }) productId!: string;

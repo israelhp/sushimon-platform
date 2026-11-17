@@ -13,6 +13,7 @@ import {
 } from '@/services/media';
 import { queryKeys } from '../query-keys';
 import { useDemoSession } from '../session/demo-session';
+import { invalidateStoreAggregates } from '../store/invalidate';
 
 /**
  * F14 — Hooks de medios del backoffice. Toda mutación invalida la biblioteca (`media`), los productos (administración y
@@ -26,6 +27,7 @@ export function useInvalidateMedia() {
       qc.invalidateQueries({ queryKey: queryKeys.media.all }),
       qc.invalidateQueries({ queryKey: queryKeys.products.all }),
       qc.invalidateQueries({ queryKey: queryKeys.catalog.all }),
+      invalidateStoreAggregates(qc),
     ]);
 }
 

@@ -40,6 +40,15 @@ const find = (
 const ids = (r: { items: { id: string }[] }) => r.items.map((i) => i.id);
 
 describe('lector público de banners: vigencia [startsAt, endsAt) (B1-B5)', () => {
+  it('F17: branchValidated no relee la sucursal (una consulta menos); sin él la valida', async () => {
+    const h = bannersHarness();
+    h.repo.seed({});
+    await h.reader.findActiveBanners({ branchId: A, locale: 'es', branchValidated: true });
+    expect(h.repo.count('findBranchStatus')).toBe(0);
+    await h.reader.findActiveBanners({ branchId: A, locale: 'es' });
+    expect(h.repo.count('findBranchStatus')).toBe(1);
+  });
+
   it('B1: starts = ahora y ends = ahora + 1 s => publicado; a ends exacto ya NO (fin exclusivo)', async () => {
     const h = bannersHarness();
     const b = h.repo.seed({ startsAt: at(0), endsAt: at(1 * SEC) });

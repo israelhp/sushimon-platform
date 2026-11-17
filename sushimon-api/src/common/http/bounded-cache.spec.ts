@@ -25,3 +25,13 @@ describe('boundedCacheControl (compartido por F15 y F16)', () => {
     expect(boundedCacheControl(body(10_000))).not.toContain('stale-while-revalidate');
   });
 });
+
+describe('boundedCacheControl con tope parametrizado (F17: 15 s)', () => {
+  it('el tope por defecto (30 s) no cambia y el parámetro lo acota', () => {
+    expect(boundedCacheControl(body(null))).toBe('public, max-age=5, s-maxage=30');
+    expect(boundedCacheControl(body(null), 15)).toBe('public, max-age=5, s-maxage=15');
+    expect(boundedCacheControl(body(20_000), 15)).toBe('public, max-age=5, s-maxage=15');
+    expect(boundedCacheControl(body(14_999), 15)).toBe('public, max-age=5, s-maxage=14');
+    expect(boundedCacheControl(body(0), 15)).toBe('no-store');
+  });
+});

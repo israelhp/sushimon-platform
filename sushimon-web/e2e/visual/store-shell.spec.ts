@@ -23,8 +23,8 @@ const CART_FIXTURE = JSON.stringify([
 ]);
 
 async function ready(page: Page) {
-  await page.getByRole('heading', { name: /Favoritos/ }).waitFor();
-  await page.getByText('Platanito Roll').first().waitFor();
+  await page.getByRole('heading', { name: /hambre/i }).waitFor();
+  // F17 (P23): sin destacados la sección «Favoritos» del Inicio no se renderiza; el ancla es «¿Tenés hambre?».
   await page.waitForTimeout(300);
 }
 

@@ -211,7 +211,14 @@
       "retry": "Retry"
     },
     "soldOut": "Sold out",
-    "soldOutAria": "{a}: sold out, cannot be added"
+    "soldOutAria": "{a}: sold out, cannot be added",
+    "promoLabel": "Promotion",
+    "promoDineIn": "Dine-in only",
+    "promoIndicative": "Indicative promo price: the server confirms it when quoting.",
+    "loadError": "We couldn’t open this product. Please try again.",
+    "loadingProduct": "Loading product…",
+    "detailOffline": "No connection: we couldn’t load this product.",
+    "fromPrice": "from"
   },
   "cart": {
     "title": "Your order",
@@ -258,13 +265,14 @@
     "jobsTitle": "Work with us",
     "jobsText": "Join the MON team: kitchen, floor and delivery. Apply in a minute.",
     "apply": "Apply",
-    "footnote": "{a} items on the menu · Prices in quetzales",
+    "footnote": "{a, plural, one {# item on the menu} other {# items on the menu}} · Prices in quetzales",
     "noProducts": "There are no products to show yet.",
     "pause": "Pause carousel",
     "play": "Resume carousel",
     "banner": {
       "cta": "See more"
-    }
+    },
+    "yourFavorites": "Your favorites"
   },
   "menu": {
     "title": "Menu",
@@ -295,7 +303,19 @@
     "searchEmptyTitle": "No results for “{q}”",
     "searchEmptySub": "Try another name or ingredient.",
     "searchMore": "Show more",
-    "overlayFailed": "We couldn’t load your branch’s prices and availability. Showing base prices; the final price is confirmed by the server when you order."
+    "searchTooShort": "Type at least 2 characters to search.",
+    "searchRateLimited": "You searched too many times in a row. Wait a moment and try again.",
+    "searchUpdating": "Updating results…",
+    "searchHint": "Search needs at least 2 characters.",
+    "resultsIn": "Results at {branch}",
+    "menuOf": "{branch} menu",
+    "searchOffline": "No connection. Check your internet and try again.",
+    "searchBusy": "Search is unavailable for a moment. Please try again.",
+    "searchMoreError": "We couldn’t load more results.",
+    "searchLoading": "Searching…",
+    "soldOutNote": "Currently unavailable at your branch",
+    "pageLoading": "Loading the menu…",
+    "noBranchMenu": "Menu"
   },
   "promos": {
     "daysRange": "{a} to {b}",
@@ -993,7 +1013,8 @@
     "count": "{count, plural, one {# item} other {# items}}",
     "emptyTitle": "Nothing here yet",
     "errorTitle": "Something went wrong",
-    "retry": "Retry"
+    "retry": "Retry",
+    "retryIn": "Retry in {a} s"
   },
   "uiKit": {
     "title": "Component kit",

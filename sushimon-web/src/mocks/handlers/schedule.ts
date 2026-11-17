@@ -131,16 +131,22 @@ export const getPublicBranchHours: Handler = (req): S['PublicBranchHours'] => {
 };
 
 /** GET /v1/branches/:id/availability */
-export const getPublicBranchAvailability: Handler = (req): S['BranchAvailability'] => {
-  const branch = activeBranch(req);
-  const at = now(req);
+export const getPublicBranchAvailability: Handler = (req): S['BranchAvailability'] =>
+  publicAvailability(req.store, activeBranch(req), now(req));
+
+/** Disponibilidad pública de una sucursal en `at` (la misma de `GET /v1/branches/:id/availability`; la reutiliza el bootstrap F17). */
+export function publicAvailability(
+  store: MockStore,
+  branch: BranchSeed,
+  at: Date,
+): S['BranchAvailability'] {
   return {
     branchId: branch.id,
     timezone: AVAILABILITY_TIMEZONE,
     serverTime: at.toISOString(),
-    ...availabilityFor(req.store, branch, at),
+    ...availabilityFor(store, branch, at),
   };
-};
+}
 
 // ── Admin ───────────────────────────────────────────────────────────────────────────────────
 

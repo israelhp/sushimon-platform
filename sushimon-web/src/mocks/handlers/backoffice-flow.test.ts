@@ -283,7 +283,7 @@ describe('catálogo y administración', () => {
       branchId: 'sucursal-2',
       available: false,
     });
-    const menu = await branchProducts.getStoreBranchMenu(h.client, 'sucursal-2');
+    const menu = await branchProducts.getStoreBranchMenu(h.client, { branchId: 'sucursal-2' });
     expect(menu.items.find((p) => p.productId === 'cangreburger')?.available).toBe(false);
   });
 

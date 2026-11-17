@@ -29,6 +29,8 @@ export class PublicPromotionsController {
   @ApiResponse({ status: 404, description: 'BRANCH_NOT_FOUND: no existe o está inactiva' })
   @ApiResponse({ status: 429, description: 'RATE_LIMITED' })
   list(@Query() query: StorePromotionsQuery): Promise<StorePromotionListDto> {
-    return this.service.list(query.branchId, query.state ?? 'live');
+    return this.service.list(query.branchId, query.state ?? 'live', {
+      ...(query.compact === true ? { compact: true } : {}),
+    });
   }
 }

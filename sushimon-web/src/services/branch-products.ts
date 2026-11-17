@@ -6,7 +6,9 @@ import type {
   SetBranchProductPricingRequest,
   SetProductAvailabilityRequest,
   StoreBranchMenu,
+  StoreBranchMenuItem,
 } from '@/lib/data-access/models';
+import { STORE_MENU_PAGE_SIZE_MAX, storeMenuQuery, type StoreMenuParams } from '@/lib/store-rules';
 import { paths } from '@/lib/data-access/paths';
 
 /**
@@ -18,9 +20,60 @@ import { paths } from '@/lib/data-access/paths';
  * alcance = 404. Sin stock numérico: «agotado» = `available=false`.
  */
 
-/** Público: overlay de TODOS los productos visibles en una sucursal ACTIVA (404 `BRANCH_NOT_FOUND` si no existe o está inactiva). */
-export const getStoreBranchMenu = (client: DataClient, branchId: string) =>
-  client.get<StoreBranchMenu>(paths.storeMenu(), { query: { branchId } });
+/**
+ * Público (F17, ampliado): UNA página de tarjetas del menú (precio efectivo, disponibilidad e info promocional). `branchId` es
+ * opcional (sin él: precio base y `available=null`); inexistente o inactiva => 404 `BRANCH_NOT_FOUND`; `available=true` sin sucursal
+ * => 400; 429 `RATE_LIMITED`; 503 `STORE_BUSY`. La query es CANÓNICA (orden fijo, sin valores por defecto: la URL es la clave de CDN).
+ */
+export const getStoreBranchMenu = (
+  client: DataClient,
+  params: StoreMenuParams = {},
+  signal?: AbortSignal,
+) =>
+  client.get<StoreBranchMenu>(paths.storeMenu(), {
+    query: storeMenuQuery(params),
+    signal,
+    public: true,
+  });
+
+/** Tope de páginas al reunir el menú completo (≤ 200 por contrato; el negocio maneja decenas). */
+export const STORE_MENU_MAX_PAGES = 20;
+
+/**
+ * Menú COMPLETO de una sucursal: sigue `total` página a página (de 100 en 100, en orden) hasta reunirlo, ante una página vacía o
+ * al tope. Devuelve las tarjetas y el `generatedAt`/`nextChangeAt` de la PRIMERA página (el refetch se programa con ellos).
+ */
+export async function listAllStoreMenu(
+  client: DataClient,
+  params: Omit<StoreMenuParams, 'page' | 'pageSize'> = {},
+  signal?: AbortSignal,
+): Promise<{
+  branchId: string | null;
+  items: StoreBranchMenuItem[];
+  total: number;
+  generatedAt: string | undefined;
+  nextChangeAt: string | null | undefined;
+}> {
+  const items: StoreBranchMenuItem[] = [];
+  let first: StoreBranchMenu | null = null;
+  for (let page = 1; page <= STORE_MENU_MAX_PAGES; page++) {
+    const result = await getStoreBranchMenu(
+      client,
+      { ...params, page, pageSize: STORE_MENU_PAGE_SIZE_MAX },
+      signal,
+    );
+    first ??= result;
+    items.push(...result.items);
+    if (result.items.length === 0 || items.length >= (result.total ?? 0)) break;
+  }
+  return {
+    branchId: first?.branchId ?? null,
+    items,
+    total: first?.total ?? items.length,
+    generatedAt: first?.generatedAt,
+    nextChangeAt: first?.nextChangeAt,
+  };
+}
 
 export interface BranchProductFilters {
   /** Nombre, slug o SKU (≤ 80). */

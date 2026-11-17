@@ -94,7 +94,7 @@ export const A11Y_ROUTES: RouteCase[] = [
   { path: '/cuenta/direcciones', ready: { role: 'heading', name: 'Mis direcciones' } },
   { path: '/trabaja-con-nosotros', ready: { role: 'heading', name: /MONcheros/ } },
   { path: '/ruta-que-no-existe', ready: { role: 'heading', name: 'Este roll no existe' } },
-  { path: '/', ready: { role: 'heading', name: /Favoritos/ } },
+  { path: '/', ready: { role: 'heading', name: /hambre/i } },
   // Consulta de invitado, reclamos y seguimiento (bloque 5). El seguimiento exige sesión: lo decide la API.
   { path: '/consultar', ready: { role: 'heading', name: /Consultá tu orden/ } },
   { path: '/incidencias', ready: { role: 'heading', name: /Hacer un reclamo/ } },
@@ -465,7 +465,7 @@ export const A11Y_ROUTES: RouteCase[] = [
   {
     path: '/',
     label: 'pedir ahora a domicilio: cobertura pendiente',
-    ready: { role: 'heading', name: /Favoritos/ },
+    ready: { role: 'heading', name: /hambre/i },
     step: async (page) => {
       await page
         .getByRole('button', { name: /Iniciar pedido/ })
@@ -480,7 +480,7 @@ export const A11Y_ROUTES: RouteCase[] = [
   {
     path: '/',
     label: 'pedir ahora a domicilio: cobertura confirmada',
-    ready: { role: 'heading', name: /Favoritos/ },
+    ready: { role: 'heading', name: /hambre/i },
     step: async (page) => {
       await page
         .getByRole('button', { name: /Iniciar pedido/ })
@@ -616,7 +616,7 @@ test('el carrito, el modo de pedido y el inicio de sesión abren como diálogos 
   page,
 }) => {
   await page.goto('/');
-  await page.getByRole('heading', { name: /Favoritos/ }).waitFor();
+  await page.getByRole('heading', { name: /hambre/i }).waitFor();
 
   await page
     .getByRole('button', { name: /Iniciar pedido/ })
@@ -624,6 +624,10 @@ test('el carrito, el modo de pedido y el inicio de sesión abren como diálogos 
     .click();
   const sheet = page.getByRole('dialog', { name: 'Pedir ahora' });
   await expect(sheet).toBeVisible();
+  // El análisis de contraste no es fiable con la hoja a medio animar (mezcla de opacidades): se espera a que termine la animación de entrada.
+  await page.waitForFunction(() =>
+    document.getAnimations().every((animation) => animation.playState !== 'running'),
+  );
   const sheetResults = await new AxeBuilder({ page }).include('[role="dialog"]').analyze();
   expect(
     sheetResults.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical'),

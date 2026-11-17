@@ -5,7 +5,6 @@ import {
   FakeBranchProductsRepo,
 } from '../../test/support/fake-branch-products-repo.js';
 import { CAT, productsHarness } from '../../test/support/products-harness.js';
-import { BranchMenuQueryService } from './branch-menu-query.service.js';
 import { BranchOffersService } from './branch-offers.service.js';
 import type { BranchProductsRepository } from './branch-products.repository.js';
 
@@ -28,7 +27,6 @@ function setup() {
   return {
     repo,
     offers: new BranchOffersService(r, categoriesQuery),
-    menu: new BranchMenuQueryService(r, categoriesQuery),
   };
 }
 
@@ -179,44 +177,5 @@ describe('BranchOffersService.assertOrderable', () => {
     await offers.assertOrderable(A, [P1]);
     expect(repo.count('findBranchStatus')).toBe(1);
     expect(repo.count('resolveMany')).toBe(1);
-  });
-});
-
-describe('BranchMenuQueryService', () => {
-  it('solo productos visibles (activos con categoría visible), orden slug, precio efectivo de ESA sucursal', async () => {
-    const { menu, repo } = setup();
-    repo.seedProduct(fakeProduct(4, { slug: 'a-primero', basePrice: '20.00' }));
-    repo.seedRow(A, P1, { priceOverride: '45.00' });
-    repo.seedRow(B, P1, { priceOverride: '99.00', available: false });
-    repo.seedRow(A, P2, { priceOverride: '1.00' }); // categoría oculta: ausente aunque tenga fila
-    const a = await menu.getMenu(A);
-    expect(a.branchId).toBe(A);
-    expect(a.items).toEqual([
-      { productId: bpid(4), slug: 'a-primero', price: '20.00', available: true },
-      { productId: P1, slug: 'b-roll', price: '45.00', available: true },
-    ]);
-    const b = await menu.getMenu(B);
-    expect(b.items.find((i) => i.productId === P1)).toEqual({
-      productId: P1,
-      slug: 'b-roll',
-      price: '99.00',
-      available: false,
-    });
-    expect(JSON.stringify(a)).not.toContain('99.00');
-  });
-
-  it('tres lecturas constantes (sucursal, overlay) sin N+1', async () => {
-    const { menu, repo } = setup();
-    await menu.getMenu(A);
-    expect(repo.count('findBranchStatus')).toBe(1);
-    expect(repo.count('findOverlay')).toBe(1);
-  });
-
-  it('sucursal inexistente o inactiva => 404 BRANCH_NOT_FOUND', async () => {
-    const { menu } = setup();
-    for (const id of [bid(99), bid(3)]) {
-      const e = await failure(menu.getMenu(id));
-      expect([(e as { status: number }).status, code(e)]).toEqual([404, 'BRANCH_NOT_FOUND']);
-    }
   });
 });

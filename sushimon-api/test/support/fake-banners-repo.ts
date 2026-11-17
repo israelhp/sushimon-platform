@@ -546,8 +546,9 @@ export class FakeBannersRepo {
   }
 
   findLinkedPromotions(ids: readonly string[]): Promise<Map<string, LinkedPromotion>> {
-    this.calls.push('findLinkedPromotions');
     const out = new Map<string, LinkedPromotion>();
+    // Como el repositorio real: sin ids no hay consulta.
+    if (ids.length > 0) this.calls.push('findLinkedPromotions');
     for (const id of ids) {
       const p = this.promotions.get(id);
       if (p) out.set(id, p);

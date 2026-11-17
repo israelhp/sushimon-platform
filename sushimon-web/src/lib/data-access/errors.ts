@@ -28,6 +28,8 @@ export class ApiError extends Error {
     readonly businessCode?: string,
     /** Violaciones por elemento (`ErrorResponse.violations`: `path`, `code`, `message`). */
     readonly violations?: readonly { path: string; code: string; message: string }[],
+    /** Segundos de espera pedidos por el servidor (`Retry-After`, p. ej. en 429); `undefined` si no vino. */
+    readonly retryAfterSec?: number,
   ) {
     super(message);
     this.name = 'ApiError';

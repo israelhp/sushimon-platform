@@ -150,6 +150,19 @@ describe('paths', () => {
     }
   });
 
+  it('F17: rutas del bootstrap y la búsqueda; el mock registra los cuatro agregados públicos', () => {
+    expect(paths.storeBootstrap()).toBe('/v1/store/bootstrap');
+    expect(paths.storeSearch()).toBe('/v1/store/search');
+    for (const key of [
+      'GET /v1/store/bootstrap',
+      'GET /v1/store/search',
+      'GET /v1/store/menu',
+      'GET /v1/store/products/:slug',
+    ]) {
+      expect(Object.keys(mockRoutes)).toContain(key);
+    }
+  });
+
   it('todas las rutas del documento de endpoints previstos están en el mock', () => {
     const doc = readFileSync(
       join(__dirname, '../../../../docs/contracts/planned-endpoints.md'),

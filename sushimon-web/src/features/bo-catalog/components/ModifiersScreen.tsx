@@ -167,7 +167,7 @@ export function ModifiersScreen() {
       ) : null}
 
       {groups.isPending ? (
-        <div aria-busy="true" aria-label={tu('loading')} className="card">
+        <div role="status" aria-busy="true" aria-label={tu('loading')} className="card">
           {Array.from({ length: 4 }, (_, i) => (
             <Skeleton key={i} zone="bo" style={{ height: 56, margin: 12, borderRadius: 12 }} />
           ))}

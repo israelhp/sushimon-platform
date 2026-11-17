@@ -8,8 +8,6 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { formatMoney } from '@/lib/format';
 import { isOrderInProgress } from '@/lib/order-status';
 import { useMyOrders } from '@/features/account/hooks';
-import { useProducts } from '@/features/catalog/hooks';
-import { productName } from '@/features/catalog/localized';
 import { OrderStatusChip } from '@/features/orders/components/order-status-chip';
 import { ReorderDialog } from '@/features/orders/components/reorder-dialog';
 import { useLastOrder } from '@/features/orders/last-order';
@@ -50,7 +48,6 @@ export function LastOrderCard() {
   const tu = useTranslations('ui');
   const locale = useLocale();
   const last = useLastOrder();
-  const products = useProducts();
   const [reordering, setReordering] = useState(false);
 
   if (last.isPending) {
@@ -71,10 +68,8 @@ export function LastOrderCard() {
   if (!order) return null;
 
   const summary = order.lines
-    .map((line) => {
-      const product = products.data?.find((p) => p.id === line.productId);
-      return `${line.quantity}× ${product ? productName(product, locale) : line.name}`;
-    })
+    // F17: el resumen usa el nombre guardado en el pedido; el catálogo solo se carga al abrir «Pedir de nuevo» (ReorderDialog).
+    .map((line) => `${line.quantity}× ${line.name}`)
     .join(' · ');
 
   return (

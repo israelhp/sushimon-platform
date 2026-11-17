@@ -25,6 +25,16 @@ export const BASICS_CHUNK = 1000;
 /** Productos candidatos a mostrar por promoción (el tope de `items` es {@link MAX_STORE_ITEMS}). */
 const MAX_ITEM_CANDIDATES = MAX_STORE_ITEMS;
 
+/** Promoción pública indicativa de un producto (contrato `StoreProductPromo`; nunca un cupón ni un código). */
+export interface IndicativePromotion {
+  promotionId: string;
+  name: string;
+  isHappyHour: boolean;
+  dineInOnly: boolean;
+  regularPrice: string;
+  promoPrice: string;
+}
+
 const iso = (ms: number | null): string | null => (ms === null ? null : new Date(ms).toISOString());
 
 /**
@@ -42,11 +52,23 @@ export class PublicPromotionsService {
     @Inject(CategoriesQueryService) private readonly categories: CategoriesQueryService,
   ) {}
 
-  async list(branchId: string, state: 'live' | 'upcoming'): Promise<StorePromotionListDto> {
-    const now = this.time.now();
+  /**
+   * `opts` (F17, todo opcional y aditivo; sin él el comportamiento de F15 no cambia): `compact` omite `items` y
+   * `productIds` (agregado del Inicio, sin las lecturas de productos); `limit` recorta lo mostrado (`nextChangeAt` se
+   * sigue calculando con TODAS las candidatas cargadas); `branchValidated` evita repetir la lectura de la sucursal cuando
+   * el llamador ya la validó en la misma solicitud; `now` fija el instante (una sola hora por solicitud).
+   */
+  async list(
+    branchId: string,
+    state: 'live' | 'upcoming',
+    opts: { compact?: boolean; limit?: number; branchValidated?: boolean; now?: Date } = {},
+  ): Promise<StorePromotionListDto> {
+    const now = opts.now ?? this.time.now();
     const nowMs = now.getTime();
-    const branch = await this.repo.findBranchStatus(branchId);
-    if (!branch?.active) throw branchNotFound();
+    if (opts.branchValidated !== true) {
+      const branch = await this.repo.findBranchStatus(branchId);
+      if (!branch?.active) throw branchNotFound();
+    }
 
     const loaded = await this.repo.findCandidates({
       branchId,
@@ -71,19 +93,107 @@ export class PublicPromotionsService {
           a.c.startsAt.getTime() - b.c.startsAt.getTime() ||
           (a.c.id < b.c.id ? -1 : a.c.id > b.c.id ? 1 : 0),
       );
-    const truncated = loadedTruncated || matching.length > MAX_STORE_PROMOTIONS;
-    const shown = matching.slice(0, MAX_STORE_PROMOTIONS);
+    const cap = Math.min(opts.limit ?? MAX_STORE_PROMOTIONS, MAX_STORE_PROMOTIONS);
+    const truncated = loadedTruncated || matching.length > cap;
+    const shown = matching.slice(0, cap);
 
-    const itemsByPromotion = await this.indicativeItems(
-      branchId,
-      shown.map((s) => s.c),
-    );
+    const itemsByPromotion =
+      opts.compact === true
+        ? new Map<string, StorePromotionItemDto[]>()
+        : await this.indicativeItems(
+            branchId,
+            shown.map((s) => s.c),
+          );
     return {
       branchId,
       generatedAt: now.toISOString(),
       nextChangeAt: iso(nextChangeAt),
       truncated,
-      items: shown.map(({ c, t }) => this.view(c, t, state, itemsByPromotion.get(c.id))),
+      items: shown.map(({ c, t }) =>
+        this.view(c, t, state, itemsByPromotion.get(c.id), opts.compact === true),
+      ),
+    };
+  }
+
+  /**
+   * Promociones AUTOMÁTICAS vigentes que aplican a cada producto, con precio INDICATIVO (cantidad 1, precio de sucursal
+   * `price` que aporta el llamador, esa promoción por sí sola) calculado con `computeLineDiscount`, la misma función del
+   * evaluador de F19. Una consulta (candidatas) sin importar cuántos productos: sin N+1. Nunca cupones ni códigos. La
+   * lista de cada producto va ordenada: mayor ahorro, vence antes, `id` menor (ADR-0021). Un producto agotado
+   * (`available === false`) no recibe promoción. `nextChangeAt` = primer cambio de vigencia (en 14 días) de las
+   * promociones que aplican a algún producto recibido, vigentes o próximas (acota la caché del llamador).
+   */
+  async findIndicativeForProducts(
+    branchId: string,
+    products: readonly { id: string; price: string; available?: boolean | null }[],
+    opts: { now?: Date } = {},
+  ): Promise<{ byProduct: Map<string, IndicativePromotion[]>; nextChangeAt: string | null }> {
+    const byProduct = new Map<string, IndicativePromotion[]>();
+    if (products.length === 0) return { byProduct, nextChangeAt: null };
+    const now = opts.now ?? this.time.now();
+    const nowMs = now.getTime();
+    const loaded = await this.repo.findCandidates({
+      branchId,
+      startsBefore: new Date(nowMs + HORIZON_MS),
+      endsAfter: now,
+      codes: { coupon: null },
+      omitCouponProducts: true,
+      limit: LOAD_LIMIT + 1,
+    });
+    const shared = this.time.sharedFor(nowMs);
+    const changes: number[] = [];
+    const scored = new Map<
+      string,
+      { promo: IndicativePromotion; saved: number; endsAt: number }[]
+    >();
+    for (const c of loaded.slice(0, LOAD_LIMIT)) {
+      if (c.code !== null) continue;
+      const t = this.time.timing(c, nowMs, shared);
+      const scope = c.hasProducts ? new Set(c.productIds) : null;
+      let touches = false;
+      for (const p of products) {
+        if (scope !== null && !scope.has(p.id)) continue;
+        touches = true;
+        if (!t.live || p.available === false) continue;
+        let discount;
+        try {
+          discount = computeLineDiscount(c.kind, c.value, p.price, 1);
+        } catch {
+          continue; // dato inválido en una promoción: no se muestra, nunca rompe la lectura
+        }
+        if (discount.discountCents <= 0) continue;
+        const list = scored.get(p.id) ?? [];
+        list.push({
+          promo: {
+            promotionId: c.id,
+            name: c.name,
+            isHappyHour: c.schedule.length > 0,
+            dineInOnly: c.dineInOnly,
+            regularPrice: p.price,
+            promoPrice: centsToDecimal(discount.finalCents),
+          },
+          saved: discount.discountCents,
+          endsAt: c.endsAt.getTime(),
+        });
+        scored.set(p.id, list);
+      }
+      if (touches && t.nextChangeAt !== null) changes.push(t.nextChangeAt);
+    }
+    for (const [id, list] of scored) {
+      list.sort(
+        (a, b) =>
+          b.saved - a.saved ||
+          a.endsAt - b.endsAt ||
+          (a.promo.promotionId < b.promo.promotionId ? -1 : 1),
+      );
+      byProduct.set(
+        id,
+        list.map((x) => x.promo),
+      );
+    }
+    return {
+      byProduct,
+      nextChangeAt: changes.length > 0 ? new Date(Math.min(...changes)).toISOString() : null,
     };
   }
 
@@ -92,6 +202,7 @@ export class PublicPromotionsService {
     t: PromotionTiming,
     state: 'live' | 'upcoming',
     items: StorePromotionItemDto[] | undefined,
+    compact = false,
   ): StorePromotionDto {
     const requiresCode = c.code !== null;
     const selected = c.hasProducts;
@@ -114,7 +225,7 @@ export class PublicPromotionsService {
       nextStartsAt: iso(t.nextStartsAt),
       nextEndsAt: state === 'live' ? iso(t.nextEndsAt) : null,
       productScope: selected ? 'SELECTED' : 'ALL',
-      ...(selected && !requiresCode ? { productIds: [...c.productIds] } : {}),
+      ...(selected && !requiresCode && !compact ? { productIds: [...c.productIds] } : {}),
       ...(items ? { items } : {}),
     };
   }

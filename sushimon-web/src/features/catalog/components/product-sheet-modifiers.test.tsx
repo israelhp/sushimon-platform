@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/data-access/errors';
 import type { PublicModifierGroup } from '@/lib/data-access/models';
 import { withShortcuts, type RequestOptions } from '@/lib/data-access/types';
+import { findLoadedDialog } from '@/test/sheet';
 import { renderStore } from '@/test/store-providers';
 import { useModifierSelection, estimatedUnitCents } from '../modifier-selection';
 import { useProducts } from '../hooks';
@@ -40,7 +41,7 @@ async function openSheet(id: string, options: Parameters<typeof renderStore>[1] 
   const view = await renderStore(<Opener id={id} />, options);
   await act(async () => {});
   fireEvent.click(screen.getByRole('button', { name: 'abrir' }));
-  const dialog = await screen.findByRole('dialog');
+  const dialog = await findLoadedDialog();
   return { view, dialog };
 }
 
@@ -171,7 +172,7 @@ describe('Ficha pública F12: selector de extras', () => {
   it('onAdd recibe la selección ESTRUCTURADA {groupId, modifierIds[]} (solo grupos con elección)', async () => {
     const onAdd = vi.fn();
     await renderStore(<DirectSheet id="sushi-pizza" onAdd={onAdd} />);
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await findLoadedDialog();
     const salsa = await within(dialog).findByRole('group', { name: /Salsa/ });
     fireEvent.click(within(salsa).getByRole('radio', { name: /Salsa de anguila/ }));
     const extras = within(dialog).getByRole('group', { name: /Extras/ });
@@ -190,8 +191,8 @@ describe('Ficha pública F12: selector de extras', () => {
   });
 
   it('error al cargar la ficha (no 404): avisa, ofrece reintentar y no deja agregar a ciegas', async () => {
-    // La ficha reintenta 2 veces los errores que no son 404: hacen falta 3 fallos seguidos para que se vea el error.
-    let failures = 3;
+    // El QueryClient de pruebas no reintenta: un solo fallo basta para ver el error; «Reintentar» lo resuelve.
+    let failures = 1;
     const { dialog } = await openSheet('sushi-pizza', {
       wrapClient: (base) =>
         withShortcuts('mock', async <T,>(path: string, options: RequestOptions = {}) => {

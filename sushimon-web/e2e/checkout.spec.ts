@@ -24,7 +24,7 @@ async function toCheckout(page: Page) {
     );
   });
   await page.goto('/');
-  await page.getByRole('heading', { name: /Favoritos/ }).waitFor();
+  await page.getByRole('heading', { name: /hambre/i }).waitFor();
   await page
     .getByRole('button', { name: /Ver tu pedido/ })
     .filter({ visible: true })

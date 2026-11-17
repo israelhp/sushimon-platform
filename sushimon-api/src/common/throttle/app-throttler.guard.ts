@@ -7,6 +7,8 @@ import { codedException } from '../errors/coded-exception.js';
 export const COVERAGE_CHECK_THROTTLE = { default: { limit: 30, ttl: 60_000 } };
 /** Lecturas públicas del catálogo (F11): lista y ficha de productos, 60/min por IP. */
 export const PRODUCTS_PUBLIC_THROTTLE = { default: { limit: 60, ttl: 60_000 } };
+/** Búsqueda pública (F17): más cara que una lectura simple; 30/min por IP, contador propio de la ruta. */
+export const STORE_SEARCH_THROTTLE = { default: { limit: 30, ttl: 60_000 } };
 export const LOCATIONS_THROTTLE = { default: { limit: 60, ttl: 60_000 } };
 
 /** Favoritos del cliente (F06 D13). Por IP; cada handler tiene su contador. */

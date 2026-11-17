@@ -67,6 +67,23 @@ function compile<TStore, TContext>(
   });
 }
 
+/**
+ * Instrumentación de PRUEBAS (Playwright): si la página define `window.__sushimonMockRequests = []` antes de cargar, cada solicitud
+ * del adaptador mock se anota ahí como `METHOD /ruta?query` (el mock no emite solicitudes de red, así que no se pueden contar con
+ * `page.on('request')`). Sin ese arreglo no hace nada.
+ */
+declare global {
+  interface Window {
+    __sushimonMockRequests?: string[];
+  }
+}
+
+function recordRequest(method: string, path: string, query: RequestOptions['query']): void {
+  if (typeof window === 'undefined' || !Array.isArray(window.__sushimonMockRequests)) return;
+  const qs = toSearchParams(query).toString();
+  window.__sushimonMockRequests.push(`${method} ${path}${qs ? `?${qs}` : ''}`);
+}
+
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (ms <= 0) return resolve();
@@ -92,6 +109,7 @@ export function createMockClient<TStore, TContext = undefined>(
 
   async function request<T>(path: string, req: RequestOptions = {}): Promise<T> {
     const { method = 'GET', query, body, signal } = req;
+    recordRequest(method, path, query);
     if (scenario === 'loading') return new Promise<T>(() => {});
     await sleep(latencyMs, signal);
     if (scenario === 'offline')

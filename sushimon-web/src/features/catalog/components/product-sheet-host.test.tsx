@@ -2,6 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '@/lib/data-access/errors';
 import { withShortcuts } from '@/lib/data-access/types';
+import { findLoadedDialog } from '@/test/sheet';
 import { renderStore } from '@/test/store-providers';
 import { MAX_QUANTITY } from '@/features/cart/cart';
 import { useProductSheet } from '../product-sheet-context';
@@ -25,7 +26,7 @@ async function openSheet(id = 'dumplings', options: Parameters<typeof renderStor
   // Espera a que el catálogo cargue antes de abrir.
   await act(async () => {});
   fireEvent.click(screen.getByRole('button', { name: 'abrir' }));
-  const dialog = await screen.findByRole('dialog');
+  const dialog = await findLoadedDialog();
   return { view, dialog };
 }
 
@@ -104,7 +105,7 @@ describe('ProductSheet', () => {
     fireEvent.change(screen.getByLabelText('Observaciones'), { target: { value: 'x' } });
     fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: 'abrir' }));
-    await screen.findByRole('dialog');
+    await findLoadedDialog();
     expect(screen.getByLabelText('Observaciones')).toHaveValue('');
     expect(screen.getByRole('group', { name: 'Cantidad' })).toHaveTextContent('1');
   });
@@ -135,11 +136,15 @@ describe('ProductSheet', () => {
     expect(within(dialog).getByLabelText('Special requests')).toBeInTheDocument();
   });
 
-  it('un producto que no existe no abre nada', async () => {
+  it('un producto que no existe: el diálogo se abre y dice que ya no está disponible (sin ficha vacía ni agregar)', async () => {
     await renderStore(<Opener id="no-existe" />);
     await act(async () => {});
     fireEvent.click(screen.getByRole('button', { name: 'abrir' }));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Este producto ya no está disponible en el menú.',
+    });
+    expect(dialog).toHaveAttribute('aria-busy', 'false');
+    expect(screen.queryByRole('button', { name: /^Agregar\s*Q/ })).not.toBeInTheDocument();
   });
 });
 

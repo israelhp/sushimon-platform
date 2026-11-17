@@ -12,8 +12,9 @@ import { happyHourPhase, pickHappyHour } from './happy-hour';
 export function useHappyHour(branchId?: string | null) {
   const selected = useOptionalOrderMode()?.mode.branchId ?? null;
   const branch = branchId === undefined ? selected : branchId;
-  const live = useStorePromotions(branch, 'live');
-  const upcoming = useStorePromotions(branch, 'upcoming');
+  // F17: el banner solo necesita nombre/estado/fechas: modo compacto (el servidor no lee productos por promoción).
+  const live = useStorePromotions(branch, 'live', { compact: true });
+  const upcoming = useStorePromotions(branch, 'upcoming', { compact: true });
   const promotion = useMemo(
     () => pickHappyHour(live.data?.items ?? [], upcoming.data?.items ?? []),
     [live.data, upcoming.data],

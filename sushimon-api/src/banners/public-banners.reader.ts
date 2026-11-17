@@ -28,7 +28,7 @@ export class PublicBannersReader {
   async findActiveBanners(input: FindActiveBannersInput): Promise<ActiveBanners> {
     const branchId = input.branchId ?? null;
     try {
-      if (branchId !== null) {
+      if (branchId !== null && input.branchValidated !== true) {
         const branch = await this.repo.findBranchStatus(branchId);
         if (!branch?.active) throw branchNotFound();
       }

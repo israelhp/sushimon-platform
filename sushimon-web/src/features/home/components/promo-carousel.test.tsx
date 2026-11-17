@@ -389,14 +389,16 @@ describe('PromoCarousel: actualización en nextChangeAt y por sucursal', () => {
     const spy = createSpyClient();
     const view = await renderStore(<PromoCarousel />, { wrapClient: spy.wrap });
     await waitFor(() => expect(slides().length).toBe(3));
-    const banners = () => spy.count('GET', /\/v1\/store\/banners$/);
+    // F17: el carrusel se alimenta del bootstrap; `/store/banners` NO se pide aparte.
+    const banners = () => spy.count('GET', /\/v1\/store\/bootstrap$/);
+    expect(spy.count('GET', /\/v1\/store\/banners$/)).toBe(0);
     expect(banners()).toBe(1);
     // El Happy Hour empieza a las 15:00 (35 min después de 14:25): hay un refetch programado, sin sondeo previo.
     await advance(30 * 60_000);
     expect(banners()).toBe(1);
     await advance(5 * 60_000 + 2_000);
     await waitFor(() => expect(banners()).toBe(2));
-    expect(spy.calls.at(-1)?.query).toMatchObject({ locale: 'es' });
+    expect(spy.calls.at(-1)?.path).toBe('/v1/store/bootstrap');
 
     // Cambiar de sucursal = otra clave = otra consulta con `branchId`.
     act(() => {
@@ -408,7 +410,8 @@ describe('PromoCarousel: actualización en nextChangeAt y por sucursal', () => {
       });
     });
     await waitFor(() => expect(banners()).toBe(3));
-    expect(spy.calls.at(-1)?.query).toMatchObject({ branchId: 'sucursal-2', locale: 'es' });
+    expect(spy.calls.at(-1)?.query).toMatchObject({ branchId: 'sucursal-2' });
+    expect(spy.count('GET', /\/v1\/store\/banners$/)).toBe(0);
   });
 
   it('si la sucursal guardada ya no existe (404) reintenta sin sucursal en vez de dejar el Inicio sin carrusel', async () => {

@@ -3,6 +3,12 @@ import { tokenSource, type TokenSource } from '@/lib/auth/token-source';
 import { ApiError, codeForStatus } from './errors';
 import { toSearchParams, withShortcuts, type DataClient, type RequestOptions } from './types';
 
+/** `Retry-After` en segundos (la forma de fecha HTTP no se interpreta); acotado a 1–120 s. */
+function parseRetryAfter(raw: string | null): number | undefined {
+  if (!raw || !/^\d{1,4}$/.test(raw.trim())) return undefined;
+  return Math.min(120, Math.max(1, Number(raw)));
+}
+
 /** @deprecated Usa ApiError. Alias conservado para no romper importaciones existentes. */
 export const HttpError = ApiError;
 
@@ -25,16 +31,17 @@ export function createHttpClient(
     options: RequestOptions,
     token: string | null,
   ): Promise<Response> {
-    const { method = 'GET', query, body, signal } = options;
+    const { method = 'GET', query, body, signal, public: isPublic = false } = options;
     const qs = toSearchParams(query).toString();
     const headers: Record<string, string> = {};
     if (body !== undefined) headers['content-type'] = 'application/json';
-    if (token) headers['authorization'] = `Bearer ${token}`;
+    if (token && !isPublic) headers['authorization'] = `Bearer ${token}`;
     try {
       return await fetchImpl(`${baseUrl}${path}${qs ? `?${qs}` : ''}`, {
         method,
         signal,
-        cache: 'no-store',
+        // Lecturas públicas: se respeta el Cache-Control del servidor (F17). El resto sigue sin caché del navegador.
+        ...(isPublic ? {} : { cache: 'no-store' as const }),
         credentials: 'omit',
         headers: Object.keys(headers).length ? headers : undefined,
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -47,7 +54,8 @@ export function createHttpClient(
 
   async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const method = options.method ?? 'GET';
-    let token = await auth.getAccessToken();
+    // Lectura pública: ni se consulta la sesión (la respuesta no depende de ella y la CDN no debe variar por token).
+    let token = options.public ? null : await auth.getAccessToken();
     let res = await send(path, options, token);
 
     if (res.status === 401 && token) {
@@ -74,6 +82,7 @@ export function createHttpClient(
         Array.isArray(payload?.details) ? payload.details : undefined,
         typeof payload?.code === 'string' ? payload.code : undefined,
         Array.isArray(payload?.violations) ? payload.violations : undefined,
+        parseRetryAfter(res.headers.get('retry-after')),
       );
     }
     if (res.status === 204) return undefined as T;

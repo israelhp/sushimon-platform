@@ -153,7 +153,7 @@ export class UpdateProductRequest {
 }
 
 /** Solo dígitos: `''`, `1.5` o `1e2` no se convierten (quedan como string y `@IsInt` los rechaza => 400). */
-const toStrictInt = ({ value }: { value: unknown }): unknown =>
+export const toStrictInt = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' && /^\d{1,9}$/.test(value) ? Number(value) : value;
 
 export const toBoolean = ({ value }: { value: unknown }): unknown =>

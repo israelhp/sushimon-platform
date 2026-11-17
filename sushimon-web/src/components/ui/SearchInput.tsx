@@ -2,7 +2,7 @@
 
 import { Search, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import type { InputHTMLAttributes } from 'react';
+import { useRef, type InputHTMLAttributes } from 'react';
 import { IconClose, IconSearch } from '@/components/icons/bo/icons';
 import { cn } from '@/lib/cn';
 import type { Zone } from './zone';
@@ -36,17 +36,21 @@ export function SearchInput({
   ...rest
 }: SearchInputProps) {
   const t = useTranslations('ui');
+  const inputRef = useRef<HTMLInputElement>(null);
   const name = label ?? t('search');
   const clear =
     clearable && value ? (
       <button
         type="button"
-        onClick={() => onValueChange('')}
+        onClick={() => {
+          onValueChange('');
+          inputRef.current?.focus();
+        }}
         aria-label={t('clearSearch')}
         className={
           zone === 'bo'
             ? 'icon-btn'
-            : 'absolute right-2 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-muted hover:bg-subtle hover:text-fg'
+            : 'absolute right-0.5 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-muted hover:bg-subtle hover:text-fg'
         }
         style={zone === 'bo' ? { width: 28, height: 28 } : undefined}
       >
@@ -60,6 +64,7 @@ export function SearchInput({
       <label className={cn('search', inline && 'inline flex!', wrapperClassName)}>
         <IconSearch size="sm" />
         <input
+          ref={inputRef}
           type="search"
           aria-label={name}
           value={value}
@@ -78,6 +83,7 @@ export function SearchInput({
         aria-hidden="true"
       />
       <input
+        ref={inputRef}
         type="search"
         aria-label={name}
         value={value}

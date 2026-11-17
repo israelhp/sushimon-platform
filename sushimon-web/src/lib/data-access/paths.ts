@@ -25,6 +25,10 @@ export const paths = {
   storeProduct: (slug: string) => `/v1/store/products/${seg(slug)}`,
   /** F13: overlay público de precio efectivo y disponibilidad de UNA sucursal (`?branchId=`). */
   storeMenu: () => '/v1/store/menu',
+  /** F17 (contrato): agregado de arranque del Inicio por sucursal e idioma (`?branchId&locale`). Público, caché ≤ 15 s. */
+  storeBootstrap: () => '/v1/store/bootstrap',
+  /** F17 (contrato): búsqueda pública (`?q&branchId&categorySlug&available&page&pageSize`). Público, caché ≤ 15 s. */
+  storeSearch: () => '/v1/store/search',
   /** LEGACY (mock previo a F10): categorías planas del catálogo simulado (Happy Hour y reportes). */
   categories: () => '/v1/catalog/categories',
   /** F15 (contrato): promociones y Happy Hour vigentes o próximas de UNA sucursal (`?branchId=&state=live|upcoming`). Público, informativo. */

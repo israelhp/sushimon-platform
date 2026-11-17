@@ -25,7 +25,13 @@ export const listStorePromotions = (
   client: DataClient,
   branchId: string,
   state: StorePromotionState = 'live',
-) => client.get<StorePromotionList>(paths.storePromotions(), { query: { branchId, state } });
+  /** F17: `compact` = sin `items` ni `productIds` (no lee productos): para banners como el de Happy Hour del menú. */
+  options: { compact?: boolean } = {},
+) =>
+  client.get<StorePromotionList>(paths.storePromotions(), {
+    query: { branchId, state, compact: options.compact ? true : undefined },
+    public: true,
+  });
 
 export type AdminPromotionStatusFilter =
   'active' | 'inactive' | 'scheduled' | 'running' | 'expired';

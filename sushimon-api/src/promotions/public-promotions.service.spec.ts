@@ -325,3 +325,54 @@ describe('PromotionCandidatesService', () => {
     expect(ok.lines[0]).toMatchObject({ discountAmount: '21.25', finalPrice: '63.75' });
   });
 });
+
+describe('PublicPromotionsService (F17, aditivo)', () => {
+  it('compact: sin items ni productIds, con límite y sin leer productos; nextChangeAt usa todas las candidatas', async () => {
+    const h = promotionsHarness();
+    h.repo.seed(happy({ name: 'Una' }));
+    h.repo.seed({ name: 'Dos', endsAt: local('2026-11-16T16:30:00') });
+    h.repo.seed({ name: 'Tres' });
+    h.repo.calls.length = 0;
+    const out = await h.store.list(A, 'live', { compact: true, limit: 2, branchValidated: true });
+    expect(out.items).toHaveLength(2);
+    expect(out.truncated).toBe(true);
+    for (const item of out.items) {
+      expect(item).not.toHaveProperty('items');
+      expect(item).not.toHaveProperty('productIds');
+    }
+    expect(h.repo.count('findBranchStatus')).toBe(0);
+    expect(h.repo.count('findProductBasics')).toBe(0);
+    expect(out.nextChangeAt).toBe(local('2026-11-16T16:30:00').toISOString());
+  });
+
+  it('sin opciones el comportamiento de F15 no cambia (valida sucursal y devuelve items)', async () => {
+    const h = promotionsHarness();
+    h.repo.seed(happy());
+    const out = await h.store.list(A, 'live');
+    expect(out.items[0]?.items).toBeDefined();
+    expect(out.items[0]?.productIds).toEqual([P1, P2]);
+    expect(h.repo.count('findBranchStatus')).toBe(1);
+  });
+
+  it('findIndicativeForProducts: una consulta, solo automáticas vigentes, mayor ahorro primero, agotado sin promo', async () => {
+    const h = promotionsHarness();
+    h.repo.seed({ name: 'Q5', kind: 'FIXED_AMOUNT', value: '5.00' });
+    h.repo.seed({ name: '30%', value: '30.00', productIds: [P1] });
+    h.repo.seed({ name: 'Cupón', code: 'ABC123', value: '90.00' });
+    h.repo.calls.length = 0;
+    const out = await h.store.findIndicativeForProducts(A, [
+      { id: P1, price: '85.00' },
+      { id: P2, price: '30.00' },
+      { id: P3, price: '25.00', available: false },
+    ]);
+    expect(h.repo.count('findCandidates')).toBe(1);
+    expect(out.byProduct.get(P1)?.map((p) => [p.name, p.promoPrice])).toEqual([
+      ['30%', '59.50'],
+      ['Q5', '80.00'],
+    ]);
+    expect(out.byProduct.get(P2)?.map((p) => p.name)).toEqual(['Q5']);
+    expect(out.byProduct.has(P3)).toBe(false);
+    expect(JSON.stringify([...out.byProduct])).not.toContain('ABC123');
+    expect((await h.store.findIndicativeForProducts(A, [])).byProduct.size).toBe(0);
+  });
+});
