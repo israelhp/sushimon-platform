@@ -1138,10 +1138,17 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Ficha pública de un producto visible
-         * @description F11. Sin autenticación. Devuelve la ficha con imágenes ordenadas y la cadena de ancestros visibles de su categoría
-         *     (raíz -> padre) para el breadcrumb. 404 `PRODUCT_NOT_FOUND` si el slug no existe, el producto está inactivo o su
-         *     categoría no es visible (no se distingue el motivo). Sin SKU. Caché compartida corta (`Cache-Control: public`).
+         * Ficha pública de un producto visible (con oferta de sucursal opcional)
+         * @description F11 + F12, ampliada en F17 de forma ADITIVA. Sin autenticación. Devuelve la ficha con imágenes ordenadas (F14), la cadena de ancestros visibles de su categoría (raíz -> padre) para el
+         *     breadcrumb y los grupos de modificadores ofrecibles (F12). 404 `PRODUCT_NOT_FOUND` si el slug no existe, el producto está inactivo o su categoría no es visible (no se distingue el motivo). Sin SKU.
+         *
+         *     `branchId` (OPCIONAL, nuevo en F17; inexistente o inactiva => 404 `BRANCH_NOT_FOUND`): añade `offer` (precio EFECTIVO y disponibilidad de ESA sucursal, F13) y `promotions` (las promociones
+         *     públicas indicativas vigentes que aplican al producto, F15; nunca cupones ni códigos; máx. 3, la de mayor ahorro primero) más `generatedAt` y `nextChangeAt`. SIN `branchId` esos cuatro campos
+         *     se omiten y la respuesta es la de F11/F12. La ficha NO calcula totales, no aplica descuentos ni valida la selección de extras (F19) y no es el carrito (F18): los precios son INFORMATIVOS
+         *     y el servidor recalcula al cotizar. Nunca incluye favoritos ni datos del cliente (los pide la web aparte con `listMyFavorites`).
+         *
+         *     Caché: SIN `branchId` se conserva `public, max-age=60, stale-while-revalidate=300` (sin `ETag`); CON `branchId` rige la política acotada de `getStoreBootstrap` (`public, max-age=min(N,5),
+         *     s-maxage=N`, `N` en 1..15, `no-store` si `nextChangeAt` ya pasó), sin `stale-while-revalidate` ni `ETag`. Los errores llevan `no-store`.
          */
         get: operations["getStoreProduct"];
         put?: never;
@@ -1403,6 +1410,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/store/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agregado de arranque del Inicio por sucursal e idioma (público, acotado)
+         * @description F17. Sin autenticación. UNA solicitud para pintar el Inicio, en lugar de varias: contexto público de la sucursal, categorías principales, productos destacados,
+         *     promociones vigentes, banners y el contador del menú. NO devuelve el catálogo (tope fijo de elementos por sección) ni datos privados del cliente (favoritos, direcciones,
+         *     pedidos y sesión se piden aparte con rutas autenticadas `/v1/me/...`), ni consulta PedidosYa/Neonet. `branchId` es opcional: sin él `branch`, `availability` son `null`, `promotions`
+         *     va vacío, los banners son solo los de «todas las sucursales» (como `listStoreBanners`) y los destacados llevan el precio base y `available=null`; con él (inexistente o inactiva =>
+         *     404 `BRANCH_NOT_FOUND`) todo se calcula para esa sucursal. `locale` (`es` por defecto | `en`) solo afecta a los banners (respaldo POR CAMPO a `es`: `fallbackFields`); los nombres de
+         *     categorías y productos no tienen traducción en v1.
+         *
+         *     Composición (sin duplicar reglas): `branch` = campos de `getPublicBranch`; `availability` = `getBranchAvailability` (F08); `categories` = raíces visibles de F10 (máx. 30,
+         *     `hasChildren` para saber si hay subcategorías; el árbol completo sigue en `listStoreCategories`); `featured` = productos destacados VISIBLES (F11/F10) con la misma tarjeta que
+         *     `getStoreBranchMenu` (máx. 8, orden estable: criterio P23); `promotions` = las promociones automáticas y los cupones VIGENTES AHORA de `listStorePromotions` (F15) en su forma pública
+         *     (nunca `code`; un cupón sale con `requiresCode=true` y sin descuento), máx. 5, SIN `items`; `banners` = `listStoreBanners` (F16), máx. 10; `productCount` = productos visibles de
+         *     la sucursal (disponibles o no) para el pie del Inicio. Las secciones no críticas (`availability`, `featured`, `promotions`, `banners`) son independientes: si una falla, la respuesta
+         *     sigue siendo 200 con esa sección vacía/`null` y su nombre en `degraded`; categorías, sucursal y `productCount` son críticas (error => 404/5xx).
+         *
+         *     Caché compartida acotada por el próximo cambio: `nextChangeAt` = el MENOR no nulo de `promotions` (cambio de vigencia), `banners` (inicio/fin) y `availability.nextTransitionAt`
+         *     (apertura/cierre), siempre con horizonte de 14 días; `null` si no hay. `Cache-Control: public, max-age=min(N,5), s-maxage=N` con `N = clamp(segundos enteros hasta nextChangeAt
+         *     medidos con generatedAt, 1, 15)` (15 si `nextChangeAt` es `null`), `no-store` si `nextChangeAt` ya pasó; si `degraded` no está vacío, `public, max-age=0, s-maxage=3` (acotado para no anular la CDN ante una sección que falla de forma persistente); sin `stale-while-revalidate` ni `ETag`;
+         *     `Vary: Accept-Encoding` (sucursal e idioma van en la URL, nunca en cabeceras ni cookies; la respuesta no depende de `Authorization`). Una edición del backoffice (producto, precio,
+         *     disponibilidad, categoría, promoción, banner, horario) puede tardar hasta 15 s en verse en la caché compartida. Los errores llevan `no-store`. Límite de tasa propio (60/min por IP).
+         */
+        get: operations["getStoreBootstrap"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/store/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Búsqueda pública de productos del menú (paginada y acotada)
+         * @description F17. Sin autenticación. Busca `q` (obligatoria, 2 a 80 caracteres tras recortar; los caracteres de control, de formato (bidi, ancho cero, guion blando) y NUL se RECHAZAN con 400, no se ignoran; los comodines `%`, `_` y `\` se tratan como texto literal) en el NOMBRE y la
+         *     DESCRIPCIÓN del producto y en el NOMBRE de su categoría, sin distinguir mayúsculas ni acentos (mismo plegado que `listStoreProducts`: `salmon` encuentra «Salmón»). El SKU y el slug NO son buscables
+         *     públicamente. Solo productos VISIBLES (F11: activos y con categoría efectivamente visible de F10); un producto oculto o inactivo nunca aparece. Con `branchId` (inexistente o inactiva =>
+         *     404 `BRANCH_NOT_FOUND`) el `price` es el EFECTIVO de la sucursal (F13), `available` es booleano y `promo` trae la promoción indicativa vigente (F15); sin él, `price` es el base y `available`
+         *     es `null` (desconocido). `available=true` deja solo los disponibles en la sucursal (exige `branchId`; sin él => 400); sin valor se devuelven todos y los agotados salen con `available=false`
+         *     (la web los muestra deshabilitados: P25). `categorySlug` restringe a una categoría visible y sus descendientes visibles (inexistente o no visible => lista vacía). Sin resultados es válido (200,
+         *     `items=[]`, `total=0`). Orden ESTABLE y determinista: 1) nombre empieza por `q`, 2) nombre contiene `q`, 3) solo coincide en descripción o categoría; dentro de cada grupo `name`, `id`. Tope
+         *     de páginas 20 y `pageSize` <= 50 (como máximo 1.000 resultados alcanzables). Tarjeta mínima: sin modificadores ni relaciones completas (eso es `getStoreProduct`). No hay `locale`: los nombres no tienen
+         *     traducción en v1 (P26). Caché compartida acotada igual que `getStoreBootstrap` (`N` en 1..15; `nextChangeAt` solo por promociones vigentes de los resultados; `null` si no hay), `no-store` en errores;
+         *     sin `ETag`/`stale-while-revalidate`. Límite de tasa propio y más bajo que el de lectura general: 30/min por IP en esta ruta.
+         */
+        get: operations["searchStoreProducts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/store/menu": {
         parameters: {
             query?: never;
@@ -1411,16 +1485,20 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Precio efectivo y disponibilidad por sucursal de los productos visibles (overlay del menú)
-         * @description F13. Sin autenticación. Devuelve, para UNA sucursal ACTIVA, un «overlay» ligero con TODOS los productos públicamente visibles (F11: producto activo Y
-         *     categoría efectivamente visible): `productId`, `slug`, `price` (precio EFECTIVO de esa sucursal: `price_override` si existe, si no el precio base; cadena
-         *     decimal) y `available`. NO duplica nombre, descripción, categoría ni imágenes (la web combina con `listStoreProducts`/`getStoreProduct`) y NO expone el precio
-         *     base ni si hay override (nunca se muestra el precio de otra sucursal). Sin stock numérico: `available=false` significa «agotado/no disponible» y no promete
-         *     cantidades. Sin paginación (catálogo de cientos de productos; orden `slug`, `productId`). `branchId` ausente o con forma inválida => 400; sucursal inexistente o
-         *     inactiva => 404 `BRANCH_NOT_FOUND` (no se distingue). Caché compartida corta `public, max-age=15` (sin `stale-while-revalidate` ni `ETag`): la caché HTTP no se
-         *     puede invalidar, de modo que un cambio de disponibilidad/precio es visible en <= 15 s; la web además invalida su caché de TanStack Query. Es INFORMATIVO: la validación
-         *     DEFINITIVA al cotizar/crear el pedido (F19/F20) se hace en el servidor contra la base de datos. Las respuestas de error llevan `Cache-Control: no-store`.
-         *     Límite de tasa propio (60/min por IP, como F11).
+         * Menú público por sucursal en tarjetas (precio efectivo, disponibilidad e info promocional), paginado
+         * @description F13 (overlay) ampliado en F17 de forma ADITIVA. Sin autenticación. Devuelve las TARJETAS de los productos públicamente visibles (F11: activo Y categoría efectivamente visible de F10), en el
+         *     orden del menú (categorías en el orden del árbol, luego `name`, `id`; `sort`/`order` lo cambian). Cada tarjeta conserva los 4 campos de F13 (`productId`, `slug`, `price`, `available`) y añade
+         *     `name`, `summary` (descripción corta: texto plano <= 160 caracteres, recortado sin partir palabras), `image` (la imagen principal, F14, o `null`), `category` (referencia mínima) y `promo` (la
+         *     promoción pública indicativa vigente de F15 con mayor ahorro, o `null`; nunca un cupón ni un código). SIN modificadores, sin galería, sin SKU, sin descripción completa ni relaciones: eso es
+         *     `getStoreProduct`. `price` es el EFECTIVO de la sucursal (`price_override` o base) y NO expone el precio base ni si hay override (nunca el precio de otra sucursal). Sin stock numérico:
+         *     `available=false` = «agotado/no disponible». Es INFORMATIVO: la validación DEFINITIVA al cotizar/crear el pedido (F19/F20) se hace en el servidor.
+         *
+         *     Cambios F17 respecto a F13 (todos aditivos o relajaciones; ver ADR-0023): (1) `branchId` pasa a OPCIONAL: sin él `price` es el base y `available` es `null`; con él inexistente o inactiva => 404
+         *     `BRANCH_NOT_FOUND`; ya no hay 400 por falta de `branchId` (sí por forma inválida). (2) Paginación `page`/`pageSize` (<= 100, por defecto 100): antes devolvía TODO sin paginar; un catálogo visible
+         *     de <= 100 productos se comporta igual que antes, y desde 101 el consumidor DEBE seguir `total` (la web lo hace). (3) Filtros `categorySlug` (con descendientes visibles; inexistente o no visible =>
+         *     lista vacía) y `available`. (4) La respuesta añade `page`, `pageSize`, `total`, `generatedAt` y `nextChangeAt`. (5) La caché pasa de `public, max-age=15` a la política acotada de
+         *     `getStoreBootstrap` (`max-age=min(N,5)`, `s-maxage=N`, `N` en 1..15; `nextChangeAt` solo por promociones vigentes de la página), sin `stale-while-revalidate` ni `ETag`; la edición del
+         *     backoffice tarda <= 15 s en verse, igual que en F13. Los errores llevan `no-store`. Límite de tasa propio (60/min por IP).
          */
         get: operations["getStoreBranchMenu"];
         put?: never;
@@ -3356,8 +3434,29 @@ export interface components {
             category: components["schemas"]["PublicProductCategoryRef"];
             media: components["schemas"]["PublicProductMedia"][];
         };
+        /** @description Precio EFECTIVO y disponibilidad de UNA sucursal para la ficha (F13). Informativo. */
+        StoreProductOffer: {
+            /** Format: uuid */
+            branchId: string;
+            price: components["schemas"]["ProductPrice"];
+            available: boolean;
+        };
         /** @description Ficha pública, igual que `PublicProduct` más los ancestros visibles de la categoría para el breadcrumb y los grupos de modificadores ofrecibles (F12). */
         PublicProductDetail: components["schemas"]["PublicProduct"] & {
+            /** @description F17. Solo con `branchId`: precio EFECTIVO y disponibilidad de esa sucursal (F13). Se omite sin `branchId`. */
+            offer?: components["schemas"]["StoreProductOffer"];
+            /** @description F17. Solo con `branchId`: promociones públicas indicativas vigentes que aplican al producto (F15; nunca cupones ni códigos), la de mayor ahorro primero. Se omite sin `branchId`. */
+            promotions?: components["schemas"]["StoreProductPromo"][];
+            /**
+             * Format: date-time
+             * @description F17. Solo con `branchId`: hora del servidor al generar la respuesta.
+             */
+            generatedAt?: string;
+            /**
+             * Format: date-time
+             * @description F17. Solo con `branchId`: próximo cambio por tiempo de las promociones (14 días); `null` si no hay. Acota `s-maxage`.
+             */
+            nextChangeAt?: string | null;
             /**
              * @description F12. Solo grupos ACTIVOS asociados al producto que se pueden ofrecer (con al menos `max(minSelect, 1)` opciones activas), en el orden
              *     de asociación, con SOLO sus opciones activas (orden de `sortOrder`). Vacío si no hay. Los precios extra son INFORMATIVOS: el servidor
@@ -3581,20 +3680,123 @@ export interface components {
             /** @description Lista completa y ordenada (`[]` quita todos). Máx. 10 (11-50 => 422 `MODIFIER_LIMIT_REACHED`); duplicados/inexistentes/inactivos nuevos => 422 `MODIFIER_GROUP_INVALID`. */
             groupIds: string[];
         };
-        /** @description Overlay de un producto visible en una sucursal (F13). Sin nombre/categoría (se combinan con `listStoreProducts`), sin precio base ni indicio de override, sin stock. */
+        /** @description Promoción pública INDICATIVA vigente que aplica a un producto en una sucursal (F15; cantidad 1, precio de la sucursal, esa promoción por sí sola). NO es una cotización y nunca revela un cupón ni su código. */
+        StoreProductPromo: {
+            /** Format: uuid */
+            promotionId: string;
+            name: string;
+            isHappyHour: boolean;
+            /** @description Solo consumo en el local; nunca aplica a recojo ni entrega. */
+            dineInOnly: boolean;
+            regularPrice: components["schemas"]["ProductPrice"];
+            promoPrice: components["schemas"]["ProductPrice"];
+        };
+        /**
+         * @description Tarjeta de un producto visible (F13, ampliada en F17). Los 4 primeros campos son los de F13 y no cambian de significado; los demás son aditivos y el servidor siempre los envía.
+         *     Sin precio base ni indicio de override, sin stock, sin SKU, sin modificadores ni galería.
+         */
         StoreBranchMenuItem: {
             /** Format: uuid */
             productId: string;
             slug: string;
-            /** @description Precio EFECTIVO en esa sucursal (override o base). Informativo; el servidor recalcula al cotizar (F19). */
+            /** @description Precio EFECTIVO en esa sucursal (override o base); el base si no se envió `branchId`. Informativo; el servidor recalcula al cotizar (F19). */
             price: components["schemas"]["ProductPrice"];
-            /** @description `false` = agotado/no disponible en esa sucursal (sin cantidades). La web lo muestra deshabilitado y no lo permite añadir al carrito. */
-            available: boolean;
+            /** @description `false` = agotado/no disponible en esa sucursal (sin cantidades). `null` = no se envió `branchId` (se desconoce). La web lo muestra deshabilitado y no lo permite añadir al carrito. */
+            available: boolean | null;
+            name?: string;
+            /** @description Descripción corta derivada de la descripción del producto (texto plano, recortada sin partir palabras); `null` si no hay descripción. */
+            summary?: string | null;
+            /** @description Imagen principal (la de menor `sortOrder`); `null` = la web muestra un placeholder. */
+            image?: components["schemas"]["PublicProductMedia"] | null;
+            category?: components["schemas"]["PublicProductCategoryRef"];
+            /** @description La promoción indicativa vigente de mayor ahorro (desempate como ADR-0021); `null` sin sucursal o sin promoción aplicable. */
+            promo?: components["schemas"]["StoreProductPromo"] | null;
         };
         StoreBranchMenu: {
-            /** Format: uuid */
-            branchId: string;
+            /**
+             * Format: uuid
+             * @description `null` = no se envió `branchId`.
+             */
+            branchId: string | null;
             items: components["schemas"]["StoreBranchMenuItem"][];
+            /** @description Siempre presente desde F17. */
+            page?: number;
+            /** @description Siempre presente desde F17. */
+            pageSize?: number;
+            /** @description Productos que cumplen el filtro (todas las páginas). Siempre presente desde F17. */
+            total?: number;
+            /**
+             * Format: date-time
+             * @description Hora del servidor al generar la respuesta (puede estar en caché hasta 15 s). Siempre presente desde F17.
+             */
+            generatedAt?: string;
+            /**
+             * Format: date-time
+             * @description Próximo instante (en 14 días) en que cambia por tiempo la info promocional de esta página; `null` si no hay. Acota `s-maxage`. Siempre presente desde F17.
+             */
+            nextChangeAt?: string | null;
+        };
+        StoreSearchPage: {
+            /** Format: uuid */
+            branchId: string | null;
+            items: components["schemas"]["StoreBranchMenuItem"][];
+            page: number;
+            pageSize: number;
+            /** @description Productos que cumplen la búsqueda (todas las páginas). */
+            total: number;
+            /** Format: date-time */
+            generatedAt: string;
+            /**
+             * Format: date-time
+             * @description Próximo cambio por tiempo de la info promocional de esta página; `null` si no hay. Acota `s-maxage`.
+             */
+            nextChangeAt: string | null;
+        };
+        /** @description Categoría raíz visible (F10), sin hijas; el árbol completo es `listStoreCategories`. */
+        StoreBootstrapCategory: {
+            /** Format: uuid */
+            id: string;
+            slug: string;
+            name: string;
+            description: string | null;
+            /** @description Tiene al menos una hija visible. */
+            hasChildren: boolean;
+        };
+        /**
+         * @description Secciones NO críticas del agregado: si fallan, la respuesta sigue siendo 200 con la sección vacía o `null` y su nombre en `degraded`.
+         * @enum {string}
+         */
+        StoreBootstrapSection: "availability" | "featured" | "promotions" | "banners";
+        StoreBootstrap: {
+            /**
+             * Format: date-time
+             * @description Hora del servidor al generar la respuesta (puede estar en caché hasta 15 s).
+             */
+            generatedAt: string;
+            /**
+             * Format: date-time
+             * @description El MENOR no nulo entre `promotions` (cambio de vigencia), `banners` (inicio/fin) y `availability.nextTransitionAt`, con horizonte de 14 días; `null` si no hay. Acota `max-age`/`s-maxage`.
+             */
+            nextChangeAt: string | null;
+            locale: components["schemas"]["BannerLocale"];
+            /** Format: uuid */
+            branchId: string | null;
+            /** @description `null` sin `branchId`. */
+            branch: components["schemas"]["PublicBranch"] | null;
+            /** @description `null` sin `branchId` o si la sección falló (`degraded`). */
+            availability: components["schemas"]["BranchAvailability"] | null;
+            /** @description Categorías raíz visibles, ordenadas por `sortOrder`, `name`, `id`. */
+            categories: components["schemas"]["StoreBootstrapCategory"][];
+            /** @description Productos destacados visibles (tarjeta de `getStoreBranchMenu`). Vacío si ninguno está destacado (criterio P23) o la sección falló. */
+            featured: components["schemas"]["StoreBranchMenuItem"][];
+            /** @description Promociones y cupones VIGENTES ahora (forma pública de `listStorePromotions`, nunca `code`), SIN `items`. Vacío sin sucursal, sin vigentes o si la sección falló. */
+            promotions: components["schemas"]["StorePromotion"][];
+            /** @description Banners elegibles ahora (forma de `listStoreBanners`), ya ordenados. Vacío si ninguno aplica o la sección falló. */
+            banners: components["schemas"]["StoreBanner"][];
+            /** @description Productos visibles del menú (disponibles o no) para el pie del Inicio. */
+            productCount: number;
+            /** @description Secciones no críticas que fallaron en esta respuesta. Si no está vacío, la respuesta lleva `Cache-Control: no-store`. */
+            degraded: components["schemas"]["StoreBootstrapSection"][];
         };
         /** @description Estado de un producto en una sucursal (F13). Sin fila en `branch_products` => `priceOverride=null`, `available=true`, `updatedAt=null`. */
         AdminBranchProductState: {
@@ -7496,7 +7698,10 @@ export interface operations {
     };
     getStoreProduct: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description UUID de una sucursal ACTIVA. Añade `offer`, `promotions`, `generatedAt` y `nextChangeAt`. */
+                branchId?: string;
+            };
             header?: never;
             path: {
                 /** @description Slug público del producto (`products.slug`). */
@@ -7509,7 +7714,7 @@ export interface operations {
             /** @description Ficha del producto */
             200: {
                 headers: {
-                    /** @description public, max-age=60, stale-while-revalidate=300 */
+                    /** @description Sin `branchId`: public, max-age=60, stale-while-revalidate=300. Con `branchId`: public, max-age=min(N,5), s-maxage=N con 1 <= N <= 15 (o no-store) */
                     "Cache-Control"?: string;
                     [name: string]: unknown;
                 };
@@ -7517,7 +7722,7 @@ export interface operations {
                     "application/json": components["schemas"]["PublicProductDetail"];
                 };
             };
-            /** @description Slug con forma inválida */
+            /** @description Slug o `branchId` con forma inválida */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -7526,7 +7731,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `PRODUCT_NOT_FOUND`: inexistente, inactivo o con categoría no visible */
+            /** @description `PRODUCT_NOT_FOUND`: inexistente, inactivo o con categoría no visible; `BRANCH_NOT_FOUND`: se envió `branchId` y no existe o está inactiva */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -8520,11 +8725,12 @@ export interface operations {
             };
         };
     };
-    getStoreBranchMenu: {
+    getStoreBootstrap: {
         parameters: {
-            query: {
-                /** @description UUID de una sucursal activa. */
-                branchId: string;
+            query?: {
+                /** @description UUID de una sucursal ACTIVA. Sin él, agregado sin sucursal. */
+                branchId?: string;
+                locale?: components["schemas"]["BannerLocale"];
             };
             header?: never;
             path?: never;
@@ -8532,18 +8738,18 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Overlay de la sucursal */
+            /** @description Agregado del Inicio */
             200: {
                 headers: {
-                    /** @description public, max-age=15 */
+                    /** @description public, max-age=min(N,5), s-maxage=N con 1 <= N <= 15 (o no-store; con `degraded`: public, max-age=0, s-maxage=3) */
                     "Cache-Control"?: string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StoreBranchMenu"];
+                    "application/json": components["schemas"]["StoreBootstrap"];
                 };
             };
-            /** @description `branchId` ausente o que no es un UUID */
+            /** @description `branchId` mal formado o `locale` fuera de `es|en` */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -8552,8 +8758,166 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `BRANCH_NOT_FOUND`: no existe o está inactiva */
+            /** @description `BRANCH_NOT_FOUND`: se envió `branchId` y no existe o está inactiva */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED`: límite por IP (60 por minuto). `Cache-Control: no-store` y `Retry-After`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `STORE_BUSY`: una lectura crítica agotó su tiempo o no hubo conexión; reintentable. `Cache-Control: no-store`. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    searchStoreProducts: {
+        parameters: {
+            query: {
+                /** @description Texto a buscar. 2 a 80 caracteres tras recortar; si queda < 2 => 400. */
+                q: string;
+                /** @description UUID de una sucursal ACTIVA. Fija el precio efectivo, la disponibilidad y las promociones. */
+                branchId?: string;
+                /** @description Slug de una categoría visible (incluye descendientes visibles). */
+                categorySlug?: string;
+                /** @description `true` = solo disponibles en la sucursal (exige `branchId`). Sin valor = todos. */
+                available?: boolean;
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de resultados (puede estar vacía) */
+            200: {
+                headers: {
+                    /** @description public, max-age=min(N,5), s-maxage=N con 1 <= N <= 15 (o no-store) */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoreSearchPage"];
+                };
+            };
+            /** @description `q` ausente o de longitud inválida, `branchId` mal formado, `available=true` sin `branchId` o paginación fuera de rango */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `BRANCH_NOT_FOUND`: se envió `branchId` y no existe o está inactiva */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED`: límite por IP (30 por minuto en esta ruta). `Cache-Control: no-store` y `Retry-After`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `STORE_BUSY`: la lectura agotó su tiempo o no hubo conexión; reintentable. `Cache-Control: no-store`. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getStoreBranchMenu: {
+        parameters: {
+            query?: {
+                /** @description UUID de una sucursal activa. Sin él, precios base y `available=null`. */
+                branchId?: string;
+                /** @description Slug de una categoría visible (incluye descendientes visibles). */
+                categorySlug?: string;
+                /** @description `true` = solo disponibles en la sucursal (exige `branchId`; sin él => 400). Sin valor = todos. */
+                available?: boolean;
+                /** @description `menu` (por defecto) = orden del árbol de categorías, luego `name`, `id`; `name`; `price` (precio efectivo). `id` desempata siempre. */
+                sort?: "menu" | "name" | "price";
+                /** @description Dirección para `name` y `price`; se ignora con `sort=menu`. */
+                order?: "asc" | "desc";
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de tarjetas del menú */
+            200: {
+                headers: {
+                    /** @description public, max-age=min(N,5), s-maxage=N con 1 <= N <= 15 (o no-store) */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoreBranchMenu"];
+                };
+            };
+            /** @description `branchId` mal formado, `available=true` sin `branchId`, `sort`/`order`/paginación fuera de rango */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `BRANCH_NOT_FOUND`: se envió `branchId` y no existe o está inactiva */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED`: límite por IP (60 por minuto). `Cache-Control: no-store` y `Retry-After`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `STORE_BUSY`: la lectura agotó su tiempo o no hubo conexión; reintentable. `Cache-Control: no-store`. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9556,6 +9920,8 @@ export interface operations {
                 branchId: string;
                 /** @description `live` (por defecto) o `upcoming`. */
                 state?: "live" | "upcoming";
+                /** @description F17 (aditivo). `true` = sin `items` ni `productIds` (no lee productos): para banners como el de Happy Hour del menú. Sin valor o `false` = respuesta completa de F15. */
+                compact?: boolean;
             };
             header?: never;
             path?: never;
