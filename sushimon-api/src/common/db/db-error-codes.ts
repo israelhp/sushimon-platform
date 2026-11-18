@@ -27,3 +27,26 @@ export function uniqueTarget(error: unknown): string | null {
   const found = raw.filter((v) => v !== undefined && v !== null);
   return found.length === 0 ? null : JSON.stringify(found);
 }
+
+/**
+ * Códigos de BD que significan «ocupado o sin conexión; reintentable» (nunca un defecto de la solicitud):
+ * P2028 (transacción), P2024 (espera de conexión agotada), P1001/P1002/P1008/P1017 (conexión), 55P03 (lock timeout),
+ * 40P01 (deadlock), 40001 (serialización), 57014 (statement timeout), 53300 (demasiadas conexiones).
+ */
+const RETRYABLE = new Set([
+  'P2028',
+  'P2024',
+  'P1001',
+  'P1002',
+  'P1008',
+  'P1017',
+  '55P03',
+  '40P01',
+  '40001',
+  '57014',
+  '53300',
+]);
+
+export function isRetryableDbError(error: unknown): boolean {
+  return dbErrorCodes(error).some((c) => RETRYABLE.has(c));
+}

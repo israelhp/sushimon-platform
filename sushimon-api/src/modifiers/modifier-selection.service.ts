@@ -1,12 +1,21 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { HttpException } from '@nestjs/common';
 import {
   assertSelectionShape,
   buildOfferGroups,
+  evaluateSelections,
+  MAX_VIOLATIONS,
   productNotFound,
+  sumPrices,
   validateSelections,
 } from './modifier-policy.js';
 import { ModifiersRepository } from './modifiers.repository.js';
-import type { ModifierSelection, ModifierSelectionResult } from './modifiers.types.js';
+import type {
+  ModifierSelection,
+  ModifierSelectionBatchItem,
+  ModifierSelectionBatchResult,
+  ModifierSelectionResult,
+} from './modifiers.types.js';
 
 /**
  * Validador reutilizable de selecciones de extras (spec F12 D10). SIN endpoint HTTP: lo consumirán F19 (cotización) y
@@ -33,5 +42,56 @@ export class ModifierSelectionService {
     const rows = await this.repo.findOffer(productId);
     if (rows === null) throw productNotFound();
     return validateSelections(buildOfferGroups(rows), selections);
+  }
+
+  /**
+   * Variante por LOTE y NO lanzante (F19/F20): UNA consulta `ANY(uuid[])` para todos los productos distintos y las
+   * MISMAS reglas (`evaluateSelections`) por elemento. Devuelve un resultado por elemento, en el mismo orden. Una
+   * entrada malformada (forma, más de 10 selecciones, más de 20 ids por selección) es `INVALID` con el código
+   * `MODIFIER_SELECTION_INVALID` y no cuesta consulta propia; un producto inexistente es `NOT_FOUND`. No comprueba
+   * visibilidad del producto (ver nota de arriba).
+   */
+  async validateMany(
+    items: readonly ModifierSelectionBatchItem[],
+  ): Promise<ModifierSelectionBatchResult[]> {
+    const shapeErrors = new Map<number, ModifierSelectionBatchResult>();
+    items.forEach((item, i) => {
+      try {
+        assertSelectionShape(item.selections);
+      } catch (error) {
+        if (!(error instanceof HttpException)) throw error;
+        shapeErrors.set(i, {
+          status: 'INVALID',
+          violations: [
+            {
+              path: 'selections',
+              code: 'MODIFIER_SELECTION_INVALID',
+              message: 'La selección de extras no es válida',
+            },
+          ],
+        });
+      }
+    });
+    const productIds = [
+      ...new Set(items.filter((_, i) => !shapeErrors.has(i)).map((item) => item.productId)),
+    ];
+    const offers = await this.repo.findOffersMany(productIds);
+    return items.map((item, i) => {
+      const shape = shapeErrors.get(i);
+      if (shape) return shape;
+      const rows = offers.get(item.productId);
+      if (!rows) return { status: 'NOT_FOUND' };
+      const { violations, items: chosen } = evaluateSelections(
+        buildOfferGroups(rows),
+        item.selections,
+      );
+      if (violations.length > 0)
+        return { status: 'INVALID', violations: violations.slice(0, MAX_VIOLATIONS) };
+      return {
+        status: 'OK',
+        extraTotal: sumPrices(chosen.map((it) => it.extraPrice)),
+        items: chosen,
+      };
+    });
   }
 }

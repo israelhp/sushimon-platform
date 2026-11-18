@@ -150,3 +150,20 @@ Flujo (pasos existentes del `CheckoutFlow`, sin rediseño): resumen del carrito 
 | Divergencia mock/http de la UI                                     | `parity.test.ts` + tipos del contrato; mock rotulado                                                                                  |
 | Propiedades de extras: `ModifierSelectionService` limita 10 grupos | Superarlo => `MODIFIER_INVALID` (no 5xx)                                                                                              |
 | Cambio del precio entre cotización y pedido                        | F20 conflicto `QUOTE_CHANGED`, nunca sustitución silenciosa                                                                           |
+
+## 9. Revisiones de seguridad y rendimiento (API) y riesgos aceptados
+
+Revisión de `security-reviewer` y `performance-reviewer` sobre la parte API (solo lectura; sin mediciones reales: no hay BD de pruebas ejecutada). **Sin hallazgos Críticos ni Altos de seguridad.** Corregido en la implementación: `null` en opcionales ⇒ 400 (`OptionalNotNull`), errores del parser (413/JSON inválido) con `private, no-store` y sin ETag, separación de dominio en la firma del token (`token\0`), topes de líneas/selecciones antes de los pipes, cupo del semáforo `CHECKOUT_DB_GATE` = `max(1, floor((DB_POOL_MAX-1)/3))` repartido con el de F17 (la suma no supera `DB_POOL_MAX-1`; con pool de 1–2 el mínimo de 1 por gate suma 2), memoización en proceso de municipios, `DB_QUERY_TIMEOUT_MS` (`query_timeout` de pg; no se usa `statement_timeout` porque el transaction pooler lo rechaza), `warn` de promociones truncadas como máximo 1/min por sucursal.
+
+**Riesgos aceptados / pendientes (no resueltos en F19):**
+
+- **Cupón distribuido (M3):** el contador de cupón (10/min por IP, 20/min por actor) es por instancia y en memoria; la rotación de IP o varias instancias serverless lo debilitan. Mitigación real = almacén compartido (decisión de infraestructura, F39). `UNKNOWN`/`NOT_APPLIED` ya están colapsados, pero un cupón correcto sigue siendo un oráculo (`APPLIED` + descuento). Vigilar la tasa de `NOT_APPLIED`.
+- **`TRUST_PROXY_HOPS` (M4):** con el valor por defecto 0 detrás de un proxy/CDN todos los invitados comparten IP o el límite se evade. Debe configurarse en el despliegue (runbook F39).
+- **Llamada al proveedor dentro del semáforo (M2):** hoy PedidosYa no hace red (adaptador `unavailable`); al integrar F29, la llamada con timeout debe sacarse de la ranura de BD o tener su propio semáforo.
+- **Enumeración de estado de producto (B1):** un invitado que conozca un UUID distingue `NOT_FOUND`/`INACTIVE`/`UNAVAILABLE`. Se mantiene porque el contrato y F18 distinguen esos estados; los UUID no son adivinables y no se expone precio.
+- **`CHECKOUT_QUOTE_SECRET` (B3):** opcional (≥ 32 caracteres); sin él no hay token. No se hace obligatorio en producción hasta F20. Generar con ≥ 32 bytes aleatorios.
+- **Lectura completa de categorías (`findAllNodes`)** por cotización y consultas de promociones candidatas con subconsultas por fila: baratas con el volumen actual; **sin medir**. Plan de medición pendiente: `EXPLAIN (ANALYZE, BUFFERS)`, p50/p95 de `quote()` con 1/2/4/8 concurrentes y `DB_POOL_MAX` 3 y 5, prueba mixta F17+F19.
+- **`query_timeout`** corta del lado cliente pero no cancela la consulta en el servidor; un timeout sale como 500 genérico (no `CHECKOUT_BUSY`).
+- **Cuerpo 64–100 KB:** responde 400 `QUOTE_LIMITS_EXCEEDED`; por encima de 100 KB responde 413 (parser global, no declarado en el contrato).
+- **Para F20:** recotizar siempre con `CheckoutQuoteService` y no confiar en importes del token; comparar `sub` (el token de invitado lleva `sub = "guest"`); el token liga el id de dirección, no su contenido (la zona/municipio pueden cambiar); aplicar idempotencia (`Idempotency-Key`).
+- **No verificado:** `checkout.int-spec.ts` (SQL real de `findOffersMany`, `findMunicipality`, `inspect`) no se ha ejecutado contra PostgreSQL.

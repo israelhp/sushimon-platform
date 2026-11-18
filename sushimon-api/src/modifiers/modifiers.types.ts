@@ -175,3 +175,18 @@ export interface ModifierSelectionResult {
   extraTotal: string;
   items: SelectedModifierItem[];
 }
+
+/** Entrada de `ModifierSelectionService.validateMany` (F19): una línea del carrito. */
+export interface ModifierSelectionBatchItem {
+  productId: string;
+  selections: readonly ModifierSelection[];
+}
+
+/**
+ * Resultado NO lanzante por línea: `NOT_FOUND` (producto inexistente), `INVALID` (con `violations[].code` de F12 o
+ * `MODIFIER_SELECTION_INVALID` por forma/tope) u `OK` (con los extras por UNIDAD).
+ */
+export type ModifierSelectionBatchResult =
+  | { status: 'OK'; extraTotal: string; items: SelectedModifierItem[] }
+  | { status: 'NOT_FOUND' }
+  | { status: 'INVALID'; violations: { path: string; code: string; message: string }[] };

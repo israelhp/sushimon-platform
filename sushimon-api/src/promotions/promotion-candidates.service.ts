@@ -6,6 +6,7 @@ import { PromotionsRepository } from './promotions.repository.js';
 
 /** Tope de candidatas leídas por evaluación (spec F15). */
 export const MAX_CANDIDATES = 200;
+const WARN_EVERY_MS = 60_000;
 
 /**
  * Carga las promociones candidatas de una sucursal para el evaluador (lo llamará F19). Solo lectura, UNA consulta
@@ -16,6 +17,18 @@ export const MAX_CANDIDATES = 200;
 @Injectable()
 export class PromotionCandidatesService {
   private readonly logger = new Logger(PromotionCandidatesService.name);
+
+  /** Último `warn` por sucursal: como máximo uno por minuto (con tráfico alto sería ruido en cada cotización). */
+  private readonly lastWarn = new Map<string, number>();
+
+  private shouldWarn(branchId: string): boolean {
+    const now = Date.now();
+    const last = this.lastWarn.get(branchId);
+    if (last !== undefined && now - last < WARN_EVERY_MS) return false;
+    if (this.lastWarn.size >= 1_000) this.lastWarn.clear();
+    this.lastWarn.set(branchId, now);
+    return true;
+  }
 
   constructor(@Inject(PromotionsRepository) private readonly repo: PromotionsRepository) {}
 
@@ -44,7 +57,7 @@ export class PromotionCandidatesService {
     });
     const truncated = rows.length > MAX_CANDIDATES;
     // Sin PII ni códigos de cupón en el log.
-    if (truncated) {
+    if (truncated && this.shouldWarn(branchId)) {
       this.logger.warn(
         `Candidatas de promoción truncadas (branch=${branchId}, tope=${MAX_CANDIDATES})`,
       );

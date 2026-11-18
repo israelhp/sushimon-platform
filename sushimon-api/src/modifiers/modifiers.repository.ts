@@ -230,6 +230,42 @@ export class ModifiersRepository {
     }));
   }
 
+  /**
+   * Igual que `findOffer` pero por LOTE (F19): UNA consulta `ANY(uuid[])` para varios productos. El mapa tiene una
+   * entrada por cada id existente (con las filas de su oferta, en el mismo orden que `findOffer`); los inexistentes no
+   * aparecen. No filtra activos: lo decide la policy.
+   */
+  async findOffersMany(productIds: readonly string[]): Promise<Map<string, OfferRow[]>> {
+    const out = new Map<string, OfferRow[]>();
+    if (productIds.length === 0) return out;
+    const rows = await this.prisma.$queryRaw<(RawOffer & { product_id: string })[]>`
+      SELECT p.id AS product_id, g.id AS group_id, g.name AS group_name, g.min_select, g.max_select,
+             g.active AS group_active, m.id AS modifier_id, m.name AS modifier_name,
+             m.extra_price::text AS extra_price, m.active AS modifier_active
+        FROM app.products p
+        LEFT JOIN app.product_modifier_groups l ON l.product_id = p.id
+        LEFT JOIN app.modifier_groups g ON g.id = l.group_id
+        LEFT JOIN app.modifiers m ON m.group_id = g.id
+       WHERE p.id = ANY(${[...productIds]}::uuid[])
+       ORDER BY p.id ASC, l.sort_order ASC, m.sort_order ASC`;
+    for (const r of rows) {
+      const list = out.get(r.product_id) ?? [];
+      list.push({
+        groupId: r.group_id,
+        groupName: r.group_name,
+        minSelect: r.min_select === null ? null : Number(r.min_select),
+        maxSelect: r.max_select === null ? null : Number(r.max_select),
+        groupActive: r.group_active,
+        modifierId: r.modifier_id,
+        modifierName: r.modifier_name,
+        extraPrice: r.extra_price,
+        modifierActive: r.modifier_active,
+      });
+      out.set(r.product_id, list);
+    }
+    return out;
+  }
+
   /** Asociaciones actuales del producto, en orden. */
   async findProductLinks(
     tx: ModifierTx,

@@ -109,6 +109,13 @@ export interface BranchOffer {
   available: boolean;
 }
 
+/** Resultado no lanzante de `BranchOffersService.inspect` (F19). */
+export interface BranchOfferInspection {
+  state: 'OK' | 'UNKNOWN' | 'HIDDEN' | 'SOLD_OUT';
+  /** Precio efectivo de la sucursal (F13); `null` si el producto no existe. */
+  price: string | null;
+}
+
 export interface ResolveRow {
   id: string;
   active: boolean;

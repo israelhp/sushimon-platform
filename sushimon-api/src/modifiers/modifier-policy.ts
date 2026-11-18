@@ -488,11 +488,14 @@ export function assertSelectionShape(selections: unknown): void {
   if (found.length > 0) throw selectionInvalid(found.slice(0, MAX_VIOLATIONS));
 }
 
-/** Valida en memoria contra los grupos del producto; lanza 422 con TODAS las violaciones. */
-export function validateSelections(
+/**
+ * Evalúa en memoria contra los grupos del producto SIN lanzar: devuelve TODAS las violaciones (sin cortar) y los
+ * elementos válidos. `validateSelections` la envuelve (lanza 422); `validateMany` (F19) la usa por línea.
+ */
+export function evaluateSelections(
   groups: readonly OfferGroup[],
   selections: readonly ModifierSelection[],
-): ModifierSelectionResult {
+): { violations: ErrorViolation[]; items: SelectedModifierItem[] } {
   const byId = new Map(groups.map((g) => [g.id, g]));
   const violations: ErrorViolation[] = [];
   const items: SelectedModifierItem[] = [];
@@ -576,6 +579,15 @@ export function validateSelections(
       );
     }
   }
+  return { violations, items };
+}
+
+/** Valida en memoria contra los grupos del producto; lanza 422 con TODAS las violaciones. */
+export function validateSelections(
+  groups: readonly OfferGroup[],
+  selections: readonly ModifierSelection[],
+): ModifierSelectionResult {
+  const { violations, items } = evaluateSelections(groups, selections);
   if (violations.length > 0) throw selectionInvalid(violations.slice(0, MAX_VIOLATIONS));
   return { ok: true, extraTotal: sumPrices(items.map((it) => it.extraPrice)), items };
 }

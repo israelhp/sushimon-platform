@@ -6,6 +6,7 @@ import { BranchScheduleModule } from '../branch-schedule/branch-schedule.module.
 import { CLOCK, SystemClock } from '../branch-schedule/clock.js';
 import { BranchesModule } from '../branches/branches.module.js';
 import { CategoriesModule } from '../categories/categories.module.js';
+import { splitGateBudget } from '../common/concurrency/db-gate.js';
 import type { Env } from '../config/env.js';
 import { ProductsModule } from '../products/products.module.js';
 import { PromotionsModule } from '../promotions/promotions.module.js';
@@ -41,11 +42,16 @@ import { StoreController } from './store.controller.js';
     StoreProductService,
     { provide: CLOCK, useClass: SystemClock },
     {
-      // Singleton del módulo: cupo propio < DB_POOL_MAX (queda una conexión para el resto), cola de 8 y espera de 1,5 s.
+      // Singleton del módulo: cupo propio (comparte el presupuesto `DB_POOL_MAX - 1` con el cotizador F19: ver
+      // `splitGateBudget`), cola de 8 y espera de 1,5 s.
       provide: STORE_DB_GATE,
       inject: [ConfigService],
       useFactory: (config: ConfigService<Env, true>): StoreDbGate =>
-        new StoreDbGate(Math.max(1, config.get('DB_POOL_MAX', { infer: true }) - 1), 8, 1_500),
+        new StoreDbGate(
+          splitGateBudget(config.get('DB_POOL_MAX', { infer: true })).store,
+          8,
+          1_500,
+        ),
     },
   ],
 })

@@ -57,8 +57,26 @@ export const BANNER_WRITE_THROTTLE = {
   actor: { limit: 30, ttl: 60_000 },
 };
 
+/**
+ * Cotización de checkout (F19, P43): 60/min por IP (`default`) y por actor autenticado (`actor`); un invitado cae a su IP.
+ * Con `couponCode` en el cuerpo aplican además los contadores propios `coupon` (10/min por IP) y `couponActor` (20/min por
+ * actor), para frenar la enumeración de cupones sin castigar el uso normal.
+ */
+export const CHECKOUT_QUOTE_THROTTLE = {
+  default: { limit: 60, ttl: 60_000 },
+  actor: { limit: 60, ttl: 60_000 },
+  coupon: { limit: 10, ttl: 60_000 },
+  couponActor: { limit: 20, ttl: 60_000 },
+};
+
 /** Throttler adicional «por actor»: solo cuenta en las rutas que declaran un límite `actor`. */
 export const ACTOR_THROTTLER = 'actor';
+
+/** Contadores de cupón de la cotización (F19): por IP y por actor. Solo cuentan si la ruta los declara Y el cuerpo trae cupón. */
+export const COUPON_THROTTLER = 'coupon';
+export const COUPON_ACTOR_THROTTLER = 'couponActor';
+/** Throttlers que evalúa `ActorThrottlerGuard` (después del JWT); el resto los evalúa `AppThrottlerGuard`. */
+const ACTOR_SIDE = new Set<string>([ACTOR_THROTTLER, COUPON_ACTOR_THROTTLER]);
 
 /** Clave por actor: `authUserId` del principal verificado; sin principal (anónimo) cae a la IP. */
 export function actorTracker(req: Record<string, unknown>): Promise<string> {
@@ -67,6 +85,28 @@ export function actorTracker(req: Record<string, unknown>): Promise<string> {
   return Promise.resolve(
     id ? `actor:${id}` : `ip:${typeof req['ip'] === 'string' ? req['ip'] : 'unknown'}`,
   );
+}
+
+const hasLimitMetadata = (name: string, context: ExecutionContext): boolean => {
+  const key = `THROTTLER:LIMIT${name}`;
+  return (
+    Reflect.getMetadata(key, context.getHandler()) !== undefined ||
+    Reflect.getMetadata(key, context.getClass()) !== undefined
+  );
+};
+
+/** ¿El cuerpo ya parseado trae `couponCode` (no vacío)? El guard corre antes que la validación: no se confía en el tipo. */
+function bodyHasCoupon(context: ExecutionContext): boolean {
+  const body = context.switchToHttp().getRequest<{ body?: unknown }>().body;
+  if (typeof body !== 'object' || body === null) return false;
+  const code = (body as Record<string, unknown>)['couponCode'];
+  return code !== undefined && code !== null && code !== '';
+}
+
+/** Los throttlers de cupón se saltan en toda ruta que no los declare y en solicitudes sin cupón. */
+export function skipUnlessCouponLimited(name: string) {
+  return (context: ExecutionContext): boolean =>
+    !hasLimitMetadata(name, context) || !bodyHasCoupon(context);
 }
 
 /** El throttler por actor se salta en toda ruta que no declare `@Throttle({ actor: … })`. */
@@ -98,7 +138,7 @@ export class AppThrottlerGuard extends ThrottlerGuard {
   /** El guard global cuenta solo por IP: el throttler por actor lo evalúa `ActorThrottlerGuard` (tras el JWT). */
   override async onModuleInit(): Promise<void> {
     await super.onModuleInit();
-    this.throttlers = this.throttlers.filter((t) => t.name !== ACTOR_THROTTLER);
+    this.throttlers = this.throttlers.filter((t) => !ACTOR_SIDE.has(t.name ?? ''));
   }
 
   /** 429 con `code` estable (`RATE_LIMITED`); `Retry-After` ya lo fija el guard y el filtro añade `no-store`. */
@@ -128,6 +168,6 @@ export class ActorThrottlerGuard extends AppThrottlerGuard {
 
   override async onModuleInit(): Promise<void> {
     await ThrottlerGuard.prototype.onModuleInit.call(this);
-    this.throttlers = this.throttlers.filter((t) => t.name === ACTOR_THROTTLER);
+    this.throttlers = this.throttlers.filter((t) => ACTOR_SIDE.has(t.name ?? ''));
   }
 }

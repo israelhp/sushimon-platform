@@ -8,13 +8,17 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request, Response } from 'express';
+import { IS_OPTIONAL_AUTH_KEY } from './optional-auth.decorator.js';
 import { IS_PUBLIC_KEY } from './public.decorator.js';
 import { InvalidTokenError, JwtVerifierService } from './jwt-verifier.service.js';
 
 const BEARER = /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*)$/;
 const MAX_HEADER = 8_192;
 
-/** Guard global: toda ruta exige un JWT válido salvo las marcadas con `@Public()`. */
+/**
+ * Guard global: toda ruta exige un JWT válido salvo las marcadas con `@Public()`. `@OptionalAuth()` (F19) admite además
+ * invitados, pero SOLO si la solicitud no trae cabecera `Authorization`: con cabecera, el token debe ser válido.
+ */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   private readonly logger = new Logger(JwtAuthGuard.name);
@@ -34,6 +38,13 @@ export class JwtAuthGuard implements CanActivate {
     const http = context.switchToHttp();
     const req = http.getRequest<Request>();
     const header = req.header('authorization');
+    if (header === undefined) {
+      const optional = this.reflector.getAllAndOverride<boolean | undefined>(IS_OPTIONAL_AUTH_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]);
+      if (optional === true) return true; // invitado: `req.principal` queda indefinido
+    }
     const match = header && header.length <= MAX_HEADER ? BEARER.exec(header) : null;
     const token = match?.[1];
     if (!token) this.reject(http.getResponse<Response>(), req, 'missing-or-malformed');
