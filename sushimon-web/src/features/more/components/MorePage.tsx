@@ -238,7 +238,7 @@ export function MorePage() {
                 className="mt-0.5 text-[14px] text-muted"
                 itemClass="py-0.5 [&>strong]:text-fg"
               />
-            ) : config.isError ? (
+            ) : config.unavailable ? null : config.isError ? (
               <ErrorNotice className="mt-2" onRetry={() => void config.refetch()} />
             ) : (
               <Skeleton aria-hidden="true" className="mt-1 h-16 w-full" />

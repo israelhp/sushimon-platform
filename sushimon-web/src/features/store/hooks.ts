@@ -31,11 +31,16 @@ import { queryKeys } from '../query-keys';
  */
 export function useStoreConfig() {
   const client = useDataClient();
-  return useQuery({
+  const query = useQuery({
     queryKey: queryKeys.store.config,
     queryFn: () => getStoreConfig(client),
     staleTime: 5 * 60_000,
+    // 404 = el endpoint no existe en la API (permanente): reintentar no sirve.
+    retry: (count, error) => !(isApiError(error) && error.status === 404) && count < 2,
   });
+  /** `true` cuando `GET /v1/store/config` no existe en la API (adaptador http): las pantallas ocultan el bloque en vez de ofrecer «Reintentar». */
+  const unavailable = isApiError(query.error) && query.error.status === 404;
+  return Object.assign(query, { unavailable });
 }
 
 /**
