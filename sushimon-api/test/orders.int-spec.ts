@@ -598,14 +598,14 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
       a,
       k,
       await orderBody(pickup(branch, [line(p1.id)]), a, {
-        contact: { fullName: 'A', phone: phone() },
+        contact: { fullName: 'Cliente A', phone: phone() },
       }),
     );
     const theirs = await orders.create(
       b,
       k,
       await orderBody(pickup(branch, [line(p1.id)]), b, {
-        contact: { fullName: 'B', phone: phone() },
+        contact: { fullName: 'Cliente B', phone: phone() },
       }),
     );
     expect(new Set([first.body.order.id, mine.body.order.id, theirs.body.order.id]).size).toBe(3);

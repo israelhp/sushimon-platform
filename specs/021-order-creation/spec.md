@@ -2,7 +2,7 @@
 
 **Rama**: `feature/F20-order-creation` (desde `develop` 65382d1, que incluye F19) · **Dueño**: A · **Prioridad**: P0 · **Tipo**: API + WEB (confirmación de pedido)
 **Dependencias**: F19 (cotizador y token), F01/F04 (cliente autenticado opcional), F05 (dirección guardada), F08/F09/F12/F13/F15 (vía el cotizador) · **Decisiones**: `docs/adr/0026-creacion-pedidos-idempotencia.md` · **Pendientes**: P48–P60 en `docs/business-rules/decisiones-pendientes.md`
-**Estado global**: `CONTRACT_DEFINED` (operaciones `createOrder` y `getOrder` y esquemas `Order*` en `openapi.yaml`; sin migración, API ni web). `pnpm contracts:check` queda rojo solo por esas dos operaciones sin implementar (esperado). PedidosYa real: `BLOCKED_EXTERNAL` (F29); pagos: F24/F25.
+**Estado global (actualizado 2026-11-18)**: `INTEGRATED` en entorno de pruebas para pickup y reparto propio (`OWN`) como invitado; NO `READY` (ver §16). Estado inicial de diseño: `CONTRACT_DEFINED` (operaciones `createOrder` y `getOrder` y esquemas `Order*` en `openapi.yaml`; sin migración, API ni web). `pnpm contracts:check` queda rojo solo por esas dos operaciones sin implementar (esperado). PedidosYa real: `BLOCKED_EXTERNAL` (F29); pagos: F24/F25.
 
 ## 1. Alcance y fuera de alcance
 
@@ -396,3 +396,17 @@ Cambios aplicados tras las revisiones de security-reviewer y performance-reviewe
 - `quoteToken` no es de un solo uso (limitado por throttles y por el tope de pendientes del cliente autenticado).
 - El token no se valida antes de tocar la BD porque la repetición idempotente lo omite a propósito (debe devolver el pedido original aunque el token haya vencido).
 - F22 (backoffice) debe ESCAPAR siempre notas y direcciones de pedidos (texto plano; prohibido `dangerouslySetInnerHTML`).
+
+## 16. Verificación real (2026-11-18) y estado
+
+**Ejecutado contra la BD de pruebas real (Supabase compartido; la migración 0018 ya estaba aplicada; todo lo sembrado y todos los pedidos se borraron al terminar y se comprobó con conteos):**
+
+- `test/orders.int-spec.ts`: **12/12** (concurrencia de idempotencia ×10 con la misma clave ⇒ un pedido, 20 números únicos, rollback real, CHECKs de totales, snapshots inmutables, token solo como hash, `lock_timeout`, GET con SQL real). Un fallo inicial era un dato de prueba (nombre de contacto de 1 carácter frente al mínimo de 2); se corrigió el test, no la API.
+- API real (puerto propio, secreto de cotización temporal solo en memoria), invitado: pickup 201; repetición con la misma clave 200 + `Idempotent-Replayed: true` y mismo pedido; misma clave con otro cuerpo 409 `IDEMPOTENCY_KEY_REUSED`; 6 peticiones simultáneas con la misma clave ⇒ **1 solo pedido** (1×201, 2×200 y 3×503 `ORDERS_BUSY` reintentables); GET con token 200, sin token o token inválido 404; reparto propio con cupón 201 (dirección copiada, promoción guardada); PedidosYa pedido con token de una cotización OWN ⇒ 422 `DELIVERY_PROVIDER_NOT_SELECTABLE`; `total` enviado por el cliente ⇒ 400; sin `Idempotency-Key` ⇒ 400; `card` ⇒ 422 `PAYMENT_METHOD_UNAVAILABLE`; cambio de precio entre cotizar y pedir (215 → 225) ⇒ 409 `QUOTE_CHANGED` con `changes`, y con la cotización nueva ⇒ 201. Siempre `private, no-store`.
+- Persistido: pedidos `pending` con `total = subtotal − descuento + tarifa`, líneas y extras con precio histórico, dirección solo en entrega, historial inicial en todos, 5 claves ↔ 5 pedidos, solo hashes de token (ninguno revocado tras repeticiones), sin tabla de pagos, auditoría `order.created` con actor NULL.
+- Web en navegador real contra la API real (invitado, pickup): doble clic sincrónico ⇒ **un solo `POST`** (201); pantalla «Recibimos tu pedido…» sin afirmar aceptación ni cobro; número `MON-001103`; teléfono enmascarado; carrito vacío solo tras el éxito; `sessionStorage` sin datos personales; recarga conserva el acceso; otra pestaña/dispositivo muestra «Se perdió el acceso a este pedido».
+- Suites: `pnpm check` verde (API 2062, web 2158), e2e API 831, Playwright (e2e + móvil) **270 pasan, 15 omitidas, 0 fallos**.
+
+**No verificado:** cliente autenticado (JWT de Supabase, `customerAddressId`, 404 de dirección ajena) contra la API real; `QUOTE_EXPIRED` real (TTL 10 min); el diálogo `QUOTE_CHANGED` en navegador contra la API real (cubierto por pruebas de componente/e2e con mock y por la API real a nivel HTTP); reparto propio en navegador; la prueba de concurrencia entre varias instancias; `OrderReceived` con axe en navegador real; p95 y carga sostenida (con 6 concurrentes hubo 503 por el semáforo con `DB_POOL_MAX=3`: requisito operativo `DB_POOL_MAX >= 5`); verificación P55 (captcha/teléfono) y privilegios del rol de la API (S3).
+
+**Pendiente de decisión del propietario:** P48–P60 (en especial P55, condición previa a producción), provisionar `CHECKOUT_QUOTE_SECRET` (≥ 32 caracteres) y `DB_POOL_MAX >= 5`, y cuándo se pasa a `READY` (requiere la verificación de cliente autenticado y de producción).
