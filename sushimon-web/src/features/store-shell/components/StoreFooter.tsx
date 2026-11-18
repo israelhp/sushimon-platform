@@ -173,7 +173,7 @@ export function StoreFooter() {
                   </a>
                 ) : null}
               </>
-            ) : config.isError ? (
+            ) : config.unavailable ? null : config.isError ? (
               <FooterError onRetry={() => void config.refetch()} />
             ) : (
               <FooterSkeleton />
@@ -193,7 +193,7 @@ export function StoreFooter() {
                   itemClass="py-0.5 [&>strong]:text-ondeep"
                 />
               </>
-            ) : config.isError ? null : (
+            ) : config.isError || config.unavailable ? null : (
               <FooterSkeleton />
             )}
           </div>
