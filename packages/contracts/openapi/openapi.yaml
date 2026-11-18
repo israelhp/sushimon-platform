@@ -2496,6 +2496,200 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /v1/orders:
+    post:
+      operationId: createOrder
+      summary: Crea un pedido (invitado o autenticado) con recotización del servidor e idempotencia
+      description: |
+        F20 (spec 021, ADR-0026). Crea UN pedido en estado `pending` con snapshots inmutables (productos, extras, descuentos,
+        promociones, dirección). NO cobra, NO registra pagos, NO solicita reparto ni envía notificaciones (F24/F25/F28/F29/F31).
+        `pending` = «recibido, a la espera de que el restaurante lo procese»; NO significa pagado ni aceptado.
+        **Acceso**: invitado o autenticado (`security` opcional; token presente e inválido => 401, nunca se degrada a invitado).
+        `customer_id` sale SIEMPRE de la sesión, jamás del cuerpo. `fulfillment.customerAddressId` exige sesión y propiedad
+        (404 idéntico si es ajena o inexistente).
+        **Sin importes en la entrada**: precios, tarifa, descuento, total, estado de pago y cobertura los decide el servidor
+        (`additionalProperties:false`; cualquier campo de importe => 400). `quoteToken` es el `quote.token` de
+        `POST /v1/checkout/quote` (F19); el cuerpo `cart`/`fulfillment`/`couponCode` es el MISMO que se cotizó.
+        **Revalidación** (siempre, antes de la transacción): el servidor verifica firma, vigencia y sujeto del token, RECOTIZA con
+        el mismo cotizador de F19 y compara huella de la entrada, proveedor, subtotal, descuento, tarifa, total y líneas.
+        Cualquier diferencia => 409 `QUOTE_CHANGED` con la cotización nueva; nunca se crea un pedido con otro importe sin que el
+        cliente lo acepte (nueva petición con el token nuevo y una `Idempotency-Key` nueva). Token vencido => 409 `QUOTE_EXPIRED`;
+        token ausente de entorno o inválido (firma, sujeto distinto, entrada distinta) => 422 `QUOTE_INVALID`; `canProceed=false`
+        => 422 `CHECKOUT_BLOCKED` con `blockers`. PedidosYa NUNCA se puede crear (422 `DELIVERY_PROVIDER_NOT_SELECTABLE`, F29);
+        PICKUP y OWN elegible sí. Sin `CHECKOUT_QUOTE_SECRET` en el servidor => 503 `ORDERS_UNAVAILABLE` (fail-closed).
+        **Idempotencia** (obligatoria): `Idempotency-Key` identifica UN intento lógico (UUID v4 o ≥ 22 caracteres base64url del
+        cliente). Misma clave + mismo cuerpo canónico (sin `quoteToken`) => se devuelve EL MISMO pedido (200 + `Idempotent-Replayed:
+        true`) sin recotizar ni validar vigencia del token; misma clave + cuerpo distinto => 409 `IDEMPOTENCY_KEY_REUSED`; solicitud
+        concurrente con la misma clave => espera y devuelve el mismo pedido (o 409 `IDEMPOTENCY_IN_PROGRESS` con `Retry-After`).
+        La clave se guarda con el pedido en la MISMA transacción, por actor (cliente o invitado), 24 h. Un 201 solo existe si el
+        pedido está persistido.
+        **Invitado**: la respuesta incluye `access.guestToken` (opaco, ≥ 256 bits, SOLO su hash se guarda) para consultar el
+        pedido con `X-Order-Token`. Se muestra al crear; en una repetición idempotente de invitado se EMITE OTRO y el anterior
+        queda revocado (el cliente pudo no haber recibido el primero). Cliente autenticado: `guestToken = null`.
+        **Anti-abuso**: límite de tasa por IP y por actor y tope de pedidos `pending` por cliente/teléfono (429).
+        Respuesta `Cache-Control: private, no-store`. Los datos de contacto no se registran en logs.
+      tags: [orders]
+      security:
+        - {}
+        - bearer: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: 'Clave de idempotencia del intento (UUID v4 recomendado). Se conserva y se reutiliza ante reintentos del MISMO envío; un envío distinto usa otra.'
+          schema:
+            { type: string, pattern: '^[A-Za-z0-9_-]{22,128}$', minLength: 22, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderCreateRequest'
+      responses:
+        '200':
+          description: 'Repetición idempotente (misma clave y mismo cuerpo): el MISMO pedido ya creado. Cabecera `Idempotent-Replayed`.'
+          headers:
+            Cache-Control:
+              description: private, no-store
+              schema: { type: string }
+            Idempotent-Replayed:
+              description: 'true'
+              schema: { type: string, enum: ['true'] }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderCreated'
+        '201':
+          description: Pedido creado (persistido) en estado `pending`
+          headers:
+            Cache-Control:
+              description: private, no-store
+              schema: { type: string }
+            Location:
+              description: '`/v1/orders/{id}`'
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderCreated'
+        '400':
+          description: Forma inválida, `Idempotency-Key` ausente o malformada (`IDEMPOTENCY_KEY_INVALID`), campos de importe, contacto/teléfono/correo inválido, notas > 280, topes de F19 (`QUOTE_LIMITS_EXCEEDED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token presente e inválido, o `customerAddressId` sin sesión
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Dirección guardada inexistente o ajena (misma respuesta; sin enumeración)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: |
+            `QUOTE_CHANGED` (cuerpo `OrderQuoteConflict`: cambios y cotización nueva), `QUOTE_EXPIRED` (cuerpo `OrderQuoteConflict` con cotización nueva),
+            `IDEMPOTENCY_KEY_REUSED` (misma clave, cuerpo distinto) o `IDEMPOTENCY_IN_PROGRESS` (reintentar con `Retry-After`).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OrderQuoteConflict'
+                  - $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: |
+            `QUOTE_INVALID`, `CHECKOUT_BLOCKED` (cuerpo `OrderBlocked` con `blockers`), `DELIVERY_PROVIDER_NOT_SELECTABLE`, `CONTACT_INCOMPLETE`
+            (autenticado sin teléfono en el perfil y sin `contact`), `PAYMENT_METHOD_UNAVAILABLE`, `BRANCH_NOT_AVAILABLE`, `MUNICIPALITY_NOT_FOUND`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OrderBlocked'
+                  - $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: '`RATE_LIMITED` (IP/actor; `Retry-After`) o `PENDING_ORDERS_LIMIT` (demasiados pedidos `pending` del mismo cliente o teléfono). `Cache-Control: no-store`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`ORDERS_BUSY` (semáforo de BD saturado; reintentable con la MISMA clave) u `ORDERS_UNAVAILABLE` (servidor sin secreto de cotización). `Cache-Control: no-store`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/orders/{id}:
+    get:
+      operationId: getOrder
+      summary: Consulta un pedido propio (sesión del cliente dueño o token de invitado)
+      description: |
+        F20 (spec 021, ADR-0026): detalle mínimo para la confirmación «pedido recibido». El seguimiento ampliado (línea de
+        tiempo, polling, `GET /v1/orders/{id}/tracking`) es F21; el acceso del personal es F22 (`/v1/admin/orders`).
+        **Autorización** (solo servidor): (a) JWT del cliente dueño del pedido, o (b) cabecera `X-Order-Token` con el token
+        de invitado emitido al crear (se compara su sha256; vigente y no revocado). El token NO va en la URL ni en query
+        (evita fugas por logs de acceso y `Referer`). Cualquier otro caso (pedido inexistente, ajeno, token ausente, inválido,
+        vencido o revocado) responde el MISMO 404 sin `code`. El `id` es el UUID del pedido, no el número visible.
+        Minimización de PII: teléfono enmascarado, sin correo ni coordenadas. `Cache-Control: private, no-store`.
+        `POST /v1/orders/lookup` (número + teléfono) NO se implementa aquí (F21).
+      tags: [orders]
+      security:
+        - {}
+        - bearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: X-Order-Token
+          in: header
+          required: false
+          description: 'Token opaco de invitado (`smo_…`). Sin él se exige sesión del cliente dueño.'
+          schema: { type: string, pattern: '^smo_[A-Za-z0-9_-]{43}$' }
+      responses:
+        '200':
+          description: Pedido
+          headers:
+            Cache-Control:
+              description: private, no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetail'
+        '400':
+          description: '`id` o `X-Order-Token` con formato inválido'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token JWT presente e inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Pedido inexistente, ajeno o token inválido/vencido/revocado (respuesta idéntica)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: '`RATE_LIMITED` (IP y actor). `Retry-After`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`ORDERS_BUSY`, reintentable'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /v1/store/categories:
     get:
       operationId: listStoreCategories
@@ -6264,7 +6458,7 @@ components:
           type: string
           description: |
             Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16: `BANNER_NOT_FOUND`, `BANNER_CODE_TAKEN`, `BANNER_VERSION_CONFLICT`, `BANNER_IMAGE_INVALID`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_LIMIT_REACHED`, `BANNER_SCOPE_FORBIDDEN` (403), `BANNERS_BUSY` (503 reintentable); F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); 404 de dirección ajena sin código). Los clientes deben ramificar por `code`, nunca por `message`.
+            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16: `BANNER_NOT_FOUND`, `BANNER_CODE_TAKEN`, `BANNER_VERSION_CONFLICT`, `BANNER_IMAGE_INVALID`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_LIMIT_REACHED`, `BANNER_SCOPE_FORBIDDEN` (403), `BANNERS_BUSY` (503 reintentable); F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); F20: `IDEMPOTENCY_KEY_INVALID` (400), `QUOTE_CHANGED` (409), `QUOTE_EXPIRED` (409), `IDEMPOTENCY_KEY_REUSED` (409), `IDEMPOTENCY_IN_PROGRESS` (409), `QUOTE_INVALID` (422), `CHECKOUT_BLOCKED` (422), `DELIVERY_PROVIDER_NOT_SELECTABLE` (422), `CONTACT_INCOMPLETE` (422), `PAYMENT_METHOD_UNAVAILABLE` (422), `PENDING_ORDERS_LIMIT` (429), `ORDERS_BUSY` (503 reintentable), `ORDERS_UNAVAILABLE` (503); 404 de dirección ajena sin código). Los clientes deben ramificar por `code`, nunca por `message`.
         violations:
           type: array
           description: Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09).
@@ -8272,6 +8466,262 @@ components:
           type: array
           maxItems: 60
           items: { $ref: '#/components/schemas/CheckoutNotice' }
+    OrderLifecycleStatus:
+      type: string
+      description: |
+        Catálogo OFICIAL de estados del pedido (F20 define; F22 gobierna las transiciones). F20 solo escribe `pending`.
+        `pending` recibido; `accepted` aceptado por la sucursal; `preparing` en cocina; `ready` listo; `on_the_way` en camino
+        (solo DELIVERY); `delivered` entregado al cliente (DELIVERY); `picked_up` recogido (PICKUP); `rejected` rechazado por
+        la sucursal; `cancelled` cancelado. Es INDEPENDIENTE del pago (F24) y de la entrega (F28/F29). Los clientes deben
+        tolerar valores futuros. Reemplaza al `OrderStatus` borrador (`received` => `pending`).
+      enum:
+        [pending, accepted, preparing, ready, on_the_way, delivered, picked_up, rejected, cancelled]
+    OrderPaymentPreference:
+      type: string
+      description: |
+        SOLO una preferencia declarada por el cliente (no es un pago). F20 admite `cash` y `bank_transfer`; `card` (F25,
+        `BLOCKED_EXTERNAL`) => 422 `PAYMENT_METHOD_UNAVAILABLE`.
+      enum: [cash, bank_transfer]
+    OrderContactInput:
+      type: object
+      description: |
+        Datos de contacto. Invitado: `fullName` y `phone` obligatorios. Autenticado: opcional (se completa con el perfil; si
+        falta el teléfono en ambos => 422 `CONTACT_INCOMPLETE`). Teléfono de Guatemala (8 dígitos, `+502` opcional); se
+        normaliza a `+502XXXXXXXX`. Correo opcional con formato válido.
+      required: []
+      additionalProperties: false
+      properties:
+        fullName: { type: string, minLength: 2, maxLength: 120 }
+        phone: { type: string, maxLength: 20, example: '+502 5555 1234' }
+        email: { type: string, format: email, maxLength: 254 }
+    OrderDeliveryAddressInput:
+      type: object
+      description: |
+        Texto de la dirección de entrega. Obligatorio con `fulfillment.type=DELIVERY` y `municipalityId` (dirección nueva o
+        invitado); PROHIBIDO con `customerAddressId` (se copia la dirección guardada) y con PICKUP (=> 400). No afecta al precio
+        ni a la huella del token (la cobertura sigue siendo municipio + zona).
+      required: [addressLine]
+      additionalProperties: false
+      properties:
+        addressLine: { type: string, minLength: 5, maxLength: 200 }
+        referenceNote: { type: string, maxLength: 200 }
+    OrderCreateRequest:
+      type: object
+      description: |
+        Cuerpo de `POST /v1/orders` (≤ 64 KB). `cart`, `fulfillment` y `couponCode` son EXACTAMENTE los de
+        `CheckoutQuoteRequest` (se recotizan en el servidor). Sin `clientView`, sin importes.
+      required: [cart, fulfillment, quoteToken]
+      additionalProperties: false
+      properties:
+        cart: { $ref: '#/components/schemas/CartQuoteInput' }
+        fulfillment: { $ref: '#/components/schemas/CheckoutFulfillmentInput' }
+        couponCode: { type: string, maxLength: 64 }
+        quoteToken:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: '`quote.token` de la cotización que el cliente aceptó.'
+        contact: { $ref: '#/components/schemas/OrderContactInput' }
+        deliveryAddress: { $ref: '#/components/schemas/OrderDeliveryAddressInput' }
+        notes:
+          type: string
+          maxLength: 280
+          description: Nota general del pedido (sin datos personales sensibles).
+        paymentMethodPreference: { $ref: '#/components/schemas/OrderPaymentPreference' }
+    OrderDetailModifier:
+      type: object
+      required: [name, extraPrice]
+      properties:
+        name: { type: string }
+        extraPrice: { $ref: '#/components/schemas/CheckoutMoney' }
+    OrderDetailLine:
+      type: object
+      description: Snapshot de la línea al crear el pedido (inmutable).
+      required:
+        [
+          productName,
+          quantity,
+          unitPrice,
+          modifiers,
+          extrasPerUnit,
+          lineSubtotal,
+          discount,
+          lineTotal,
+          notes,
+        ]
+      properties:
+        productName: { type: string }
+        quantity: { type: integer, minimum: 1, maximum: 99 }
+        unitPrice: { $ref: '#/components/schemas/CheckoutMoney' }
+        modifiers:
+          type: array
+          maxItems: 30
+          items: { $ref: '#/components/schemas/OrderDetailModifier' }
+        extrasPerUnit: { $ref: '#/components/schemas/CheckoutMoney' }
+        lineSubtotal: { $ref: '#/components/schemas/CheckoutMoney' }
+        discount: { $ref: '#/components/schemas/CheckoutMoney' }
+        lineTotal: { $ref: '#/components/schemas/CheckoutMoney' }
+        notes: { type: string, nullable: true }
+    OrderDetailPromotion:
+      type: object
+      required: [name, amount]
+      properties:
+        name: { type: string }
+        amount: { $ref: '#/components/schemas/CheckoutMoney' }
+    OrderDetailAddress:
+      type: object
+      description: Snapshot de la dirección (sin coordenadas).
+      required: [municipalityName, zone, addressLine, referenceNote]
+      properties:
+        municipalityName: { type: string }
+        zone: { type: string, nullable: true }
+        addressLine: { type: string }
+        referenceNote: { type: string, nullable: true }
+    OrderDetailContact:
+      type: object
+      description: 'Minimización de PII: teléfono enmascarado y sin correo.'
+      required: [fullName, phoneMasked]
+      properties:
+        fullName: { type: string }
+        phoneMasked: { type: string, example: '****1234' }
+    OrderDetailPayment:
+      type: object
+      description: |
+        Estado de cobro. En F20 SIEMPRE `NOT_STARTED` (no hay cobro ni registro de pago); F24/F25 amplían el enum y
+        el significado. `methodPreference` es solo lo que el cliente declaró.
+      required: [methodPreference, status]
+      properties:
+        methodPreference:
+          allOf: [{ $ref: '#/components/schemas/OrderPaymentPreference' }]
+          nullable: true
+        status:
+          {
+            type: string,
+            enum: [NOT_STARTED],
+            description: 'Los clientes deben tolerar valores futuros (F24).',
+          }
+    OrderDetail:
+      type: object
+      description: |
+        Pedido persistido (reemplaza al `Order` borrador para `http`; F21 lo amplía de forma ADITIVA: línea de tiempo,
+        entrega). Importes en cadenas decimales GTQ; `total = subtotal − discountTotal + deliveryFee`.
+      required:
+        [
+          id,
+          orderNumber,
+          displayNumber,
+          status,
+          branchId,
+          fulfillmentType,
+          deliveryProvider,
+          currency,
+          lines,
+          promotions,
+          address,
+          contact,
+          notes,
+          subtotal,
+          extrasTotal,
+          discountTotal,
+          deliveryFee,
+          total,
+          payment,
+          placedAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        orderNumber:
+          {
+            type: integer,
+            format: int64,
+            description: 'Secuencia de PostgreSQL: creciente, única, NO contigua. Nunca es una credencial.',
+          }
+        displayNumber: { type: string, example: 'MON-001042' }
+        status: { $ref: '#/components/schemas/OrderLifecycleStatus' }
+        branchId: { type: string, format: uuid }
+        fulfillmentType: { type: string, enum: [PICKUP, DELIVERY] }
+        deliveryProvider:
+          allOf: [{ $ref: '#/components/schemas/CourierProvider' }]
+          nullable: true
+          description: '`OWN` en entrega propia, `null` en PICKUP. `PEDIDOSYA` no es creable en F20.'
+        currency: { type: string, enum: [GTQ] }
+        lines:
+          type: array
+          maxItems: 30
+          items: { $ref: '#/components/schemas/OrderDetailLine' }
+        promotions:
+          type: array
+          maxItems: 30
+          items: { $ref: '#/components/schemas/OrderDetailPromotion' }
+        address:
+          allOf: [{ $ref: '#/components/schemas/OrderDetailAddress' }]
+          nullable: true
+        contact: { $ref: '#/components/schemas/OrderDetailContact' }
+        notes: { type: string, nullable: true }
+        subtotal: { $ref: '#/components/schemas/CheckoutMoney' }
+        extrasTotal: { $ref: '#/components/schemas/CheckoutMoney' }
+        discountTotal: { $ref: '#/components/schemas/CheckoutMoney' }
+        deliveryFee: { $ref: '#/components/schemas/CheckoutMoney' }
+        total: { $ref: '#/components/schemas/CheckoutMoney' }
+        payment: { $ref: '#/components/schemas/OrderDetailPayment' }
+        placedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    OrderGuestAccess:
+      type: object
+      description: |
+        Credencial de invitado, mostrada SOLO en la creación (o en una repetición idempotente, que revoca la anterior). El
+        servidor guarda únicamente su sha256. Guardar en `sessionStorage`; nunca en la URL ni en logs.
+      required: [guestToken, expiresAt]
+      properties:
+        guestToken: { type: string, pattern: '^smo_[A-Za-z0-9_-]{43}$' }
+        expiresAt: { type: string, format: date-time }
+    OrderCreated:
+      type: object
+      required: [order, access]
+      properties:
+        order: { $ref: '#/components/schemas/OrderDetail' }
+        access:
+          allOf: [{ $ref: '#/components/schemas/OrderGuestAccess' }]
+          nullable: true
+          description: '`null` si el pedido es de un cliente autenticado (accede con su sesión).'
+    OrderQuoteChange:
+      type: object
+      required: [field]
+      properties:
+        field:
+          { type: string, enum: [provider, subtotal, discountTotal, deliveryFee, total, lines] }
+        previous:
+          {
+            type: string,
+            nullable: true,
+            description: 'Valor cotizado antes (importe o proveedor; `null` en `lines`).',
+          }
+        current: { type: string, nullable: true }
+    OrderQuoteConflict:
+      description: 'Conflicto 409 `QUOTE_CHANGED` / `QUOTE_EXPIRED`. Hereda `ErrorResponse` y añade la cotización vigente para re-aceptar.'
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          required: [quote, changes]
+          properties:
+            changes:
+              type: array
+              maxItems: 10
+              items: { $ref: '#/components/schemas/OrderQuoteChange' }
+            quote:
+              $ref: '#/components/schemas/CheckoutQuote'
+    OrderBlocked:
+      description: 422 `CHECKOUT_BLOCKED`. Hereda `ErrorResponse` y añade los bloqueos de la recotización.
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          required: [blockers]
+          properties:
+            blockers:
+              type: array
+              maxItems: 60
+              items: { $ref: '#/components/schemas/CheckoutBlocker' }
     AdminModifier:
       type: object
       required: [id, groupId, name, extraPrice, active, sortOrder, createdAt, updatedAt]

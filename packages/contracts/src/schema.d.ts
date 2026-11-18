@@ -1037,6 +1037,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Crea un pedido (invitado o autenticado) con recotización del servidor e idempotencia
+         * @description F20 (spec 021, ADR-0026). Crea UN pedido en estado `pending` con snapshots inmutables (productos, extras, descuentos,
+         *     promociones, dirección). NO cobra, NO registra pagos, NO solicita reparto ni envía notificaciones (F24/F25/F28/F29/F31).
+         *     `pending` = «recibido, a la espera de que el restaurante lo procese»; NO significa pagado ni aceptado.
+         *     **Acceso**: invitado o autenticado (`security` opcional; token presente e inválido => 401, nunca se degrada a invitado).
+         *     `customer_id` sale SIEMPRE de la sesión, jamás del cuerpo. `fulfillment.customerAddressId` exige sesión y propiedad
+         *     (404 idéntico si es ajena o inexistente).
+         *     **Sin importes en la entrada**: precios, tarifa, descuento, total, estado de pago y cobertura los decide el servidor
+         *     (`additionalProperties:false`; cualquier campo de importe => 400). `quoteToken` es el `quote.token` de
+         *     `POST /v1/checkout/quote` (F19); el cuerpo `cart`/`fulfillment`/`couponCode` es el MISMO que se cotizó.
+         *     **Revalidación** (siempre, antes de la transacción): el servidor verifica firma, vigencia y sujeto del token, RECOTIZA con
+         *     el mismo cotizador de F19 y compara huella de la entrada, proveedor, subtotal, descuento, tarifa, total y líneas.
+         *     Cualquier diferencia => 409 `QUOTE_CHANGED` con la cotización nueva; nunca se crea un pedido con otro importe sin que el
+         *     cliente lo acepte (nueva petición con el token nuevo y una `Idempotency-Key` nueva). Token vencido => 409 `QUOTE_EXPIRED`;
+         *     token ausente de entorno o inválido (firma, sujeto distinto, entrada distinta) => 422 `QUOTE_INVALID`; `canProceed=false`
+         *     => 422 `CHECKOUT_BLOCKED` con `blockers`. PedidosYa NUNCA se puede crear (422 `DELIVERY_PROVIDER_NOT_SELECTABLE`, F29);
+         *     PICKUP y OWN elegible sí. Sin `CHECKOUT_QUOTE_SECRET` en el servidor => 503 `ORDERS_UNAVAILABLE` (fail-closed).
+         *     **Idempotencia** (obligatoria): `Idempotency-Key` identifica UN intento lógico (UUID v4 o ≥ 22 caracteres base64url del
+         *     cliente). Misma clave + mismo cuerpo canónico (sin `quoteToken`) => se devuelve EL MISMO pedido (200 + `Idempotent-Replayed:
+         *     true`) sin recotizar ni validar vigencia del token; misma clave + cuerpo distinto => 409 `IDEMPOTENCY_KEY_REUSED`; solicitud
+         *     concurrente con la misma clave => espera y devuelve el mismo pedido (o 409 `IDEMPOTENCY_IN_PROGRESS` con `Retry-After`).
+         *     La clave se guarda con el pedido en la MISMA transacción, por actor (cliente o invitado), 24 h. Un 201 solo existe si el
+         *     pedido está persistido.
+         *     **Invitado**: la respuesta incluye `access.guestToken` (opaco, ≥ 256 bits, SOLO su hash se guarda) para consultar el
+         *     pedido con `X-Order-Token`. Se muestra al crear; en una repetición idempotente de invitado se EMITE OTRO y el anterior
+         *     queda revocado (el cliente pudo no haber recibido el primero). Cliente autenticado: `guestToken = null`.
+         *     **Anti-abuso**: límite de tasa por IP y por actor y tope de pedidos `pending` por cliente/teléfono (429).
+         *     Respuesta `Cache-Control: private, no-store`. Los datos de contacto no se registran en logs.
+         */
+        post: operations["createOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Consulta un pedido propio (sesión del cliente dueño o token de invitado)
+         * @description F20 (spec 021, ADR-0026): detalle mínimo para la confirmación «pedido recibido». El seguimiento ampliado (línea de
+         *     tiempo, polling, `GET /v1/orders/{id}/tracking`) es F21; el acceso del personal es F22 (`/v1/admin/orders`).
+         *     **Autorización** (solo servidor): (a) JWT del cliente dueño del pedido, o (b) cabecera `X-Order-Token` con el token
+         *     de invitado emitido al crear (se compara su sha256; vigente y no revocado). El token NO va en la URL ni en query
+         *     (evita fugas por logs de acceso y `Referer`). Cualquier otro caso (pedido inexistente, ajeno, token ausente, inválido,
+         *     vencido o revocado) responde el MISMO 404 sin `code`. El `id` es el UUID del pedido, no el número visible.
+         *     Minimización de PII: teléfono enmascarado, sin correo ni coordenadas. `Cache-Control: private, no-store`.
+         *     `POST /v1/orders/lookup` (número + teléfono) NO se implementa aquí (F21).
+         */
+        get: operations["getOrder"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/store/categories": {
         parameters: {
             query?: never;
@@ -2483,7 +2556,7 @@ export interface components {
             details?: string[];
             /**
              * @description Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16: `BANNER_NOT_FOUND`, `BANNER_CODE_TAKEN`, `BANNER_VERSION_CONFLICT`, `BANNER_IMAGE_INVALID`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_LIMIT_REACHED`, `BANNER_SCOPE_FORBIDDEN` (403), `BANNERS_BUSY` (503 reintentable); F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); 404 de dirección ajena sin código). Los clientes deben ramificar por `code`, nunca por `message`.
+             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16: `BANNER_NOT_FOUND`, `BANNER_CODE_TAKEN`, `BANNER_VERSION_CONFLICT`, `BANNER_IMAGE_INVALID`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_LIMIT_REACHED`, `BANNER_SCOPE_FORBIDDEN` (403), `BANNERS_BUSY` (503 reintentable); F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); F20: `IDEMPOTENCY_KEY_INVALID` (400), `QUOTE_CHANGED` (409), `QUOTE_EXPIRED` (409), `IDEMPOTENCY_KEY_REUSED` (409), `IDEMPOTENCY_IN_PROGRESS` (409), `QUOTE_INVALID` (422), `CHECKOUT_BLOCKED` (422), `DELIVERY_PROVIDER_NOT_SELECTABLE` (422), `CONTACT_INCOMPLETE` (422), `PAYMENT_METHOD_UNAVAILABLE` (422), `PENDING_ORDERS_LIMIT` (429), `ORDERS_BUSY` (503 reintentable), `ORDERS_UNAVAILABLE` (503); 404 de dirección ajena sin código). Los clientes deben ramificar por `code`, nunca por `message`.
              */
             code?: string;
             /** @description Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09). */
@@ -3841,6 +3914,172 @@ export interface components {
             canProceed: boolean;
             blockers: components["schemas"]["CheckoutBlocker"][];
             notices: components["schemas"]["CheckoutNotice"][];
+        };
+        /**
+         * @description Catálogo OFICIAL de estados del pedido (F20 define; F22 gobierna las transiciones). F20 solo escribe `pending`.
+         *     `pending` recibido; `accepted` aceptado por la sucursal; `preparing` en cocina; `ready` listo; `on_the_way` en camino
+         *     (solo DELIVERY); `delivered` entregado al cliente (DELIVERY); `picked_up` recogido (PICKUP); `rejected` rechazado por
+         *     la sucursal; `cancelled` cancelado. Es INDEPENDIENTE del pago (F24) y de la entrega (F28/F29). Los clientes deben
+         *     tolerar valores futuros. Reemplaza al `OrderStatus` borrador (`received` => `pending`).
+         * @enum {string}
+         */
+        OrderLifecycleStatus: "pending" | "accepted" | "preparing" | "ready" | "on_the_way" | "delivered" | "picked_up" | "rejected" | "cancelled";
+        /**
+         * @description SOLO una preferencia declarada por el cliente (no es un pago). F20 admite `cash` y `bank_transfer`; `card` (F25,
+         *     `BLOCKED_EXTERNAL`) => 422 `PAYMENT_METHOD_UNAVAILABLE`.
+         * @enum {string}
+         */
+        OrderPaymentPreference: "cash" | "bank_transfer";
+        /**
+         * @description Datos de contacto. Invitado: `fullName` y `phone` obligatorios. Autenticado: opcional (se completa con el perfil; si
+         *     falta el teléfono en ambos => 422 `CONTACT_INCOMPLETE`). Teléfono de Guatemala (8 dígitos, `+502` opcional); se
+         *     normaliza a `+502XXXXXXXX`. Correo opcional con formato válido.
+         */
+        OrderContactInput: {
+            fullName?: string;
+            /** @example +502 5555 1234 */
+            phone?: string;
+            /** Format: email */
+            email?: string;
+        };
+        /**
+         * @description Texto de la dirección de entrega. Obligatorio con `fulfillment.type=DELIVERY` y `municipalityId` (dirección nueva o
+         *     invitado); PROHIBIDO con `customerAddressId` (se copia la dirección guardada) y con PICKUP (=> 400). No afecta al precio
+         *     ni a la huella del token (la cobertura sigue siendo municipio + zona).
+         */
+        OrderDeliveryAddressInput: {
+            addressLine: string;
+            referenceNote?: string;
+        };
+        /**
+         * @description Cuerpo de `POST /v1/orders` (≤ 64 KB). `cart`, `fulfillment` y `couponCode` son EXACTAMENTE los de
+         *     `CheckoutQuoteRequest` (se recotizan en el servidor). Sin `clientView`, sin importes.
+         */
+        OrderCreateRequest: {
+            cart: components["schemas"]["CartQuoteInput"];
+            fulfillment: components["schemas"]["CheckoutFulfillmentInput"];
+            couponCode?: string;
+            /** @description `quote.token` de la cotización que el cliente aceptó. */
+            quoteToken: string;
+            contact?: components["schemas"]["OrderContactInput"];
+            deliveryAddress?: components["schemas"]["OrderDeliveryAddressInput"];
+            /** @description Nota general del pedido (sin datos personales sensibles). */
+            notes?: string;
+            paymentMethodPreference?: components["schemas"]["OrderPaymentPreference"];
+        };
+        OrderDetailModifier: {
+            name: string;
+            extraPrice: components["schemas"]["CheckoutMoney"];
+        };
+        /** @description Snapshot de la línea al crear el pedido (inmutable). */
+        OrderDetailLine: {
+            productName: string;
+            quantity: number;
+            unitPrice: components["schemas"]["CheckoutMoney"];
+            modifiers: components["schemas"]["OrderDetailModifier"][];
+            extrasPerUnit: components["schemas"]["CheckoutMoney"];
+            lineSubtotal: components["schemas"]["CheckoutMoney"];
+            discount: components["schemas"]["CheckoutMoney"];
+            lineTotal: components["schemas"]["CheckoutMoney"];
+            notes: string | null;
+        };
+        OrderDetailPromotion: {
+            name: string;
+            amount: components["schemas"]["CheckoutMoney"];
+        };
+        /** @description Snapshot de la dirección (sin coordenadas). */
+        OrderDetailAddress: {
+            municipalityName: string;
+            zone: string | null;
+            addressLine: string;
+            referenceNote: string | null;
+        };
+        /** @description Minimización de PII: teléfono enmascarado y sin correo. */
+        OrderDetailContact: {
+            fullName: string;
+            /** @example ****1234 */
+            phoneMasked: string;
+        };
+        /**
+         * @description Estado de cobro. En F20 SIEMPRE `NOT_STARTED` (no hay cobro ni registro de pago); F24/F25 amplían el enum y
+         *     el significado. `methodPreference` es solo lo que el cliente declaró.
+         */
+        OrderDetailPayment: {
+            methodPreference: components["schemas"]["OrderPaymentPreference"] | null;
+            /**
+             * @description Los clientes deben tolerar valores futuros (F24).
+             * @enum {string}
+             */
+            status: "NOT_STARTED";
+        };
+        /**
+         * @description Pedido persistido (reemplaza al `Order` borrador para `http`; F21 lo amplía de forma ADITIVA: línea de tiempo,
+         *     entrega). Importes en cadenas decimales GTQ; `total = subtotal − discountTotal + deliveryFee`.
+         */
+        OrderDetail: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: int64
+             * @description Secuencia de PostgreSQL: creciente, única, NO contigua. Nunca es una credencial.
+             */
+            orderNumber: number;
+            /** @example MON-001042 */
+            displayNumber: string;
+            status: components["schemas"]["OrderLifecycleStatus"];
+            /** Format: uuid */
+            branchId: string;
+            /** @enum {string} */
+            fulfillmentType: "PICKUP" | "DELIVERY";
+            /** @description `OWN` en entrega propia, `null` en PICKUP. `PEDIDOSYA` no es creable en F20. */
+            deliveryProvider: components["schemas"]["CourierProvider"] | null;
+            /** @enum {string} */
+            currency: "GTQ";
+            lines: components["schemas"]["OrderDetailLine"][];
+            promotions: components["schemas"]["OrderDetailPromotion"][];
+            address: components["schemas"]["OrderDetailAddress"] | null;
+            contact: components["schemas"]["OrderDetailContact"];
+            notes: string | null;
+            subtotal: components["schemas"]["CheckoutMoney"];
+            extrasTotal: components["schemas"]["CheckoutMoney"];
+            discountTotal: components["schemas"]["CheckoutMoney"];
+            deliveryFee: components["schemas"]["CheckoutMoney"];
+            total: components["schemas"]["CheckoutMoney"];
+            payment: components["schemas"]["OrderDetailPayment"];
+            /** Format: date-time */
+            placedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        /**
+         * @description Credencial de invitado, mostrada SOLO en la creación (o en una repetición idempotente, que revoca la anterior). El
+         *     servidor guarda únicamente su sha256. Guardar en `sessionStorage`; nunca en la URL ni en logs.
+         */
+        OrderGuestAccess: {
+            guestToken: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        OrderCreated: {
+            order: components["schemas"]["OrderDetail"];
+            /** @description `null` si el pedido es de un cliente autenticado (accede con su sesión). */
+            access: components["schemas"]["OrderGuestAccess"] | null;
+        };
+        OrderQuoteChange: {
+            /** @enum {string} */
+            field: "provider" | "subtotal" | "discountTotal" | "deliveryFee" | "total" | "lines";
+            /** @description Valor cotizado antes (importe o proveedor; `null` en `lines`). */
+            previous?: string | null;
+            current?: string | null;
+        };
+        /** @description Conflicto 409 `QUOTE_CHANGED` / `QUOTE_EXPIRED`. Hereda `ErrorResponse` y añade la cotización vigente para re-aceptar. */
+        OrderQuoteConflict: components["schemas"]["ErrorResponse"] & {
+            changes: components["schemas"]["OrderQuoteChange"][];
+            quote: components["schemas"]["CheckoutQuote"];
+        };
+        /** @description 422 `CHECKOUT_BLOCKED`. Hereda `ErrorResponse` y añade los bloqueos de la recotización. */
+        OrderBlocked: components["schemas"]["ErrorResponse"] & {
+            blockers: components["schemas"]["CheckoutBlocker"][];
         };
         AdminModifier: {
             /** Format: uuid */
@@ -7664,6 +7903,191 @@ export interface operations {
                 };
             };
             /** @description `CHECKOUT_BUSY`: el semáforo de lecturas se agotó o no hubo conexión; reintentable. `Cache-Control: no-store`. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createOrder: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Clave de idempotencia del intento (UUID v4 recomendado). Se conserva y se reutiliza ante reintentos del MISMO envío; un envío distinto usa otra. */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Repetición idempotente (misma clave y mismo cuerpo): el MISMO pedido ya creado. Cabecera `Idempotent-Replayed`. */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    /** @description true */
+                    "Idempotent-Replayed"?: "true";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderCreated"];
+                };
+            };
+            /** @description Pedido creado (persistido) en estado `pending` */
+            201: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    /** @description `/v1/orders/{id}` */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderCreated"];
+                };
+            };
+            /** @description Forma inválida, `Idempotency-Key` ausente o malformada (`IDEMPOTENCY_KEY_INVALID`), campos de importe, contacto/teléfono/correo inválido, notas > 280, topes de F19 (`QUOTE_LIMITS_EXCEEDED`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token presente e inválido, o `customerAddressId` sin sesión */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Dirección guardada inexistente o ajena (misma respuesta; sin enumeración) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /**
+             * @description `QUOTE_CHANGED` (cuerpo `OrderQuoteConflict`: cambios y cotización nueva), `QUOTE_EXPIRED` (cuerpo `OrderQuoteConflict` con cotización nueva),
+             *     `IDEMPOTENCY_KEY_REUSED` (misma clave, cuerpo distinto) o `IDEMPOTENCY_IN_PROGRESS` (reintentar con `Retry-After`).
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderQuoteConflict"] | components["schemas"]["ErrorResponse"];
+                };
+            };
+            /**
+             * @description `QUOTE_INVALID`, `CHECKOUT_BLOCKED` (cuerpo `OrderBlocked` con `blockers`), `DELIVERY_PROVIDER_NOT_SELECTABLE`, `CONTACT_INCOMPLETE`
+             *     (autenticado sin teléfono en el perfil y sin `contact`), `PAYMENT_METHOD_UNAVAILABLE`, `BRANCH_NOT_AVAILABLE`, `MUNICIPALITY_NOT_FOUND`.
+             */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderBlocked"] | components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` (IP/actor; `Retry-After`) o `PENDING_ORDERS_LIMIT` (demasiados pedidos `pending` del mismo cliente o teléfono). `Cache-Control: no-store`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDERS_BUSY` (semáforo de BD saturado; reintentable con la MISMA clave) u `ORDERS_UNAVAILABLE` (servidor sin secreto de cotización). `Cache-Control: no-store`. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getOrder: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Token opaco de invitado (`smo_…`). Sin él se exige sesión del cliente dueño. */
+                "X-Order-Token"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pedido */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderDetail"];
+                };
+            };
+            /** @description `id` o `X-Order-Token` con formato inválido */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token JWT presente e inválido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Pedido inexistente, ajeno o token inválido/vencido/revocado (respuesta idéntica) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` (IP y actor). `Retry-After`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDERS_BUSY`, reintentable */
             503: {
                 headers: {
                     [name: string]: unknown;
