@@ -14,8 +14,15 @@ function hostWith(res: unknown, id?: string): ArgumentsHost {
   } as unknown as ArgumentsHost;
 }
 
-function fakeRes() {
-  const res = { status: vi.fn(), json: vi.fn(), setHeader: vi.fn() };
+function fakeRes(existingCacheControl?: string) {
+  const res = {
+    status: vi.fn(),
+    json: vi.fn(),
+    setHeader: vi.fn(),
+    getHeader: vi.fn((name: string) =>
+      name === 'Cache-Control' ? existingCacheControl : undefined,
+    ),
+  };
   res.status.mockReturnValue(res);
   return res;
 }
@@ -264,5 +271,53 @@ describe('AllExceptionsFilter', () => {
         requestId: 'req-7',
       });
     }
+  });
+
+  describe('Cache-Control de errores (F19)', () => {
+    it('sin valor previo => no-store', () => {
+      const res = fakeRes();
+      new AllExceptionsFilter().catch(new BadRequestException('x'), hostWith(res));
+      expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    });
+
+    it('respeta `private, no-store` fijado por la ruta privada (no lo rebaja)', () => {
+      const res = fakeRes('private, no-store');
+      new AllExceptionsFilter().catch(new BadRequestException('x'), hostWith(res));
+      expect(res.setHeader).not.toHaveBeenCalledWith('Cache-Control', 'no-store');
+    });
+
+    it('un valor público previo se sustituye por no-store', () => {
+      const res = fakeRes('public, max-age=60');
+      new AllExceptionsFilter().catch(new BadRequestException('x'), hostWith(res));
+      expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    });
+
+    it('también en 500 inesperados', () => {
+      vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      const res = fakeRes('private, no-store');
+      new AllExceptionsFilter().catch(new Error('boom'), hostWith(res));
+      expect(res.setHeader).not.toHaveBeenCalledWith('Cache-Control', 'no-store');
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+
+    it('CHECKOUT_BUSY (503) es un código público; otros 5xx codificados siguen genéricos', () => {
+      vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      const res = fakeRes();
+      new AllExceptionsFilter().catch(
+        codedException(HttpStatus.SERVICE_UNAVAILABLE, 'CHECKOUT_BUSY', 'ocupado'),
+        hostWith(res),
+      );
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ statusCode: 503, code: 'CHECKOUT_BUSY', message: 'ocupado' }),
+      );
+      const other = fakeRes();
+      new AllExceptionsFilter().catch(
+        codedException(HttpStatus.SERVICE_UNAVAILABLE, 'INTERNAL_THING', 'secreto interno'),
+        hostWith(other),
+      );
+      const body = other.json.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(body['code']).toBeUndefined();
+      expect(body['message']).toBe('Error interno del servidor');
+    });
   });
 });

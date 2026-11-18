@@ -8,6 +8,9 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
+/** Valor que las rutas privadas (cotización de checkout) fijan en TODA respuesta, también en errores. */
+export const PRIVATE_NO_STORE = 'private, no-store';
+
 /** Forma estándar de error (ver packages/contracts/openapi/openapi.yaml → ErrorResponse). */
 export interface ErrorBody {
   statusCode: number;
@@ -40,6 +43,8 @@ const PUBLIC_5XX_CODES: ReadonlySet<string> = new Set([
   'MEDIA_STORAGE_UNAVAILABLE',
   'MFA_RESET_UNAVAILABLE',
   'MFA_RESET_FAILED',
+  // F19 (ADR-0025 D7): semáforo del cotizador de checkout saturado o sin conexión; reintentable, mensaje fijo.
+  'CHECKOUT_BUSY',
 ]);
 
 /** Solo propaga violaciones bien formadas; descarta cualquier otro campo (nunca filtra datos internos). */
@@ -66,6 +71,15 @@ function prismaErrorLabel(error: Error): string {
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
+
+  /**
+   * Los errores nunca se guardan en caché. Respeta `private, no-store` si una ruta privada (F19, checkout) ya lo fijó
+   * por middleware: es MÁS estricto para intermediarios compartidos, así que no se rebaja a `no-store`.
+   */
+  private noStore(res: Response): void {
+    if (res.getHeader('Cache-Control') === PRIVATE_NO_STORE) return;
+    res.setHeader('Cache-Control', 'no-store');
+  }
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
@@ -103,7 +117,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ...(violations && status < 500 ? { violations } : {}),
       };
       if (status >= 500) this.logger.error(`[${requestId ?? '-'}] ${exception.message}`);
-      res.setHeader('Cache-Control', 'no-store');
+      this.noStore(res);
       res.status(status).json(body);
       return;
     }
@@ -118,7 +132,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         prismaError ?? (exception instanceof Error ? exception.stack : String(exception))
       }`,
     );
-    res.setHeader('Cache-Control', 'no-store');
+    this.noStore(res);
     res.status(500).json({
       statusCode: 500,
       error: 'INTERNAL_SERVER_ERROR',

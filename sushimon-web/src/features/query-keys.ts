@@ -195,6 +195,19 @@ export const queryKeys = {
       mutation: (scope: string) => ['customer', scope, 'favorites', 'mutate'] as const,
     },
   },
+  /**
+   * F19 (spec 020): cotización de checkout. PRIVADA: con sesión la clave cuelga de `customer` con la IDENTIDAD (`scope`), así
+   * `useCustomerCacheGuard` la descarta al cerrar sesión o cambiar de cuenta y otra cuenta nunca lee la respuesta ajena. El invitado
+   * usa su propia rama (`checkout/guest`): no empieza por `customer`, así el guard (que descarta lo «de otra identidad» al
+   * montarse y al cambiar de cuenta) no borra una cotización de invitado en vuelo. `fingerprint` = huella canónica de las
+   * ENTRADAS (`quoteFingerprint`); no incluye `clientView`.
+   */
+  checkout: {
+    quote: (scope: string | null, fingerprint: string) =>
+      scope
+        ? (['customer', scope, 'checkout', 'quote', fingerprint] as const)
+        : (['checkout', 'guest', 'quote', fingerprint] as const),
+  },
   backoffice: {
     all: ['backoffice'] as const,
     me: ['backoffice', 'me'] as const,

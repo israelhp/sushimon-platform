@@ -217,3 +217,82 @@ describe('ModifierSelectionService.validate', () => {
     ).toEqual(['MODIFIER_GROUP_NOT_ON_PRODUCT@selections[0].groupId']);
   });
 });
+
+describe('ModifierSelectionService.validateMany (F19)', () => {
+  it('UNA consulta para todo el lote; resultados alineados y NO lanzantes', async () => {
+    const { service, repo } = setup();
+    const out = await service.validateMany([
+      { productId: P.roll, selections: [{ groupId: G.salsas, modifierIds: [OPT(1)] }] },
+      { productId: P.roll, selections: [] }, // falta la salsa obligatoria
+      { productId: P.sin, selections: [] },
+      { productId: P.roll, selections: [{ groupId: G.salsas, modifierIds: [OPT(2), OPT(4)] }] },
+    ]);
+    expect(repo.count('findOffersMany')).toBe(1);
+    expect(repo.count('findOffer')).toBe(0);
+    expect(out[0]).toMatchObject({ status: 'OK', extraTotal: '1.50' });
+    expect(out[1]).toMatchObject({ status: 'INVALID' });
+    expect(out[2]).toMatchObject({ status: 'OK', extraTotal: '0.00', items: [] });
+    expect(out[3]).toMatchObject({ status: 'INVALID' });
+  });
+
+  it('mismas reglas que validate: cada resultado equivale a validate() por separado', async () => {
+    const { service } = setup();
+    const cases = [
+      [{ groupId: G.salsas, modifierIds: [OPT(1), OPT(2)] }],
+      [{ groupId: G.salsas, modifierIds: [OPT(3)] }], // opción inactiva
+      [
+        { groupId: G.salsas, modifierIds: [OPT(1)] },
+        { groupId: G.salsas, modifierIds: [OPT(2)] },
+      ], // duplicado
+      [{ groupId: G.vacio, modifierIds: [OPT(5)] }], // grupo ajeno
+    ];
+    const batch = await service.validateMany(
+      cases.map((selections) => ({ productId: P.roll, selections })),
+    );
+    for (const [i, selections] of cases.entries()) {
+      const single = await service.validate(P.roll, selections).then(
+        (r) => ({ ok: true, extraTotal: r.extraTotal }),
+        (e: { response: { violations: { code: string; path: string }[] } }) => ({
+          ok: false,
+          violations: e.response.violations,
+        }),
+      );
+      const many = batch[i];
+      if (single.ok)
+        expect(many).toMatchObject({
+          status: 'OK',
+          extraTotal: (single as { extraTotal: string }).extraTotal,
+        });
+      else
+        expect(many).toMatchObject({
+          status: 'INVALID',
+          violations: (single as { violations: unknown[] }).violations,
+        });
+    }
+  });
+
+  it('producto inexistente => NOT_FOUND; forma inválida (más de 10 grupos) => INVALID sin consulta propia', async () => {
+    const { service, repo } = setup();
+    const tooMany = Array.from({ length: 11 }, (_, i) => ({
+      groupId: `g${i}`,
+      modifierIds: [] as string[],
+    }));
+    const out = await service.validateMany([
+      { productId: '00000000-0000-4000-8000-0000000fffff', selections: [] },
+      { productId: P.roll, selections: tooMany },
+    ]);
+    expect(out[0]).toEqual({ status: 'NOT_FOUND' });
+    expect(out[1]).toMatchObject({
+      status: 'INVALID',
+      violations: [expect.objectContaining({ code: 'MODIFIER_SELECTION_INVALID' })],
+    });
+    expect(repo.count('findOffersMany')).toBe(1);
+  });
+
+  it('lote vacío o solo formas inválidas: ninguna consulta por producto (el repositorio real no consulta con ids vacíos)', async () => {
+    const { service, repo } = setup();
+    expect(await service.validateMany([])).toEqual([]);
+    await service.validateMany([{ productId: P.roll, selections: 'x' as never }]);
+    expect(repo.calls.filter((c) => c === 'findOffer')).toHaveLength(0);
+  });
+});

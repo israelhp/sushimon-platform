@@ -3,6 +3,8 @@ import { DocumentBuilder, SwaggerModule, type OpenAPIObject } from '@nestjs/swag
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter.js';
+import { bodyParserErrorMiddleware } from './common/http/body-parser-error.middleware.js';
+import { privateNoStoreMiddleware } from './common/http/cache-control.js';
 
 export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
   const config = new DocumentBuilder()
@@ -24,6 +26,11 @@ export interface AppSetupOptions {
 export function configureApp(app: NestExpressApplication, options: AppSetupOptions): void {
   if (options.trustProxyHops) app.set('trust proxy', options.trustProxyHops);
   app.use(helmet());
+  // Cotización de checkout (F19): `private, no-store` y sin ETag desde ANTES del parser JSON, para que también los
+  // errores del parser (413, JSON inválido) salgan privados. Nest registraría el parser en `init()`, después de esto.
+  app.use('/v1/checkout', privateNoStoreMiddleware);
+  app.useBodyParser('json');
+  app.use(bodyParserErrorMiddleware);
   app.setGlobalPrefix('v1');
   app.enableCors({
     origin: options.corsOrigins,

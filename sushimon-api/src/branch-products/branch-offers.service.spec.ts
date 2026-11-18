@@ -179,3 +179,63 @@ describe('BranchOffersService.assertOrderable', () => {
     expect(repo.count('resolveMany')).toBe(1);
   });
 });
+
+describe('BranchOffersService.inspect (F19)', () => {
+  it('estado por producto SIN lanzar: OK, HIDDEN (inactivo o categoría oculta), SOLD_OUT y UNKNOWN; precio efectivo', async () => {
+    const { offers, repo } = setup();
+    repo.seedProduct(fakeProduct(4, { slug: 'agotado', basePrice: '20.00' }));
+    repo.seedRow(A, P1, { priceOverride: '45.00' });
+    repo.seedRow(A, bpid(4), { available: false });
+    const map = await offers.inspect(A, [P1, P2, P3, bpid(4), bpid(99)]);
+    expect(map.get(P1)).toEqual({ state: 'OK', price: '45.00' });
+    expect(map.get(P2)?.state).toBe('HIDDEN'); // categoría oculta
+    expect(map.get(P3)?.state).toBe('HIDDEN'); // producto inactivo
+    expect(map.get(bpid(4))).toEqual({ state: 'SOLD_OUT', price: '20.00' });
+    expect(map.get(bpid(99))).toEqual({ state: 'UNKNOWN', price: null });
+  });
+
+  it('misma consulta que assertOrderable: UNA lectura de productos, ids duplicados colapsados, sin N+1', async () => {
+    const { offers, repo } = setup();
+    await offers.inspect(
+      A,
+      Array.from({ length: 50 }, () => P1),
+    );
+    expect(repo.count('resolveMany')).toBe(1);
+    expect(repo.count('findBranchStatus')).toBe(0); // la sucursal la valida el llamador (puerto de horarios)
+  });
+
+  it('precio por sucursal: el override de A no afecta a B; nunca basePrice', async () => {
+    const { offers, repo } = setup();
+    repo.seedRow(A, P1, { priceOverride: '45.00' });
+    expect((await offers.inspect(A, [P1])).get(P1)?.price).toBe('45.00');
+    expect((await offers.inspect(B, [P1])).get(P1)?.price).toBe('50.00');
+  });
+
+  it('entradas malas: ids no UUID son UNKNOWN-ausentes; lista vacía => vacío; > 200 => 422; branchId inválido => 422', async () => {
+    const { offers, repo } = setup();
+    expect((await offers.inspect(A, ['no-uuid'])).size).toBe(0);
+    expect((await offers.inspect(A, [])).size).toBe(0);
+    expect(repo.count('resolveMany')).toBe(0);
+    expect(
+      code(
+        await failure(
+          offers.inspect(
+            A,
+            Array.from({ length: 201 }, (_, i) => bpid(i)),
+          ),
+        ),
+      ),
+    ).toBe('PRODUCT_NOT_AVAILABLE');
+    expect(code(await failure(offers.inspect('x', [P1])))).toBe('BRANCH_NOT_AVAILABLE');
+  });
+
+  it('coincide con assertOrderable: un producto es OK sii assertOrderable no lanza', async () => {
+    const { offers, repo } = setup();
+    repo.seedRow(A, P1, { available: false });
+    for (const id of [P1, P2, P3, bpid(99)]) {
+      const state = (await offers.inspect(A, [id])).get(id)?.state;
+      const thrown = await failure(offers.assertOrderable(A, [id]));
+      expect(state === 'OK').toBe(thrown === null);
+    }
+  });
+});

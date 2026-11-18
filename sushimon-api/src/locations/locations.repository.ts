@@ -20,6 +20,17 @@ export class LocationsRepository {
     return this.prisma.department.findMany({ select: { id: true, name: true } });
   }
 
+  /** Municipio con el nombre de su departamento (F19: regla de zona de la ciudad de Guatemala). `null` si no existe. */
+  async findMunicipality(
+    id: string,
+  ): Promise<{ id: string; name: string; departmentName: string } | null> {
+    const row = await this.prisma.municipality.findUnique({
+      where: { id },
+      select: { id: true, name: true, department: { select: { name: true } } },
+    });
+    return row ? { id: row.id, name: row.name, departmentName: row.department.name } : null;
+  }
+
   /**
    * UNA consulta indexada por `department_id` (el UNIQUE `(department_id, name)` la cubre) que además distingue
    * «departamento inexistente» (`null`) de «existente sin municipios» (`[]`).

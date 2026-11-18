@@ -394,7 +394,7 @@ Los apartados **API** y **Next.js** de cada ficha son entregables separados. Cua
 - **Datos y migraciones:** app.products, app.branch_products, app.promotions, app.delivery_zones (lectura).
 - **Pruebas y aceptación:** API recalcula precios; datos inválidos rechazados; coincidencia exacta subtotal+extras-descuentos+envío. Subtotal+modificadores-descuentos+envío = total, alcance por sucursal, validación de cotización.
 - **Límite / no invadir otra feature:** No permitir confirmar PedidosYa con tarifas mock; no crear pedido, eso es F20.
-- **Estado de partida:** POR DETERMINAR tras inspección Git y tests.
+- **Estado de partida:** F19 `IN_PROGRESS` (2026-11-18, rama `feature/F19-checkout-quote`): contrato `POST /v1/checkout/quote` y API implementados (`API_IMPLEMENTED`); `test/checkout.int-spec.ts` 9/9 contra PostgreSQL real (BD de pruebas) y checkout web verificado en navegador contra la API real como invitado (retiro, entrega propia, cupón, PedidosYa `UNKNOWN`). NO verificado: cliente autenticado con dirección guardada (requiere sesión Supabase), lectores de pantalla, rendimiento bajo carga. Cobertura OWN real; PedidosYa siempre `UNKNOWN` (`BLOCKED_EXTERNAL`, F29). El paso final sigue simulado (F20; en `http` queda deshabilitado). No `READY`. Ver `specs/020-checkout-quote/spec.md`.
 - **Decisión o brecha original por resolver:** Definir tipos de fulfillment y contrato de cotización compartido A/B.
 - **Límite PedidosYa:** El flujo de pedidos internos y reparto OWN puede avanzarse con contratos reales; el flujo operativo externo se reporta `BLOCKED_EXTERNAL` hasta entrega y validación del proveedor. No usar un mock para despacho real.
 

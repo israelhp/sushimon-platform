@@ -245,6 +245,18 @@ export class FakeModifiersRepo {
     return Promise.resolve(rows);
   }
 
+  /** Lote (F19): UNA llamada registrada como `findOffersMany`; reutiliza la oferta por producto sin contarla. */
+  async findOffersMany(productIds: readonly string[]): Promise<Map<string, OfferRow[]>> {
+    const out = new Map<string, OfferRow[]>();
+    for (const id of productIds) {
+      const rows = await this.findOffer(id);
+      this.calls.pop(); // la consulta por producto no cuenta: el lote es UNA consulta
+      if (rows) out.set(id, rows);
+    }
+    this.calls.push('findOffersMany');
+    return out;
+  }
+
   findProductLinks(_tx: ModifierTx, productId: string) {
     this.calls.push('findProductLinks');
     return Promise.resolve(

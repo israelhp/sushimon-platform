@@ -82,6 +82,7 @@ describe('paths', () => {
     expect(paths.adminDeliveryZoneStatus('z1')).toBe('/v1/admin/delivery-zones/z1/status');
     expect(paths.adminBranchDeliverySettings('b1')).toBe('/v1/admin/branches/b1/delivery-settings');
     expect(paths.deliveryCoverageCheck()).toBe('/v1/delivery-coverage/check');
+    expect(paths.checkoutQuote()).toBe('/v1/checkout/quote');
     // La cotización por «niveles» (tiers/ETA del mock) se retiró: la tarifa propia viene de `checkDeliveryCoverage`.
     expect(Object.keys(paths)).not.toContain('deliveryQuote');
   });
@@ -183,6 +184,8 @@ describe('paths', () => {
       // F15: las sustituyen `GET /v1/store/promotions` y `/v1/admin/promotions[/{id}[/status]]`; las rutas mock previas se RETIRARON.
       '/v1/promotions',
       '/v1/backoffice/promotions',
+      // F19: el documento la menciona SOLO para descartarla (la ruta vigente es `POST /v1/checkout/quote`).
+      '/v1/store/checkout/quote',
     ]);
     const documented = [...doc.matchAll(/`(\/v1\/[^`?\s[]+)/g)]
       .map((m) => (m[1] ?? '').replace(/\{(\w+)\}/g, 'X'))

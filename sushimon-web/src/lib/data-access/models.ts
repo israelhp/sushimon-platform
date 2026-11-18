@@ -56,6 +56,17 @@ export type UpdateDeliveryZoneRequest = S['UpdateDeliveryZoneRequest'];
 export type UpdateDeliveryZoneStatusRequest = S['UpdateDeliveryZoneStatusRequest'];
 export type BranchDeliverySettings = S['BranchDeliverySettings'];
 export type UpdateBranchDeliverySettingsRequest = S['UpdateBranchDeliverySettingsRequest'];
+/** F19: cotización de checkout (autoridad de precios del SERVIDOR). */
+export type CartQuoteInput = S['CartQuoteInput'];
+export type CheckoutQuoteRequest = S['CheckoutQuoteRequest'];
+export type CheckoutQuote = S['CheckoutQuote'];
+export type CheckoutQuoteLine = S['CheckoutQuoteLine'];
+export type CheckoutLineStatus = S['CheckoutLineStatus'];
+export type CheckoutFulfillmentInput = S['CheckoutFulfillmentInput'];
+export type CheckoutDeliveryOption = S['CheckoutDeliveryOption'];
+export type CheckoutBlocker = S['CheckoutBlocker'];
+export type CheckoutNotice = S['CheckoutNotice'];
+export type CheckoutClientView = S['CheckoutClientView'];
 export type DeliveryCoverageCheckRequest = S['DeliveryCoverageCheckRequest'];
 export type DeliveryCoverageCheckResponse = S['DeliveryCoverageCheckResponse'];
 export type DeliveryEligibility = S['DeliveryEligibility'];

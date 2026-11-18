@@ -7,6 +7,7 @@ import * as bo from './backoffice';
 import * as branches from './branches';
 import * as branchProducts from './branch-products';
 import * as categories from './categories';
+import * as checkout from './checkout';
 import * as delivery from './delivery';
 import * as favorites from './favorites';
 import * as media from './media';
@@ -108,6 +109,8 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'GET /v1/admin/branches/:id/delivery-settings': delivery.getAdminBranchDeliverySettings,
   'PATCH /v1/admin/branches/:id/delivery-settings': delivery.updateAdminBranchDeliverySettings,
   'POST /v1/delivery-coverage/check': delivery.checkDeliveryCoverage,
+  // F19: cotización de checkout SIMULADA (misma forma que el contrato; sin efectos)
+  'POST /v1/checkout/quote': checkout.quoteCheckout,
   // F10: categorías y jerarquía del menú (contrato)
   'GET /v1/admin/categories': categories.listAdminCategories,
   'POST /v1/admin/categories': categories.createAdminCategory,

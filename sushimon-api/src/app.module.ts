@@ -6,7 +6,10 @@ import {
   ACTOR_THROTTLER,
   actorTracker,
   AppThrottlerGuard,
+  COUPON_ACTOR_THROTTLER,
+  COUPON_THROTTLER,
   skipUnlessActorLimited,
+  skipUnlessCouponLimited,
 } from './common/throttle/app-throttler.guard.js';
 import { noStoreMiddleware } from './common/http/cache-control.js';
 import { rejectProtoKeysMiddleware } from './common/http/reject-proto-keys.middleware.js';
@@ -25,6 +28,7 @@ import { PromotionsModule } from './promotions/promotions.module.js';
 import { BannersModule } from './banners/banners.module.js';
 import { BranchesModule } from './branches/branches.module.js';
 import { StoreModule } from './store/store.module.js';
+import { CheckoutModule } from './checkout/checkout.module.js';
 import { StaffModule } from './staff/staff.module.js';
 import { CustomersModule } from './customers/customers.module.js';
 import { FavoritesModule } from './favorites/favorites.module.js';
@@ -56,6 +60,20 @@ import { HealthTokenGuard } from './health/health-token.guard.js';
           getTracker: actorTracker,
           skipIf: skipUnlessActorLimited,
         },
+        // Cupón de la cotización (F19): solo en rutas que lo declaran y con `couponCode` en el cuerpo.
+        {
+          name: COUPON_THROTTLER,
+          ttl: config.get('RATE_LIMIT_TTL_MS', { infer: true }),
+          limit: config.get('RATE_LIMIT_MAX', { infer: true }),
+          skipIf: skipUnlessCouponLimited(COUPON_THROTTLER),
+        },
+        {
+          name: COUPON_ACTOR_THROTTLER,
+          ttl: config.get('RATE_LIMIT_TTL_MS', { infer: true }),
+          limit: config.get('RATE_LIMIT_MAX', { infer: true }),
+          getTracker: actorTracker,
+          skipIf: skipUnlessCouponLimited(COUPON_ACTOR_THROTTLER),
+        },
       ],
     }),
     DatabaseModule,
@@ -69,6 +87,7 @@ import { HealthTokenGuard } from './health/health-token.guard.js';
     PromotionsModule,
     BannersModule,
     StoreModule,
+    CheckoutModule,
     BranchScheduleModule,
     LocationsModule,
     DeliveryCoverageModule,

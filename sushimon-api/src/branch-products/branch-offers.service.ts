@@ -8,7 +8,7 @@ import {
   MAX_VIOLATIONS,
 } from './branch-product-policy.js';
 import { BranchProductsRepository } from './branch-products.repository.js';
-import type { BranchOffer } from './branch-products.types.js';
+import type { BranchOffer, BranchOfferInspection } from './branch-products.types.js';
 
 const notAvailable = (violations: ErrorViolation[]) =>
   codedException(
@@ -54,6 +54,40 @@ export class BranchOffersService {
     if (unique.length === 0) return out;
     for (const row of await this.repo.resolveMany(branchId, unique)) {
       out.set(row.id, { price: row.price, basePrice: row.basePrice, available: row.available });
+    }
+    return out;
+  }
+
+  /**
+   * Variante NO lanzante de `assertOrderable` (F19/F20): estado por producto con la MISMA consulta (`resolveMany`) y la
+   * MISMA visibilidad de categorías (`getVisibleIds`), en paralelo (2 consultas, sin N+1). No valida la sucursal (el
+   * llamador la comprueba con el puerto de horarios). `UNKNOWN`: inexistente o id mal formado; `HIDDEN`: producto
+   * inactivo o categoría no visible; `SOLD_OUT`: agotado en la sucursal; `OK`: ordenable. `price` es el precio EFECTIVO
+   * de sucursal (nunca `basePrice`). Más de 200 ids únicos => 422 `PRODUCT_NOT_AVAILABLE`; `branchId` mal formado => 422
+   * `BRANCH_NOT_AVAILABLE`.
+   */
+  async inspect(
+    branchId: string,
+    productIds: readonly string[],
+  ): Promise<Map<string, BranchOfferInspection>> {
+    if (!Array.isArray(productIds) || productIds.length > MAX_RESOLVE_IDS) throw invalidList();
+    if (!isUuid(branchId)) throw branchNotAvailable();
+    const unique = [...new Set((productIds as unknown[]).filter(isUuid))];
+    const out = new Map<string, BranchOfferInspection>();
+    if (unique.length === 0) return out;
+    const [visibleIds, rows] = await Promise.all([
+      this.categories.getVisibleIds(),
+      this.repo.resolveMany(branchId, unique),
+    ]);
+    const visible = new Set(visibleIds);
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    for (const id of unique) {
+      const row = byId.get(id);
+      if (!row) out.set(id, { state: 'UNKNOWN', price: null });
+      else if (!row.active || !visible.has(row.categoryId))
+        out.set(id, { state: 'HIDDEN', price: row.price });
+      else if (!row.available) out.set(id, { state: 'SOLD_OUT', price: row.price });
+      else out.set(id, { state: 'OK', price: row.price });
     }
     return out;
   }

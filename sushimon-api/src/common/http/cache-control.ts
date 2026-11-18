@@ -41,3 +41,20 @@ export function noStoreMiddleware(
   res.setHeader('Cache-Control', 'no-store');
   next();
 }
+
+/**
+ * Middleware de rutas PRIVADAS por solicitud (F19, checkout): `private, no-store` en TODA respuesta, también en 400/401/
+ * 429/503, y SIN ETag (Express lo añade con `res.set('ETag', …)` al enviar: se ignora solo para esta respuesta).
+ * `AllExceptionsFilter` respeta este valor en lugar de rebajarlo a `no-store`.
+ */
+export function privateNoStoreMiddleware(
+  _req: Request,
+  res: Response,
+  next: (error?: unknown) => void,
+): void {
+  res.setHeader('Cache-Control', 'private, no-store');
+  const setHeader = res.setHeader.bind(res) as (name: string, value: unknown) => Response;
+  res.setHeader = ((name: string, value: unknown) =>
+    name.toLowerCase() === 'etag' ? res : setHeader(name, value)) as Response['setHeader'];
+  next();
+}

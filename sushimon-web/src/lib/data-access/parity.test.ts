@@ -7,6 +7,7 @@ import * as admin from '@/services/backoffice-admin';
 import * as banners from '@/services/banners';
 import * as bo from '@/services/backoffice-orders';
 import * as branchProducts from '@/services/branch-products';
+import * as checkout from '@/services/checkout';
 import * as coverage from '@/services/delivery-coverage';
 import * as categories from '@/services/categories';
 import * as favorites from '@/services/favorites';
@@ -249,6 +250,64 @@ describe('paridad mock ↔ http', () => {
       'MUNICIPALITY_NOT_FOUND',
       'DELIVERY_ZONE_VERSION_CONFLICT',
       'BRANCH_NOT_AVAILABLE',
+    ]);
+  });
+
+  it('F19: la cotización de checkout produce los mismos resultados y errores en mock y http (misma forma que el contrato)', async () => {
+    const p = pair();
+    p.asCustomer();
+    for (const h of [p.mock, p.backend]) h.store.checkoutBusy = 1;
+    const cart = (branchId: string, ...ids: string[]) => ({
+      branchId,
+      lines: ids.map((productId) => ({ productId, quantity: 2, selections: [] })),
+    });
+    const city = 'mun-guatemala-guatemala';
+    const steps: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) =>
+        checkout.quoteCheckout(c, {
+          cart: cart('sucursal-1', 'dumplings'),
+          fulfillment: { type: 'PICKUP' },
+        }), // 503
+      (c) =>
+        checkout.quoteCheckout(c, {
+          cart: cart('sucursal-1', 'dumplings'),
+          fulfillment: { type: 'PICKUP' },
+        }),
+      (c) =>
+        checkout.quoteCheckout(c, {
+          cart: cart('sucursal-1', 'dumplings', 'no-existe'),
+          fulfillment: { type: 'DELIVERY', municipalityId: city, zone: 'Zona 10' },
+          couponCode: 'bienvenido10',
+        }),
+      (c) =>
+        checkout.quoteCheckout(c, {
+          cart: cart('sucursal-1', 'dumplings'),
+          fulfillment: { type: 'DELIVERY', municipalityId: city },
+        }),
+      (c) =>
+        checkout.quoteCheckout(c, {
+          cart: cart('sucursal-99', 'dumplings'),
+          fulfillment: { type: 'PICKUP' },
+        }), // 422
+      (c) =>
+        checkout.quoteCheckout(c, {
+          cart: cart('sucursal-1', 'dumplings'),
+          fulfillment: { type: 'DELIVERY', customerAddressId: 'addr-ajena' },
+        }), // 404
+      (c) =>
+        c.request('/v1/checkout/quote', {
+          method: 'POST',
+          body: {
+            cart: cart('sucursal-1', 'dumplings'),
+            fulfillment: { type: 'PICKUP' },
+            total: '1.00',
+          },
+        }), // 400
+    ];
+    const a = await run(steps, p.mock.client);
+    expect(await run(steps, p.http)).toEqual(a);
+    expect(a.filter((x) => 'error' in x).map((x) => ('error' in x ? x.error.status : 0))).toEqual([
+      503, 422, 404, 400,
     ]);
   });
 

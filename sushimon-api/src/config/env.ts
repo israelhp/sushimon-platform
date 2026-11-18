@@ -65,6 +65,11 @@ export const envSchema = z
     /** Conexiones por instancia. Pequeño a propósito: cada instancia serverless abre su propio pool. */
     DB_POOL_MAX: z.coerce.number().int().min(1).max(20).default(3),
     DB_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(500).max(30_000).default(5_000),
+    /**
+     * Tope CLIENTE por consulta (`query_timeout` de `pg`, ms): la solicitud falla en vez de colgarse. NO se fija
+     * `statement_timeout` porque `pg` lo envía como parámetro de arranque y el transaction pooler lo rechaza.
+     */
+    DB_QUERY_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(10_000),
     DB_IDLE_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(300_000).default(10_000),
 
     /** Ventana y tope del rate limit global (por IP). Los límites por endpoint se ajustan por slice. */
@@ -182,6 +187,12 @@ export const envSchema = z
      * solo desarrollo/pruebas) no arranca en producción ni junto a credenciales R2.
      */
     MEDIA_STORAGE_ADAPTER: optional(z.enum(['r2', 'mock'])),
+
+    /**
+     * F19 (ADR-0025 D5): secreto HMAC de la vigencia firmada de la cotización de checkout. OPCIONAL, >= 32 caracteres;
+     * sin él `quote.token` es `null` y F20 no podrá confirmar pedidos. SECRETO de servidor: nunca en repo, logs ni cliente.
+     */
+    CHECKOUT_QUOTE_SECRET: optional(z.string().min(32, 'mínimo 32 caracteres')),
 
     /** Token de `GET /v1/health/ready` (cabecera `x-health-token`). Obligatorio en producción. */
     HEALTH_READY_TOKEN: optional(z.string().min(16, 'mínimo 16 caracteres')),

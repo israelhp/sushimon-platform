@@ -46,7 +46,9 @@ const heading = () => screen.getByRole('heading', { level: 1 });
 /** El botón de acción existe dos veces (resumen de escritorio y barra móvil); basta con una. */
 const next = async (user: UserEvent, name: RegExp) => {
   // F18: «Continuar» espera la revalidación del carrito (precios, disponibilidad y extras de la sucursal).
-  await waitFor(() => expect(screen.getAllByRole('button', { name })[0]).toBeEnabled());
+  await waitFor(() =>
+    expect(screen.getAllByRole('button', { name })[0]).not.toHaveAttribute('aria-disabled', 'true'),
+  );
   await user.click(screen.getAllByRole('button', { name })[0]!);
 };
 
@@ -140,7 +142,9 @@ describe('checkout · paso 1 explica SIEMPRE el bloqueo (U2)', () => {
     const user = userEvent.setup();
     const view = await openCheckout();
     await waitFor(() =>
-      expect(screen.getAllByRole('button', { name: /Continuar a entrega/i })[0]).toBeEnabled(),
+      expect(
+        screen.getAllByRole('button', { name: /Continuar a entrega/i })[0],
+      ).not.toHaveAttribute('aria-disabled', 'true'),
     );
     await act(async () => view.api().mode.update({ branchId: 'sucursal-2' }));
     const alert = await screen.findByRole('alert');
@@ -286,11 +290,14 @@ describe('checkout · sucursal que no recibe pedidos (F08, solo UI)', () => {
     await next(user, /Continuar a envío/i);
     await screen.findByRole('heading', { level: 1, name: 'Envío' });
     const notice = await screen.findByRole('alert');
-    expect(notice).toHaveTextContent('Sucursal 1 está cerrada en este momento');
+    expect(notice).toHaveTextContent('La sucursal está cerrada en este momento');
     // la próxima apertura la calcula el servidor (fin del cierre: mañana 1:00 p. m.)
     expect(notice).toHaveTextContent('Abre mañana a las 1:00 p. m.');
-    // no se avanza a Pago mientras la sucursal no recibe pedidos
-    await next(user, /Continuar a pago/i);
+    // no se avanza a Pago mientras la sucursal no recibe pedidos (la cotización trae `BRANCH_CLOSED`)
+    expect(screen.getAllByRole('button', { name: /Continuar a pago/i })[0]).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
     expect(heading()).toHaveTextContent('Envío');
   });
 
@@ -325,13 +332,16 @@ describe('checkout · envío y cobertura', () => {
     await openCheckout({ type: 'delivery' });
     await toStep(user, 'Envío');
     expect(await screen.findByTestId('shipping-fee')).toHaveTextContent('Q15.00');
-    expect(screen.getByText('Entregamos en esta dirección desde Sucursal 1.')).toBeInTheDocument();
     expect(screen.queryByText(/Tiempo estimado de entrega/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Zona cercana/)).not.toBeInTheDocument();
-    // PedidosYa se rotula como integración pendiente (nunca «conectado»); el mock lo marca como simulación.
-    expect(screen.getByText(/PedidosYa: integración pendiente/)).toBeInTheDocument();
-    // Resumen: Q53 + Q15 de envío.
-    expect(screen.getAllByTestId('summary-total')[0]).toHaveTextContent('Q68.00');
+    // PedidosYa NUNCA se presenta como disponible ni seleccionable (sin integración verificada).
+    const py = screen.getByRole('radio', { name: /PedidosYa/ });
+    expect(py).toBeDisabled();
+    expect(py).toHaveAttribute('data-status', 'unknown');
+    // Resumen: Q53 + Q15 de envío (valores del SERVIDOR).
+    await waitFor(() =>
+      expect(screen.getAllByTestId('summary-total')[0]).toHaveTextContent('Q68.00'),
+    );
   });
 
   it('PedidosYa no verificable y sin zona propia: «no podemos confirmar»; no continúa y recoger sigue disponible', async () => {
@@ -345,18 +355,19 @@ describe('checkout · envío y cobertura', () => {
     );
     await next(user, /Continuar a envío/i);
     expect(
-      await screen.findByText(/No podemos confirmar el envío a domicilio/),
+      await screen.findByText(/No pudimos verificar la entrega a domicilio/),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByText(/Por ahora no tenemos cobertura a domicilio/),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/No hay entrega a domicilio disponible/)).not.toBeInTheDocument();
 
-    await next(user, /Continuar a pago/i);
+    expect(screen.getAllByRole('button', { name: /Continuar a pago/i })[0]).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
     expect(heading()).toHaveTextContent('Envío');
 
     await user.click(screen.getAllByRole('button', { name: 'Recoger en sucursal' })[0]!);
     expect(view.api().mode.mode.type).toBe('pickup');
-    expect(await screen.findByText('¿En qué sucursal lo recogés?')).toBeInTheDocument();
+    expect(await screen.findByText('¿En qué sucursal lo recoges?')).toBeInTheDocument();
     await next(user, /Continuar a pago/i);
     expect(await screen.findByRole('heading', { level: 1, name: 'Pago' })).toBeInTheDocument();
   });
@@ -383,10 +394,12 @@ describe('checkout · envío y cobertura', () => {
     );
     await next(user, /Continuar a envío/i);
     expect(
-      await screen.findByText(/Por ahora no tenemos cobertura a domicilio para esta dirección/),
+      await screen.findByText(/No hay entrega a domicilio disponible para esta dirección/),
     ).toBeInTheDocument();
-    expect(screen.getByText('Sin cobertura de envío por ahora')).toBeInTheDocument();
-    await next(user, /Continuar a pago/i);
+    expect(screen.getAllByRole('button', { name: /Continuar a pago/i })[0]).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
     expect(heading()).toHaveTextContent('Envío');
   });
 
@@ -413,8 +426,11 @@ describe('checkout · envío y cobertura', () => {
     const view = await openCheckout({ scenario: 'branch-closed' });
     await toStep(user, 'Envío');
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Sucursal 1 está cerrada en este momento');
-    await next(user, /Continuar a pago/i);
+    expect(alert).toHaveTextContent('La sucursal está cerrada en este momento');
+    expect(screen.getAllByRole('button', { name: /Continuar a pago/i })[0]).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
     expect(heading()).toHaveTextContent('Envío');
 
     await user.click(within(alert).getByRole('button', { name: 'Programar' }));

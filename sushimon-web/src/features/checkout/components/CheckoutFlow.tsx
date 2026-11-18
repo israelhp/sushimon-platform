@@ -10,6 +10,7 @@ import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
 import { isApiError } from '@/lib/data-access/errors';
 import type { CreateOrderRequest, Order } from '@/lib/data-access/models';
+import { moneyToCents } from '@/lib/checkout-quote';
 import { formatMoney } from '@/lib/format';
 import { useCreateAddress, useUpdateMe } from '@/features/account/hooks';
 import { useLocationOptions } from '@/features/delivery-coverage/hooks';
@@ -31,6 +32,7 @@ import { NeonetDialog, type NeonetOutcome } from './NeonetDialog';
 import { OrderStep, OrderStepSkeleton } from './OrderStep';
 import { OrderSummary, type SummaryAction } from './OrderSummary';
 import { PaymentStep } from './PaymentStep';
+import { QuoteAlerts } from './QuoteAlerts';
 import { useCheckoutSteps } from './parts';
 import { ReviewStep } from './ReviewStep';
 import { ShippingStep } from './ShippingStep';
@@ -47,7 +49,7 @@ const scrollTop = () => {
 function focusFirstError() {
   requestAnimationFrame(() => {
     const el = document.querySelector<HTMLElement>(
-      '#paso-actual [aria-invalid="true"], #paso-actual [data-focus-error]',
+      '#paso-actual [aria-invalid="true"]:not([data-skip-focus]), #paso-actual [data-focus-error]',
     );
     if (el) {
       el.focus({ preventScroll: true });
@@ -271,6 +273,8 @@ export function CheckoutFlow() {
 
   const submit = async () => {
     if (busy) return;
+    // F20 aún no existe: con la API real NO se llama a `POST /v1/orders` ni se inventa un éxito.
+    if (!data.confirmationAvailable) return;
     const invalid = ([1, 2, 3, 4] as const).find((s) => !data.stepOk(s));
     if (invalid) {
       dispatch({ type: 'goto', step: invalid, showErrors: true });
@@ -316,7 +320,10 @@ export function CheckoutFlow() {
   if (confirmed) return <Confirmation order={confirmed} onOrderChange={setConfirmed} />;
 
   const loadFailed =
-    data.configQuery.isError || data.branchesQuery.isError || data.view.status === 'error';
+    // `GET /v1/store/config` NO existe en la API (F10 pendiente): con `http` su 404 no es un fallo de carga del checkout.
+    (data.configQuery.isError && !data.configQuery.unavailable) ||
+    data.branchesQuery.isError ||
+    data.view.status === 'error';
   const loading =
     !loadFailed &&
     (!ready ||
@@ -341,11 +348,41 @@ export function CheckoutFlow() {
     );
   }
 
-  const quoteLoading =
-    step === 3 &&
-    data.type === 'delivery' &&
-    data.selectionComplete &&
-    data.coverage.state === 'loading';
+  // F19: desde «Envío» (y al confirmar) solo se avanza con una cotización VIGENTE, de las entradas ACTUALES y `canProceed`.
+  const quoteGate = step >= 3 && !data.quote.canContinue;
+  const noConfirm = isLast && !data.confirmationAvailable;
+  const blocked = busy ? false : quoteGate || loading || loadFailed || noConfirm;
+  const quoteStatus = data.quote.status;
+  const waitingQuote = quoteStatus === 'loading' || quoteStatus === 'expired';
+  const reason = loadFailed
+    ? t('checkout.quote.reason.loadFailed')
+    : loading
+      ? t('checkout.quote.reason.loading')
+      : quoteGate && data.branchMismatch
+        ? t('checkout.quote.reason.branch')
+        : quoteGate && data.addressPending
+          ? t('checkout.quote.reason.address')
+          : quoteGate && quoteStatus === 'error'
+            ? t('checkout.quote.reason.error')
+            : quoteGate && quoteStatus === 'idle'
+              ? t('checkout.quote.reason.idle')
+              : quoteGate && quoteStatus !== 'ready'
+                ? t('checkout.quote.reason.calculating')
+                : quoteGate
+                  ? t('checkout.quote.reason.problem')
+                  : noConfirm
+                    ? t('checkout.quote.reason.confirmSoon')
+                    : '';
+  /** Bloqueado: no avanza; el foco va al primer bloqueo de la cotización o, si solo está calculando, a la frase del motivo. */
+  const onBlocked = () => {
+    const issue = document.querySelector<HTMLElement>(
+      '#paso-actual [data-focus-error], #paso-actual [aria-invalid="true"]:not([data-skip-focus])',
+    );
+    const reasons = [...document.querySelectorAll<HTMLElement>('[data-reason]')];
+    // En jsdom `offsetParent` es siempre null: se cae al primero.
+    const visible = reasons.find((r) => r.offsetParent !== null) ?? reasons[0] ?? null;
+    (issue ?? visible)?.focus();
+  };
   const action: SummaryAction = {
     label: busy
       ? t('checkout.registering')
@@ -354,10 +391,12 @@ export function CheckoutFlow() {
           ? t('checkout.payNow')
           : t('checkout.placeOrder')
         : t('checkout.continueTo', { a: (steps[step] ?? '').toLowerCase() }),
-    onClick: isLast ? () => void submit() : () => goTo(step + 1),
+    onClick: blocked ? onBlocked : isLast ? () => void submit() : () => goTo(step + 1),
     busy,
-    disabled: busy || quoteLoading || loading || loadFailed,
+    blocked,
+    reason,
     isLast,
+    showSimulation: step >= 4,
   };
   const summary = <OrderSummary data={data} onEdit={cartDrawer.open} action={action} />;
   const profileChanged =
@@ -438,28 +477,34 @@ export function CheckoutFlow() {
           {loadFailed ? (
             <ErrorNotice
               onRetry={() => {
-                if (data.configQuery.isError) void data.configQuery.refetch();
+                if (data.configQuery.isError && !data.configQuery.unavailable)
+                  void data.configQuery.refetch();
                 if (data.branchesQuery.isError) void data.branchesQuery.refetch();
                 if (data.view.status === 'error') data.view.retry();
               }}
             />
           ) : loading ? (
             <OrderStepSkeleton lines={data.cartLinesCount} />
-          ) : step === 1 ? (
-            <OrderStep data={data} />
-          ) : step === 2 ? (
-            <DeliveryStep
-              data={data}
-              extras={extras}
-              setExtras={setExtras}
-              profileChanged={profileChanged}
-            />
-          ) : step === 3 ? (
-            <ShippingStep data={data} goTo={goTo} />
-          ) : step === 4 ? (
-            <PaymentStep />
           ) : (
-            <ReviewStep data={data} goTo={goTo} summary={summary} error={submitError} />
+            <div className="flex flex-col gap-4">
+              {step >= 3 ? <QuoteAlerts data={data} goTo={goTo} /> : null}
+              {step === 1 ? (
+                <OrderStep data={data} />
+              ) : step === 2 ? (
+                <DeliveryStep
+                  data={data}
+                  extras={extras}
+                  setExtras={setExtras}
+                  profileChanged={profileChanged}
+                />
+              ) : step === 3 ? (
+                <ShippingStep data={data} goTo={goTo} summary={summary} />
+              ) : step === 4 ? (
+                <PaymentStep />
+              ) : (
+                <ReviewStep data={data} goTo={goTo} summary={summary} error={submitError} />
+              )}
+            </div>
           )}
         </div>
         <div className="hidden lg:sticky lg:top-[96px] lg:block">{summary}</div>
@@ -469,37 +514,71 @@ export function CheckoutFlow() {
         <div className="mx-auto max-w-[720px]">
           <div className="mb-2 flex items-baseline justify-between gap-3 text-[13px]">
             <span className="min-w-0 truncate font-bold text-muted">
-              {data.type === 'delivery' ? t('checkout.estimatedTotal') : t('common.total')}
+              {data.totalIsEstimate ? t('checkout.estimatedTotal') : t('common.total')}
               {data.type === 'delivery' && data.shipping == null ? (
                 <span className="font-normal">
                   {' · '}
-                  {t('checkout.estimatedShipping')}: {t('checkout.toQuote')}
+                  {t('checkout.quote.deliveryFee')}: {t('checkout.quote.pending')}
                 </span>
               ) : null}
             </span>
-            <span className="flex-none font-display text-[20px] text-fg">{money(data.total)}</span>
+            <span className="flex-none font-display text-[20px] text-fg">
+              {waitingQuote ? '…' : money(data.total)}
+            </span>
           </div>
           <button
             type="button"
             onClick={action.onClick}
-            disabled={action.disabled}
+            disabled={busy}
+            aria-disabled={blocked || undefined}
+            aria-describedby={blocked ? 'checkout-bar-reason' : undefined}
             aria-busy={busy}
-            className="btn btn-primary w-full !justify-between !px-6 text-[16px]"
+            className="btn btn-primary w-full !pointer-events-auto !justify-between !px-6 text-[16px]"
           >
             <span className="flex min-w-0 items-center gap-2 truncate">
               {busy ? <Loader2 className="anim-spin h-5 w-5 flex-none" aria-hidden="true" /> : null}
               {action.label}
             </span>
             {isLast ? (
-              <span className="font-display">{money(data.total)}</span>
+              <span className="font-display">
+                {waitingQuote ? '…' : money(data.total)}
+                {data.totalIsEstimate && !waitingQuote ? (
+                  <small className="ml-1 text-[12px] font-normal">
+                    ({t('checkout.quote.estimatedTag')})
+                  </small>
+                ) : null}
+              </span>
             ) : (
               <ArrowRight className="h-5 w-5 flex-none" aria-hidden="true" />
             )}
           </button>
+          {blocked ? (
+            <p
+              id="checkout-bar-reason"
+              tabIndex={-1}
+              data-reason
+              className="m-0 mt-1.5 text-[13px] leading-snug text-fg outline-none"
+            >
+              {reason}
+            </p>
+          ) : null}
         </div>
       </div>
 
-      <p className="sr-only" role="status" aria-live="polite">
+      {/* UNA sola región polite para los importes: «Actualizando…», «Total actualizado: Qxx» o el error. */}
+      <p className="sr-only" role="status" aria-live="polite" data-testid="quote-live">
+        {quoteStatus === 'error'
+          ? t('checkout.quote.liveError')
+          : data.quote.updating || quoteStatus === 'loading'
+            ? t('checkout.quote.liveUpdating')
+            : data.serverQuote?.total
+              ? t('checkout.quote.liveTotal', {
+                  a: money((moneyToCents(data.serverQuote.total) ?? 0) / 100),
+                })
+              : ''}
+      </p>
+
+      <p className="sr-only" aria-live="polite">
         {t('checkout.stepOf', { a: step, b: CHECKOUT_STEP_COUNT })}: {stepName}
       </p>
 

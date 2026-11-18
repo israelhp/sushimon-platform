@@ -991,6 +991,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/checkout/quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cotiza un carrito para el checkout (autoridad de precios; sin crear pedido)
+         * @description F19 (spec 020, ADR-0025). Calcula EN EL SERVIDOR líneas, extras, descuentos, tarifa de entrega y total de un carrito.
+         *     NO crea pedidos, pagos ni entregas, NO reserva inventario y NO asigna repartidor (F20/F24/F25/F28/F29). Es un POST
+         *     sin efectos (equivale a un cálculo): responde 200, no lleva `Idempotency-Key` y no se audita.
+         *     **Acceso**: invitado o autenticado (`security` opcional). Sin `Authorization` se cotiza como invitado; un token
+         *     presente pero inválido => 401 (no se degrada a invitado). `fulfillment.customerAddressId` EXIGE sesión de cliente y
+         *     que la dirección sea suya: sin sesión => 401; ajena, inexistente o sin perfil de cliente => 404 idéntico (anti-IDOR).
+         *     **Entrada sin importes**: `cart` es `CartQuoteInput` (ids y cantidades); `clientView` solo contiene lo que el
+         *     cliente VIO y es una PISTA no autoritativa (produce avisos `PRICE_CHANGED`/`TOTAL_CHANGED`, jamás cambia un cálculo).
+         *     Cualquier otra propiedad (precio, tarifa, descuento, total) => 400.
+         *     **Dinero**: cadenas decimales de 2 posiciones en GTQ; aritmética en centavos enteros (`PromotionEvaluator` de F15,
+         *     medio hacia arriba en porcentajes). `subtotal = Σ (precio unitario de sucursal + extras) × cantidad` de las líneas
+         *     compradas; `total = subtotal − discountTotal + deliveryFee`. Las promociones descuentan solo el producto, nunca los
+         *     extras (F15 D15.6); una promoción por línea (la de mayor ahorro), jamás se apilan.
+         *     **`total` es `null`** si no es verificable: alguna línea no comprable, entrega a domicilio sin tarifa verificable
+         *     o dirección incompleta. `canProceed` es `true` solo si `blockers` está vacío. `notices` no bloquean.
+         *     **Entrega**: el cliente elige modalidad (`PICKUP`|`DELIVERY`), no proveedor. Cada proveedor se evalúa por separado
+         *     (`delivery.options`). PEDIDOSYA es `UNKNOWN` mientras la integración esté `BLOCKED_EXTERNAL` y NUNCA es seleccionable
+         *     en esta versión (tarifa al cliente sin política aprobada, P40); un mock aparece con `simulated=true` y tampoco
+         *     habilita nada. OWN solo si la sucursal tiene `ownDeliveryZonesEnabled` y hay zona; su tarifa es la del servidor.
+         *     Nunca se expone el costo del proveedor. Si el cliente indica `deliveryProvider` y no es seleccionable NO se cambia
+         *     de proveedor en silencio (blocker `DELIVERY_PROVIDER_NOT_SELECTABLE`). La cotización usa SIEMPRE la sucursal del
+         *     carrito (no la reasigna por cobertura). Pedidos programados: fuera de alcance (solo «ahora»).
+         *     **Vigencia**: `quote.expiresAt` (10 min) y `quote.token` firmado (HMAC con secreto de servidor; `null` si el
+         *     servidor no tiene secreto: F20 debe rechazar cotizaciones sin firma). El token NO reserva nada: F20 revalida todo y
+         *     responde conflicto si el resultado difiere. Cupón: ante cualquier cosa distinta de `APPLIED` el cliente solo ve
+         *     `NOT_APPLIED` (sin motivo; no se puede enumerar códigos) y la ruta tiene un límite de tasa específico.
+         *     Respuesta `Cache-Control: private, no-store`.
+         */
+        post: operations["quoteCheckout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/store/categories": {
         parameters: {
             query?: never;
@@ -2437,7 +2483,7 @@ export interface components {
             details?: string[];
             /**
              * @description Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16: `BANNER_NOT_FOUND`, `BANNER_CODE_TAKEN`, `BANNER_VERSION_CONFLICT`, `BANNER_IMAGE_INVALID`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_LIMIT_REACHED`, `BANNER_SCOPE_FORBIDDEN` (403), `BANNERS_BUSY` (503 reintentable)). Los clientes deben ramificar por `code`, nunca por `message`.
+             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16: `BANNER_NOT_FOUND`, `BANNER_CODE_TAKEN`, `BANNER_VERSION_CONFLICT`, `BANNER_IMAGE_INVALID`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_LIMIT_REACHED`, `BANNER_SCOPE_FORBIDDEN` (403), `BANNERS_BUSY` (503 reintentable); F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); 404 de dirección ajena sin código). Los clientes deben ramificar por `code`, nunca por `message`.
              */
             code?: string;
             /** @description Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09). */
@@ -3607,14 +3653,194 @@ export interface components {
             selections: components["schemas"]["CartQuoteSelectionInput"][];
         };
         /**
-         * @description F18 (spec 019, ADR-0024). Entrada reutilizable para `POST /v1/checkout/quote` (F19; la operación AÚN NO EXISTE ni está en este contrato). Una sola sucursal por carrito.
-         *     Lo produce la función pura `toQuoteInput(cart)` de la web; las líneas van en orden determinista (`productId`, luego clave canónica de selecciones). F19 puede ampliar el
-         *     cuerpo (modo, dirección, cupón) con un esquema propio que COMPONGA este, sin cambiar sus campos.
+         * @description F18 (spec 019, ADR-0024). Entrada reutilizable que `POST /v1/checkout/quote` (F19, `CheckoutQuoteRequest.cart`) compone sin cambios. Una sola sucursal por carrito.
+         *     Lo produce la función pura `toQuoteInput(cart)` de la web; las líneas van en orden determinista (`productId`, luego clave canónica de selecciones). F19 amplía el
+         *     cuerpo (modalidad, dirección, cupón) en `CheckoutQuoteRequest`, que lo COMPONE sin cambiar sus campos.
          */
         CartQuoteInput: {
             /** Format: uuid */
             branchId: string;
             lines: components["schemas"]["CartQuoteLineInput"][];
+        };
+        /**
+         * @description Importe en GTQ como CADENA decimal de 2 posiciones (nunca `number`). Calculado con centavos enteros.
+         * @example 85.00
+         */
+        CheckoutMoney: string;
+        /**
+         * @description Estado de una línea cotizada, alineado con los estados de F18 (`cart-rules.ts`). `OK` y `PRICE_CHANGED` son comprables;
+         *     el resto bloquea. `NOT_FOUND`: el producto no existe; `INACTIVE`: existe pero no es ordenable (inactivo o categoría
+         *     oculta); `UNAVAILABLE`: agotado en la sucursal; `MODIFIER_INVALID`: selección de extras inválida (grupo, mínimo,
+         *     máximo, obligatorio); `OPTION_UNAVAILABLE`: una opción elegida ya no existe o está inactiva. `BRANCH_MISMATCH` es
+         *     solo del cliente. Precedencia: NOT_FOUND > INACTIVE > UNAVAILABLE > OPTION_UNAVAILABLE > MODIFIER_INVALID > PRICE_CHANGED > OK.
+         *     Los clientes deben tolerar valores futuros.
+         * @enum {string}
+         */
+        CheckoutLineStatus: "OK" | "PRICE_CHANGED" | "UNAVAILABLE" | "INACTIVE" | "NOT_FOUND" | "MODIFIER_INVALID" | "OPTION_UNAVAILABLE";
+        /**
+         * @description Modalidad. `PICKUP`: no admite ningún otro campo. `DELIVERY`: exactamente UNO de `customerAddressId` (dirección
+         *     guardada, exige sesión de cliente y propiedad) o `municipalityId` (+ `zone` opcional; invitado o dirección nueva).
+         *     En el municipio de la ciudad de Guatemala la zona es obligatoria con formato «Zona N» (decisión C2 de F05); si falta
+         *     => blocker `ADDRESS_INCOMPLETE`. No hay texto libre de dirección: la cotización solo necesita municipio y zona.
+         *     `deliveryProvider` es una preferencia explícita (no se sustituye en silencio). Combinaciones incoherentes => 400.
+         */
+        CheckoutFulfillmentInput: {
+            /** @enum {string} */
+            type: "PICKUP" | "DELIVERY";
+            /** Format: uuid */
+            customerAddressId?: string;
+            /** Format: uuid */
+            municipalityId?: string;
+            zone?: string | null;
+            deliveryProvider?: components["schemas"]["CourierProvider"];
+        };
+        /** @description Precio unitario de producto (sin extras ni descuento) que el cliente VIO para la línea `index` de `cart.lines`. Pista no autoritativa. */
+        CheckoutClientLineView: {
+            index: number;
+            unitPrice: components["schemas"]["CheckoutMoney"];
+        };
+        /**
+         * @description Lo que el cliente ya vio. SOLO sirve para avisar (`PRICE_CHANGED`, `TOTAL_CHANGED`); el servidor no lo usa para calcular,
+         *     validar ni cobrar. No es un importe de entrada.
+         */
+        CheckoutClientView: {
+            lines?: components["schemas"]["CheckoutClientLineView"][];
+            total?: components["schemas"]["CheckoutMoney"];
+        };
+        /**
+         * @description Cuerpo de `POST /v1/checkout/quote`. COMPONE `CartQuoteInput` (F18) sin cambiar sus campos: `toQuoteInput(cart)` va
+         *     tal cual en `cart`. Topes adicionales: ≤ 200 unidades y ≤ 300 selecciones en total (si no, 400 `QUOTE_LIMITS_EXCEEDED`);
+         *     cuerpo ≤ 64 KB.
+         */
+        CheckoutQuoteRequest: {
+            cart: components["schemas"]["CartQuoteInput"];
+            fulfillment: components["schemas"]["CheckoutFulfillmentInput"];
+            /** @description Cupón opcional (sin patrón, para que un formato inválido no se distinga de uno inexistente). Se normaliza en el servidor. Nunca se registra en logs. */
+            couponCode?: string;
+            clientView?: components["schemas"]["CheckoutClientView"];
+        };
+        CheckoutQuoteMeta: {
+            /** Format: date-time */
+            generatedAt: string;
+            /**
+             * Format: date-time
+             * @description Vigencia fija (10 min). No reserva inventario ni precio.
+             */
+            expiresAt: string;
+            /**
+             * @description Firma sin estado (HMAC-SHA256, secreto de servidor) de {sucursal, modalidad, proveedor, totales, huella de la entrada,
+             *     sujeto, vigencia}. Opaco para el cliente. `null` si el servidor no tiene secreto configurado (F20 debe rechazarlo).
+             *     Solo `canProceed=true` emite token.
+             */
+            token: string | null;
+        };
+        /** @description Horario de la sucursal (F08, America/Guatemala). Es DISTINTO de la disponibilidad logística del proveedor de entrega. */
+        CheckoutBranchState: {
+            /** Format: uuid */
+            id: string;
+            isAcceptingOrders: boolean;
+            reason: components["schemas"]["BranchAvailabilityReason"];
+            /** Format: date-time */
+            nextOpensAt: string | null;
+        };
+        CheckoutModifierLine: {
+            /** Format: uuid */
+            groupId: string;
+            /** Format: uuid */
+            optionId: string;
+            extraPrice: components["schemas"]["CheckoutMoney"];
+        };
+        /**
+         * @description Una línea por cada elemento de `cart.lines`, en el mismo orden (`index`). En una línea no comprable los importes son `null`.
+         *     `lineSubtotal = (unitPrice + extrasPerUnit) × quantity`; `lineTotal = lineSubtotal − discount`.
+         */
+        CheckoutQuoteLine: {
+            index: number;
+            /** Format: uuid */
+            productId: string;
+            quantity: number;
+            status: components["schemas"]["CheckoutLineStatus"];
+            /** @description Precio EFECTIVO de la sucursal (F13), nunca `basePrice`. */
+            unitPrice: components["schemas"]["CheckoutMoney"] | null;
+            modifiers: components["schemas"]["CheckoutModifierLine"][];
+            extrasPerUnit: components["schemas"]["CheckoutMoney"] | null;
+            lineSubtotal: components["schemas"]["CheckoutMoney"] | null;
+            discount: components["schemas"]["CheckoutMoney"] | null;
+            /** Format: uuid */
+            promotionId: string | null;
+            lineTotal: components["schemas"]["CheckoutMoney"] | null;
+            /** @description Eco de `clientView` solo si el precio cambió (`status=PRICE_CHANGED`); informativo. */
+            previousUnitPrice: components["schemas"]["CheckoutMoney"] | null;
+        };
+        /**
+         * @description Evaluación independiente de un proveedor para la dirección dada. `customerFee` es lo que se cobraría AL CLIENTE; el
+         *     costo interno del proveedor jamás se expone. `selectable=false` => `unavailableReason` presente.
+         */
+        CheckoutDeliveryOption: {
+            provider: components["schemas"]["CourierProvider"];
+            enabled: boolean;
+            /** @enum {string} */
+            coverageStatus: "AVAILABLE" | "UNAVAILABLE" | "UNKNOWN";
+            /** @description Solo PEDIDOSYA. */
+            integrationStatus?: components["schemas"]["ProviderIntegrationStatus"];
+            /** @description true si el resultado viene de un adaptador simulado (solo desarrollo/pruebas). */
+            simulated: boolean;
+            customerFee: components["schemas"]["CheckoutMoney"] | null;
+            selectable: boolean;
+            /**
+             * @description `PROVIDER_DISABLED`, `NO_ZONE_COVERAGE`, `COVERAGE_UNKNOWN`, `SIMULATED`, `CUSTOMER_FEE_UNDEFINED` o un `CoverageReason`
+             *     de F09. Los clientes deben tolerar valores futuros.
+             */
+            unavailableReason?: string;
+        };
+        CheckoutDelivery: {
+            selectedProvider: components["schemas"]["CourierProvider"] | null;
+            options: components["schemas"]["CheckoutDeliveryOption"][];
+        };
+        /**
+         * @description Motivo que impide continuar. `code` estable (los clientes ramifican por él): por línea (`scope=LINE`, `lineIndex`):
+         *     `UNAVAILABLE`, `INACTIVE`, `NOT_FOUND`, `MODIFIER_INVALID`, `OPTION_UNAVAILABLE`; sucursal (`BRANCH`): `BRANCH_CLOSED`;
+         *     modalidad (`FULFILLMENT`): `ADDRESS_INCOMPLETE`, `DELIVERY_UNAVAILABLE` (ningún proveedor cubre), `DELIVERY_UNVERIFIED`
+         *     (no se pudo verificar cobertura), `DELIVERY_PROVIDER_NOT_SELECTABLE` (el proveedor pedido no es seleccionable).
+         *     Valores futuros posibles.
+         */
+        CheckoutBlocker: {
+            code: string;
+            /** @enum {string} */
+            scope: "LINE" | "BRANCH" | "FULFILLMENT";
+            lineIndex?: number;
+        };
+        /** @description Aviso que NO bloquea: `PRICE_CHANGED` (línea), `TOTAL_CHANGED`, `PROMOTIONS_TRUNCATED` (había más de 200 promociones candidatas; no es «cupón inválido»). */
+        CheckoutNotice: {
+            code: string;
+            lineIndex?: number;
+        };
+        /** @description Vista del cliente: solo `APPLIED` o `NOT_APPLIED`, sin motivo (un cupón inexistente, vencido, de otra sucursal o sin ahorro responden igual). */
+        CheckoutCoupon: {
+            /** @enum {string} */
+            status: "APPLIED" | "NOT_APPLIED";
+        };
+        CheckoutQuote: {
+            quote: components["schemas"]["CheckoutQuoteMeta"];
+            /** @enum {string} */
+            currency: "GTQ";
+            branch: components["schemas"]["CheckoutBranchState"];
+            fulfillment: {
+                /** @enum {string} */
+                type: "PICKUP" | "DELIVERY";
+                delivery: components["schemas"]["CheckoutDelivery"] | null;
+            };
+            lines: components["schemas"]["CheckoutQuoteLine"][];
+            subtotal: components["schemas"]["CheckoutMoney"];
+            extrasTotal: components["schemas"]["CheckoutMoney"];
+            discountTotal: components["schemas"]["CheckoutMoney"];
+            /** @description `0.00` en PICKUP; `null` si a domicilio no hay tarifa verificable. */
+            deliveryFee: components["schemas"]["CheckoutMoney"] | null;
+            total: components["schemas"]["CheckoutMoney"] | null;
+            coupon: components["schemas"]["CheckoutCoupon"] | null;
+            canProceed: boolean;
+            blockers: components["schemas"]["CheckoutBlocker"][];
+            notices: components["schemas"]["CheckoutNotice"][];
         };
         AdminModifier: {
             /** Format: uuid */
@@ -7359,6 +7585,86 @@ export interface operations {
             };
             /** @description `RATE_LIMITED`: límite por IP (30 por minuto en esta ruta). `Cache-Control: no-store` y `Retry-After`. */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    quoteCheckout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckoutQuoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Cotización calculada (puede traer `blockers`; `canProceed=false` NO es un error HTTP) */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckoutQuote"];
+                };
+            };
+            /** @description Forma inválida (UUID, cantidades, propiedades desconocidas como `price`, `fee` o `total`, combinación incoherente de `fulfillment`) o topes superados (`QUOTE_LIMITS_EXCEEDED`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token presente e inválido, o `customerAddressId` sin sesión */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Dirección guardada inexistente o ajena (misma respuesta; sin enumeración) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `BRANCH_NOT_AVAILABLE` (sucursal inexistente o inactiva) o `MUNICIPALITY_NOT_FOUND` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED`: límite por IP (y por cliente si hay sesión) más estricto con `couponCode`. `Cache-Control: no-store` y `Retry-After`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `CHECKOUT_BUSY`: el semáforo de lecturas se agotó o no hubo conexión; reintentable. `Cache-Control: no-store`. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

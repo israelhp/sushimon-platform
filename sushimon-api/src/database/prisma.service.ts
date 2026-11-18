@@ -23,6 +23,7 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
         connectionString: connectionString ?? 'postgresql://unconfigured.invalid/none',
         max: config.get('DB_POOL_MAX', { infer: true }),
         connectionTimeoutMillis: config.get('DB_CONNECTION_TIMEOUT_MS', { infer: true }),
+        query_timeout: config.get('DB_QUERY_TIMEOUT_MS', { infer: true }),
         idleTimeoutMillis: config.get('DB_IDLE_TIMEOUT_MS', { infer: true }),
       }),
     });

@@ -70,3 +70,25 @@ describe('LocationsService', () => {
     expect((err?.getResponse() as { code: string }).code).toBe('DEPARTMENT_NOT_FOUND');
   });
 });
+
+describe('LocationsService.findMunicipality (memo, F19)', () => {
+  const row = { id: 'm1', name: 'Mixco', departmentName: 'Guatemala' };
+  const setup = (found: typeof row | null) => {
+    const repo = { findMunicipality: vi.fn().mockResolvedValue(found) };
+    return { repo, service: new LocationsService(repo as unknown as LocationsRepository) };
+  };
+
+  it('memoriza los encontrados: una sola consulta', async () => {
+    const { repo, service } = setup(row);
+    expect(await service.findMunicipality('m1')).toEqual(row);
+    expect(await service.findMunicipality('m1')).toEqual(row);
+    expect(repo.findMunicipality).toHaveBeenCalledTimes(1);
+  });
+
+  it('NO memoriza los inexistentes (sin crecimiento por entradas hostiles)', async () => {
+    const { repo, service } = setup(null);
+    expect(await service.findMunicipality('x')).toBeNull();
+    expect(await service.findMunicipality('x')).toBeNull();
+    expect(repo.findMunicipality).toHaveBeenCalledTimes(2);
+  });
+});
