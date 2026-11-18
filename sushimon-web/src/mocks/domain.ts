@@ -1,7 +1,7 @@
 import { ApiError, codeForStatus } from '@/lib/data-access/errors';
 import type {
   Branch,
-  Order,
+  DraftOrder,
   OrderAddress,
   OrderLine,
   OrderStatusEvent,
@@ -146,21 +146,21 @@ export function totals(lines: OrderLine[], deliveryFee: number) {
   return { subtotal, deliveryFee, discount: 0, total: round2(subtotal + deliveryFee) };
 }
 
-export function findOrder(store: MockStore, id: string): Order {
+export function findOrder(store: MockStore, id: string): DraftOrder {
   const order = store.orders.find((o) => o.id === normalizeOrderNumber(id));
   if (!order) fail(404, 'Pedido no encontrado');
   return order;
 }
 
 /** Pedido con tarjeta aún sin pagar (no llega a la cocina/backoffice). */
-export function isAwaitingPayment(order: Order): boolean {
+export function isAwaitingPayment(order: DraftOrder): boolean {
   return (
     order.payment.method === 'card' &&
     (order.payment.status === 'pending' || order.payment.status === 'declined')
   );
 }
 
-export function touch(order: Order, now: Date) {
+export function touch(order: DraftOrder, now: Date) {
   order.updatedAt = now.toISOString();
 }
 

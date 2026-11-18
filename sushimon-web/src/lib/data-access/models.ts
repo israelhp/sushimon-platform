@@ -202,7 +202,12 @@ export type AdminPromotionProductRef = S['AdminPromotionProductRef'];
 export type CreatePromotionRequest = S['CreatePromotionRequest'];
 export type UpdatePromotionRequest = S['UpdatePromotionRequest'];
 export type UpdatePromotionStatusRequest = S['UpdatePromotionStatusRequest'];
-export type OrderStatus = S['OrderStatus'];
+/**
+ * BORRADORES (mock) — F20 (spec 021 §2.4): `Order`, `CreateOrderRequest` y `OrderStatus` del contrato son el borrador que usan el
+ * seguimiento y el backoffice SIMULADOS. Se renombran aquí para no confundirlos con los esquemas REALES (`OrderDetail`,
+ * `OrderCreateRequest`, `OrderLifecycleStatus`, más abajo). Se retiran con F21/F22.
+ */
+export type DraftOrderStatus = S['OrderStatus'];
 export type PaymentStatus = S['PaymentStatus'];
 export type PaymentMethod = S['PaymentMethod'];
 export type DeliveryProvider = S['DeliveryProvider'];
@@ -215,9 +220,30 @@ export type OrderLine = S['OrderLine'];
 export type OrderStatusEvent = S['OrderStatusEvent'];
 export type Payment = S['Payment'];
 export type Delivery = S['Delivery'];
-export type Order = S['Order'];
+export type DraftOrder = S['Order'];
 export type CreateOrderLine = S['CreateOrderLine'];
-export type CreateOrderRequest = S['CreateOrderRequest'];
+export type DraftCreateOrderRequest = S['CreateOrderRequest'];
+/**
+ * F20 (contrato real, spec 021): creación y lectura de pedidos persistidos. `OrderCreateRequest` lleva la cotización aceptada
+ * (`quoteToken`), nunca importes; `OrderCreated` trae el pedido y, solo para invitados, la credencial `access.guestToken`.
+ */
+export type OrderLifecycleStatus = S['OrderLifecycleStatus'];
+export type OrderPaymentPreference = S['OrderPaymentPreference'];
+export type OrderContactInput = S['OrderContactInput'];
+export type OrderDeliveryAddressInput = S['OrderDeliveryAddressInput'];
+export type OrderCreateRequest = S['OrderCreateRequest'];
+export type OrderDetailModifier = S['OrderDetailModifier'];
+export type OrderDetailLine = S['OrderDetailLine'];
+export type OrderDetailPromotion = S['OrderDetailPromotion'];
+export type OrderDetailAddress = S['OrderDetailAddress'];
+export type OrderDetailContact = S['OrderDetailContact'];
+export type OrderDetailPayment = S['OrderDetailPayment'];
+export type OrderDetail = S['OrderDetail'];
+export type OrderGuestAccess = S['OrderGuestAccess'];
+export type OrderCreated = S['OrderCreated'];
+export type OrderQuoteChange = S['OrderQuoteChange'];
+export type OrderQuoteConflict = S['OrderQuoteConflict'];
+export type OrderBlocked = S['OrderBlocked'];
 export type OrderLookupRequest = S['OrderLookupRequest'];
 export type CardPaymentRequest = S['CardPaymentRequest'];
 export type PaymentResult = S['PaymentResult'];
@@ -317,7 +343,7 @@ export const ORDER_STATUSES = [
   'delivered',
   'rejected',
   'cancelled',
-] as const satisfies readonly OrderStatus[];
+] as const satisfies readonly DraftOrderStatus[];
 
 export const DELIVERY_TIERS = [
   'near',

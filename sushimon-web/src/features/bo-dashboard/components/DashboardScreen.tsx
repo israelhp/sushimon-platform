@@ -24,7 +24,7 @@ import { ACTION_CLASS, COLUMN_TONE, useOrderText } from '@/features/bo-orders/us
 import { ORDERS_REFRESH_MS, useScopedOrders } from '@/features/bo-orders/use-scoped-orders';
 import { useDemoSession } from '@/features/session/demo-session';
 import { cn } from '@/lib/cn';
-import type { DashboardAlert, Order } from '@/lib/data-access/models';
+import type { DashboardAlert, DraftOrder } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
 import { toBackofficeColumn } from '@/lib/order-status';
 import type { BackofficeScreen } from '@/lib/permissions';
@@ -224,7 +224,7 @@ function LatestOrders({
   orders,
   loading,
 }: {
-  orders: readonly Order[] | undefined;
+  orders: readonly DraftOrder[] | undefined;
   loading: boolean;
 }) {
   const t = useTranslations('backoffice.panel.latest');
@@ -325,7 +325,7 @@ function AlertsCard({
   loading,
 }: {
   alerts: readonly DashboardAlert[];
-  orders: readonly Order[];
+  orders: readonly DraftOrder[];
   loading: boolean;
 }) {
   const t = useTranslations('backoffice.panel.alerts');

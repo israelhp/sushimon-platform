@@ -18,6 +18,7 @@ import {
 } from '@/lib/promotion-rules';
 import { availableAt, badRequest, effectivePriceAt, fail, failCode } from '../domain';
 import { evaluateOwn, evaluatePedidosYa } from '../coverage';
+import { inputHashOf, linesHashOf, mintMockQuoteToken } from '../quote-token';
 import { MUNICIPALITY_SEEDS, municipalityByName } from '../fixtures/geography';
 import type { PromotionRecord } from '../fixtures/promotions';
 import type { MockStore } from '../store';
@@ -533,8 +534,10 @@ export const quoteCheckout: Handler = (req): CheckoutQuote => {
     notices.push({ code: 'TOTAL_CHANGED' });
   }
   const ttlEnd = new Date(at.getTime() + QUOTE_TTL_MS);
-  return {
-    // Simulación: sin firma (`token: null`) y vigencia ficticia sobre el reloj de la demo.
+  const canProceed = blockers.length === 0;
+  const result: CheckoutQuote = {
+    // Simulación: vigencia ficticia sobre el reloj de la demo. El token (F20) es un doble SIN firma (`mockq.…`) con la evidencia
+    // de la cotización; solo se emite si se puede continuar (como la API real) y lo lee el mock de `POST /v1/orders`.
     quote: { generatedAt: at.toISOString(), expiresAt: ttlEnd.toISOString(), token: null },
     currency: 'GTQ',
     branch: {
@@ -551,8 +554,22 @@ export const quoteCheckout: Handler = (req): CheckoutQuote => {
     deliveryFee: feeCents === null ? null : money(feeCents),
     total: total === null ? null : money(total),
     coupon: parsed.couponCode ? { status: couponApplied ? 'APPLIED' : 'NOT_APPLIED' } : null,
-    canProceed: blockers.length === 0,
+    canProceed,
     blockers,
     notices,
   };
+  if (canProceed && total !== null && feeCents !== null) {
+    result.quote.token = mintMockQuoteToken({
+      sub: req.context.session.customer?.email.trim().toLowerCase() ?? 'guest',
+      inputHash: inputHashOf(parsed),
+      provider: delivery?.selectedProvider ?? null,
+      subtotal: money(subtotal),
+      discountTotal: money(discountTotal),
+      deliveryFee: money(feeCents),
+      total: money(total),
+      linesHash: linesHashOf(lines),
+      exp: ttlEnd.getTime(),
+    });
+  }
+  return result;
 };

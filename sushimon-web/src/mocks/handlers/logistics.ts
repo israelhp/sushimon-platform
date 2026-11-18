@@ -1,4 +1,4 @@
-import type { DeliveryProvider, Order, OrderStatus } from '@/lib/data-access/models';
+import type { DeliveryProvider, DraftOrder, DraftOrderStatus } from '@/lib/data-access/models';
 import {
   canDispatch,
   checkTransition,
@@ -29,7 +29,7 @@ export function riderBusy(store: MockStore, riderId: string): boolean {
 }
 
 /** Costo simulado del courier: envío cobrado + recargo determinista. */
-export function courierCost(store: MockStore, order: Order): number {
+export function courierCost(store: MockStore, order: DraftOrder): number {
   const surcharge =
     store.courierSurcharges[order.id] ?? SURCHARGES[hashSeed(order.id) % SURCHARGES.length] ?? 0;
   return round2(order.deliveryFee + surcharge);
@@ -38,8 +38,8 @@ export function courierCost(store: MockStore, order: Order): number {
 /** Aplica una transición de pedido (valida con la máquina única; inválida → 409). */
 export function applyOrderStatus(
   req: Req,
-  order: Order,
-  to: OrderStatus,
+  order: DraftOrder,
+  to: DraftOrderStatus,
   source: 'staff' | 'logistics',
   reason?: string,
 ) {
@@ -59,7 +59,7 @@ export function applyOrderStatus(
 
 export function dispatchOrder(
   req: Req,
-  order: Order,
+  order: DraftOrder,
   provider: DeliveryProvider,
   riderId?: string,
 ) {
@@ -107,7 +107,7 @@ export function dispatchOrder(
 }
 
 /** Avanza un paso la logística (y el pedido cuando corresponde). */
-export function advanceDelivery(req: Req, order: Order) {
+export function advanceDelivery(req: Req, order: DraftOrder) {
   const d = order.delivery;
   if (!d) fail(409, 'El pedido no tiene logística');
   if (d.status === 'delivered' || d.status === 'failed') fail(409, 'La logística ya terminó');

@@ -295,16 +295,16 @@ describe('F13 mock · el pedido mock usa el precio de la sucursal (nunca el de o
   });
   it('precio efectivo por sucursal y 409 si está agotado allí', async () => {
     const h = createHarness();
-    const a = await orders.createOrder(h.client, pickup('sucursal-1', 'dynamita-roll'));
-    const b = await orders.createOrder(h.client, pickup('sucursal-2', 'dynamita-roll'));
+    const a = await orders.createDraftOrder(h.client, pickup('sucursal-1', 'dynamita-roll'));
+    const b = await orders.createDraftOrder(h.client, pickup('sucursal-2', 'dynamita-roll'));
     expect(a.lines[0]).toMatchObject({ unitPrice: 82 });
     expect(b.lines[0]).toMatchObject({ unitPrice: 86 });
     expect(
-      await failure(orders.createOrder(h.client, pickup('sucursal-2', 'gaseosas'))),
+      await failure(orders.createDraftOrder(h.client, pickup('sucursal-2', 'gaseosas'))),
     ).toMatchObject({ status: 409 });
     // Disponible en la sucursal 1.
     expect(
-      (await orders.createOrder(h.client, pickup('sucursal-1', 'gaseosas'))).lines,
+      (await orders.createDraftOrder(h.client, pickup('sucursal-1', 'gaseosas'))).lines,
     ).toHaveLength(1);
   });
 });

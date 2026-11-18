@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '@/lib/data-access/errors';
-import type { CreateOrderRequest, Order } from '@/lib/data-access/models';
+import type { DraftCreateOrderRequest, DraftOrder } from '@/lib/data-access/models';
 import * as orders from '@/services/orders';
 import { getBranchAvailability } from '@/services/branch-schedule';
 import * as branchProducts from '@/services/branch-products';
@@ -10,7 +10,7 @@ import { createHarness } from '../testing';
 
 const customer = { name: 'Ana Prueba', phone: '5555-0000', email: 'ana@ejemplo.com' };
 
-const deliveryOrder = (over: Partial<CreateOrderRequest> = {}): CreateOrderRequest => ({
+const deliveryOrder = (over: Partial<DraftCreateOrderRequest> = {}): DraftCreateOrderRequest => ({
   fulfillment: 'delivery',
   schedule: { kind: 'now' },
   customer,
@@ -117,7 +117,7 @@ describe('datos públicos', () => {
 describe('crear pedido', () => {
   it('calcula precios y totales en el "servidor"', async () => {
     const { client } = createHarness();
-    const order = await orders.createOrder(client, deliveryOrder());
+    const order = await orders.createDraftOrder(client, deliveryOrder());
     expect(order.id).toBe('MON-307059');
     expect(order.status).toBe('received');
     expect(order.lines[0]).toMatchObject({ unitPrice: 57, subtotal: 114, note: 'Sin pepino' });
@@ -125,12 +125,12 @@ describe('crear pedido', () => {
     expect(order).toMatchObject({ deliveryFee: 15, total: 151, branchId: 'sucursal-1' });
     expect(order.payment).toMatchObject({ method: 'cash', status: 'pending', amount: 151 });
     // El invitado que lo creó puede verlo en la misma sesión.
-    expect((await orders.getOrder(client, order.id)).id).toBe(order.id);
+    expect((await orders.getDraftOrder(client, order.id)).id).toBe(order.id);
   });
 
   it('valida entradas (400/404/409/422)', async () => {
     const { client } = createHarness();
-    const cases: [Partial<CreateOrderRequest>, number][] = [
+    const cases: [Partial<DraftCreateOrderRequest>, number][] = [
       [{ lines: [] }, 400],
       [{ lines: [{ productId: 'california-roll', quantity: 100 }] }, 400],
       [{ lines: [{ productId: 'california-roll', quantity: 0 }] }, 400],
@@ -154,11 +154,13 @@ describe('crear pedido', () => {
       [{ schedule: { kind: 'scheduled', date: '2026-11-11', time: '14:30' } }, 422],
     ];
     for (const [over, status] of cases) {
-      expect((await apiError(orders.createOrder(client, deliveryOrder(over)))).status).toBe(status);
+      expect((await apiError(orders.createDraftOrder(client, deliveryOrder(over)))).status).toBe(
+        status,
+      );
     }
     // Producto sin stock en la sucursal → 409
     const e = await apiError(
-      orders.createOrder(
+      orders.createDraftOrder(
         client,
         deliveryOrder({
           fulfillment: 'pickup',
@@ -173,7 +175,7 @@ describe('crear pedido', () => {
 
   it('programado válido (≥45 min, dentro del horario)', async () => {
     const { client } = createHarness();
-    const order = await orders.createOrder(
+    const order = await orders.createDraftOrder(
       client,
       deliveryOrder({ schedule: { kind: 'scheduled', date: '2026-11-11', time: '15:30' } }),
     );
@@ -182,8 +184,8 @@ describe('crear pedido', () => {
 
   it('branch-closed: no permite "ahora" pero sí programar', async () => {
     const { client } = createHarness('branch-closed');
-    expect((await apiError(orders.createOrder(client, deliveryOrder()))).status).toBe(409);
-    const ok = await orders.createOrder(
+    expect((await apiError(orders.createDraftOrder(client, deliveryOrder()))).status).toBe(409);
+    const ok = await orders.createDraftOrder(
       client,
       deliveryOrder({ schedule: { kind: 'scheduled', date: '2026-11-12', time: '13:00' } }),
     );
@@ -193,7 +195,7 @@ describe('crear pedido', () => {
   it('product-unavailable: rechaza los productos marcados', async () => {
     const { client } = createHarness('product-unavailable');
     const e = await apiError(
-      orders.createOrder(
+      orders.createDraftOrder(
         client,
         deliveryOrder({ lines: [{ productId: 'calientito-roll', quantity: 1 }] }),
       ),
@@ -203,9 +205,9 @@ describe('crear pedido', () => {
 
   it('un pedido creado en la tienda aparece en el backoffice', async () => {
     const h = createHarness();
-    const order = await orders.createOrder(h.client, deliveryOrder());
+    const order = await orders.createDraftOrder(h.client, deliveryOrder());
     h.asStaff('admin');
-    const list = await h.client.get<Order[]>('/v1/backoffice/orders');
+    const list = await h.client.get<DraftOrder[]>('/v1/backoffice/orders');
     expect(list.map((o) => o.id)).toContain(order.id);
   });
 });
@@ -213,10 +215,10 @@ describe('crear pedido', () => {
 describe('consulta, seguimiento e incidencias', () => {
   it('lookup con número + teléfono; mismo 404 si no coincide', async () => {
     const { client } = createHarness();
-    expect((await apiError(orders.getOrder(client, 'MON-490217'))).status).toBe(404);
+    expect((await apiError(orders.getDraftOrder(client, 'MON-490217'))).status).toBe(404);
     const o = await orders.lookupOrder(client, { orderNumber: '490217', phone: '5555 1234' });
     expect(o.id).toBe('MON-490217');
-    expect((await orders.getOrder(client, 'MON-490217')).id).toBe('MON-490217');
+    expect((await orders.getDraftOrder(client, 'MON-490217')).id).toBe('MON-490217');
     const wrongPhone = await apiError(
       orders.lookupOrder(client, { orderNumber: 'MON-490217', phone: '5555-0000' }),
     );
@@ -285,7 +287,7 @@ describe('consulta, seguimiento e incidencias', () => {
   it('el dueño con sesión ve sus pedidos', async () => {
     const h = createHarness();
     h.asCustomer();
-    expect((await orders.getOrder(h.client, 'MON-482193')).status).toBe('delivered');
+    expect((await orders.getDraftOrder(h.client, 'MON-482193')).status).toBe('delivered');
   });
 
   it('incidencia: valida y la agrega al pedido', async () => {
@@ -299,7 +301,7 @@ describe('consulta, seguimiento e incidencias', () => {
       resolution: 'replace',
     });
     expect(inc).toMatchObject({ id: 'INC-1043', status: 'received' });
-    expect((await orders.getOrder(h.client, 'MON-490217')).incidents).toHaveLength(1);
+    expect((await orders.getDraftOrder(h.client, 'MON-490217')).incidents).toHaveLength(1);
     const bad = await apiError(
       orders.createIncident(h.client, {
         orderId: 'MON-490217',
@@ -325,7 +327,7 @@ describe('consulta, seguimiento e incidencias', () => {
 
   it('avance de demostración recorre la máquina hasta entregado (domicilio)', async () => {
     const h = createHarness();
-    const order = await orders.createOrder(h.client, deliveryOrder());
+    const order = await orders.createDraftOrder(h.client, deliveryOrder());
     const seen: string[] = [];
     let current = order;
     for (let i = 0; i < 10 && current.status !== 'delivered'; i++) {
@@ -342,7 +344,7 @@ describe('consulta, seguimiento e incidencias', () => {
 describe('pago con tarjeta (NeoNet simulado)', () => {
   async function cardOrder(scenario: Parameters<typeof createHarness>[0] = 'default') {
     const h = createHarness(scenario);
-    const order = await orders.createOrder(h.client, deliveryOrder({ paymentMethod: 'card' }));
+    const order = await orders.createDraftOrder(h.client, deliveryOrder({ paymentMethod: 'card' }));
     return { h, order };
   }
   const pay = (h: ReturnType<typeof createHarness>, orderId: string, cardNumber: string) =>
@@ -373,7 +375,8 @@ describe('pago con tarjeta (NeoNet simulado)', () => {
   it('el pedido con tarjeta no llega al backoffice hasta que se paga', async () => {
     const { h, order } = await cardOrder();
     h.asStaff('admin');
-    const ids = async () => (await h.client.get<Order[]>('/v1/backoffice/orders')).map((o) => o.id);
+    const ids = async () =>
+      (await h.client.get<DraftOrder[]>('/v1/backoffice/orders')).map((o) => o.id);
     expect(await ids()).not.toContain(order.id);
     await pay(h, order.id, '4000000000000002');
     expect(await ids()).not.toContain(order.id);
@@ -385,9 +388,9 @@ describe('pago con tarjeta (NeoNet simulado)', () => {
   it('review se confirma pasados 20 s del reloj', async () => {
     const { h, order } = await cardOrder();
     await pay(h, order.id, '4000000000000077');
-    expect((await orders.getOrder(h.client, order.id)).payment.status).toBe('review');
+    expect((await orders.getDraftOrder(h.client, order.id)).payment.status).toBe('review');
     h.clock.advance(21_000);
-    expect((await orders.getOrder(h.client, order.id)).payment.status).toBe('approved');
+    expect((await orders.getDraftOrder(h.client, order.id)).payment.status).toBe('approved');
   });
 
   it('rechaza tarjetas que no son de prueba y datos inválidos', async () => {
@@ -412,13 +415,13 @@ describe('pago con tarjeta (NeoNet simulado)', () => {
     const p = await cardOrder('order-pending');
     expect((await pay(p.h, p.order.id, '4242424242424242')).status).toBe('review');
     p.h.clock.advance(60_000);
-    expect((await orders.getOrder(p.h.client, p.order.id)).payment.status).toBe('review');
+    expect((await orders.getDraftOrder(p.h.client, p.order.id)).payment.status).toBe('review');
   });
 
   it('pago rechazado y cambio a efectivo: el pedido con tarjeta previo se cancela (sin huérfanos)', async () => {
     const { h, order } = await cardOrder('payment-rejected');
     expect((await pay(h, order.id, '4242424242424242')).status).toBe('declined');
-    const cash = await orders.createOrder(h.client, deliveryOrder({ paymentMethod: 'cash' }));
+    const cash = await orders.createDraftOrder(h.client, deliveryOrder({ paymentMethod: 'cash' }));
     const stale = h.store.orders.find((o) => o.id === order.id);
     expect(stale).toMatchObject({ status: 'cancelled' });
     expect(stale?.history.at(-1)).toMatchObject({ kind: 'order', status: 'cancelled' });
@@ -430,7 +433,7 @@ describe('pago con tarjeta (NeoNet simulado)', () => {
 
   it('un pedido de otro cliente con tarjeta pendiente no se cancela', async () => {
     const { h, order } = await cardOrder();
-    await orders.createOrder(
+    await orders.createDraftOrder(
       h.client,
       deliveryOrder({ customer: { ...customer, phone: '5555-9999' }, paymentMethod: 'cash' }),
     );

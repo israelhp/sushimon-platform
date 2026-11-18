@@ -4,7 +4,8 @@ import type {
   Category,
   Customer,
   JobApplication,
-  Order,
+  DraftOrder,
+  OrderDetail,
   AdminProductMedia,
   ModifierExtraPrice,
   ProductPrice,
@@ -125,6 +126,16 @@ export interface FavoriteRecord {
   addedAt: string;
 }
 
+/** F20: pedido «persistido» del mock con la forma real y sus credenciales de invitado (ficticias). */
+export interface PlacedOrderRecord {
+  detail: OrderDetail;
+  /** Id del pedido borrador enlazado (`MON-3xxxxx`, igual al `displayNumber`). */
+  draftId: string;
+  /** Correo de la cuenta de demostración dueña; `null` = invitado. */
+  ownerEmail: string | null;
+  tokens: { token: string; expiresAt: string; revoked: boolean }[];
+}
+
 export interface CustomerAccount {
   profile: Customer;
   addresses: StoredAddress[];
@@ -242,7 +253,7 @@ export interface MockStore {
   promotions: PromotionRecord[];
   /** F16: banners del Inicio (estados derivados; `version` para concurrencia optimista; prioridad no única). */
   banners: BannerRecord[];
-  orders: Order[];
+  orders: DraftOrder[];
   staff: StaffRecord[];
   roles: RoleRecord[];
   riders: RiderSeed[];
@@ -256,6 +267,14 @@ export interface MockStore {
    * ventana. Opcional: los stores persistidos antes de este campo no lo traen.
    */
   lookupFailures?: Record<string, { count: number; lastAt: number }>;
+  /**
+   * F20 (SIMULADO): pedidos con la FORMA REAL (`OrderDetail`) que crea el mock de `POST /v1/orders`. Cada uno lleva su pedido
+   * BORRADOR enlazado (`draftId`, en `orders`) para que el seguimiento, el backoffice y la pasarela NeoNet simulados sigan
+   * funcionando. Opcional: los stores persistidos antes de F20 no lo traen.
+   */
+  placedOrders?: PlacedOrderRecord[];
+  /** F20: claves de idempotencia por ámbito (`guest` | correo) → huella del cuerpo y pedido. Opcional (ver `placedOrders`). */
+  orderIdempotency?: Record<string, { requestHash: string; orderId: string }>;
   /** Diferencia costo courier − envío cobrado por pedido (para cotizar PedidosYa simulado). */
   courierSurcharges: Record<string, number>;
   /** F19 (pruebas): próximas N cotizaciones responden 503 `CHECKOUT_BUSY` (determinista). */

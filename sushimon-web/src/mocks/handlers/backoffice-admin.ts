@@ -1,4 +1,4 @@
-import type { Category, Order, ReportGroup, ReportSummary } from '@/lib/data-access/models';
+import type { Category, DraftOrder, ReportGroup, ReportSummary } from '@/lib/data-access/models';
 import { localMinutes } from '@/lib/time';
 import { fail, round2 } from '../domain';
 import { clampRange } from '../factories/history';
@@ -89,7 +89,8 @@ function rangeParams(req: Req) {
   return clampRange(from, to, today(req));
 }
 
-const sales = (orders: Order[]) => round2(orders.filter(isSale).reduce((s, o) => s + o.total, 0));
+const sales = (orders: DraftOrder[]) =>
+  round2(orders.filter(isSale).reduce((s, o) => s + o.total, 0));
 
 /** GET /v1/backoffice/reports/summary?from&to&branchId */
 export const getReportSummary: Handler = (req): ReportSummary => {
@@ -98,12 +99,12 @@ export const getReportSummary: Handler = (req): ReportSummary => {
   const range = rangeParams(req);
   const perDay = range.days.map((d) => ({ day: d, orders: ordersForDay(req, d, branchIds) }));
   const all = perDay.flatMap((x) => x.orders);
-  const byBranch = (orders: Order[]) =>
+  const byBranch = (orders: DraftOrder[]) =>
     branchIds.map((branchId) => {
       const mine = orders.filter((o) => o.branchId === branchId);
       return { branchId, orders: mine.length, sales: sales(mine) };
     });
-  const group = (key: string, orders: Order[]): ReportGroup => ({
+  const group = (key: string, orders: DraftOrder[]): ReportGroup => ({
     key,
     orders: orders.length,
     sales: sales(orders),
@@ -160,7 +161,7 @@ export const getReportSummary: Handler = (req): ReportSummary => {
 };
 
 /** GET /v1/backoffice/reports/history?from&to&branchId — pedidos del rango (más recientes primero). */
-export const getReportHistory: Handler = (req): Order[] => {
+export const getReportHistory: Handler = (req): DraftOrder[] => {
   const user = requireStaff(req, 'reports.read');
   const branchIds = scopedBranchIds(req, user);
   const range = rangeParams(req);

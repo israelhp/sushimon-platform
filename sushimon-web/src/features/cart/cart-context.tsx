@@ -41,6 +41,7 @@ import {
   type LinePatch,
 } from '@/lib/cart-rules';
 import { useClientReady } from '../store/client-ready';
+import type { ConfirmedOrderId } from './confirmed-order';
 
 /**
  * F18 — Carrito local del navegador (`monsushi-cart-v2`), ANÓNIMO: sin vínculo a la cuenta ni sincronización con el backend.
@@ -182,6 +183,12 @@ export interface CartActions {
   removeMany: (lineIds: readonly string[]) => void;
   /** Vacía el carrito por acción del usuario (la UI pide confirmación). */
   clear: () => void;
+  /**
+   * F20: vacía el carrito tras un pedido REAL confirmado por el servidor. Solo acepta un `ConfirmedOrderId` (tipo marcado que
+   * únicamente construye `confirmedOrderId(created)`) y solo lo invoca `usePlaceOrder` tras un 200/201: jamás ante un error,
+   * un estado ambiguo ni el flujo simulado (que usa `clear()`).
+   */
+  clearAfterOrder: (orderId: ConfirmedOrderId) => void;
   /** Escribe en la presentación lo vigente de la sucursal (no toca `selections`, cantidades ni `updatedAt`). */
   applyRevalidation: (patches: readonly LinePatch[]) => void;
   acknowledgePrice: (lineId: string) => void;
@@ -192,9 +199,6 @@ export interface CartActions {
   /** Reevalúa el TTL (al volver al foco/visibilidad): si venció, vacía con aviso. */
   checkExpiry: () => void;
 }
-
-// F20: `clearAfterOrder` NO existe todavía. Cuando haya pedidos reales se añadirá con un identificador de pedido
-// CONFIRMADO por el servidor (tipo propio); el checkout simulado solo usa `clear()`.
 
 const actions: CartActions = {
   dismissNotice: () => setNoticeState({ notice: null }),
@@ -232,6 +236,7 @@ const actions: CartActions = {
     cartStore.set((s) => removeLines(s, ids, Date.now()));
   },
   clear: () => cartStore.set(clearCart(Date.now())),
+  clearAfterOrder: () => cartStore.set(clearCart(Date.now())),
   applyRevalidation: (patches) => {
     const state = cartStore.get();
     const next = applyPatches(state, patches, Date.now());

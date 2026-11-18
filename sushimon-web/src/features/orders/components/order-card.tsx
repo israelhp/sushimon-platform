@@ -3,14 +3,14 @@
 import { ChevronRight, LifeBuoy, RotateCcw, Store, Truck } from 'lucide-react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
-import type { Order } from '@/lib/data-access/models';
+import type { DraftOrder } from '@/lib/data-access/models';
 import { cn } from '@/lib/cn';
 import { formatDateTime, formatMoney } from '@/lib/format';
 import { isOrderInProgress } from '@/lib/order-status';
 import { OrderStatusChip } from './order-status-chip';
 
 /** Incidencias abiertas (no resueltas) de un pedido. */
-export const openIncidentCount = (order: Pick<Order, 'incidents'>) =>
+export const openIncidentCount = (order: Pick<DraftOrder, 'incidents'>) =>
   order.incidents.filter((i) => i.status !== 'resolved').length;
 
 /**
@@ -18,7 +18,7 @@ export const openIncidentCount = (order: Pick<Order, 'incidents'>) =>
  * productos, estado, etiqueta NeoNet si es con tarjeta e incidencias abiertas. Todo el bloque enlaza al
  * seguimiento `/pedidos/[id]`; `onReorder` agrega el pie "Volver a pedir".
  */
-export function OrderCard({ order, onReorder }: { order: Order; onReorder?: () => void }) {
+export function OrderCard({ order, onReorder }: { order: DraftOrder; onReorder?: () => void }) {
   const t = useTranslations('orders');
   const locale = useLocale();
   const inProgress = isOrderInProgress(order);

@@ -7,7 +7,14 @@ import { checkZone, requiresZone } from '@/features/order-mode/draft';
  */
 export const CHECKOUT_STEP_COUNT = 5;
 export type CheckoutStep = 1 | 2 | 3 | 4 | 5;
-export type PaymentChoice = 'card' | 'cash';
+export type PaymentChoice = 'card' | 'cash' | 'bank_transfer';
+
+/**
+ * Método EFECTIVO: con la API real (`simulation=false`) la tarjeta/NeoNet no se ofrece (F25 `BLOCKED_EXTERNAL`; la API rechaza
+ * `card`), así que un borrador guardado con `card` cuenta como efectivo. Con datos simulados se respeta la elección.
+ */
+export const effectivePayment = (payment: PaymentChoice, simulation: boolean): PaymentChoice =>
+  !simulation && payment === 'card' ? 'cash' : payment;
 
 export interface ContactForm {
   name: string;
@@ -246,7 +253,7 @@ export function parseDraft(raw: string | null, fallback: CheckoutDraft): Checkou
       notes: str(v.notes).slice(0, 300),
       pickupBranchId: typeof v.pickupBranchId === 'string' ? v.pickupBranchId : null,
       deliveryBranchId: typeof v.deliveryBranchId === 'string' ? v.deliveryBranchId : null,
-      payment: v.payment === 'cash' ? 'cash' : 'card',
+      payment: v.payment === 'cash' || v.payment === 'bank_transfer' ? v.payment : 'card',
       quoteWanted: step === 3,
     };
   } catch {

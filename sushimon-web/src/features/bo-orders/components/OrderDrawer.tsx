@@ -18,7 +18,7 @@ import { formatTopbarDate } from '@/features/backoffice-shell/staff-display';
 import { useNow } from '@/features/backoffice-shell/use-now';
 import { useShell } from '@/features/backoffice-shell/shell-context';
 import { cn } from '@/lib/cn';
-import type { Order, OrderStatusEvent } from '@/lib/data-access/models';
+import type { DraftOrder, OrderStatusEvent } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
 import { toBackofficeColumn } from '@/lib/order-status';
 import { localDate, localTime } from '@/lib/time';
@@ -65,7 +65,7 @@ export function OrderDrawer({ orderId }: { orderId: string }) {
   return <OrderDrawerContent order={order} onClose={detail.close} />;
 }
 
-function OrderDrawerContent({ order, onClose }: { order: Order; onClose: () => void }) {
+function OrderDrawerContent({ order, onClose }: { order: DraftOrder; onClose: () => void }) {
   const t = useTranslations('backoffice.orders');
   const td = useTranslations('backoffice.orders.drawer');
   const { grants, can, branchById } = useShell();
@@ -340,7 +340,7 @@ function historyLabel(event: OrderStatusEvent, t: Translator): string {
   return t('history.delivery', { status: event.status });
 }
 
-function LogisticsSection({ order }: { order: Order }) {
+function LogisticsSection({ order }: { order: DraftOrder }) {
   const t = useTranslations('backoffice.orders');
   const td = useTranslations('backoffice.orders.drawer');
   const { can } = useShell();
@@ -463,7 +463,7 @@ function LogisticsSection({ order }: { order: Order }) {
 }
 
 /** Llamar al repartidor propio (el teléfono viene del listado de repartidores de la sucursal). */
-function RiderCallButton({ order }: { order: Order }) {
+function RiderCallButton({ order }: { order: DraftOrder }) {
   const td = useTranslations('backoffice.orders.drawer');
   const riders = useRiders(order.branchId);
   const phone = riders.data?.find((r) => r.id === order.delivery?.riderId)?.phone;

@@ -1,5 +1,6 @@
 import { municipalityByName } from '@/mocks/fixtures/geography';
 import { describe, expect, it } from 'vitest';
+import type { OrderCreateRequest } from '@/lib/data-access/models';
 import type { MockScenario } from '@/mocks/scenarios';
 import { createHarness, type TestHarness } from '@/mocks/testing';
 import * as account from '@/services/account';
@@ -40,13 +41,16 @@ function httpBackedBy(backend: TestHarness): DataClient {
         method,
         query: Object.fromEntries(url.searchParams),
         body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
+        // F20: `Idempotency-Key` / `X-Order-Token` viajan como cabeceras (el cliente http las envía en minúsculas).
+        headers: (init?.headers ?? undefined) as Record<string, string> | undefined,
       });
       return data === undefined ? new Response(null, { status: 204 }) : Response.json(data);
     } catch (e) {
       if (!(e instanceof ApiError)) throw e;
       if (e.status === 0) throw new TypeError('fetch failed');
       return Response.json(
-        {
+        // Errores con cuerpo propio del contrato (`OrderQuoteConflict`, `OrderBlocked`…): se serializan tal cual.
+        e.body ?? {
           statusCode: e.status,
           error: codeForStatus(e.status),
           message: e.message,
@@ -54,7 +58,10 @@ function httpBackedBy(backend: TestHarness): DataClient {
           code: e.businessCode,
           violations: e.violations,
         },
-        { status: e.status },
+        {
+          status: e.status,
+          headers: e.retryAfterSec ? { 'retry-after': String(e.retryAfterSec) } : undefined,
+        },
       );
     }
   }) as typeof fetch;
@@ -155,8 +162,8 @@ const storeSteps: ((c: DataClient) => Promise<unknown>)[] = [
       branchId: 'sucursal-4',
       municipalityId: 'mun-guatemala-guatemala',
     }),
-  (c) => orders.createOrder(c, newOrder),
-  (c) => orders.createOrder(c, { ...newOrder, lines: [] }),
+  (c) => orders.createDraftOrder(c, newOrder),
+  (c) => orders.createDraftOrder(c, { ...newOrder, lines: [] }),
   (c) =>
     orders.payWithCard(c, {
       orderId: 'MON-307059',
@@ -173,8 +180,8 @@ const storeSteps: ((c: DataClient) => Promise<unknown>)[] = [
       expiry: '12/28',
       cvv: '123',
     }),
-  (c) => orders.getOrder(c, 'MON-307059'),
-  (c) => orders.getOrder(c, 'MON-490217'),
+  (c) => orders.getDraftOrder(c, 'MON-307059'),
+  (c) => orders.getDraftOrder(c, 'MON-490217'),
   (c) => orders.lookupOrder(c, { orderNumber: '490217', phone: '55551234' }),
   (c) =>
     orders.createIncident(c, {
@@ -1158,6 +1165,98 @@ describe('paridad mock ↔ http', () => {
     expect(codes).toEqual(expect.arrayContaining([200, 400, 404]));
   });
 
+  it('F20: crear y leer el pedido REAL (createOrder/getOrder) produce lo mismo con mock y con http, errores incluidos', async () => {
+    const p = pair();
+    const cart = {
+      branchId: 'sucursal-1',
+      lines: [{ productId: 'dumplings', quantity: 2, selections: [] }],
+    };
+    const fulfillment = { type: 'PICKUP' as const };
+    const KEY = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const place = async (c: DataClient, over: Partial<OrderCreateRequest> = {}, key = KEY) => {
+      const q = await checkout.quoteCheckout(c, { cart, fulfillment });
+      return orders.createOrder(
+        c,
+        {
+          cart,
+          fulfillment,
+          quoteToken: q.quote.token as string,
+          contact: { fullName: 'Ana Prueba', phone: '5555-0000' },
+          paymentMethodPreference: 'cash',
+          ...over,
+        },
+        key,
+      );
+    };
+    const steps: ((c: DataClient) => Promise<unknown>)[] = [
+      async (c) => {
+        const created = await place(c);
+        // Lectura con la credencial recién emitida, sin ella y con otra: el mismo 404 sin `code`.
+        const read = await orders.getOrder(c, created.order.id, {
+          guestToken: created.access?.guestToken,
+        });
+        return { created, read };
+      },
+      (c) => place(c), // repetición idempotente: el mismo pedido
+      (c) => place(c, { notes: 'otro cuerpo' }), // 409 IDEMPOTENCY_KEY_REUSED
+      (c) =>
+        place(
+          c,
+          { paymentMethodPreference: 'card' as never },
+          'zzzzzzzz-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        ), // 422
+      (c) => place(c, { quoteToken: 'basura' }, 'yyyyyyyy-bbbb-4ccc-8ddd-eeeeeeeeeeee'), // 422 QUOTE_INVALID
+      (c) => place(c, {}, 'corta'), // 400 IDEMPOTENCY_KEY_INVALID
+      (c) => orders.getOrder(c, '00000000-0000-4000-8000-000000000001'), // 404
+      (c) => orders.getOrder(c, '00000000-0000-4000-8000-000000000001', { guestToken: 'smo_x' }), // 404
+    ];
+    const a = await run(steps, p.mock.client);
+    expect(await run(steps, p.http)).toEqual(a);
+    expect(a.map((x) => ('error' in x ? x.error.status : 200))).toEqual([
+      200, 200, 409, 422, 422, 400, 404, 404,
+    ]);
+  });
+
+  it('F20: el cuerpo de QUOTE_CHANGED (cambios y cotización nueva) y el Retry-After del 429 llegan igual por http', async () => {
+    const p = pair();
+    const cart = {
+      branchId: 'sucursal-1',
+      lines: [{ productId: 'dumplings', quantity: 1, selections: [] }],
+    };
+    const fulfillment = { type: 'PICKUP' as const };
+    const attempt = async (c: DataClient, store: TestHarness['store']) => {
+      const q = await checkout.quoteCheckout(c, { cart, fulfillment });
+      store.branchProducts.push({
+        branchId: 'sucursal-1',
+        productId: 'dumplings',
+        priceOverride: '40.00',
+        available: true,
+        updatedAt: '2026-11-11T00:00:00.000Z',
+      });
+      try {
+        await orders.createOrder(
+          c,
+          {
+            cart,
+            fulfillment,
+            quoteToken: q.quote.token as string,
+            contact: { fullName: 'Ana', phone: '5555-0000' },
+          },
+          'qqqqqqqq-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        );
+      } catch (e) {
+        return e as ApiError;
+      }
+      throw new Error('se esperaba QUOTE_CHANGED');
+    };
+    // `backend` respalda al cliente http: su store es el que recibe el cambio de precio.
+    const viaMock = await attempt(p.mock.client, p.mock.store);
+    const viaHttp = await attempt(p.http, p.backend.store);
+    expect(viaHttp.businessCode).toBe('QUOTE_CHANGED');
+    expect(viaHttp.body).toEqual(viaMock.body);
+    expect((viaHttp.body as { changes: unknown[] }).changes.length).toBeGreaterThan(0);
+  });
+
   it.each(['offline', 'error', 'forbidden', 'request-rejected', 'rider-unavailable'] as const)(
     'escenario %s produce los mismos errores',
     async (scenario) => {
@@ -1165,7 +1264,7 @@ describe('paridad mock ↔ http', () => {
       p.asStaff('manager');
       const steps: ((c: DataClient) => Promise<unknown>)[] = [
         (c) => products.listStoreProducts(c),
-        (c) => orders.createOrder(c, { ...newOrder, paymentMethod: 'cash' }),
+        (c) => orders.createDraftOrder(c, { ...newOrder, paymentMethod: 'cash' }),
         (c) => bo.getDashboard(c),
         (c) => bo.dispatchOrder(c, { id: 'MON-307051', provider: 'pedidosya' }),
         (c) => bo.advanceDelivery(c, 'MON-307051'),

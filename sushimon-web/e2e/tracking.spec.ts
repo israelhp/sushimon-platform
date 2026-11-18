@@ -33,10 +33,10 @@ test.describe('consulta de invitado y seguimiento', () => {
     await page.goto('/consultar');
     await page.getByRole('button', { name: 'Consultar', exact: true }).click();
     await expect(page.getByLabel('Número de pedido')).toBeFocused();
-    await expect(page.getByText('Ingresá el número de pedido', { exact: true })).toBeVisible();
+    await expect(page.getByText('Ingresa el número de pedido', { exact: true })).toBeVisible();
 
     await consult(page, 'MON-490217', '5555-9999');
-    const notice = 'No encontramos un pedido con esos datos. Revisá el número y el teléfono.';
+    const notice = 'No encontramos un pedido con esos datos. Revisa el número y el teléfono.';
     await expect(page.getByText(notice)).toBeVisible();
     await consult(page, 'MON-111111', '5555-1234');
     await expect(page.getByText(notice)).toBeVisible();

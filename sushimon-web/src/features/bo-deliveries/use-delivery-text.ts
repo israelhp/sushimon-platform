@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { useCallback, useMemo } from 'react';
-import type { Order } from '@/lib/data-access/models';
+import type { DraftOrder } from '@/lib/data-access/models';
 
 /** Textos de presentación compartidos por Entregas y el modal Despachar (zona y dirección del envío). */
 export function useDeliveryText() {
@@ -19,7 +19,7 @@ export function useDeliveryText() {
 
   /** Dirección de entrega en una línea ("4a Avenida 12-34 · Zona 4"). */
   const address = useCallback(
-    (order: Pick<Order, 'address'>) => {
+    (order: Pick<DraftOrder, 'address'>) => {
       const a = order.address;
       if (!a) return '—';
       const zone = a.zone ? t('filters.zoneName', { zone: a.zone }) : a.municipality;

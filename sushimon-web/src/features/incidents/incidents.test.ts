@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Order } from '@/lib/data-access/models';
+import type { DraftOrder } from '@/lib/data-access/models';
 import { arrangeIncidentOrders, openIncidents } from './orders';
 import {
   DESCRIPTION_MAX,
@@ -10,7 +10,7 @@ import {
 } from './validation';
 import { buildIncidentWhatsappMessage, whatsappUrl } from './whatsapp';
 
-const order = (id: string, createdAt: string, extra: Partial<Order> = {}) =>
+const order = (id: string, createdAt: string, extra: Partial<DraftOrder> = {}) =>
   ({
     id,
     createdAt,
@@ -24,7 +24,7 @@ const order = (id: string, createdAt: string, extra: Partial<Order> = {}) =>
     ],
     incidents: [],
     ...extra,
-  }) as unknown as Order;
+  }) as unknown as DraftOrder;
 
 describe('validateIncident', () => {
   const valid = {

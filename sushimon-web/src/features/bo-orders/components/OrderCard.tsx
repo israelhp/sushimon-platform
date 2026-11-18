@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { branchShortName, useShell } from '@/features/backoffice-shell/shell-context';
 import { cn } from '@/lib/cn';
-import type { Order } from '@/lib/data-access/models';
+import type { DraftOrder } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
 import { useOrderDetail } from '../order-detail-context';
 import { isLate, nextAction, orderCode, orderTime } from '../order-view';
@@ -11,7 +11,7 @@ import { useOrderActions } from '../use-order-actions';
 import { ACTION_CLASS, useOrderText } from '../use-order-text';
 
 /** Tarjeta del tablero (`kcard`): abre el detalle y ofrece la siguiente acción del rol. */
-export function OrderCard({ order, now }: { order: Order; now: Date | null }) {
+export function OrderCard({ order, now }: { order: DraftOrder; now: Date | null }) {
   const t = useTranslations('backoffice.orders');
   const { grants, branchById } = useShell();
   const detail = useOrderDetail();

@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackofficeShell } from '@/features/backoffice-shell/BackofficeShell';
 import { ScreenGuard } from '@/features/backoffice-shell/ScreenGuard';
 import { ApiError } from '@/lib/data-access/errors';
-import type { Order, ReportSummary, StaffRole } from '@/lib/data-access/models';
+import type { DraftOrder, ReportSummary, StaffRole } from '@/lib/data-access/models';
 import type { MockScenario } from '@/mocks/scenarios';
 import { renderBackoffice } from '@/test/backoffice-providers';
 import { resetNavigationMock } from '@/test/next-navigation-mock';
@@ -358,7 +358,7 @@ describe('reportes', () => {
       await user.click(screen.getByRole('tab', { name: 'Historial de pedidos' }));
       expect(await screen.findByRole('heading', { name: 'Pedidos del periodo' })).toBeVisible();
 
-      const orders = await view.api().client.get<Order[]>('/v1/backoffice/reports/history', {
+      const orders = await view.api().client.get<DraftOrder[]>('/v1/backoffice/reports/history', {
         query: { from: '2026-11-10', to: '2026-11-10' },
       });
       const totals = historyTotals(orders);

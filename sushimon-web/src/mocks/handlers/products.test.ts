@@ -432,12 +432,12 @@ describe('F11 mock · pedidos, favoritos y extras simulados', () => {
       paymentMethod: 'cash' as const,
     };
     for (const productId of ['gyoza-vegetal', 'roll-edicion-limitada']) {
-      const { createOrder } = await import('@/services/orders');
+      const { createDraftOrder: createOrder } = await import('@/services/orders');
       expect(
         await failure(createOrder(h.client, { ...order, lines: [{ productId, quantity: 1 }] })),
       ).toMatchObject({ status: 422 });
     }
-    const { createOrder } = await import('@/services/orders');
+    const { createDraftOrder: createOrder } = await import('@/services/orders');
     const created = await createOrder(h.client, {
       ...order,
       lines: [{ productId: 'dumplings', quantity: 2 }],

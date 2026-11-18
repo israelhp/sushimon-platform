@@ -1,4 +1,4 @@
-import type { Branch, Order, ReportSummary } from '@/lib/data-access/models';
+import type { Branch, DraftOrder, ReportSummary } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
 import { addDaysISO, localDate, localMinutes, localTime } from '@/lib/time';
 import { dayNumber, dayShort, formatMoneyCompact } from './format';
@@ -249,19 +249,22 @@ export const DEFAULT_HISTORY_FILTERS: HistoryFilters = {
 export const HISTORY_PAGE = 25;
 
 /** Un pedido cuenta como venta salvo recibido sin aceptar, rechazado o cancelado (misma regla que el servidor). */
-export const isSaleOrder = (order: Pick<Order, 'status'>) =>
+export const isSaleOrder = (order: Pick<DraftOrder, 'status'>) =>
   !['received', 'rejected', 'cancelled'].includes(order.status);
 
-export const isCancelledOrder = (order: Pick<Order, 'status'>) =>
+export const isCancelledOrder = (order: Pick<DraftOrder, 'status'>) =>
   order.status === 'rejected' || order.status === 'cancelled';
 
-export const orderDay = (order: Pick<Order, 'createdAt'>) => localDate(new Date(order.createdAt));
+export const orderDay = (order: Pick<DraftOrder, 'createdAt'>) =>
+  localDate(new Date(order.createdAt));
 
-export const orderClock = (order: Pick<Order, 'createdAt'>) => localTime(new Date(order.createdAt));
+export const orderClock = (order: Pick<DraftOrder, 'createdAt'>) =>
+  localTime(new Date(order.createdAt));
 
-const orderMinutes = (order: Pick<Order, 'createdAt'>) => localMinutes(new Date(order.createdAt));
+const orderMinutes = (order: Pick<DraftOrder, 'createdAt'>) =>
+  localMinutes(new Date(order.createdAt));
 
-export function productsText(order: Pick<Order, 'lines'>): string {
+export function productsText(order: Pick<DraftOrder, 'lines'>): string {
   return order.lines.map((l) => `${l.quantity}× ${l.name}`).join(', ');
 }
 
@@ -281,7 +284,7 @@ export function activeFilterCount(f: HistoryFilters): number {
 }
 
 export function matchesHistorySearch(
-  order: Pick<Order, 'id' | 'customer'>,
+  order: Pick<DraftOrder, 'id' | 'customer'>,
   query: string,
 ): boolean {
   const q = query.trim().toLowerCase();
@@ -294,7 +297,7 @@ export function matchesHistorySearch(
   );
 }
 
-export function filterHistory(orders: readonly Order[], f: HistoryFilters): Order[] {
+export function filterHistory(orders: readonly DraftOrder[], f: HistoryFilters): DraftOrder[] {
   const min = parseFloat(f.min);
   const max = parseFloat(f.max);
   return orders.filter((o) => {
@@ -314,9 +317,9 @@ export function filterHistory(orders: readonly Order[], f: HistoryFilters): Orde
   });
 }
 
-export function sortHistory(orders: readonly Order[], sort: HistorySort): Order[] {
+export function sortHistory(orders: readonly DraftOrder[], sort: HistorySort): DraftOrder[] {
   const list = [...orders];
-  const key = (o: Order) => `${o.createdAt} ${o.id}`;
+  const key = (o: DraftOrder) => `${o.createdAt} ${o.id}`;
   if (sort === 'recientes') return list.sort((a, b) => (key(a) < key(b) ? 1 : -1));
   if (sort === 'antiguos') return list.sort((a, b) => (key(a) < key(b) ? -1 : 1));
   if (sort === 'menor') return list.sort((a, b) => a.total - b.total);
@@ -337,7 +340,7 @@ export interface HistoryTotals {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-export function historyTotals(orders: readonly Order[]): HistoryTotals {
+export function historyTotals(orders: readonly DraftOrder[]): HistoryTotals {
   const count = orders.length;
   const cancelled = orders.filter(isCancelledOrder).length;
   const delivery = orders.filter((o) => o.fulfillment === 'delivery').length;
@@ -360,14 +363,14 @@ export interface DayGroup {
   count: number;
   sales: number;
   cancelled: number;
-  rows: Order[];
+  rows: DraftOrder[];
 }
 
 /**
  * Agrupa por día las primeras `limit` filas (ya ordenadas). Los totales del encabezado de cada día salen de TODAS las
  * filas del día, no solo de las mostradas.
  */
-export function groupByDay(sorted: readonly Order[], limit: number): DayGroup[] {
+export function groupByDay(sorted: readonly DraftOrder[], limit: number): DayGroup[] {
   const perDay = new Map<string, { count: number; sales: number; cancelled: number }>();
   for (const o of sorted) {
     const d = orderDay(o);
@@ -391,7 +394,9 @@ export function groupByDay(sorted: readonly Order[], limit: number): DayGroup[] 
 }
 
 /** Productos presentes en los pedidos del periodo (para el filtro "Producto"), por nombre. */
-export function historyProductOptions(orders: readonly Order[]): { id: string; name: string }[] {
+export function historyProductOptions(
+  orders: readonly DraftOrder[],
+): { id: string; name: string }[] {
   const map = new Map<string, string>();
   for (const o of orders) for (const l of o.lines) map.set(l.productId, l.name);
   return [...map.entries()]

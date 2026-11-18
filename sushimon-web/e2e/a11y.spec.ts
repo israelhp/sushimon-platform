@@ -92,7 +92,7 @@ export const A11Y_ROUTES: RouteCase[] = [
   { path: '/ruta-que-no-existe', ready: { role: 'heading', name: 'Este roll no existe' } },
   { path: '/', ready: { role: 'heading', name: /hambre/i } },
   // Consulta de invitado, reclamos y seguimiento (bloque 5). El seguimiento exige sesión: lo decide la API.
-  { path: '/consultar', ready: { role: 'heading', name: /Consultá tu orden/ } },
+  { path: '/consultar', ready: { role: 'heading', name: /Consulta tu orden/ } },
   { path: '/incidencias', ready: { role: 'heading', name: /Hacer un reclamo/ } },
   {
     path: '/incidencias',

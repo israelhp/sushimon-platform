@@ -7,7 +7,7 @@ import { createFixedClock } from '@/mocks/clock';
 import { createMockDataClient } from '@/mocks/index';
 import { createSeedStore } from '@/mocks/seed';
 import { usePayWithCard } from '@/features/orders/hooks';
-import { createOrder } from '@/services/orders';
+import { createDraftOrder as createOrder } from '@/services/orders';
 
 const PAN = '4242424242424242';
 const CVV = '737';

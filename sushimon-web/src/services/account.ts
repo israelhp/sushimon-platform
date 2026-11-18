@@ -6,7 +6,7 @@ import type {
   CustomerAddressResponse,
   CustomerStorefrontContext,
   MeResponse,
-  Order,
+  DraftOrder,
   UpdateCustomerProfileRequest,
 } from '@/lib/data-access/models';
 import { paths } from '@/lib/data-access/paths';
@@ -154,4 +154,4 @@ export const deleteAddress = (client: DataClient, id: string) =>
 export const setDefaultAddress = async (client: DataClient, id: string): Promise<Address> =>
   toAddress(await client.patch<CustomerAddressResponse>(paths.myAddressDefault(id)));
 
-export const listMyOrders = (client: DataClient) => client.get<Order[]>(paths.myOrders());
+export const listMyOrders = (client: DataClient) => client.get<DraftOrder[]>(paths.myOrders());

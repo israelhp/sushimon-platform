@@ -3,7 +3,7 @@
 import { MessageCircle, Phone } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Skeleton } from '@/components/ui/Skeleton';
-import type { Order } from '@/lib/data-access/models';
+import type { DraftOrder } from '@/lib/data-access/models';
 import { cn } from '@/lib/cn';
 import { useBranches, useStoreConfig } from '@/features/store/hooks';
 import { buildIncidentWhatsappMessage, whatsappUrl } from '../whatsapp';
@@ -20,7 +20,7 @@ export function WhatsappReportButton({
   variant = 'solid',
   className,
 }: {
-  order: Order | null;
+  order: DraftOrder | null;
   label?: string;
   variant?: 'solid' | 'outline';
   className?: string;

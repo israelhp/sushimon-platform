@@ -1,8 +1,8 @@
 import type {
   DeliveryProvider,
   DeliveryStatus,
-  Order,
-  OrderStatus,
+  DraftOrder,
+  DraftOrderStatus,
 } from '@/lib/data-access/models';
 import { can, type Grants } from '@/lib/permissions';
 
@@ -12,7 +12,7 @@ import { can, type Grants } from '@/lib/permissions';
  * qué acción mostrar). En http, la validación definitiva es del servidor.
  */
 
-export const ORDER_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
+export const ORDER_TRANSITIONS: Record<DraftOrderStatus, readonly DraftOrderStatus[]> = {
   received: ['accepted', 'rejected', 'cancelled'],
   accepted: ['preparing', 'cancelled'],
   preparing: ['ready', 'cancelled'],
@@ -23,7 +23,7 @@ export const ORDER_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
   cancelled: [],
 };
 
-export const TERMINAL_ORDER_STATUSES: readonly OrderStatus[] = [
+export const TERMINAL_ORDER_STATUSES: readonly DraftOrderStatus[] = [
   'delivered',
   'rejected',
   'cancelled',
@@ -34,16 +34,16 @@ export type TransitionSource = 'staff' | 'logistics';
 
 export type TransitionCheck = { ok: true } | { ok: false; reason: string };
 
-type OrderLike = Pick<Order, 'status' | 'fulfillment' | 'payment' | 'delivery'>;
-type BranchOf = Partial<Pick<Order, 'branchId'>>;
+type OrderLike = Pick<DraftOrder, 'status' | 'fulfillment' | 'payment' | 'delivery'>;
+type BranchOf = Partial<Pick<DraftOrder, 'branchId'>>;
 
-export function isPaymentSettledForAcceptance(order: Pick<Order, 'payment'>): boolean {
+export function isPaymentSettledForAcceptance(order: Pick<DraftOrder, 'payment'>): boolean {
   return order.payment.method === 'cash' || order.payment.status === 'approved';
 }
 
 export function checkTransition(
   order: OrderLike,
-  to: OrderStatus,
+  to: DraftOrderStatus,
   source: TransitionSource = 'staff',
   reason?: string,
 ): TransitionCheck {
@@ -72,7 +72,7 @@ export function checkTransition(
 
 export function canTransition(
   order: OrderLike,
-  to: OrderStatus,
+  to: DraftOrderStatus,
   source: TransitionSource = 'staff',
 ): boolean {
   return checkTransition(order, to, source, 'x').ok;
@@ -98,7 +98,7 @@ export function nextDeliveryStatus(
 export function orderStatusForDelivery(
   provider: DeliveryProvider,
   status: DeliveryStatus,
-): OrderStatus | null {
+): DraftOrderStatus | null {
   if (status === 'delivered') return 'delivered';
   if (provider === 'pedidosya' && status === 'picked_up') return 'on_the_way';
   if (provider === 'own' && status === 'on_the_way') return 'on_the_way';
@@ -129,7 +129,9 @@ export type StoreOrderStateKey =
   | 'rejected'
   | 'cancelled';
 
-export function toStoreOrderState(order: Pick<Order, 'status' | 'payment'>): StoreOrderStateKey {
+export function toStoreOrderState(
+  order: Pick<DraftOrder, 'status' | 'payment'>,
+): StoreOrderStateKey {
   const { status, payment } = order;
   if (status === 'rejected' || status === 'cancelled') return status;
   if (status === 'delivered') return 'completed';
@@ -158,12 +160,12 @@ export interface StoreTrackingStep {
 }
 
 export function toStoreTrackingStep(
-  order: Pick<Order, 'status' | 'fulfillment' | 'payment'>,
+  order: Pick<DraftOrder, 'status' | 'fulfillment' | 'payment'>,
 ): StoreTrackingStep {
   const variant = order.fulfillment === 'delivery' ? 'delivery' : 'pickup';
   const total = variant === 'delivery' ? 6 : 5;
   const paid = order.payment.method === 'card' && order.payment.status === 'approved';
-  const byStatus: Record<OrderStatus, number> = {
+  const byStatus: Record<DraftOrderStatus, number> = {
     received: paid ? 2 : 1,
     accepted: 2,
     preparing: 2,
@@ -183,7 +185,7 @@ export function toStoreTrackingStep(
 }
 
 /** "En curso" para la tienda (punto pulsante vs. palomita verde). */
-export function isOrderInProgress(order: Pick<Order, 'status'>): boolean {
+export function isOrderInProgress(order: Pick<DraftOrder, 'status'>): boolean {
   return !TERMINAL_ORDER_STATUSES.includes(order.status);
 }
 
@@ -202,8 +204,8 @@ export const BACKOFFICE_COLUMNS: readonly Exclude<BackofficeColumn, 'cancelado'>
   'entregado',
 ];
 
-export function toBackofficeColumn(order: Pick<Order, 'status'>): BackofficeColumn {
-  const map: Record<OrderStatus, BackofficeColumn> = {
+export function toBackofficeColumn(order: Pick<DraftOrder, 'status'>): BackofficeColumn {
+  const map: Record<DraftOrderStatus, BackofficeColumn> = {
     received: 'nuevo',
     accepted: 'aceptado',
     preparing: 'preparacion',
@@ -217,8 +219,8 @@ export function toBackofficeColumn(order: Pick<Order, 'status'>): BackofficeColu
 }
 
 /** Columna del backoffice → estados del contrato (para filtros). */
-export function fromBackofficeColumn(column: BackofficeColumn): OrderStatus[] {
-  const map: Record<BackofficeColumn, OrderStatus[]> = {
+export function fromBackofficeColumn(column: BackofficeColumn): DraftOrderStatus[] {
+  const map: Record<BackofficeColumn, DraftOrderStatus[]> = {
     nuevo: ['received'],
     aceptado: ['accepted'],
     preparacion: ['preparing'],
@@ -252,7 +254,7 @@ export type BackofficeLogisticsKey =
   | 'fallido';
 
 export function toBackofficeLogistics(
-  order: Pick<Order, 'delivery' | 'status'>,
+  order: Pick<DraftOrder, 'delivery' | 'status'>,
 ): BackofficeLogisticsKey {
   if (!order.delivery) return order.status === 'delivered' ? 'entregado' : 'none';
   const map: Record<DeliveryStatus, BackofficeLogisticsKey> = {
@@ -298,7 +300,10 @@ export function nextBackofficeAction(
 }
 
 /** Acción → estado destino (para `PATCH /status`); 'dispatch' usa su propia ruta. */
-export const NEXT_ACTION_STATUS: Record<Exclude<BackofficeNextAction, 'dispatch'>, OrderStatus> = {
+export const NEXT_ACTION_STATUS: Record<
+  Exclude<BackofficeNextAction, 'dispatch'>,
+  DraftOrderStatus
+> = {
   accept: 'accepted',
   prepare: 'preparing',
   ready: 'ready',

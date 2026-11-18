@@ -20,7 +20,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { SimulationBadge } from '@/components/ui/SimulationBadge';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
-import type { Order } from '@/lib/data-access/models';
+import type { DraftOrder } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
 import { toStoreOrderState, toStoreTrackingStep } from '@/lib/order-status';
 import { localDate } from '@/lib/time';
@@ -63,8 +63,8 @@ export function Confirmation({
   order,
   onOrderChange,
 }: {
-  order: Order;
-  onOrderChange: (order: Order) => void;
+  order: DraftOrder;
+  onOrderChange: (order: DraftOrder) => void;
 }) {
   const t = useTranslations();
   const locale = useLocale();
@@ -295,7 +295,7 @@ export function Confirmation({
             <ListOrdered className="h-4 w-4" aria-hidden="true" /> {t('confirm.viewMyOrders')}
           </Link>
         ) : (
-          <p className="m-0 rounded-xl bg-subtle px-3.5 py-3 text-[13px] leading-snug text-muted sm:flex-1">
+          <p className="m-0 rounded-xl bg-subtle px-3.5 py-3 text-[13px] leading-snug text-fg sm:flex-1">
             {t('confirm.trackLater')}
           </p>
         )}

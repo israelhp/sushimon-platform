@@ -17,7 +17,7 @@ import { Portal } from '@/components/ui/Portal';
 import { SimulationBadge } from '@/components/ui/SimulationBadge';
 import { useDialog } from '@/components/ui/use-dialog';
 import { cn } from '@/lib/cn';
-import type { Order, PaymentResult } from '@/lib/data-access/models';
+import type { DraftOrder, PaymentResult } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
 import { useOrder, usePayWithCard } from '@/features/orders/hooks';
 import {
@@ -62,7 +62,7 @@ export function NeonetDialog({
   onChangeMethod,
   onOutcome,
 }: {
-  order: Order;
+  order: DraftOrder;
   /** Hora del servidor/demo (vencimiento de la tarjeta). */
   now: Date;
   /** Cerrar y volver al checkout (no disponible mientras se procesa). */

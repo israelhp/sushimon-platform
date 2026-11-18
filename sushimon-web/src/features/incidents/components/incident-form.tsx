@@ -6,7 +6,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { isApiError } from '@/lib/data-access/errors';
-import type { Incident, Order } from '@/lib/data-access/models';
+import type { Incident, DraftOrder } from '@/lib/data-access/models';
 import { formatDateTime, formatMoney } from '@/lib/format';
 import { useCreateIncident, useOrder } from '@/features/orders/hooks';
 import { ErrorNotice } from '@/features/store-shell/components/ErrorNotice';
@@ -101,7 +101,7 @@ function OrderPicker() {
   );
 }
 
-function Confirmation({ incident, order }: { incident: Incident; order: Order }) {
+function Confirmation({ incident, order }: { incident: Incident; order: DraftOrder }) {
   const t = useTranslations('incidents');
   return (
     <div
@@ -124,7 +124,7 @@ function Confirmation({ incident, order }: { incident: Incident; order: Order })
   );
 }
 
-function ReportForm({ order }: { order: Order }) {
+function ReportForm({ order }: { order: DraftOrder }) {
   const t = useTranslations('incidents');
   const tcom = useTranslations('common');
   const create = useCreateIncident();

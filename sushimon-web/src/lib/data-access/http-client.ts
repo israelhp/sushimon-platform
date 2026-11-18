@@ -31,9 +31,21 @@ export function createHttpClient(
     options: RequestOptions,
     token: string | null,
   ): Promise<Response> {
-    const { method = 'GET', query, body, signal, public: isPublic = false } = options;
+    const {
+      method = 'GET',
+      query,
+      body,
+      signal,
+      public: isPublic = false,
+      headers: extra,
+    } = options;
     const qs = toSearchParams(query).toString();
     const headers: Record<string, string> = {};
+    // Cabeceras del llamador (F20: `Idempotency-Key`, `X-Order-Token`). Van primero: no pueden pisar las de abajo.
+    for (const [name, value] of Object.entries(extra ?? {})) {
+      const key = name.toLowerCase();
+      if (key !== 'authorization' && key !== 'content-type') headers[key] = value;
+    }
     if (body !== undefined) headers['content-type'] = 'application/json';
     if (token && !isPublic) headers['authorization'] = `Bearer ${token}`;
     try {
@@ -83,6 +95,7 @@ export function createHttpClient(
         typeof payload?.code === 'string' ? payload.code : undefined,
         Array.isArray(payload?.violations) ? payload.violations : undefined,
         parseRetryAfter(res.headers.get('retry-after')),
+        payload ?? undefined,
       );
     }
     if (res.status === 204) return undefined as T;

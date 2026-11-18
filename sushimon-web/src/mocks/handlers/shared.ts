@@ -1,5 +1,5 @@
 import type { MockHandler, MockRequest } from '@/lib/data-access/mock-client';
-import type { GrantScope, Order, StaffPermission, StaffRole } from '@/lib/data-access/models';
+import type { GrantScope, DraftOrder, StaffPermission, StaffRole } from '@/lib/data-access/models';
 import { can, type Grants } from '@/lib/permissions';
 import { localDate } from '@/lib/time';
 import { fail, isAwaitingPayment } from '../domain';
@@ -101,7 +101,7 @@ export function scopedBranchIds(req: Req, user: StaffActor): string[] {
   return [requested];
 }
 
-export function assertOrderInScope(user: StaffActor, order: Order) {
+export function assertOrderInScope(user: StaffActor, order: DraftOrder) {
   if (!user.scope.allBranches && !user.scope.branchIds.includes(order.branchId)) {
     // 404 para no revelar pedidos de otras sucursales.
     fail(404, 'Pedido no encontrado');
@@ -131,7 +131,7 @@ export function requireCustomer(req: Req): CustomerAccount {
  * Pedidos de un día para el backoffice: historial generado + pedidos vivos del store de esa fecha,
  * sin los que esperan pago con tarjeta (no llegan a la cocina).
  */
-export function ordersForDay(req: Req, dateISO: string, branchIds: string[]): Order[] {
+export function ordersForDay(req: Req, dateISO: string, branchIds: string[]): DraftOrder[] {
   const generated = req.store.historyEnabled ? generateDayOrders(dateISO, today(req)) : [];
   const live = req.store.orders.filter(
     (o) => localDate(new Date(o.createdAt)) === dateISO && !isAwaitingPayment(o),

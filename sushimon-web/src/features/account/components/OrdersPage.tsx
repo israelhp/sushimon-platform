@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { useState, type KeyboardEvent } from 'react';
 import { cn } from '@/lib/cn';
-import type { Order } from '@/lib/data-access/models';
+import type { DraftOrder } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
 import { isOrderInProgress } from '@/lib/order-status';
 import { OrderCard } from '@/features/orders/components/order-card';
@@ -27,7 +27,7 @@ export function OrdersPage() {
   const sheet = useOrderSheet();
   const orders = useMyOrders();
   const [tab, setTab] = useState<Tab>('active');
-  const [reorder, setReorder] = useState<Order | null>(null);
+  const [reorder, setReorder] = useState<DraftOrder | null>(null);
 
   const all = orders.data ?? [];
   const sorted = [...all].sort((a, b) => b.createdAt.localeCompare(a.createdAt));

@@ -23,7 +23,7 @@ import { errorMessage } from '@/features/bo-orders/error-message';
 import { useOrderDetail } from '@/features/bo-orders/order-detail-context';
 import { useScopedOrders } from '@/features/bo-orders/use-scoped-orders';
 import { cn } from '@/lib/cn';
-import type { CourierQuote, Order } from '@/lib/data-access/models';
+import type { CourierQuote, DraftOrder } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
 import {
   compareQuote,
@@ -77,7 +77,7 @@ export function DispatchModal({ orderId, onClose }: { orderId: string; onClose: 
   return <DispatchFlow order={order} onClose={onClose} />;
 }
 
-function DispatchFlow({ order, onClose }: { order: Order; onClose: () => void }) {
+function DispatchFlow({ order, onClose }: { order: DraftOrder; onClose: () => void }) {
   const t = useTranslations('backoffice.dispatch');
   const toast = useToast();
   const detail = useOrderDetail();

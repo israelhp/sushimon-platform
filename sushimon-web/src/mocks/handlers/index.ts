@@ -13,6 +13,7 @@ import * as favorites from './favorites';
 import * as media from './media';
 import * as modifiers from './modifiers';
 import * as orders from './orders';
+import * as placement from './order-placement';
 import * as products from './products';
 import * as promotions from './promotions';
 import * as pub from './public';
@@ -47,7 +48,9 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'GET /v1/store/promotions': promotions.listStorePromotions,
   // F16: banners publicados del Inicio por sucursal e idioma (contrato, público)
   'GET /v1/store/banners': banners.listStoreBanners,
-  'POST /v1/orders': orders.createOrder,
+  'POST /v1/orders': placement.createPlacedOrder,
+  'POST /v1/demo/orders': orders.createDraftOrder,
+  'POST /v1/demo/orders/:id/card': placement.prepareDraftCard,
   'POST /v1/orders/lookup': orders.lookupOrder,
   'GET /v1/orders/:id': orders.getOrder,
   'POST /v1/payments/card': orders.payWithCard,

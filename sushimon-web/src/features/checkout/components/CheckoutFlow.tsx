@@ -8,25 +8,26 @@ import { useEffect, useRef, useState } from 'react';
 import { FoodArt } from '@/components/art/FoodArt';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
-import { isApiError } from '@/lib/data-access/errors';
-import type { CreateOrderRequest, Order } from '@/lib/data-access/models';
+import type { DraftOrder, OrderCreated } from '@/lib/data-access/models';
 import { moneyToCents } from '@/lib/checkout-quote';
 import { formatMoney } from '@/lib/format';
 import { useCreateAddress, useUpdateMe } from '@/features/account/hooks';
 import { useLocationOptions } from '@/features/delivery-coverage/hooks';
 import { useCart } from '@/features/cart/cart-context';
-import { useCreateOrder } from '@/features/orders/hooks';
+import { useDraftOrderLoader } from '@/features/orders/hooks';
 import { saveLastOrder } from '@/features/orders/last-order';
-import { useOrderMode } from '@/features/order-mode/order-mode-context';
 import { ErrorNotice } from '@/features/store-shell/components/ErrorNotice';
 import { STORE_ROUTES } from '@/features/store-shell/nav';
 import { useCartDrawer } from '@/features/store-shell/store-shell-context';
-import { CHECKOUT_STEP_COUNT, zoneForOrder, type CheckoutStep } from '../checkout-model';
+import { CHECKOUT_STEP_COUNT, effectivePayment, type CheckoutStep } from '../checkout-model';
+import { intentFingerprint, type OrderIntent } from '../order-attempt';
+import { usePlaceOrder } from '../use-place-order';
 import { useCheckoutDraft } from '../checkout-context';
 import { clearRemembered, writeRemembered } from '../remember';
 import { useCheckoutData } from '../use-checkout-data';
 import { addressSignature, decideSaveAddress } from '../save-address';
 import { Confirmation } from './Confirmation';
+import { PlacementStatus, placementLiveKey } from './PlacementStatus';
 import { DeliveryStep, type CheckoutExtras } from './DeliveryStep';
 import { NeonetDialog, type NeonetOutcome } from './NeonetDialog';
 import { OrderStep, OrderStepSkeleton } from './OrderStep';
@@ -34,6 +35,7 @@ import { OrderSummary, type SummaryAction } from './OrderSummary';
 import { PaymentStep } from './PaymentStep';
 import { QuoteAlerts } from './QuoteAlerts';
 import { useCheckoutSteps } from './parts';
+import { quoteLineName, rowNamesByConfig } from './quote-helpers';
 import { ReviewStep } from './ReviewStep';
 import { ShippingStep } from './ShippingStep';
 
@@ -75,17 +77,23 @@ export function CheckoutFlow() {
   const { draft, dispatch, ready, discard } = useCheckoutDraft();
   const data = useCheckoutData();
   const cart = useCart();
-  const { mode } = useOrderMode();
   const cartDrawer = useCartDrawer();
-  const createOrder = useCreateOrder();
+  const drafts = useDraftOrderLoader();
   const createAddress = useCreateAddress();
   const addressLocations = useLocationOptions(draft.address.department);
   const updateMe = useUpdateMe();
 
-  const [confirmed, setConfirmed] = useState<Order | null>(null);
-  const [pending, setPending] = useState<{ order: Order; signature: string } | null>(null);
+  const [confirmed, setConfirmed] = useState<DraftOrder | null>(null);
+  const [pending, setPending] = useState<{ order: DraftOrder; signature: string } | null>(null);
+  /** Pedido REAL confirmado por el servidor (solo con la API real): se presenta como «pedido recibido». */
+  const [placedId, setPlacedId] = useState<string | null>(null);
+  const routerRef = useRef(router);
+  useEffect(() => {
+    routerRef.current = router;
+  });
   const [neonetOpen, setNeonetOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  /** Mock: cargando el pedido borrador enlazado tras crearlo (pasarela/confirmación simuladas). */
+  const [loadingDraft, setLoadingDraft] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [extras, setExtras] = useState<CheckoutExtras>({
     saveAddress: true,
@@ -199,40 +207,35 @@ export function CheckoutFlow() {
     }
   };
 
-  /** Cuerpo del pedido: intención del cliente (el servidor calcula precios, envío y totales). */
-  const buildRequest = (): CreateOrderRequest => {
-    const delivery = data.type === 'delivery';
+  const simulation = data.isSimulation;
+  const payment = effectivePayment(draft.payment, simulation);
+
+  /** Lo que el cliente confirma (sin importes ni token): las entradas ACTUALES de la cotización + contacto, dirección y preferencia. */
+  const buildIntent = (): OrderIntent | null => {
+    const q = data.quoteInputs;
+    if (!q) return null;
+    const f = q.fulfillment;
     return {
-      fulfillment: delivery ? 'delivery' : 'pickup',
-      branchId: data.branchId ?? undefined,
-      schedule: mode.when,
-      customer: {
-        name: draft.contact.name.trim(),
-        phone: draft.contact.phone.trim(),
-        email: draft.contact.email.trim(),
+      scope: data.scope,
+      quote: { cart: q.cart, fulfillment: f, couponCode: q.couponCode },
+      contact: {
+        fullName: draft.contact.name,
+        phone: draft.contact.phone,
+        email: draft.contact.email,
       },
-      address: delivery
-        ? {
-            department: draft.address.department,
-            municipality: draft.address.municipality,
-            zone: zoneForOrder(draft.address),
-            line: draft.address.line.trim(),
-            references: draft.address.references.trim(),
-          }
-        : undefined,
-      lines: data.rows.map(({ line }) => ({
-        productId: line.productId,
-        quantity: line.quantity,
-        ...(line.note ? { note: line.note } : {}),
-      })),
-      paymentMethod: draft.payment === 'card' ? 'card' : 'cash',
-      note: draft.notes.trim() || undefined,
+      // Dirección NUEVA (municipio + zona): el texto va aparte; con dirección guardada se copia en el servidor.
+      deliveryAddress:
+        f.type === 'DELIVERY' && !f.customerAddressId
+          ? { addressLine: draft.address.line, referenceNote: draft.address.references }
+          : null,
+      notes: draft.notes,
+      // Solo una PREFERENCIA (no es un cobro). La tarjeta (NeoNet simulada) no se declara: la API rechaza `card`.
+      preference: payment === 'cash' || payment === 'bank_transfer' ? payment : null,
     };
   };
 
-  /** Pedido confirmado: guarda el resumen, vacía el carrito, aplica las preferencias y muestra la confirmación. */
-  const finalize = (order: Order) => {
-    saveLastOrder(order);
+  /** Preferencias del cliente al confirmar (recordar datos en el dispositivo, actualizar el perfil). */
+  const applyPreferences = () => {
     if (!signedIn) {
       if (extras.remember) {
         writeRemembered({ contact: draft.contact, address: draft.address });
@@ -253,27 +256,75 @@ export function CheckoutFlow() {
         });
       }
     }
+  };
+
+  /** SIMULADO (mock): pedido borrador confirmado; el carrito lo vacía `clear()` (el pedido REAL usa `clearAfterOrder`). */
+  const finalize = (order: DraftOrder) => {
+    saveLastOrder(order);
+    applyPreferences();
     setNeonetOpen(false);
     setPending(null);
-    // SIMULADO (MOCK_ONLY): vacía solo por el flujo de demostración. `clearAfterOrder` queda reservado para F20 (pedido real).
     cart.clear();
     discard();
     setConfirmed(order);
     scrollTop();
   };
 
-  const errorMessage = (error: unknown): string => {
-    if (isApiError(error)) {
-      if (error.status === 0) return t('checkoutFlow.errOffline');
-      if (error.status === 409) return t('checkoutFlow.errConflict');
-      if (error.status === 422) return t('delivery.notCovered');
+  /**
+   * El servidor (o el mock) confirmó el pedido. API real: el carrito ya lo vació `usePlaceOrder` (`clearAfterOrder`); aquí se
+   * aplican las preferencias, se descarta el borrador y se va a «pedido recibido». Mock: se carga el pedido borrador enlazado para
+   * la pasarela NeoNet / confirmación simuladas.
+   */
+  const handleCreated = (created: OrderCreated) => {
+    if (!simulation) {
+      applyPreferences();
+      discard();
+      // La pantalla «pedido recibido» tiene UN solo dueño: la ruta `/pedidos/[id]` (aquí solo se anuncia y se navega).
+      setPlacedId(created.order.id);
+      return;
     }
-    return t('checkout.orderError');
+    const card = payment === 'card';
+    const intent = buildIntent();
+    setLoadingDraft(true);
+    drafts
+      .load(created.order.displayNumber, card)
+      .then((order) => {
+        if (card) {
+          setPending({ order, signature: intent ? intentFingerprint(intent) : '' });
+          setNeonetOpen(true);
+        } else finalize(order);
+      })
+      .catch(() => setSubmitError(t('checkout.orderError')))
+      .finally(() => setLoadingDraft(false));
   };
+
+  const place = usePlaceOrder({ clearCart: !simulation, onSuccess: handleCreated });
+  const busy = place.busy || loadingDraft;
+
+  // Cotización cambiada/vencida/inválida: se recotiza para que la pantalla muestre los importes y bloqueos vigentes.
+  const failure = place.state.status === 'failed' ? place.state.failure.kind : null;
+  const refetchQuote = data.quote.refetch;
+  useEffect(() => {
+    if (
+      failure === 'quoteChanged' ||
+      failure === 'quoteExpired' ||
+      failure === 'quoteInvalid' ||
+      failure === 'keyReused' ||
+      failure === 'blocked'
+    ) {
+      refetchQuote();
+    }
+  }, [failure, refetchQuote]);
+
+  useEffect(() => {
+    if (!placedId) return;
+    const id = setTimeout(() => routerRef.current.replace(`/pedidos/${placedId}`), 250);
+    return () => clearTimeout(id);
+  }, [placedId]);
 
   const submit = async () => {
     if (busy) return;
-    // F20 aún no existe: con la API real NO se llama a `POST /v1/orders` ni se inventa un éxito.
+    // Solo con una cotización vigente que traiga su token (F19): nunca se confirma «a ciegas».
     if (!data.confirmationAvailable) return;
     const invalid = ([1, 2, 3, 4] as const).find((s) => !data.stepOk(s));
     if (invalid) {
@@ -281,31 +332,25 @@ export function CheckoutFlow() {
       focusFirstError();
       return;
     }
+    const intent = buildIntent();
+    const token = data.serverQuote?.quote.token;
+    if (!intent || !token) return;
     setSubmitError('');
-    const body = buildRequest();
-    const signature = JSON.stringify(body);
-    if (draft.payment === 'card' && pending && pending.signature === signature) {
+    if (
+      simulation &&
+      payment === 'card' &&
+      pending &&
+      pending.signature === intentFingerprint(intent)
+    ) {
       setNeonetOpen(true);
       return;
     }
-    setBusy(true);
-    try {
-      const order = await createOrder.mutateAsync(body);
-      if (draft.payment === 'card') {
-        setPending({ order, signature });
-        setNeonetOpen(true);
-      } else {
-        finalize(order);
-      }
-    } catch (error) {
-      setSubmitError(errorMessage(error));
-    } finally {
-      setBusy(false);
-    }
+    place.reset();
+    await place.place(intent, token);
   };
 
   /** Aplica el resultado del pago (sin datos de tarjeta salvo marca/últimos 4 que ya devuelve el servidor). */
-  const withPayment = (order: Order, outcome: NeonetOutcome): Order => ({
+  const withPayment = (order: DraftOrder, outcome: NeonetOutcome): DraftOrder => ({
     ...order,
     payment: {
       ...order.payment,
@@ -317,6 +362,18 @@ export function CheckoutFlow() {
   });
 
   // ── Estados de pantalla ─────────────────────────────────────────────────────────────────
+  if (placedId) {
+    return (
+      <div className="wrap flex flex-col items-center gap-3 py-16 text-center">
+        {/* Se anuncia ANTES de navegar; el foco lo toma el título de la ruta de destino (una sola vez). */}
+        <p className="sr-only" role="status" aria-live="polite" data-testid="quote-live">
+          {t('checkout.order.liveReceived')}
+        </p>
+        <Loader2 className="anim-spin h-8 w-8 text-secondary" aria-hidden="true" />
+        <p className="m-0 text-muted">{t('orders.received.loading')}</p>
+      </div>
+    );
+  }
   if (confirmed) return <Confirmation order={confirmed} onOrderChange={setConfirmed} />;
 
   const loadFailed =
@@ -353,6 +410,7 @@ export function CheckoutFlow() {
   const noConfirm = isLast && !data.confirmationAvailable;
   const blocked = busy ? false : quoteGate || loading || loadFailed || noConfirm;
   const quoteStatus = data.quote.status;
+  const liveKey = placementLiveKey(place.state);
   const waitingQuote = quoteStatus === 'loading' || quoteStatus === 'expired';
   const reason = loadFailed
     ? t('checkout.quote.reason.loadFailed')
@@ -371,7 +429,7 @@ export function CheckoutFlow() {
                 : quoteGate
                   ? t('checkout.quote.reason.problem')
                   : noConfirm
-                    ? t('checkout.quote.reason.confirmSoon')
+                    ? t('checkout.order.confirmReason')
                     : '';
   /** Bloqueado: no avanza; el foco va al primer bloqueo de la cotización o, si solo está calculando, a la frase del motivo. */
   const onBlocked = () => {
@@ -385,9 +443,13 @@ export function CheckoutFlow() {
   };
   const action: SummaryAction = {
     label: busy
-      ? t('checkout.registering')
+      ? t(
+          place.state.status === 'sending' && place.state.retrying
+            ? 'checkout.order.retrying'
+            : 'checkout.order.sending',
+        )
       : isLast
-        ? draft.payment === 'card'
+        ? simulation && payment === 'card'
           ? t('checkout.payNow')
           : t('checkout.placeOrder')
         : t('checkout.continueTo', { a: (steps[step] ?? '').toLowerCase() }),
@@ -396,7 +458,7 @@ export function CheckoutFlow() {
     blocked,
     reason,
     isLast,
-    showSimulation: step >= 4,
+    showSimulation: simulation,
   };
   const summary = <OrderSummary data={data} onEdit={cartDrawer.open} action={action} />;
   const profileChanged =
@@ -502,7 +564,28 @@ export function CheckoutFlow() {
               ) : step === 4 ? (
                 <PaymentStep />
               ) : (
-                <ReviewStep data={data} goTo={goTo} summary={summary} error={submitError} />
+                <ReviewStep
+                  data={data}
+                  goTo={goTo}
+                  summary={summary}
+                  error={submitError}
+                  placement={
+                    <PlacementStatus
+                      state={place.state}
+                      onRetry={place.retry}
+                      onAcceptChange={place.acceptChange}
+                      onCancelChange={place.reset}
+                      lineName={(i) => {
+                        const sent = i === undefined ? undefined : data.quoteInputs?.cart.lines[i];
+                        return quoteLineName(
+                          rowNamesByConfig(data.rows),
+                          sent,
+                          sent?.productId ?? '',
+                        );
+                      }}
+                    />
+                  }
+                />
               )}
             </div>
           )}
@@ -565,21 +648,19 @@ export function CheckoutFlow() {
         </div>
       </div>
 
-      {/* UNA sola región polite para los importes: «Actualizando…», «Total actualizado: Qxx» o el error. */}
+      {/* UNA sola región polite (importes, estado de la confirmación y paso actual). */}
       <p className="sr-only" role="status" aria-live="polite" data-testid="quote-live">
-        {quoteStatus === 'error'
-          ? t('checkout.quote.liveError')
-          : data.quote.updating || quoteStatus === 'loading'
-            ? t('checkout.quote.liveUpdating')
-            : data.serverQuote?.total
-              ? t('checkout.quote.liveTotal', {
-                  a: money((moneyToCents(data.serverQuote.total) ?? 0) / 100),
-                })
-              : ''}
-      </p>
-
-      <p className="sr-only" aria-live="polite">
-        {t('checkout.stepOf', { a: step, b: CHECKOUT_STEP_COUNT })}: {stepName}
+        {liveKey
+          ? t(`checkout.order.${liveKey}` as 'checkout.order.sending')
+          : quoteStatus === 'error'
+            ? t('checkout.quote.liveError')
+            : data.quote.updating || quoteStatus === 'loading'
+              ? t('checkout.quote.liveUpdating')
+              : data.serverQuote?.total
+                ? t('checkout.quote.liveTotal', {
+                    a: money((moneyToCents(data.serverQuote.total) ?? 0) / 100),
+                  })
+                : `${t('checkout.stepOf', { a: step, b: CHECKOUT_STEP_COUNT })}: ${stepName}`}
       </p>
 
       {pending && neonetOpen ? (

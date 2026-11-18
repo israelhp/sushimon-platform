@@ -4,6 +4,7 @@ import {
   Banknote,
   Clock,
   CreditCard,
+  Landmark,
   Phone,
   ShoppingBag,
   Store,
@@ -13,11 +14,10 @@ import {
 import { useLocale, useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
 import { moneyToCents } from '@/lib/checkout-quote';
-import { SimulationBadge } from '@/components/ui/SimulationBadge';
 import { formatMoney } from '@/lib/format';
 import { formatWhen } from '@/features/order-mode/when';
 import { localDate } from '@/lib/time';
-import { formatAddress, type CheckoutStep } from '../checkout-model';
+import { effectivePayment, formatAddress, type CheckoutStep } from '../checkout-model';
 import { useCheckoutDraft } from '../checkout-context';
 import type { CheckoutData } from '../use-checkout-data';
 import { ReviewRow, useCheckoutSteps } from './parts';
@@ -28,12 +28,15 @@ export function ReviewStep({
   goTo,
   summary,
   error,
+  placement,
 }: {
   data: CheckoutData;
   goTo: (step: CheckoutStep) => void;
   /** Resumen de compra (solo móvil/tablet: en escritorio vive en la columna lateral). */
   summary: ReactNode;
   error: string;
+  /** Estado de la confirmación (enviando, errores, cambio de total): `PlacementStatus`. */
+  placement?: ReactNode;
 }) {
   const t = useTranslations();
   const locale = useLocale();
@@ -49,7 +52,9 @@ export function ReviewStep({
     today: t('when.today'),
     tomorrow: t('when.tomorrow'),
   });
-  const PayIcon = draft.payment === 'card' ? CreditCard : Banknote;
+  const payment = effectivePayment(draft.payment, data.isSimulation);
+  const PayIcon =
+    payment === 'card' ? CreditCard : payment === 'bank_transfer' ? Landmark : Banknote;
   const row = (
     title: string,
     step: CheckoutStep,
@@ -71,10 +76,12 @@ export function ReviewStep({
 
   return (
     <section aria-label={steps[4]} className="flex flex-col gap-4">
-      {/* F20 aún no existe: la confirmación es SIEMPRE simulada (con datos de demostración o con la API real). */}
-      <p className="m-0 flex flex-wrap items-center gap-2 text-[13px] text-muted">
-        <SimulationBadge kind="simulation" /> {t('checkout.quote.simulationFinal')}
-      </p>
+      {data.isSimulation ? (
+        // Una sola insignia «Simulación» por pantalla: la del resumen de compra; aquí solo la nota.
+        <p className="m-0 text-[13px] text-muted">{t('checkout.quote.simulationFinal')}</p>
+      ) : (
+        <p className="m-0 text-[13px] text-muted">{t('checkout.order.realNote')}</p>
+      )}
       <div className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
         {row(
           steps[0] ?? '',
@@ -133,11 +140,23 @@ export function ReviewStep({
           t('checkout.pay'),
           4,
           <PayIcon className="h-5 w-5" />,
-          draft.payment === 'card' ? t('payment.cardLabel') : t('payment.cash'),
+          <>
+            {payment === 'card'
+              ? t('payment.cardLabel')
+              : payment === 'bank_transfer'
+                ? t('payment.transfer')
+                : t('payment.cash')}
+            {!data.isSimulation ? (
+              <span className="block text-[13px] font-normal text-muted">
+                {t('checkout.order.payCoordinated')}
+              </span>
+            ) : null}
+          </>,
           'pay',
         )}
       </div>
       <div className="lg:hidden">{summary}</div>
+      {placement}
       {error ? (
         <div className="notice notice-warn" role="alert">
           <TriangleAlert className="mt-0.5 h-[18px] w-[18px] flex-none" aria-hidden="true" />

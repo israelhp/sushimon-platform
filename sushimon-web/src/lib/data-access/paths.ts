@@ -157,6 +157,10 @@ export const paths = {
   demoMediaObject: (assetId: string) => `/v1/demo/media/objects/${seg(assetId)}`,
   /** Escenario SIMULADO de PedidosYa para la cobertura (solo mock; nunca existe en la API real). */
   demoPedidosyaCoverage: () => '/v1/demo/delivery/pedidosya-coverage',
+  /** Solo mock: crea el pedido BORRADOR (`DraftOrder`) que aún usan el seguimiento y el backoffice simulados (retirar con F21/F22). */
+  demoDraftOrders: () => '/v1/demo/orders',
+  /** Solo mock: marca un pedido borrador para la tarjeta NeoNet SIMULADA (la API real rechaza `card`: F25 BLOCKED_EXTERNAL). */
+  demoPrepareCardOrder: (id: string) => `/v1/demo/orders/${seg(id)}/card`,
   demoAdvanceOrder: (id: string) => `/v1/demo/orders/${seg(id)}/advance`,
   demoSimulateOrder: () => '/v1/demo/orders/simulate',
 } as const;

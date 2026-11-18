@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Delivery, Order } from '@/lib/data-access/models';
+import type { Delivery, DraftOrder } from '@/lib/data-access/models';
 import { DEMO_BASE_TIME } from '@/mocks/clock';
 import { createSeedStore } from '@/mocks/seed';
 import {
@@ -21,10 +21,14 @@ import {
 const NOW = new Date(DEMO_BASE_TIME);
 const TODAY = '2026-11-11';
 const seed = createSeedStore('default').orders;
-const base = seed.find((o) => o.id === 'MON-307051') as Order; // listo, a domicilio, sin logística
+const base = seed.find((o) => o.id === 'MON-307051') as DraftOrder; // listo, a domicilio, sin logística
 
 /** Pedido a domicilio de prueba (envío cobrado Q20) creado a las 12:00 (hora de Guatemala). */
-function order(id: string, patch: Partial<Order> = {}, delivery: Partial<Delivery> | null = null) {
+function order(
+  id: string,
+  patch: Partial<DraftOrder> = {},
+  delivery: Partial<Delivery> | null = null,
+) {
   const fullDelivery: Delivery | null = delivery && {
     provider: 'pedidosya',
     status: 'delivered',
@@ -46,7 +50,7 @@ function order(id: string, patch: Partial<Order> = {}, delivery: Partial<Deliver
     status: 'delivered',
     delivery: fullDelivery,
     ...patch,
-  } as Order;
+  } as DraftOrder;
 }
 
 const FILTERS = (patch: Partial<DeliveryFilters> = {}): DeliveryFilters => ({
