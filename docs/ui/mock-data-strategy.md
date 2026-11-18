@@ -485,3 +485,13 @@ Verificado con `grep` (consumidores fuera de pruebas):
 - `mocks/branch-availability.ts`: solo lo usa el handler mock (`mocks/handlers/schedule.ts`) para reproducir `GET /v1/branches/:id/availability`; **ninguna pantalla** lo importa, por diseño (la UI consume la disponibilidad del servidor).
 
 Los tres tienen consumidores reales y sus pruebas siguen cubriendo código vivo, así que no se borran ni sus pruebas. Las constantes exportadas solo por uso interno (`WEEKDAYS`, `MINUTES_PER_DAY`, `nextWeekday`, `RANGE_MESSAGE`, `formatHm`) se dejan: se usan dentro de su módulo.
+
+## F19 — cotización de checkout (`specs/020-checkout-quote`, ADR-0025)
+
+La API es la ÚNICA autoridad de precios: `POST /v1/checkout/quote` (`CONTRACT_DEFINED`, API y web pendientes). Política mock:
+
+- El adaptador mock mantiene paridad de FORMA con `CheckoutQuote` (mismos estados de línea de F18, `blockers`, `notices`, `delivery.options`) para UI First, pero la cotización mock es una **simulación**: `quote.token = null`, `quote.expiresAt` ficticio y un rótulo visible «Simulación» en el resumen del checkout. Nunca confirma pedidos reales ni invoca `clearAfterOrder` (F20).
+- PedidosYa en el mock: siempre `UNKNOWN`, `selectable=false`, sin tarifa (un escenario `AVAILABLE` simulado tampoco habilita nada). OWN usa tarifas de fixtures solo en mock.
+- Con la fuente `http` el checkout NO calcula totales definitivos en el cliente: el estimado de F18 se muestra únicamente mientras llega la cotización y rotulado «estimado».
+- Pedidos programados y reglas de programación siguen `MOCK_ONLY` (P42); en `http` se deshabilitan.
+- Estado: cotización real `CONTRACT_DEFINED`; checkout web `MOCK_ONLY` hasta implementar.
