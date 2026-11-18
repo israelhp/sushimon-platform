@@ -5,8 +5,6 @@ import { useTranslations } from 'next-intl';
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import { cn } from '@/lib/cn';
 import type { Address, StoreConfig } from '@/lib/data-access/models';
-import { CoverageChip } from '@/features/account/components/CoverageChip';
-import { CoverageNotice } from '@/features/delivery-coverage/components/CoverageNotice';
 import { GoogleLogo } from '@/features/store-shell/components/GoogleLogo';
 import { useAuthModal } from '@/features/store-shell/store-shell-context';
 import { formatAddress, hasAnyError, type AddressForm } from '../checkout-model';
@@ -238,11 +236,10 @@ export function DeliveryStep({
                     badge={
                       <>
                         {data.defaultAddressId === a.id ? (
-                          <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-extrabold text-fg">
+                          <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[12px] font-extrabold text-fg">
                             {t('addr.isDefault')}
                           </span>
                         ) : null}
-                        <CoverageChip address={a} />
                       </>
                     }
                   />
@@ -277,13 +274,9 @@ export function DeliveryStep({
                   config={config as StoreConfig | undefined}
                 />
                 <div className="sm:col-span-2">
-                  <CoverageNotice
-                    state={data.coverage.state}
-                    outcome={data.outcome ?? null}
-                    branchName={(id) => data.branches.find((b) => b.id === id)?.name ?? id}
-                    municipalityUnavailable={data.coverage.municipalityUnavailable}
-                    onRetry={data.coverage.refetch}
-                  />
+                  <p className="m-0 text-[12px] leading-snug text-muted">
+                    {t('checkout.quote.coverageLater')}
+                  </p>
                 </div>
               </div>
             )

@@ -13,7 +13,9 @@ export function PaymentStep() {
   const { draft, dispatch } = useCheckoutDraft();
   return (
     <section aria-label={steps[3]}>
-      <h2 className="lbl">{t('payment.title')}</h2>
+      <h2 className="lbl flex flex-wrap items-center gap-2">
+        {t('payment.title')} <SimulationBadge kind="simulation" />
+      </h2>
       <div
         className="flex flex-col gap-2.5"
         role="radiogroup"

@@ -118,7 +118,7 @@ export function OrderTypeFields({
           </Choice>
           <Choice
             active={when.kind === 'scheduled'}
-            disabled={days.length === 0}
+            disabled={days.length === 0 || !data.scheduledSupported}
             onClick={() => {
               if (when.kind !== 'scheduled' && days[0]) pickDay(days[0].date);
             }}
@@ -127,6 +127,11 @@ export function OrderTypeFields({
             {t('mode.schedule')}
           </Choice>
         </div>
+        {!data.scheduledSupported ? (
+          <p className="mt-2 text-[12px] text-muted" id="checkout-scheduled-soon">
+            {t('checkout.quote.scheduledSoon')}
+          </p>
+        ) : null}
       </fieldset>
 
       {when.kind === 'scheduled' ? (

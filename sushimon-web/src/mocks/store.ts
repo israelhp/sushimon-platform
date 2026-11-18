@@ -258,6 +258,8 @@ export interface MockStore {
   lookupFailures?: Record<string, { count: number; lastAt: number }>;
   /** Diferencia costo courier − envío cobrado por pedido (para cotizar PedidosYa simulado). */
   courierSurcharges: Record<string, number>;
+  /** F19 (pruebas): próximas N cotizaciones responden 503 `CHECKOUT_BUSY` (determinista). */
+  checkoutBusy?: number;
   /** Historial generado deshabilitado (escenario `empty`). */
   historyEnabled: boolean;
   sequences: {

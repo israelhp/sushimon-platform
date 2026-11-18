@@ -31,10 +31,10 @@ describe('límites del carrito (#34, F18)', () => {
     }
   });
 
-  it('toQuoteInput no se consume todavía: la cotización real es F19', () => {
-    const callers = files.filter(
-      (f) => /toQuoteInput\(/.test(readFileSync(f, 'utf8')) && !/cart-rules\.ts$/.test(f),
-    );
-    expect(callers).toEqual([]);
+  it('toQuoteInput solo lo consume la cotización de checkout (F19, use-checkout-data)', () => {
+    const callers = files
+      .filter((f) => /toQuoteInput\(/.test(readFileSync(f, 'utf8')) && !/cart-rules\.ts$/.test(f))
+      .map((f) => f.replace(/^.*\/src\//, 'src/'));
+    expect(callers).toEqual(['src/features/checkout/use-checkout-data.ts']);
   });
 });

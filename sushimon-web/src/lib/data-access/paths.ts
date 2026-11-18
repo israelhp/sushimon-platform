@@ -18,6 +18,8 @@ export const paths = {
   locationDepartments: () => '/v1/locations/departments',
   locationMunicipalities: () => '/v1/locations/municipalities',
   deliveryCoverageCheck: () => '/v1/delivery-coverage/check',
+  /** F19 (contrato): cotización de checkout (POST sin efectos, auth opcional, `private, no-store`). Nunca `public`. */
+  checkoutQuote: () => '/v1/checkout/quote',
   /** F10 (contrato): árbol de categorías visibles del menú (público, sin autenticación). */
   storeCategories: () => '/v1/store/categories',
   /** F11 (contrato): productos visibles del menú (paginado, `q`, `categorySlug`) y ficha por slug. Sin autenticación. */
