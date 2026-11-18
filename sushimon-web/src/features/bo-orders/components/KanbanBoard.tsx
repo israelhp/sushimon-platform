@@ -2,14 +2,14 @@
 
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
-import type { Order } from '@/lib/data-access/models';
+import type { DraftOrder } from '@/lib/data-access/models';
 import { BACKOFFICE_COLUMNS } from '@/lib/order-status';
 import { groupByColumn } from '../order-view';
 import { COLUMN_DOT } from '../use-order-text';
 import { OrderCard } from './OrderCard';
 
 /** Tablero kanban: Nuevo · Aceptado · Preparación · Listo · En camino · Entregado. */
-export function KanbanBoard({ orders, now }: { orders: readonly Order[]; now: Date | null }) {
+export function KanbanBoard({ orders, now }: { orders: readonly DraftOrder[]; now: Date | null }) {
   const t = useTranslations('backoffice.orders');
   const groups = groupByColumn(orders);
   const DELIVERED_LIMIT = 10;

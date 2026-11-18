@@ -1,4 +1,4 @@
-import type { Order, Product } from '@/lib/data-access/models';
+import type { DraftOrder, Product } from '@/lib/data-access/models';
 
 /**
  * "Repetir pedido": arma las líneas de carrito a partir de un pedido anterior con el catálogo
@@ -20,7 +20,7 @@ export interface ReorderPlan {
   priceChanges: { productId: string; name: string; before: number; now: number }[];
 }
 
-export function planReorder(order: Pick<Order, 'lines'>, products: Product[]): ReorderPlan {
+export function planReorder(order: Pick<DraftOrder, 'lines'>, products: Product[]): ReorderPlan {
   const byId = new Map(products.map((p) => [p.id, p]));
   const plan: ReorderPlan = { lines: [], skippedCount: 0, skipped: [], priceChanges: [] };
   for (const line of order.lines) {

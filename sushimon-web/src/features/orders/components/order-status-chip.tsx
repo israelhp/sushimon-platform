@@ -2,7 +2,7 @@
 
 import { Check } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import type { Order } from '@/lib/data-access/models';
+import type { DraftOrder } from '@/lib/data-access/models';
 import { cn } from '@/lib/cn';
 import { isOrderInProgress, toStoreTrackingStep } from '@/lib/order-status';
 
@@ -14,7 +14,7 @@ import { isOrderInProgress, toStoreTrackingStep } from '@/lib/order-status';
 export function OrderStatusChip({
   order,
 }: {
-  order: Pick<Order, 'status' | 'fulfillment' | 'payment'>;
+  order: Pick<DraftOrder, 'status' | 'fulfillment' | 'payment'>;
 }) {
   const t = useTranslations('status');
   const step = toStoreTrackingStep(order);

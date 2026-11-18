@@ -11,7 +11,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => router,
 }));
 
-const NOT_FOUND = 'No encontramos un pedido con esos datos. Revisá el número y el teléfono.';
+const NOT_FOUND = 'No encontramos un pedido con esos datos. Revisa el número y el teléfono.';
 
 describe('LookupForm (consulta de invitado)', () => {
   beforeEach(() => {
@@ -26,9 +26,9 @@ describe('LookupForm (consulta de invitado)', () => {
     const id = screen.getByLabelText('Número de pedido');
     expect(id).toHaveAttribute('aria-invalid', 'true');
     expect(id).toHaveFocus();
-    expect(id).toHaveAccessibleDescription('Ingresá el número de pedido');
+    expect(id).toHaveAccessibleDescription('Ingresa el número de pedido');
     expect(screen.getByLabelText('Teléfono')).toHaveAccessibleDescription(
-      'Ingresá el teléfono (8 dígitos)',
+      'Ingresa el teléfono (8 dígitos)',
     );
     expect(router.push).not.toHaveBeenCalled();
   });
@@ -98,7 +98,7 @@ describe('LookupForm (consulta de invitado)', () => {
     const view = await renderStore(<LookupForm />);
     expect(screen.getByText('Datos de prueba: MON-490217 · 5555-1234')).toBeInTheDocument();
     expect(screen.getByText('Demo')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /¿Tenés cuenta\?/ }));
+    await user.click(screen.getByRole('button', { name: /¿Tienes cuenta\?/ }));
     expect(view.api().shell.authOpen).toBe(true);
   });
 

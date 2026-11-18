@@ -1,4 +1,4 @@
-import type { DeliveryStatus, Order, OrderStatusEvent } from '@/lib/data-access/models';
+import type { DeliveryStatus, DraftOrder, OrderStatusEvent } from '@/lib/data-access/models';
 import type { Grants } from '@/lib/permissions';
 import {
   BACKOFFICE_COLUMNS,
@@ -22,12 +22,12 @@ export type OrderTypeFilter = 'todos' | 'delivery' | 'pickup';
 export type OrderStatusFilter = 'todos' | BackofficeColumn;
 
 /** Minutos desde que se creó el pedido (nunca negativo). */
-export function minutesSince(order: Pick<Order, 'createdAt'>, now: Date | null): number {
+export function minutesSince(order: Pick<DraftOrder, 'createdAt'>, now: Date | null): number {
   return now ? Math.max(0, minutesBetween(order.createdAt, now)) : 0;
 }
 
 /** Pedido nuevo sin aceptar hace más de 5 minutos (etiqueta roja del prototipo). */
-export function isLate(order: Pick<Order, 'status' | 'createdAt'>, now: Date | null): boolean {
+export function isLate(order: Pick<DraftOrder, 'status' | 'createdAt'>, now: Date | null): boolean {
   return order.status === 'received' && minutesSince(order, now) > 5;
 }
 
@@ -42,9 +42,9 @@ export function waitParts(minutes: number): WaitParts {
   return { kind: 'hours', hours: Math.floor(minutes / 60), minutes: minutes % 60 };
 }
 
-export const orderCode = (order: Pick<Order, 'id'>) => `#${order.id}`;
+export const orderCode = (order: Pick<DraftOrder, 'id'>) => `#${order.id}`;
 
-export const itemCount = (order: Pick<Order, 'lines'>) =>
+export const itemCount = (order: Pick<DraftOrder, 'lines'>) =>
   order.lines.reduce((sum, line) => sum + line.quantity, 0);
 
 export function initials(name: string): string {
@@ -52,17 +52,17 @@ export function initials(name: string): string {
   return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase();
 }
 
-export function orderTime(order: Pick<Order, 'createdAt'>): string {
+export function orderTime(order: Pick<DraftOrder, 'createdAt'>): string {
   return localTime(new Date(order.createdAt));
 }
 
-export const isTerminal = (order: Pick<Order, 'status'>) =>
+export const isTerminal = (order: Pick<DraftOrder, 'status'>) =>
   TERMINAL_ORDER_STATUSES.includes(order.status);
 
 /** Pedidos "en curso": nuevo → en camino (excluye entregados y cancelados). */
-export const isActive = (order: Pick<Order, 'status'>) => !isTerminal(order);
+export const isActive = (order: Pick<DraftOrder, 'status'>) => !isTerminal(order);
 
-export function matchesSearch(order: Pick<Order, 'id' | 'customer'>, query: string): boolean {
+export function matchesSearch(order: Pick<DraftOrder, 'id' | 'customer'>, query: string): boolean {
   const q = query.trim().toLowerCase();
   return !q || order.id.toLowerCase().includes(q) || order.customer.name.toLowerCase().includes(q);
 }
@@ -74,7 +74,7 @@ export interface OrderFilters {
   branchId: string | undefined;
 }
 
-export function filterOrders(orders: readonly Order[], filters: OrderFilters): Order[] {
+export function filterOrders(orders: readonly DraftOrder[], filters: OrderFilters): DraftOrder[] {
   return orders.filter(
     (o) =>
       (filters.type === 'todos' || o.fulfillment === filters.type) &&
@@ -84,13 +84,18 @@ export function filterOrders(orders: readonly Order[], filters: OrderFilters): O
 }
 
 /** Orden del tablero: las columnas activas muestran primero lo más antiguo; "Entregado", lo más reciente. */
-export function sortForColumn(column: BackofficeColumn, orders: readonly Order[]): Order[] {
+export function sortForColumn(
+  column: BackofficeColumn,
+  orders: readonly DraftOrder[],
+): DraftOrder[] {
   const sorted = [...orders].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   return column === 'entregado' ? sorted.reverse() : sorted;
 }
 
-export function groupByColumn(orders: readonly Order[]): Record<BackofficeColumn, Order[]> {
-  const groups: Record<BackofficeColumn, Order[]> = {
+export function groupByColumn(
+  orders: readonly DraftOrder[],
+): Record<BackofficeColumn, DraftOrder[]> {
+  const groups: Record<BackofficeColumn, DraftOrder[]> = {
     nuevo: [],
     aceptado: [],
     preparacion: [],
@@ -107,11 +112,11 @@ export function groupByColumn(orders: readonly Order[]): Record<BackofficeColumn
 }
 
 /** Orden de la tabla: lo más reciente primero. */
-export function sortForTable(orders: readonly Order[]): Order[] {
+export function sortForTable(orders: readonly DraftOrder[]): DraftOrder[] {
   return [...orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-export function countByColumn(orders: readonly Order[]): Record<BackofficeColumn, number> {
+export function countByColumn(orders: readonly DraftOrder[]): Record<BackofficeColumn, number> {
   const g = groupByColumn(orders);
   return Object.fromEntries(
     (Object.keys(g) as BackofficeColumn[]).map((k) => [k, g[k].length]),
@@ -122,7 +127,7 @@ export type StepState = 'done' | 'cur' | '';
 
 /** Barra de avance del detalle (el recoger en tienda omite "En camino"). */
 export function progressSteps(
-  order: Pick<Order, 'status' | 'fulfillment'>,
+  order: Pick<DraftOrder, 'status' | 'fulfillment'>,
 ): { column: BackofficeColumn; state: StepState }[] {
   const sequence = BACKOFFICE_COLUMNS.filter(
     (c) => order.fulfillment === 'delivery' || c !== 'en_camino',
@@ -149,7 +154,7 @@ export const logisticsKeyFor = (status: DeliveryStatus): BackofficeLogisticsKey 
 
 /** Línea de seguimiento logístico (PedidosYa: 6 pasos; repartidor propio: 3). */
 export function trackSteps(
-  delivery: NonNullable<Order['delivery']>,
+  delivery: NonNullable<DraftOrder['delivery']>,
 ): { key: BackofficeLogisticsKey; state: StepState }[] {
   const sequence = DELIVERY_SEQUENCE[delivery.provider];
   const current = sequence.indexOf(delivery.status);
@@ -167,16 +172,16 @@ export function trackSteps(
 export { toBackofficeLogistics };
 
 /** Eventos del historial, del más reciente al más antiguo (como el prototipo). */
-export function historyNewestFirst(order: Pick<Order, 'history'>): OrderStatusEvent[] {
+export function historyNewestFirst(order: Pick<DraftOrder, 'history'>): OrderStatusEvent[] {
   return [...order.history].reverse();
 }
 
-export function nextAction(order: Order, grants: Grants): BackofficeNextAction | null {
+export function nextAction(order: DraftOrder, grants: Grants): BackofficeNextAction | null {
   return nextBackofficeAction(order, grants);
 }
 
 /** Cocina no puede despachar: ve un aviso informativo cuando el pedido a domicilio está listo. */
-export function dispatchBlockedForRole(order: Order, grants: Grants): boolean {
+export function dispatchBlockedForRole(order: DraftOrder, grants: Grants): boolean {
   return (
     order.status === 'ready' &&
     order.fulfillment === 'delivery' &&

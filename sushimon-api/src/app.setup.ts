@@ -29,13 +29,15 @@ export function configureApp(app: NestExpressApplication, options: AppSetupOptio
   // Cotización de checkout (F19): `private, no-store` y sin ETag desde ANTES del parser JSON, para que también los
   // errores del parser (413, JSON inválido) salgan privados. Nest registraría el parser en `init()`, después de esto.
   app.use('/v1/checkout', privateNoStoreMiddleware);
+  // Pedidos (F20): datos personales y token de invitado; mismo trato (también 400/401/404/409/422/429/503).
+  app.use('/v1/orders', privateNoStoreMiddleware);
   app.useBodyParser('json');
   app.use(bodyParserErrorMiddleware);
   app.setGlobalPrefix('v1');
   app.enableCors({
     origin: options.corsOrigins,
     credentials: true,
-    exposedHeaders: ['X-Request-Id'],
+    exposedHeaders: ['X-Request-Id', 'Idempotent-Replayed', 'Retry-After', 'Location'],
   });
   app.useGlobalPipes(
     new ValidationPipe({

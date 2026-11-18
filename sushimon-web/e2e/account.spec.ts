@@ -108,7 +108,7 @@ test.describe('Más', () => {
   test('hub con accesos, contacto, preferencias y privacidad', async ({ page }) => {
     await page.goto('/mas');
     await expect(page.getByRole('heading', { level: 1, name: /^Más/ })).toBeVisible();
-    for (const name of [/Consultá tu orden/, /Reclamo/, /Promociones/, /Trabaja con nosotros/]) {
+    for (const name of [/Consulta tu orden/, /Reclamo/, /Promociones/, /Trabaja con nosotros/]) {
       await expect(page.getByRole('main').getByRole('link', { name })).toBeVisible();
     }
     await page.getByRole('main').getByText('Aviso de privacidad (demo)').click();

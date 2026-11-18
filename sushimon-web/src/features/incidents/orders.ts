@@ -1,13 +1,13 @@
-import type { Order } from '@/lib/data-access/models';
+import type { DraftOrder } from '@/lib/data-access/models';
 
 /** Pedidos que ofrece el Reclamo (igual que el prototipo). */
 export const MAX_INCIDENT_ORDERS = 5;
 
 /** Pone primero el pedido indicado (`?pedido=`) y limita a {@link MAX_INCIDENT_ORDERS}. */
 export function arrangeIncidentOrders(
-  orders: readonly Order[],
+  orders: readonly DraftOrder[],
   highlightId: string | null,
-): Order[] {
+): DraftOrder[] {
   const list = highlightId
     ? [...orders.filter((o) => o.id === highlightId), ...orders.filter((o) => o.id !== highlightId)]
     : [...orders];
@@ -15,6 +15,6 @@ export function arrangeIncidentOrders(
 }
 
 /** Incidencias abiertas (sin resolver) del pedido: avisa antes de abrir otra. */
-export function openIncidents(order: Pick<Order, 'incidents'>) {
+export function openIncidents(order: Pick<DraftOrder, 'incidents'>) {
   return order.incidents.filter((i) => i.status !== 'resolved');
 }

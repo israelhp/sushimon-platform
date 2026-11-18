@@ -11,17 +11,19 @@ import { cartInput } from '@/test/cart';
 import { renderStore } from '@/test/store-providers';
 import { CheckoutPage } from './CheckoutPage';
 
+const routerReplace = vi.fn();
 vi.mock('next/navigation', () => ({
   usePathname: () => '/checkout',
-  useRouter: () => ({ push: vi.fn(), back: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: routerReplace }),
 }));
 
 /** F19 · estados de la cotización en el checkout, con la respuesta del mock ajustada por prueba (paridad de forma). */
 type Patch = (quote: CheckoutQuote, callIndex: number, body: CheckoutQuoteRequest) => CheckoutQuote;
 interface Tap {
   bodies: CheckoutQuoteRequest[];
-  /** Solicitudes a `POST /v1/orders` (la confirmación real no existe: F20). */
+  /** Solicitudes a `POST /v1/orders` (F20): ruta, clave de idempotencia y cuerpo. */
   orderCalls: string[];
+  orderRequests: { key: string; body: { quoteToken: string } & Record<string, unknown> }[];
   /** Retiene la respuesta de la llamada `n` (1-based) hasta `release()`. */
   hold: (n: number) => () => void;
   wrapClient: (base: DataClient) => DataClient;
@@ -38,9 +40,11 @@ function tap({
   const bodies: CheckoutQuoteRequest[] = [];
   const holds = new Map<number, Promise<void>>();
   const orderCalls: string[] = [];
+  const orderRequests: Tap['orderRequests'] = [];
   return {
     bodies,
     orderCalls,
+    orderRequests,
     hold: (n) => {
       let release!: () => void;
       holds.set(n, new Promise<void>((r) => (release = r)));
@@ -48,7 +52,13 @@ function tap({
     },
     wrapClient: (base) =>
       withShortcuts(kind, async <T,>(path: string, options: RequestOptions = {}) => {
-        if (path === '/v1/orders') orderCalls.push(path);
+        if (path === '/v1/orders' && options.method === 'POST') {
+          orderCalls.push(path);
+          orderRequests.push({
+            key: options.headers?.['Idempotency-Key'] ?? '',
+            body: options.body as Tap['orderRequests'][number]['body'],
+          });
+        }
         if (path !== paths.checkoutQuote()) return base.request<T>(path, options);
         const n = bodies.push(options.body as CheckoutQuoteRequest);
         await holds.get(n);
@@ -61,6 +71,8 @@ function tap({
 }
 
 beforeEach(() => {
+  routerReplace.mockClear();
+  delete window.__sushimonMockFaults;
   window.sessionStorage.clear();
   window.localStorage.clear();
   window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
@@ -145,6 +157,22 @@ async function toPay(user: UserEvent) {
     await next(user, new RegExp(`Continuar a ${name}`, 'i'));
   }
 }
+
+/** U1: el checkout NO renderiza «pedido recibido»: anuncia en la región viva única y navega a `/pedidos/[id]` (dueño único). */
+const received = async (text = 'Recibimos tu pedido') => {
+  await waitFor(() => expect(screen.getByTestId('quote-live')).toHaveTextContent(text), {
+    timeout: 8000,
+  });
+  await waitFor(
+    () => expect(routerReplace).toHaveBeenCalledWith(expect.stringMatching(/^\/pedidos\/0000/)),
+    { timeout: 8000 },
+  );
+  expect(routerReplace).toHaveBeenCalledTimes(1);
+  expect(screen.queryByTestId('order-received')).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('heading', { name: /Recibimos tu pedido|received your order/i }),
+  ).not.toBeInTheDocument();
+};
 
 describe('checkout · cotización del servidor (F19)', () => {
   it('cargando: esqueleto, importes aún no definitivos, región en vivo «Actualizando importes…» y «Continuar» bloqueado con su motivo', async () => {
@@ -508,7 +536,7 @@ describe('checkout · cotización del servidor (F19)', () => {
               ...q,
               quote: {
                 ...q.quote,
-                expiresAt: new Date(Date.parse(q.quote.generatedAt) + 150).toISOString(),
+                expiresAt: new Date(Date.parse(q.quote.generatedAt) + 1200).toISOString(),
               },
             }
           : q,
@@ -607,26 +635,204 @@ describe('checkout · cotización del servidor (F19)', () => {
     expect(within(summary).queryByText('Simulación')).not.toBeInTheDocument();
   });
 
-  it('A4 (http): Pago y Confirmación rotulan «Simulación», el envío final queda bloqueado con su nota y NO llama a POST /v1/orders', async () => {
+  /** Con la API real (`http`) hasta «Confirmación» con efectivo; el pedido se confirma contra el mock de `POST /v1/orders`. */
+  async function toReviewHttp(t: Tap) {
     const user = userEvent.setup();
     seedDraft(4);
-    const t = tap({ kind: 'http' });
     await openCheckout(t);
     await screen.findByRole('heading', { level: 1, name: 'Pago' });
-    expect(
-      within(screen.getByRole('region', { name: 'Pago' })).getAllByText('Simulación').length,
-    ).toBeGreaterThan(0);
     await next(user, /Continuar a confirmación/i);
     await screen.findByRole('heading', { level: 1, name: 'Confirmación' });
-    expect(screen.getAllByText('Simulación').length).toBeGreaterThan(0);
+    return user;
+  }
+
+  it('F20 (http): Pago no ofrece tarjeta ni rotula «Simulación»; solo efectivo y transferencia como preferencia', async () => {
+    seedDraft(4);
+    await openCheckout(tap({ kind: 'http' }));
+    await screen.findByRole('heading', { level: 1, name: 'Pago' });
+    const region = screen.getByRole('region', { name: 'Pago' });
+    expect(within(region).queryByText('Simulación')).not.toBeInTheDocument();
+    expect(within(region).queryByRole('radio', { name: /tarjeta/i })).not.toBeInTheDocument();
+    expect(within(region).getByRole('radio', { name: /Efectivo/ })).toBeChecked();
+    expect(within(region).getByRole('radio', { name: /Transferencia/ })).toBeInTheDocument();
+    expect(within(region).getByText(/El pago se coordina con el restaurante/)).toBeInTheDocument();
+  });
+
+  it('F20 (http): la confirmación ya no dice «próximamente» ni «Simulación»; confirma con el quoteToken, la clave y el cuerpo sin importes', async () => {
+    const t = tap({ kind: 'http' });
+    const user = await toReviewHttp(t);
+    expect(screen.queryByText('Simulación')).not.toBeInTheDocument();
+    expect(screen.queryByText(/estará disponible próximamente/)).not.toBeInTheDocument();
+    const place = btn(/Realizar pedido/);
+    await waitFor(() => expect(place).not.toHaveAttribute('aria-disabled', 'true'));
+    await user.click(place);
+    await received();
+    expect(t.orderRequests).toHaveLength(1);
+    const { key, body } = t.orderRequests[0]!;
+    expect(key).toMatch(/^[A-Za-z0-9_-]{22,128}$/);
+    expect(body.quoteToken).toMatch(/^mockq\./);
+    expect(body.paymentMethodPreference).toBe('cash');
+    expect(body.contact).toMatchObject({ fullName: 'Ana López', phone: '5555-1234' });
+    expect(JSON.stringify(body)).not.toMatch(/"(total|price|subtotal|deliveryFee|status|paid)"/);
+  });
+
+  it('F20: éxito => carrito vacío y la clave de intento descartada; la credencial de invitado queda SOLO en sessionStorage', async () => {
+    const t = tap({ kind: 'http' });
+    const user = await toReviewHttp(t);
+    await user.click(btn(/Realizar pedido/));
+    await received();
+    expect(
+      JSON.parse(window.localStorage.getItem('monsushi-cart-v2') ?? '{"lines":[]}').lines,
+    ).toEqual([]);
+    expect(window.sessionStorage.getItem('monsushi-order-attempt')).toBeNull();
+    const orderKeys = Object.keys(window.sessionStorage).filter(
+      (k) => k.startsWith('monsushi-order-') && k !== 'monsushi-order-attempt',
+    );
+    expect(orderKeys).toHaveLength(1);
+    expect(JSON.stringify({ ...window.localStorage })).not.toContain('smo_');
+  });
+
+  it('F20: doble clic => un solo POST /v1/orders', async () => {
+    const t = tap({ kind: 'http' });
+    const user = await toReviewHttp(t);
+    const place = btn(/Realizar pedido/);
+    await waitFor(() => expect(place).not.toHaveAttribute('aria-disabled', 'true'));
+    await user.dblClick(place);
+    await received();
+    expect(t.orderCalls).toHaveLength(1);
+  });
+
+  it('F20: error de red => reintenta con la MISMA clave y no vacía el carrito hasta el éxito', async () => {
+    window.__sushimonMockFaults = { 'POST /v1/orders': ['lost-response'] };
+    const t = tap({ kind: 'http' });
+    const user = await toReviewHttp(t);
+    await user.click(btn(/Realizar pedido/));
+    await received();
+    expect(t.orderRequests).toHaveLength(2);
+    expect(t.orderRequests[1]!.key).toBe(t.orderRequests[0]!.key);
+    // El servidor creó UN solo pedido (el reintento devolvió el mismo).
+    expect((await screen.findByTestId('quote-live')).textContent).toMatch(/Recibimos/);
+  });
+
+  it('F20: QUOTE_CHANGED => diálogo con el nuevo total; no reenvía solo; «Aceptar y confirmar» envía con otro token y otra clave', async () => {
+    window.__sushimonMockFaults = { 'POST /v1/orders': ['price-change'] };
+    const t = tap({ kind: 'http' });
+    const user = await toReviewHttp(t);
+    await user.click(btn(/Realizar pedido/));
+    const dialog = await screen.findByRole('alertdialog', { name: 'El total de tu pedido cambió' });
+    expect(within(dialog).getByTestId('changed-total')).toHaveTextContent('Q');
+    expect(t.orderRequests).toHaveLength(1);
+    expect(JSON.parse(window.localStorage.getItem('monsushi-cart-v2')!).lines).toHaveLength(1);
+    await user.click(within(dialog).getByRole('button', { name: 'Aceptar y confirmar' }));
+    await received();
+    expect(t.orderRequests).toHaveLength(2);
+    expect(t.orderRequests[1]!.body.quoteToken).not.toBe(t.orderRequests[0]!.body.quoteToken);
+    expect(t.orderRequests[1]!.key).not.toBe(t.orderRequests[0]!.key);
+  });
+
+  it('F20: QUOTE_CHANGED y «Revisar mi pedido» => cierra, recotiza y conserva el carrito', async () => {
+    window.__sushimonMockFaults = { 'POST /v1/orders': ['price-change'] };
+    const t = tap({ kind: 'http' });
+    const user = await toReviewHttp(t);
+    const quotesBefore = t.bodies.length;
+    await user.click(btn(/Realizar pedido/));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Revisar mi pedido' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    await waitFor(() => expect(t.bodies.length).toBeGreaterThan(quotesBefore));
+    expect(t.orderRequests).toHaveLength(1);
+    expect(JSON.parse(window.localStorage.getItem('monsushi-cart-v2')!).lines).toHaveLength(1);
+  });
+
+  it('F20: QUOTE_EXPIRED => mensaje, recotiza y vuelve a pedir confirmación (carrito intacto)', async () => {
+    window.__sushimonMockFaults = { 'POST /v1/orders': ['expired'] };
+    const t = tap({ kind: 'http' });
+    const user = await toReviewHttp(t);
+    const quotesBefore = t.bodies.length;
+    await user.click(btn(/Realizar pedido/));
+    expect((await screen.findAllByText(/Tu cotización venció/)).length).toBeGreaterThan(0);
+    // U4: una sola región aria-live en el checkout (la de importes/confirmación/paso).
+    expect(screen.getAllByTestId('quote-live')).toHaveLength(1);
+    expect(
+      document.querySelectorAll('#paso-actual [aria-live], #paso-actual [role="status"]'),
+    ).toHaveLength(0);
+    expect(screen.getByTestId('quote-live')).toHaveTextContent(/Tu cotización venció/);
+    await waitFor(() => expect(t.bodies.length).toBeGreaterThan(quotesBefore));
+    expect(JSON.parse(window.localStorage.getItem('monsushi-cart-v2')!).lines).toHaveLength(1);
+    const place = btn(/Realizar pedido/);
+    await waitFor(() => expect(place).not.toHaveAttribute('aria-disabled', 'true'));
+    await user.click(place);
+    await received();
+    expect(t.orderRequests[1]!.key).not.toBe(t.orderRequests[0]!.key);
+  });
+
+  it('F20: 429 con Retry-After => «Reintentar» inactivo mientras espera; ORDERS_UNAVAILABLE => sin reintento automático', async () => {
+    window.__sushimonMockFaults = { 'POST /v1/orders': ['rate-limited'] };
+    const t = tap({ kind: 'http' });
+    const user = await toReviewHttp(t);
+    await user.click(btn(/Realizar pedido/));
+    const alert = await screen.findByRole('alert', {}, { timeout: 4000 });
+    expect(within(alert).getByText(/Demasiados intentos/)).toBeInTheDocument();
+    expect(within(alert).getByRole('button', { name: /Reintentar/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(t.orderRequests).toHaveLength(1);
+  });
+
+  it('F20: ORDERS_UNAVAILABLE => «no podemos recibir pedidos ahora», una sola solicitud y carrito intacto', async () => {
+    window.__sushimonMockFaults = { 'POST /v1/orders': ['unavailable'] };
+    const t = tap({ kind: 'http' });
+    const user = await toReviewHttp(t);
+    await user.click(btn(/Realizar pedido/));
+    expect(await screen.findByText(/No podemos recibir pedidos ahora/)).toBeInTheDocument();
+    expect(t.orderRequests).toHaveLength(1);
+    expect(JSON.parse(window.localStorage.getItem('monsushi-cart-v2')!).lines).toHaveLength(1);
+    expect(
+      screen.queryByRole('heading', { name: '¡Recibimos tu pedido!' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('F20: sin token en la cotización (servidor sin secreto) la confirmación queda bloqueada con su motivo y NO llama a POST /v1/orders', async () => {
+    const t = tap({
+      kind: 'http',
+      patch: (q) => ({ ...q, quote: { ...q.quote, token: null } }),
+    });
+    const user = await toReviewHttp(t);
     const place = btn(/Realizar pedido/);
     await waitFor(() => expect(place).toHaveAttribute('aria-disabled', 'true'));
     expect(document.getElementById(place.getAttribute('aria-describedby')!)).toHaveTextContent(
-      'La confirmación del pedido estará disponible próximamente.',
+      'Actualizando la cotización para poder confirmar tu pedido.',
     );
     await user.click(place);
     expect(t.orderCalls).toEqual([]);
-    expect(screen.queryByRole('heading', { name: /Pedido registrado/ })).not.toBeInTheDocument();
+  });
+
+  it('U8/U10 (http): la fila de pago dice que el pago se coordina; (mock) una sola insignia «Simulación» en la nota de la revisión', async () => {
+    const user = await toReviewHttp(tap({ kind: 'http' }));
+    void user;
+    expect(screen.getByText('(el pago se coordina con el restaurante)')).toBeInTheDocument();
+  });
+
+  it('U10 (mock): la nota de la revisión no lleva su propia insignia (la lleva el resumen)', async () => {
+    const user = userEvent.setup();
+    const t = tap();
+    await openCheckout(t);
+    await toPay(user);
+    await next(user, /Continuar a confirmación/i);
+    const note = await screen.findByText(/no se crea ningún pedido ni cobro real/);
+    expect(note.querySelector('.demo-badge')).toBeNull();
+    expect(screen.queryByText('(el pago se coordina con el restaurante)')).not.toBeInTheDocument();
+  });
+
+  it('F20 (en): textos en inglés del pedido recibido', async () => {
+    const t = tap({ kind: 'http' });
+    seedDraft(5);
+    await openCheckout(t, { locale: 'en' });
+    const place = (await screen.findAllByRole('button', { name: /Place order/ }))[0]!;
+    await waitFor(() => expect(place).not.toHaveAttribute('aria-disabled', 'true'));
+    await userEvent.setup().click(place);
+    await received('We received your order');
   });
 
   it('B3: la confirmación muestra el proveedor elegido y el cupón aplicado (simulación con datos de demostración)', async () => {

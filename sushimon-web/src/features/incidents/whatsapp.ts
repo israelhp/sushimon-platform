@@ -1,4 +1,4 @@
-import type { Order } from '@/lib/data-access/models';
+import type { DraftOrder } from '@/lib/data-access/models';
 import { formatDateTime, formatMoney } from '@/lib/format';
 
 /** Número de WhatsApp válido (internacional, 11–15 dígitos): igual que la guarda del prototipo. */
@@ -28,7 +28,10 @@ export interface WhatsappMessageLabels {
 }
 
 /** Mensaje prellenado con los datos del pedido (como `By` del prototipo). El cliente solo agrega qué pasó. */
-export function buildIncidentWhatsappMessage(order: Order, labels: WhatsappMessageLabels): string {
+export function buildIncidentWhatsappMessage(
+  order: DraftOrder,
+  labels: WhatsappMessageLabels,
+): string {
   return labels.template({
     id: order.id,
     date: formatDateTime(order.createdAt, labels.locale),

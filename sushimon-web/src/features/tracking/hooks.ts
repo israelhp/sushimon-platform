@@ -2,9 +2,9 @@
 
 import { useQueries } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import type { Order } from '@/lib/data-access/models';
+import type { DraftOrder } from '@/lib/data-access/models';
 import { useDataClient } from '@/lib/data-access/provider';
-import { getOrder } from '@/services/orders';
+import { getDraftOrder } from '@/services/orders';
 import { useMyOrders } from '../account/hooks';
 import { useLastOrder } from '../orders/last-order';
 import { queryKeys } from '../query-keys';
@@ -12,7 +12,7 @@ import { useDemoSession } from '../session/demo-session';
 import { useVerifiedOrderIds } from './verified-orders';
 
 export interface OrdersByIds {
-  orders: Order[];
+  orders: DraftOrder[];
   isPending: boolean;
   refetch: () => void;
 }
@@ -26,7 +26,7 @@ export function useOrdersByIds(ids: readonly string[], enabled = true): OrdersBy
   const results = useQueries({
     queries: ids.map((id) => ({
       queryKey: queryKeys.orders.detail(id),
-      queryFn: () => getOrder(client, id),
+      queryFn: () => getDraftOrder(client, id),
       enabled,
       retry: false,
     })),
@@ -37,7 +37,7 @@ export function useOrdersByIds(ids: readonly string[], enabled = true): OrdersBy
 }
 
 export interface IncidentOrders {
-  orders: Order[];
+  orders: DraftOrder[];
   isPending: boolean;
   isError: boolean;
   refetch: () => void;

@@ -1,4 +1,4 @@
-import type { DeliveryProvider, Order } from '@/lib/data-access/models';
+import type { DeliveryProvider, DraftOrder } from '@/lib/data-access/models';
 import { toBackofficeLogistics, type BackofficeLogisticsKey } from '@/lib/order-status';
 import { addDaysISO, localDate, localTime, minutesBetween } from '@/lib/time';
 
@@ -66,7 +66,7 @@ export function clampPeriod(from: string, to: string, today: string): PeriodInfo
 export type DeliveryState = 'sin' | 'proceso' | 'entregado' | 'cancelado';
 
 export interface DeliveryRow {
-  order: Order;
+  order: DraftOrder;
   id: string;
   dateISO: string;
   /** HH:mm local de creación del pedido. */
@@ -94,7 +94,7 @@ export interface DeliveryRow {
 
 export const round2 = (n: number) => Math.round(n * 100) / 100;
 
-function stateOf(order: Order): DeliveryState {
+function stateOf(order: DraftOrder): DeliveryState {
   if (order.status === 'rejected' || order.status === 'cancelled') return 'cancelado';
   const d = order.delivery;
   if (d) {
@@ -104,7 +104,7 @@ function stateOf(order: Order): DeliveryState {
   return order.status === 'delivered' ? 'entregado' : 'sin';
 }
 
-export function toDeliveryRow(order: Order, today: string, now: Date | null): DeliveryRow {
+export function toDeliveryRow(order: DraftOrder, today: string, now: Date | null): DeliveryRow {
   const d = order.delivery;
   const created = new Date(order.createdAt);
   const dateISO = localDate(created);
@@ -137,7 +137,7 @@ export function toDeliveryRow(order: Order, today: string, now: Date | null): De
 
 /** Solo envíos a domicilio, decorados. */
 export function toDeliveryRows(
-  orders: readonly Order[],
+  orders: readonly DraftOrder[],
   today: string,
   now: Date | null,
 ): DeliveryRow[] {

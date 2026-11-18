@@ -35,7 +35,7 @@ async function fail(p: Promise<unknown>): Promise<ApiError> {
 }
 
 describe('F19 mock · POST /v1/checkout/quote (SIMULADO, paridad de forma con el contrato)', () => {
-  it('recoger: totales exactos en centavos, sin tarifa, sin token y con vigencia ficticia de 10 min', async () => {
+  it('recoger: totales exactos en centavos, sin tarifa, token simulado (F20, sin firma) y con vigencia ficticia de 10 min', async () => {
     const { client } = createHarness();
     const q = await quoteCheckout(client, request([line('dumplings', 2)]));
     expect(q.currency).toBe('GTQ');
@@ -51,7 +51,7 @@ describe('F19 mock · POST /v1/checkout/quote (SIMULADO, paridad de forma con el
     expect(q.fulfillment).toEqual({ type: 'PICKUP', delivery: null });
     expect(q.canProceed).toBe(true);
     expect(q.blockers).toEqual([]);
-    expect(q.quote.token).toBeNull();
+    expect(q.quote.token).toMatch(/^mockq\./); // doble SIN firma; la API real emite un HMAC
     expect(Date.parse(q.quote.expiresAt) - Date.parse(q.quote.generatedAt)).toBe(600_000);
     expect(q.coupon).toBeNull();
   });

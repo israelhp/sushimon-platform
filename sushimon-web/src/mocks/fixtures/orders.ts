@@ -2,7 +2,7 @@ import type {
   DeliveryStatus,
   Incident,
   OrderAddress,
-  OrderStatus,
+  DraftOrderStatus,
   PaymentMethod,
 } from '@/lib/data-access/models';
 
@@ -77,7 +77,7 @@ export interface OrderSeed {
   address: OrderAddress | null;
   lines: OrderLineSeed[];
   note: string;
-  status: OrderStatus;
+  status: DraftOrderStatus;
   rejectionReason?: string;
   payment: { method: PaymentMethod; reference?: string };
   /** Diferencia entre el costo del courier y el envío cobrado (shipNow − ship del prototipo). */

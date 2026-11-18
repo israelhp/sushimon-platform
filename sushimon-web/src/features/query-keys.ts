@@ -165,6 +165,9 @@ export const queryKeys = {
   orders: {
     all: ['orders'] as const,
     detail: (id: string) => ['orders', 'detail', id] as const,
+    /** F20: pedido REAL (`OrderDetail`), aislado por cuenta o invitado. La credencial de invitado NUNCA entra en la clave. */
+    placed: (scope: string | null, id: string) =>
+      ['orders', 'placed', scope ?? 'guest', id] as const,
   },
   /**
    * F06 (spec 010 D15): datos del CLIENTE con la IDENTIDAD en la raíz (`scope` = id de Supabase Auth, o `demo:<correo>` en el

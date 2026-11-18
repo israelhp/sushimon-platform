@@ -1,7 +1,7 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
-import type { Order, OrderLine } from '@/lib/data-access/models';
+import type { DraftOrder, OrderLine } from '@/lib/data-access/models';
 import { createPersistedStore } from '@/lib/persisted-store';
 import { useMyOrders } from '@/features/account/hooks';
 import { useDemoSession } from '@/features/session/demo-session';
@@ -50,7 +50,7 @@ const lastOrderStore = createPersistedStore<LastOrderSummary | null>({
 });
 
 /** Guarda el resumen del pedido recién creado (lo llama el checkout al confirmar). */
-export function saveLastOrder(order: Pick<Order, 'id' | 'total' | 'lines'>): void {
+export function saveLastOrder(order: Pick<DraftOrder, 'id' | 'total' | 'lines'>): void {
   lastOrderStore.set({ id: order.id, total: order.total, lines: order.lines });
 }
 

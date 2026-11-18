@@ -1,4 +1,4 @@
-import type { DashboardAlert, Order } from '@/lib/data-access/models';
+import type { DashboardAlert, DraftOrder } from '@/lib/data-access/models';
 
 /** Tono del ícono de cada alerta (a-red / a-amber / a-blue del prototipo). */
 export function alertTone(type: DashboardAlert['type']): 'a-red' | 'a-amber' | 'a-blue' {
@@ -6,6 +6,6 @@ export function alertTone(type: DashboardAlert['type']): 'a-red' | 'a-amber' | '
 }
 
 /** Los N pedidos más recientes (los más nuevos primero), como "Últimos pedidos" del prototipo. */
-export function latestOrders(orders: readonly Order[], limit: number): Order[] {
+export function latestOrders(orders: readonly DraftOrder[], limit: number): DraftOrder[] {
   return [...orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit);
 }

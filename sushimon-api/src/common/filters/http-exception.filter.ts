@@ -23,6 +23,10 @@ export interface ErrorBody {
   code?: string;
   /** Violaciones estructuradas de reglas de negocio (opcional; F08). */
   violations?: { path: string; code: string; message: string }[];
+  /** F20: cuerpo extra de 409 `QUOTE_CHANGED`/`QUOTE_EXPIRED` y 422 `CHECKOUT_BLOCKED` (ver `EXTRA_BODY_KEYS`). */
+  changes?: unknown;
+  quote?: unknown;
+  blockers?: unknown;
 }
 
 /**
@@ -45,7 +49,26 @@ const PUBLIC_5XX_CODES: ReadonlySet<string> = new Set([
   'MFA_RESET_FAILED',
   // F19 (ADR-0025 D7): semáforo del cotizador de checkout saturado o sin conexión; reintentable, mensaje fijo.
   'CHECKOUT_BUSY',
+  // F20 (spec 021 §2.3, ADR-0026 D7): semáforo de pedidos saturado o sin conexión (reintentable con la MISMA clave de
+  // idempotencia) y servidor sin `CHECKOUT_QUOTE_SECRET` (configuración, fail-closed). Mensaje fijo; contrato público.
+  'ORDERS_BUSY',
+  'ORDERS_UNAVAILABLE',
 ]);
+
+/**
+ * Campos adicionales del cuerpo de error que una excepción puede declarar en `extra` (F20): `changes` + `quote` (409
+ * `QUOTE_CHANGED`/`QUOTE_EXPIRED`, esquema `OrderQuoteConflict`) y `blockers` (422 `CHECKOUT_BLOCKED`, `OrderBlocked`).
+ * Lista blanca y solo en 4xx: nunca se propaga otra clave ni un 5xx con datos.
+ */
+const EXTRA_BODY_KEYS: readonly string[] = ['changes', 'quote', 'blockers'];
+
+function pickExtra(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) return {};
+  const source = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of EXTRA_BODY_KEYS) if (key in source) out[key] = source[key];
+  return out;
+}
 
 /** Solo propaga violaciones bien formadas; descarta cualquier otro campo (nunca filtra datos internos). */
 function pickViolations(value: unknown): ErrorBody['violations'] {
@@ -115,7 +138,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ...(details ? { details } : {}),
         ...(code && (status < 500 || PUBLIC_5XX_CODES.has(code)) ? { code } : {}),
         ...(violations && status < 500 ? { violations } : {}),
+        ...(status < 500 ? pickExtra(payload['extra']) : {}),
       };
+      // `Retry-After` (segundos) de una excepción que lo declare (F20: 409 `IDEMPOTENCY_IN_PROGRESS`).
+      const retryAfter = payload['retryAfter'];
+      if (typeof retryAfter === 'number' && Number.isInteger(retryAfter) && retryAfter > 0) {
+        res.setHeader('Retry-After', String(retryAfter));
+      }
       if (status >= 500) this.logger.error(`[${requestId ?? '-'}] ${exception.message}`);
       this.noStore(res);
       res.status(status).json(body);

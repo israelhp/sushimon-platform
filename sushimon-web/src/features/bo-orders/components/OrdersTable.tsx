@@ -5,7 +5,7 @@ import { IconEye } from '@/components/icons/bo';
 import { StatusPill } from '@/components/ui/Pill';
 import { branchShortName, useShell } from '@/features/backoffice-shell/shell-context';
 import { cn } from '@/lib/cn';
-import type { Order } from '@/lib/data-access/models';
+import type { DraftOrder } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
 import { toBackofficeColumn } from '@/lib/order-status';
 import { useOrderDetail } from '../order-detail-context';
@@ -14,7 +14,7 @@ import { useOrderActions } from '../use-order-actions';
 import { ACTION_CLASS, COLUMN_TONE, useOrderText } from '../use-order-text';
 
 /** Tabla de pedidos (`cols-orders`): una fila por pedido con su siguiente acción y el botón de detalle. */
-export function OrdersTable({ orders }: { orders: readonly Order[] }) {
+export function OrdersTable({ orders }: { orders: readonly DraftOrder[] }) {
   const t = useTranslations('backoffice.orders.table');
   return (
     <div className="tscroll">
@@ -43,7 +43,7 @@ export function OrdersTable({ orders }: { orders: readonly Order[] }) {
   );
 }
 
-function OrderRow({ order }: { order: Order }) {
+function OrderRow({ order }: { order: DraftOrder }) {
   const t = useTranslations('backoffice.orders');
   const { grants, branchById } = useShell();
   const detail = useOrderDetail();

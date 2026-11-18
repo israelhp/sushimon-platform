@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { grantsForRole } from '@/mocks/testing';
-import type { Order } from '@/lib/data-access/models';
+import type { DraftOrder } from '@/lib/data-access/models';
 import { createFixedClock } from '@/mocks/clock';
 import { createSeedStore } from '@/mocks/seed';
 import {
@@ -22,7 +22,7 @@ import {
 
 const now = createFixedClock().now();
 const orders = createSeedStore().orders;
-const byId = (id: string): Order => {
+const byId = (id: string): DraftOrder => {
   const order = orders.find((o) => o.id === id);
   if (!order) throw new Error(`Pedido de prueba inexistente: ${id}`);
   return order;

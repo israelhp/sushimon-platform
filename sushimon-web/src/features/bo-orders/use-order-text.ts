@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { useCallback, useMemo } from 'react';
 import type { PillTone } from '@/components/ui/Pill';
-import type { Order } from '@/lib/data-access/models';
+import type { DraftOrder } from '@/lib/data-access/models';
 import {
   toBackofficeColumn,
   type BackofficeColumn,
@@ -59,23 +59,23 @@ export function useOrderText() {
   const t = useTranslations('backoffice.orders');
 
   const statusLabel = useCallback(
-    (order: Pick<Order, 'status'>) => t(`status.${toBackofficeColumn(order)}`),
+    (order: Pick<DraftOrder, 'status'>) => t(`status.${toBackofficeColumn(order)}`),
     [t],
   );
   const typeShort = useCallback(
-    (order: Pick<Order, 'fulfillment'>) => t(`type.${order.fulfillment}`),
+    (order: Pick<DraftOrder, 'fulfillment'>) => t(`type.${order.fulfillment}`),
     [t],
   );
   const typeLong = useCallback(
-    (order: Pick<Order, 'fulfillment'>) => t(`type.${order.fulfillment}Long`),
+    (order: Pick<DraftOrder, 'fulfillment'>) => t(`type.${order.fulfillment}Long`),
     [t],
   );
   const itemsLabel = useCallback(
-    (order: Pick<Order, 'lines'>) => t('items', { count: itemCount(order) }),
+    (order: Pick<DraftOrder, 'lines'>) => t('items', { count: itemCount(order) }),
     [t],
   );
   const waitText = useCallback(
-    (order: Pick<Order, 'createdAt'>, now: Date | null) => {
+    (order: Pick<DraftOrder, 'createdAt'>, now: Date | null) => {
       const parts = waitParts(minutesSince(order, now));
       const wait =
         parts.kind === 'now'
@@ -88,7 +88,7 @@ export function useOrderText() {
     [t],
   );
   const logisticsLabel = useCallback(
-    (order: Pick<Order, 'delivery' | 'status'>) =>
+    (order: Pick<DraftOrder, 'delivery' | 'status'>) =>
       t(`logisticsStatus.${toBackofficeLogistics(order)}`),
     [t],
   );

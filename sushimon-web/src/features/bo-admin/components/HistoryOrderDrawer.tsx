@@ -6,7 +6,7 @@ import { Drawer } from '@/components/ui/Drawer';
 import { initials, orderCode } from '@/features/bo-orders/order-view';
 import { COLUMN_TONE, useOrderText } from '@/features/bo-orders/use-order-text';
 import { branchShortName, useShell } from '@/features/backoffice-shell/shell-context';
-import type { Order } from '@/lib/data-access/models';
+import type { DraftOrder } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
 import { toBackofficeColumn } from '@/lib/order-status';
 import { dayLong } from '../format';
@@ -16,7 +16,7 @@ import { orderClock, orderDay } from '../reports-view';
  * Detalle SOLO LECTURA de un pedido del historial. El drawer operativo (`OrderDrawer`) trabaja con los pedidos de hoy
  * y sus acciones; el historial incluye días anteriores, que no se pueden operar.
  */
-export function HistoryOrderDrawer({ order, onClose }: { order: Order; onClose: () => void }) {
+export function HistoryOrderDrawer({ order, onClose }: { order: DraftOrder; onClose: () => void }) {
   const t = useTranslations('backoffice.reports.history');
   const td = useTranslations('backoffice.orders.drawer');
   const text = useOrderText();

@@ -2,7 +2,7 @@ import { isApiError } from '@/lib/data-access/errors';
 import type {
   AdminBranch,
   CreateBranchRequest,
-  Order,
+  DraftOrder,
   UpdateBranchRequest,
 } from '@/lib/data-access/models';
 import type { AdminBranchFilters } from '@/services/branches';
@@ -253,7 +253,7 @@ export interface BranchStats {
 export function branchStats(
   branchId: string,
   byBranch: readonly { branchId: string; orders: number; sales: number }[] | undefined,
-  todayOrders: readonly Order[] | undefined,
+  todayOrders: readonly DraftOrder[] | undefined,
 ): BranchStats {
   const row = byBranch?.find((b) => b.branchId === branchId);
   return {

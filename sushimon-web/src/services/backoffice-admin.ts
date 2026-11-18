@@ -1,5 +1,5 @@
 import type { DataClient } from '@/lib/data-access/types';
-import type { Category, Order, ReportSummary } from '@/lib/data-access/models';
+import type { Category, DraftOrder, ReportSummary } from '@/lib/data-access/models';
 import { paths } from '@/lib/data-access/paths';
 
 /** Categorías simuladas y reportes del backoffice (las sucursales F07: `services/branches`). */
@@ -29,4 +29,4 @@ export const getReportSummary = (client: DataClient, filters: ReportFilters = {}
   client.get<ReportSummary>(paths.reportSummary(), { query: reportQuery(filters) });
 
 export const getReportHistory = (client: DataClient, filters: ReportFilters = {}) =>
-  client.get<Order[]>(paths.reportHistory(), { query: reportQuery(filters) });
+  client.get<DraftOrder[]>(paths.reportHistory(), { query: reportQuery(filters) });

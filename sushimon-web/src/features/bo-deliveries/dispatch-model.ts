@@ -1,4 +1,4 @@
-import type { CourierQuote, Order, Rider } from '@/lib/data-access/models';
+import type { CourierQuote, DraftOrder, Rider } from '@/lib/data-access/models';
 import { can, type Grants } from '@/lib/permissions';
 import { round2 } from './deliveries-view';
 
@@ -13,7 +13,8 @@ export type DispatchStep = 'choose' | 'loading' | 'quote' | 'own';
 export type DispatchBlock = 'role' | 'pickup' | 'notReady' | 'active' | null;
 
 export function dispatchBlock(
-  order: Pick<Order, 'status' | 'fulfillment' | 'delivery'> & Partial<Pick<Order, 'branchId'>>,
+  order: Pick<DraftOrder, 'status' | 'fulfillment' | 'delivery'> &
+    Partial<Pick<DraftOrder, 'branchId'>>,
   grants: Grants,
 ): DispatchBlock {
   if (!can(grants, 'deliveries.assign', order.branchId)) return 'role';
@@ -32,7 +33,7 @@ export interface OwnRiderOption {
 }
 
 /** Repartidores propios de la sucursal del pedido, con su disponibilidad (en turno y sin pedido en ruta). */
-export function ownRiderOptions(riders: readonly Rider[], order: Pick<Order, 'branchId'>) {
+export function ownRiderOptions(riders: readonly Rider[], order: Pick<DraftOrder, 'branchId'>) {
   return riders
     .filter((r) => r.branchId === order.branchId)
     .map<OwnRiderOption>((rider) => {
@@ -54,7 +55,7 @@ export interface QuoteComparison {
 /** Cotizado al cliente vs. costo vigente de PedidosYa (la diferencia se registra en Entregas). */
 export function compareQuote(
   quote: Pick<CourierQuote, 'cost'>,
-  order: Pick<Order, 'deliveryFee'>,
+  order: Pick<DraftOrder, 'deliveryFee'>,
 ): QuoteComparison {
   const diff = round2(quote.cost - order.deliveryFee);
   return {

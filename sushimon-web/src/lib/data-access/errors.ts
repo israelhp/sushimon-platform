@@ -30,6 +30,11 @@ export class ApiError extends Error {
     readonly violations?: readonly { path: string; code: string; message: string }[],
     /** Segundos de espera pedidos por el servidor (`Retry-After`, p. ej. en 429); `undefined` si no vino. */
     readonly retryAfterSec?: number,
+    /**
+     * Cuerpo completo del error (`ErrorResponse` y sus extensiones, p. ej. `OrderQuoteConflict{changes, quote}` o
+     * `OrderBlocked{blockers}`). Solo para leer campos de negocio con validación; nunca se registra.
+     */
+    readonly body?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';

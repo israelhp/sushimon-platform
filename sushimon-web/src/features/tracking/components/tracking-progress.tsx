@@ -2,13 +2,13 @@
 
 import { Check } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import type { Order } from '@/lib/data-access/models';
+import type { DraftOrder } from '@/lib/data-access/models';
 import { cn } from '@/lib/cn';
 import { toStoreTrackingStep } from '@/lib/order-status';
 
 /** Etiquetas de los pasos: 6 a domicilio, 5 para recoger; el 2.º dice "Pago al recibir" si aún no se pagó. */
 export function useTrackingStepLabels(
-  order: Pick<Order, 'status' | 'fulfillment' | 'payment'>,
+  order: Pick<DraftOrder, 'status' | 'fulfillment' | 'payment'>,
 ): string[] {
   const t = useTranslations('status');
   const step = toStoreTrackingStep(order);
@@ -25,7 +25,7 @@ export function useTrackingStepLabels(
 export function TrackingProgress({
   order,
 }: {
-  order: Pick<Order, 'status' | 'fulfillment' | 'payment'>;
+  order: Pick<DraftOrder, 'status' | 'fulfillment' | 'payment'>;
 }) {
   const t = useTranslations('tracking');
   const { progress } = toStoreTrackingStep(order);

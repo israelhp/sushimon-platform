@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Branch, Order, ReportSummary } from '@/lib/data-access/models';
+import type { Branch, DraftOrder, ReportSummary } from '@/lib/data-access/models';
 import { daysInRange, dayLong, dayShort, dayWithMonth, formatMoneyCompact } from './format';
 import {
   DEFAULT_HISTORY_FILTERS,
@@ -16,7 +16,7 @@ import {
 const TODAY = '2026-11-11';
 
 let seq = 0;
-function order(over: Partial<Order> & { at?: string }): Order {
+function order(over: Partial<DraftOrder> & { at?: string }): DraftOrder {
   seq += 1;
   const { at = '2026-11-11T19:00:00Z', ...rest } = over;
   return {
@@ -33,7 +33,7 @@ function order(over: Partial<Order> & { at?: string }): Order {
     ],
     rejectionReason: null,
     ...rest,
-  } as Order;
+  } as DraftOrder;
 }
 
 describe('formatos de fecha y dinero', () => {

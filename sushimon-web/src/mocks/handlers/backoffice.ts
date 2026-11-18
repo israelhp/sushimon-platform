@@ -3,8 +3,8 @@ import type {
   DashboardAlert,
   DashboardSummary,
   DispatchRequest,
-  Order,
-  OrderStatus,
+  DraftOrder,
+  DraftOrderStatus,
   OrderStatusChangeRequest,
   Rider,
   StaffPermission,
@@ -39,10 +39,10 @@ import {
 } from './shared';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const byNewest = (a: Order, b: Order) => b.createdAt.localeCompare(a.createdAt);
+const byNewest = (a: DraftOrder, b: DraftOrder) => b.createdAt.localeCompare(a.createdAt);
 
 /** Estados que cuentan como venta (aceptados en adelante, sin rechazados/cancelados). */
-export const isSale = (o: Order) => !['received', 'rejected', 'cancelled'].includes(o.status);
+export const isSale = (o: DraftOrder) => !['received', 'rejected', 'cancelled'].includes(o.status);
 
 /** GET /v1/backoffice/me */
 export const getStaffMe: Handler = (req): StaffUser => {
@@ -66,7 +66,7 @@ export const getDashboard: Handler = (req): DashboardSummary => {
   const orders = ordersForDay(req, date, branchIds);
   settleReviews(req, orders);
   const t = now(req);
-  const count = (...s: OrderStatus[]) => orders.filter((o) => s.includes(o.status)).length;
+  const count = (...s: DraftOrderStatus[]) => orders.filter((o) => s.includes(o.status)).length;
   const alerts: DashboardAlert[] = [];
   for (const o of [...orders].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
     const minutes = minutesBetween(o.createdAt, t);
@@ -116,7 +116,7 @@ export const listBackofficeOrders: Handler = (req) => {
   return orders.filter((o) => !statuses || statuses.includes(o.status)).sort(byNewest);
 };
 
-function permissionForStatus(to: OrderStatus): StaffPermission {
+function permissionForStatus(to: DraftOrderStatus): StaffPermission {
   switch (to) {
     case 'accepted':
       return 'orders.accept';

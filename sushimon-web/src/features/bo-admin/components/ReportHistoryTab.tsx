@@ -23,7 +23,7 @@ import { PopoverRoot, usePopover } from '@/features/backoffice-shell/use-popover
 import { branchShortName, useShell } from '@/features/backoffice-shell/shell-context';
 import { COLUMN_TONE, useOrderText } from '@/features/bo-orders/use-order-text';
 import { cn } from '@/lib/cn';
-import type { Order } from '@/lib/data-access/models';
+import type { DraftOrder } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
 import { toBackofficeColumn } from '@/lib/order-status';
 import { addDaysISO } from '@/lib/time';
@@ -77,7 +77,7 @@ export function ReportHistoryTab({
   const [modeState, setModeState] = useState<Mode>('dia');
   const [filters, setFilters] = useState<HistoryFilters>(DEFAULT_HISTORY_FILTERS);
   const [limit, setLimit] = useState(HISTORY_PAGE);
-  const [selected, setSelected] = useState<Order | null>(null);
+  const [selected, setSelected] = useState<DraftOrder | null>(null);
   const productPopover = usePopover();
 
   const single = range.from === range.to;
@@ -571,7 +571,7 @@ interface GroupRowsProps {
   sort: HistoryFilters['sort'];
   multiDay: boolean;
   onFocusDay: (iso: string) => void;
-  onOpen: (order: Order) => void;
+  onOpen: (order: DraftOrder) => void;
 }
 
 function GroupRows({ group, today, sort, multiDay, onFocusDay, onOpen }: GroupRowsProps) {

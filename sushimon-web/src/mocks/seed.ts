@@ -1,4 +1,4 @@
-import type { Order, OrderLine, OrderStatusEvent, Payment } from '@/lib/data-access/models';
+import type { DraftOrder, OrderLine, OrderStatusEvent, Payment } from '@/lib/data-access/models';
 import { addDaysISO, fromLocal, localDate } from '@/lib/time';
 import { DEMO_BASE_TIME } from './clock';
 import { BRANCH_SEEDS } from './fixtures/branches';
@@ -199,7 +199,7 @@ function buildModifiers(
   };
 }
 
-export function buildSeedOrder(seed: OrderSeed, base: Date, scenario: MockScenario): Order {
+export function buildSeedOrder(seed: OrderSeed, base: Date, scenario: MockScenario): DraftOrder {
   const created = new Date(base.getTime() - seed.minutesAgo * 60_000);
   const at = (minutes: number) => new Date(created.getTime() + minutes * 60_000);
   const age = seed.minutesAgo;
@@ -245,7 +245,7 @@ export function buildSeedOrder(seed: OrderSeed, base: Date, scenario: MockScenar
     }
   }
 
-  let delivery: Order['delivery'] = null;
+  let delivery: DraftOrder['delivery'] = null;
   if (seed.delivery) {
     const d = seed.delivery;
     const requested = fromLocal(day, d.requestedAt);

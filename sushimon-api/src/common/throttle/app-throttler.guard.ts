@@ -1,6 +1,12 @@
 import { HttpStatus, Inject, Injectable, type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerStorage, type ThrottlerModuleOptions } from '@nestjs/throttler';
+import {
+  ThrottlerGuard,
+  ThrottlerStorage,
+  type ThrottlerLimitDetail,
+  type ThrottlerModuleOptions,
+} from '@nestjs/throttler';
+import type { Response } from 'express';
 import { codedException } from '../errors/coded-exception.js';
 
 /** Límites por ruta de los endpoints públicos que tocan BD (F09). Por IP y por instancia (ver `TRUST_PROXY_HOPS`). */
@@ -67,6 +73,21 @@ export const CHECKOUT_QUOTE_THROTTLE = {
   actor: { limit: 60, ttl: 60_000 },
   coupon: { limit: 10, ttl: 60_000 },
   couponActor: { limit: 20, ttl: 60_000 },
+};
+
+/**
+ * Creación de pedidos (F20, spec 021 §8): 10/min por IP (`default`) y por actor autenticado (`actor`; un invitado cae a su
+ * IP). Un pedido real cuesta una transacción y consume número de secuencia: el límite es mucho menor que el del cotizador.
+ */
+export const CREATE_ORDER_THROTTLE = {
+  default: { limit: 10, ttl: 60_000 },
+  actor: { limit: 10, ttl: 60_000 },
+};
+
+/** Lectura de un pedido (F20): 60/min por IP y 30/min por actor; los intentos con token inválido también cuentan. */
+export const ORDER_READ_THROTTLE = {
+  default: { limit: 60, ttl: 60_000 },
+  actor: { limit: 30, ttl: 60_000 },
 };
 
 /** Throttler adicional «por actor»: solo cuenta en las rutas que declaran un límite `actor`. */
@@ -141,8 +162,20 @@ export class AppThrottlerGuard extends ThrottlerGuard {
     this.throttlers = this.throttlers.filter((t) => !ACTOR_SIDE.has(t.name ?? ''));
   }
 
-  /** 429 con `code` estable (`RATE_LIMITED`); `Retry-After` ya lo fija el guard y el filtro añade `no-store`. */
-  protected override throwThrottlingException(): Promise<void> {
+  /**
+   * 429 con `code` estable (`RATE_LIMITED`). El guard base fija `Retry-After` solo para el throttler `default`; los demás
+   * (p. ej. `actor`) lo emiten con sufijo (`Retry-After-actor`), así que aquí se garantiza SIEMPRE `Retry-After` (segundos
+   * hasta que se libere la ventana). El filtro global añade `no-store`.
+   */
+  protected override throwThrottlingException(
+    context: ExecutionContext,
+    detail: ThrottlerLimitDetail,
+  ): Promise<void> {
+    const res = context.switchToHttp().getResponse<Response | undefined>();
+    if (res && typeof res.setHeader === 'function' && !res.getHeader('Retry-After')) {
+      const seconds = Math.ceil(detail.timeToBlockExpire || detail.timeToExpire || 1);
+      res.setHeader('Retry-After', String(Math.max(1, seconds)));
+    }
     throw codedException(
       HttpStatus.TOO_MANY_REQUESTS,
       'RATE_LIMITED',

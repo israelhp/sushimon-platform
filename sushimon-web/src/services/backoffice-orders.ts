@@ -3,8 +3,8 @@ import type {
   CourierQuote,
   DashboardSummary,
   DeliveryProvider,
-  Order,
-  OrderStatus,
+  DraftOrder,
+  DraftOrderStatus,
   Rider,
   StaffUser,
 } from '@/lib/data-access/models';
@@ -20,13 +20,13 @@ export const getDashboard = (client: DataClient, branchId?: string) =>
 export interface BackofficeOrderFilters {
   branchId?: string;
   /** Uno o varios estados del contrato. */
-  status?: OrderStatus | OrderStatus[];
+  status?: DraftOrderStatus | DraftOrderStatus[];
   /** YYYY-MM-DD (por defecto, hoy en el servidor). */
   date?: string;
 }
 
 export const listBackofficeOrders = (client: DataClient, filters: BackofficeOrderFilters = {}) =>
-  client.get<Order[]>(paths.boOrders(), {
+  client.get<DraftOrder[]>(paths.boOrders(), {
     query: {
       branchId: filters.branchId,
       status: Array.isArray(filters.status) ? filters.status.join(',') : filters.status,
@@ -36,14 +36,14 @@ export const listBackofficeOrders = (client: DataClient, filters: BackofficeOrde
 
 export interface ChangeOrderStatusArgs {
   id: string;
-  status: OrderStatus;
+  status: DraftOrderStatus;
   reason?: string;
 }
 
 export const changeOrderStatus = (
   client: DataClient,
   { id, status, reason }: ChangeOrderStatusArgs,
-) => client.patch<Order>(paths.boOrderStatus(id), reason ? { status, reason } : { status });
+) => client.patch<DraftOrder>(paths.boOrderStatus(id), reason ? { status, reason } : { status });
 
 export interface DispatchArgs {
   id: string;
@@ -52,7 +52,10 @@ export interface DispatchArgs {
 }
 
 export const dispatchOrder = (client: DataClient, { id, provider, riderId }: DispatchArgs) =>
-  client.post<Order>(paths.boOrderDispatch(id), riderId ? { provider, riderId } : { provider });
+  client.post<DraftOrder>(
+    paths.boOrderDispatch(id),
+    riderId ? { provider, riderId } : { provider },
+  );
 
 /** Cotización PedidosYa SIMULADA (integración real pendiente de documentación). */
 export const quoteCourier = (client: DataClient, orderId: string) =>
@@ -60,7 +63,7 @@ export const quoteCourier = (client: DataClient, orderId: string) =>
 
 /** Avanza un paso el estado logístico (solo simulación). */
 export const advanceDelivery = (client: DataClient, orderId: string) =>
-  client.patch<Order>(paths.deliveryAdvance(orderId));
+  client.patch<DraftOrder>(paths.deliveryAdvance(orderId));
 
 export interface DeliveryFilters {
   from?: string;
@@ -70,7 +73,7 @@ export interface DeliveryFilters {
 }
 
 export const listDeliveries = (client: DataClient, filters: DeliveryFilters = {}) =>
-  client.get<Order[]>(paths.deliveries(), {
+  client.get<DraftOrder[]>(paths.deliveries(), {
     query: {
       from: filters.from,
       to: filters.to,
@@ -84,4 +87,4 @@ export const listRiders = (client: DataClient, branchId?: string) =>
 
 /** 🎭 Solo mock: genera un pedido entrante (simulate() del prototipo). */
 export const simulateIncomingOrder = (client: DataClient, branchId?: string) =>
-  client.post<Order>(paths.demoSimulateOrder(), branchId ? { branchId } : {});
+  client.post<DraftOrder>(paths.demoSimulateOrder(), branchId ? { branchId } : {});

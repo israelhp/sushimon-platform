@@ -1,4 +1,9 @@
-import type { Order, OrderAddress, OrderLine, OrderStatusEvent } from '@/lib/data-access/models';
+import type {
+  DraftOrder,
+  OrderAddress,
+  OrderLine,
+  OrderStatusEvent,
+} from '@/lib/data-access/models';
 import { addDaysISO, dayOfWeekOf, fromLocal, minutesToHM } from '@/lib/time';
 import { BRANCH_SEEDS } from '../fixtures/branches';
 import { PRODUCT_SEEDS } from '../fixtures/products';
@@ -192,20 +197,20 @@ function localMinuteOfOrder(rng: Rng, isToday: boolean) {
   return (12 + h) * 60 + Math.floor(rng() * 60);
 }
 
-const cache = new Map<string, Order[]>();
+const cache = new Map<string, DraftOrder[]>();
 
 /**
  * Pedidos generados de un día (`YYYY-MM-DD`) respecto de `today`. Fuera de los 60 días → [].
  * Resultado congelado en caché: los consumidores deben clonarlo antes de mutarlo.
  */
-export function generateDayOrders(dateISO: string, today: string): Order[] {
+export function generateDayOrders(dateISO: string, today: string): DraftOrder[] {
   if (dateISO > today || dateISO < historyMinDate(today)) return [];
   const key = `${dateISO}|${today}`;
   const hit = cache.get(key);
   if (hit) return hit;
 
   const isToday = dateISO === today;
-  type Draft = { minute: number; build: (id: string, n: number) => Order };
+  type Draft = { minute: number; build: (id: string, n: number) => DraftOrder };
   const drafts: Draft[] = [];
 
   HISTORY_BRANCHES.forEach((branchId) => {
@@ -256,7 +261,7 @@ export function generateDayOrders(dateISO: string, today: string): Order[] {
             history.push(event(at(OFFSETS.preparing), 'order', 'preparing'));
             history.push(event(at(OFFSETS.ready), 'order', 'ready'));
           }
-          let deliveryInfo: Order['delivery'] = null;
+          let deliveryInfo: DraftOrder['delivery'] = null;
           let deliveredAt = at(OFFSETS.delivered);
           if (!cancelled && delivery) {
             const own = RIDER_SEEDS.filter((r) => r.branchId === branchId);
@@ -335,7 +340,7 @@ export function generateDayOrders(dateISO: string, today: string): Order[] {
     const n = end - drafts.length + 1 + i;
     return d.build(`MON-3${String(n).padStart(5, '0')}`, n);
   });
-  const frozen = Object.freeze(list) as Order[];
+  const frozen = Object.freeze(list) as DraftOrder[];
   cache.set(key, frozen);
   return frozen;
 }

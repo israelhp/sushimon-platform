@@ -163,4 +163,90 @@ describe('createHttpClient (contrato F00)', () => {
       expect(getAccessToken).not.toHaveBeenCalled();
     });
   });
+
+  describe('F20: cabeceras del llamador (Idempotency-Key, X-Order-Token)', () => {
+    const none = {
+      getAccessToken: () => Promise.resolve(null),
+      onUnauthorized: () => Promise.resolve(false),
+    };
+
+    it('las envía tal cual (en minúsculas) junto al cuerpo JSON y sin tocar la sesión del cliente', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(json({ ok: true }, 201));
+      const client = createHttpClient('http://api.test', fetchMock, {
+        getAccessToken: () => Promise.resolve('tok-sesion'),
+        onUnauthorized: () => Promise.resolve(false),
+      });
+      await client.request('/v1/orders', {
+        method: 'POST',
+        body: { a: 1 },
+        headers: { 'Idempotency-Key': 'k'.repeat(22), 'X-Order-Token': 'smo_x' },
+      });
+      const headers = (fetchMock.mock.calls[0]?.[1] as RequestInit).headers as Record<
+        string,
+        string
+      >;
+      expect(headers['idempotency-key']).toBe('k'.repeat(22));
+      expect(headers['x-order-token']).toBe('smo_x');
+      expect(headers['content-type']).toBe('application/json');
+      expect(headers['authorization']).toBe('Bearer tok-sesion');
+    });
+
+    it('no puede reemplazar Authorization ni Content-Type', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(json({}, 200));
+      const client = createHttpClient('http://api.test', fetchMock, {
+        getAccessToken: () => Promise.resolve('tok-real'),
+        onUnauthorized: () => Promise.resolve(false),
+      });
+      await client.request('/v1/orders', {
+        method: 'POST',
+        body: {},
+        headers: { Authorization: 'Bearer falso', 'Content-Type': 'text/plain' },
+      });
+      const headers = (fetchMock.mock.calls[0]?.[1] as RequestInit).headers as Record<
+        string,
+        string
+      >;
+      expect(headers['authorization']).toBe('Bearer tok-real');
+      expect(headers['content-type']).toBe('application/json');
+    });
+
+    it('nunca registra las cabeceras (ni en consola ni en el mensaje del error)', async () => {
+      const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map((m) =>
+        vi.spyOn(console, m).mockImplementation(() => undefined),
+      );
+      const fetchMock = vi.fn().mockResolvedValue(json({ message: 'no' }, 409));
+      const client = createHttpClient('http://api.test', fetchMock, none);
+      const error = await client
+        .request('/v1/orders', {
+          method: 'POST',
+          body: {},
+          headers: { 'Idempotency-Key': 'SECRETA-'.repeat(4), 'X-Order-Token': 'smo_SECRETO' },
+        })
+        .catch((e: unknown) => e as ApiError);
+      for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+      expect(JSON.stringify({ m: (error as ApiError).message })).not.toMatch(/SECRET/);
+      spies.forEach((s) => s.mockRestore());
+    });
+
+    it('expone el cuerpo del error (OrderQuoteConflict) y Retry-After', async () => {
+      const conflict = {
+        statusCode: 409,
+        message: 'x',
+        code: 'QUOTE_CHANGED',
+        changes: [],
+        quote: { total: '90.00' },
+      };
+      const fetchMock = vi.fn().mockResolvedValue(json(conflict, 409, { 'retry-after': '3' }));
+      const client = createHttpClient('http://api.test', fetchMock, none);
+      const error = (await client
+        .request('/v1/orders', { method: 'POST', body: {} })
+        .catch((e: unknown) => e)) as ApiError;
+      expect(error).toMatchObject({
+        status: 409,
+        businessCode: 'QUOTE_CHANGED',
+        retryAfterSec: 3,
+        body: conflict,
+      });
+    });
+  });
 });

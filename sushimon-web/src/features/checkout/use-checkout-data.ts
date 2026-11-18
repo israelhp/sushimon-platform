@@ -306,8 +306,11 @@ export function useCheckoutData() {
     shownQuote: quote.shown,
     /** Cambio de total entre dos cotizaciones vigentes (se limpia a los 6 s). */
     totalChange,
-    /** `http`: no existe `POST /v1/orders` (F20): el envío final se deshabilita (no se inventa un éxito). */
-    confirmationAvailable: !isHttp,
+    /**
+     * F20: se puede confirmar solo con una cotización VIGENTE que traiga su `token` firmado (la API real lo emite solo con
+     * `canProceed`; sin secreto de servidor es `null` y no se confirma). El mock emite un token simulado.
+     */
+    confirmationAvailable: !!serverQuote?.quote.token,
     /** El carrito es de otra sucursal que la del modo de pedido: no se cotiza hasta resolverlo (F18). */
     branchMismatch:
       cart.lines.length > 0 && mode.branchId !== null && cart.branchId !== mode.branchId,

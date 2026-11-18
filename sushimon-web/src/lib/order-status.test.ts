@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { grantsForRole } from '@/mocks/testing';
-import type { Order, OrderStatus } from './data-access/models';
+import type { DraftOrder, DraftOrderStatus } from './data-access/models';
 import {
   canDispatch,
   checkTransition,
@@ -14,9 +14,9 @@ import {
   fromBackofficeColumn,
 } from './order-status';
 
-type O = Pick<Order, 'status' | 'fulfillment' | 'payment' | 'delivery'>;
+type O = Pick<DraftOrder, 'status' | 'fulfillment' | 'payment' | 'delivery'>;
 
-const payment = (method: 'cash' | 'card', status: Order['payment']['status']) =>
+const payment = (method: 'cash' | 'card', status: DraftOrder['payment']['status']) =>
   ({
     method,
     status,
@@ -26,7 +26,7 @@ const payment = (method: 'cash' | 'card', status: Order['payment']['status']) =>
     cardLast4: null,
     simulated: true,
     processedAt: null,
-  }) satisfies Order['payment'];
+  }) satisfies DraftOrder['payment'];
 
 const order = (over: Partial<O> = {}): O => ({
   status: 'received',
@@ -132,7 +132,7 @@ describe('mapeos de UI', () => {
 
   it('tienda: pasos de seguimiento (6 domicilio / 5 recoger)', () => {
     const step = (
-      status: OrderStatus,
+      status: DraftOrderStatus,
       fulfillment: 'delivery' | 'pickup' = 'delivery',
       paid = false,
     ) =>

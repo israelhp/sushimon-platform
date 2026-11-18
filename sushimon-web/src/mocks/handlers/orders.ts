@@ -1,9 +1,9 @@
 import type {
   CardPaymentRequest,
   CreateIncidentRequest,
-  CreateOrderRequest,
+  DraftCreateOrderRequest,
   Incident,
-  Order,
+  DraftOrder,
   OrderLine,
   OrderLookupRequest,
   OrderSchedule,
@@ -35,6 +35,7 @@ import type { MockStore } from '../store';
 import { advanceDelivery, applyOrderStatus, dispatchOrder, freeOwnRider } from './logistics';
 import { isProductVisible } from './products';
 import { resolveOwnDelivery } from '../coverage';
+import { findPlacedOrder, readPlacedOrder } from './order-placement';
 import { body, now, oneOf, requireStaff, str, type Handler, type Req } from './shared';
 
 const REVIEW_SETTLE_MS = 20_000;
@@ -45,7 +46,7 @@ export function nextOrderId(store: MockStore): string {
 }
 
 /** ¿Puede esta sesión ver el pedido? (dueño con cuenta o invitado verificado en la sesión). */
-function canSee(req: Req, order: Order): boolean {
+function canSee(req: Req, order: DraftOrder): boolean {
   const email = req.context.session.customer?.email.trim().toLowerCase();
   return (
     req.store.verifiedOrderIds.includes(order.id) ||
@@ -53,14 +54,14 @@ function canSee(req: Req, order: Order): boolean {
   );
 }
 
-function visibleOrder(req: Req, id: string): Order {
+function visibleOrder(req: Req, id: string): DraftOrder {
   const order = findOrder(req.store, id);
   if (!canSee(req, order)) fail(404, 'Pedido no encontrado');
   return order;
 }
 
 /** Pago "en verificación" que se confirma solo pasados 20 s del reloj (salvo order-pending). */
-export function settleReviews(req: Req, orders: Order[]) {
+export function settleReviews(req: Req, orders: DraftOrder[]) {
   if (req.scenario === 'order-pending') return;
   const t = now(req);
   for (const o of orders) {
@@ -84,9 +85,12 @@ function parseSchedule(value: unknown): OrderSchedule {
   return { kind, date: s.date, time: s.time };
 }
 
-/** POST /v1/orders — el precio final lo calcula el "servidor" (este handler). */
-export const createOrder: Handler = (req): Order => {
-  const b = body<CreateOrderRequest>(req);
+/**
+ * POST /v1/demo/orders — SOLO mock: crea el pedido BORRADOR (`DraftOrder`) que usan el seguimiento y el backoffice simulados.
+ * El pedido real de F20 es `POST /v1/orders` (`order-placement.ts`). Se retira con F21/F22.
+ */
+export const createDraftOrder: Handler = (req): DraftOrder => {
+  const b = body<DraftCreateOrderRequest>(req);
   const fulfillment = oneOf(b.fulfillment, ['pickup', 'delivery'] as const, 'fulfillment');
   const paymentMethod = oneOf(b.paymentMethod, ['cash', 'card'] as const, 'paymentMethod');
   const schedule = parseSchedule(b.schedule);
@@ -165,7 +169,7 @@ export const createOrder: Handler = (req): Order => {
   });
   const t = totals(lines, deliveryFee);
 
-  const order: Order = {
+  const order: DraftOrder = {
     id: nextOrderId(req.store),
     createdAt: at.toISOString(),
     updatedAt: at.toISOString(),
@@ -210,7 +214,7 @@ export const createOrder: Handler = (req): Order => {
  * cliente y sesión crean otro pedido (p. ej. cambia a efectivo): se cancela para no dejar huérfanos
  * en el store. En la API real lo haría el servidor (expiración/cancelación de pedidos sin pago).
  */
-function cancelAbandonedCardOrders(req: Req, fresh: Order, at: Date) {
+function cancelAbandonedCardOrders(req: Req, fresh: DraftOrder, at: Date) {
   for (const o of req.store.orders) {
     if (
       o.status !== 'received' ||
@@ -227,8 +231,13 @@ function cancelAbandonedCardOrders(req: Req, fresh: Order, at: Date) {
   }
 }
 
-/** GET /v1/orders/:id */
+/**
+ * GET /v1/orders/:id — dos formas según el id: un pedido REAL simulado de F20 (UUID, `OrderDetail`, dueño o `X-Order-Token`) o el
+ * pedido BORRADOR del seguimiento simulado (`MON-…`, `DraftOrder`).
+ */
 export const getOrder: Handler = (req) => {
+  const placed = findPlacedOrder(req.store, req.params.id ?? '');
+  if (placed) return readPlacedOrder(req, placed);
   const order = visibleOrder(req, req.params.id ?? '');
   settleReviews(req, [order]);
   return order;
@@ -462,7 +471,7 @@ export const demoSimulateOrder: Handler = (req) => {
   const fee = delivery && zoneRule ? Number(zoneRule.baseFee) : 0;
   const t = totals(lines, fee);
   const name = SIM_NAMES[n % SIM_NAMES.length] ?? 'Cliente';
-  const order: Order = {
+  const order: DraftOrder = {
     id: nextOrderId(req.store),
     createdAt: at.toISOString(),
     updatedAt: at.toISOString(),

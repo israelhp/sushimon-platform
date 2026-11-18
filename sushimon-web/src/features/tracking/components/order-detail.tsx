@@ -20,7 +20,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { SimulationBadge } from '@/components/ui/SimulationBadge';
 import { cn } from '@/lib/cn';
 import { isApiError } from '@/lib/data-access/errors';
-import type { Incident, Order } from '@/lib/data-access/models';
+import type { Incident, DraftOrder } from '@/lib/data-access/models';
 import { formatDateTime, formatMoney } from '@/lib/format';
 import { isOrderInProgress, toStoreOrderState, toStoreTrackingStep } from '@/lib/order-status';
 import { localDate } from '@/lib/time';
@@ -32,6 +32,7 @@ import { WhatsappReportButton } from '@/features/incidents/components/whatsapp-r
 import { ErrorNotice } from '@/features/store-shell/components/ErrorNotice';
 import { useBranches, useStoreConfig } from '@/features/store/hooks';
 import { formatOrderAddress } from '../format-address';
+import { OrderReceivedScreen } from '@/features/checkout/components/OrderReceivedScreen';
 import { TrackingProgress } from './tracking-progress';
 
 /** Cada cuántos ms se refresca el estado de un pedido en curso. */
@@ -74,7 +75,7 @@ function IncidentStatusPill({ status }: { status: Incident['status'] }) {
   );
 }
 
-function DemoAdvance({ order }: { order: Order }) {
+function DemoAdvance({ order }: { order: DraftOrder }) {
   const t = useTranslations('status');
   const tt = useTranslations('tracking');
   const advance = useAdvanceOrderDemo();
@@ -110,7 +111,7 @@ function DemoAdvance({ order }: { order: Order }) {
  * Presentacional: recibe el pedido ya cargado; úsalo desde el contenedor `OrderDetail` o, con otro
  * origen de datos (p. ej. la lista de Mi cuenta), directamente.
  */
-export function OrderDetailView({ order }: { order: Order }) {
+export function OrderDetailView({ order }: { order: DraftOrder }) {
   const t = useTranslations('orders');
   const tc = useTranslations('confirm');
   const tt = useTranslations('tracking');
@@ -386,6 +387,16 @@ function DetailSkeleton({ label }: { label: string }) {
  * (la sesión/verificación del navegador nunca autoriza nada).
  */
 export function OrderDetail({ orderId }: { orderId: string }) {
+  // F20: con la API real solo existe la confirmación mínima (el seguimiento es F21); el seguimiento SIMULADO es del mock.
+  const simulation = useIsSimulation();
+  return simulation ? (
+    <SimulatedOrderDetail orderId={orderId} />
+  ) : (
+    <OrderReceivedScreen orderId={orderId} />
+  );
+}
+
+function SimulatedOrderDetail({ orderId }: { orderId: string }) {
   const t = useTranslations('tracking');
   const tu = useTranslations('ui');
   const router = useRouter();

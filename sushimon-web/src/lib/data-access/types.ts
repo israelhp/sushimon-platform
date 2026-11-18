@@ -17,6 +17,11 @@ export interface RequestOptions {
    * `Cache-Control` del servidor. La respuesta no puede depender de la sesión. Las lecturas privadas (`/me/...`) no lo usan.
    */
   public?: boolean;
+  /**
+   * Cabeceras de la solicitud (p. ej. `Idempotency-Key`, `X-Order-Token`; F20). El cliente http las envía tal cual y NUNCA las
+   * registra (llevan claves y credenciales de invitado). No puede reemplazar `Authorization` ni `Content-Type`.
+   */
+  headers?: Record<string, string>;
 }
 
 type ReadOptions = Omit<RequestOptions, 'method' | 'body'>;

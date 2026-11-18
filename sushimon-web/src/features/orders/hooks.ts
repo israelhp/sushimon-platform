@@ -1,16 +1,20 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import type { Order } from '@/lib/data-access/models';
+import { ApiError } from '@/lib/data-access/errors';
+import type { DraftOrder, OrderCreated, OrderDetail } from '@/lib/data-access/models';
 import { useDataClient } from '@/lib/data-access/provider';
 import {
   advanceOrderDemo,
   createIncident,
   createOrder,
+  getDraftOrder,
   getOrder,
+  prepareDraftCardOrder,
   lookupOrder,
   payWithCard,
 } from '@/services/orders';
+import { useCustomerScope } from '../session/customer-scope';
 import { customerOrdersPredicate, queryKeys } from '../query-keys';
 
 /** Invalida todo lo derivado de pedidos (detalle, cliente, backoffice, reportes, panel). */
@@ -34,7 +38,7 @@ function useOrderMutation<TArgs, TResult>(
   });
 }
 
-const seedDetail = (order: Order, qc: QueryClient) =>
+const seedDetail = (order: DraftOrder, qc: QueryClient) =>
   qc.setQueryData(queryKeys.orders.detail(order.id), order);
 
 /** Seguimiento de un pedido. `refetchInterval` opcional para refrescar el estado. */
@@ -45,19 +49,57 @@ export function useOrder(
   const client = useDataClient();
   return useQuery({
     queryKey: queryKeys.orders.detail(id ?? ''),
-    queryFn: () => getOrder(client, id as string),
+    queryFn: () => getDraftOrder(client, id as string),
     enabled: !!id,
     refetchInterval: options.refetchInterval,
   });
 }
 
-/** Crea el pedido (body CreateOrderRequest; el servidor calcula totales). */
+/**
+ * F20: crea el pedido real (`POST /v1/orders`). NO usa `useMutation`: la caché de TanStack conservaría el cuerpo (contacto,
+ * dirección) y la respuesta (credencial de invitado) hasta el `gcTime`. El cuerpo y la clave viven solo en la llamada; con éxito
+ * se invalida lo derivado de pedidos. Reintentar es decisión de `usePlaceOrder` (misma clave).
+ */
 export function useCreateOrder() {
   const client = useDataClient();
-  return useOrderMutation(
-    (input: Parameters<typeof createOrder>[1]) => createOrder(client, input),
-    seedDetail,
-  );
+  const qc = useQueryClient();
+  return {
+    create: async (
+      input: Parameters<typeof createOrder>[1],
+      idempotencyKey: string,
+      signal?: AbortSignal,
+    ): Promise<OrderCreated> => {
+      const created = await createOrder(client, input, idempotencyKey, signal);
+      invalidateOrders(qc);
+      return created;
+    },
+  };
+}
+
+/** 🎭 Solo mock: pedido BORRADOR enlazado al recién creado (id = `displayNumber`) para la confirmación/pasarela simulada. */
+export function useDraftOrderLoader() {
+  const client = useDataClient();
+  return {
+    load: (id: string, forCard: boolean): Promise<DraftOrder> =>
+      forCard ? prepareDraftCardOrder(client, id) : getDraftOrder(client, id),
+  };
+}
+
+/**
+ * F20: pedido REAL por UUID (`GET /v1/orders/{id}`), con la sesión del dueño o la credencial de invitado (`X-Order-Token`).
+ * Sin reintentos: un 404/401 es definitivo (otra pestaña, token vencido). La credencial no entra en la clave de caché.
+ */
+export function useOrderDetail(id: string | null | undefined, guestToken: string | null) {
+  const client = useDataClient();
+  const identity = useCustomerScope();
+  const scope = identity.state === 'ready' ? identity.scope : null;
+  return useQuery<OrderDetail, ApiError>({
+    queryKey: queryKeys.orders.placed(scope, id ?? ''),
+    queryFn: ({ signal }) => getOrder(client, id as string, { guestToken, signal }),
+    enabled: !!id && identity.state !== 'pending',
+    retry: false,
+    gcTime: 60_000,
+  });
 }
 
 /** Consulta de invitado (número + teléfono). Un 404 no revela si el pedido existe. */

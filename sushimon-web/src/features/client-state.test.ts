@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Order, Product } from '@/lib/data-access/models';
+import type { DraftOrder, Product } from '@/lib/data-access/models';
 import { createSeedStore } from '@/mocks/seed';
 import { planReorder } from './account/reorder';
 import { priceToNumber } from '@/lib/product-rules';
@@ -47,7 +47,7 @@ describe('repetir pedido', () => {
     available: true,
     availability: [],
   }));
-  const old = store.orders.find((o) => o.id === 'MON-479850') as Order;
+  const old = store.orders.find((o) => o.id === 'MON-479850') as DraftOrder;
 
   it('informa productos que no se agregarán y cambios de precio', () => {
     const plan = planReorder(old, products);

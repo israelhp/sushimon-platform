@@ -7,7 +7,7 @@ import { Pill } from '@/components/ui/Pill';
 import { Switch } from '@/components/ui/Switch';
 import { useShell } from '@/features/backoffice-shell/shell-context';
 import { cn } from '@/lib/cn';
-import type { Order, Rider } from '@/lib/data-access/models';
+import type { DraftOrder, Rider } from '@/lib/data-access/models';
 import type { PeriodRider } from '../deliveries-view';
 
 /** "Repartidores del periodo": quién hizo cuántos envíos; tocar uno filtra la tabla por ese repartidor. */
@@ -100,7 +100,7 @@ export function OwnRiderCards({
   todayOrders,
 }: {
   riders: readonly Rider[];
-  todayOrders: readonly Order[];
+  todayOrders: readonly DraftOrder[];
 }) {
   const t = useTranslations('backoffice.deliveries.own');
   const { branchById } = useShell();

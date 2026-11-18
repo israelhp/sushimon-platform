@@ -15,6 +15,13 @@ export interface MockRequest<TStore, TContext = undefined> {
   params: Record<string, string>;
   query: URLSearchParams;
   body: unknown;
+  /** Cabeceras de la solicitud (nombres en minúsculas): `idempotency-key`, `x-order-token`… (F20). */
+  headers: Record<string, string>;
+  /**
+   * Fallo de PRUEBA encolado para esta ruta (`window.__sushimonMockFaults`, ver abajo) que el handler interpreta; `undefined` en
+   * uso normal. Los fallos `offline` y `lost-response` los resuelve el cliente.
+   */
+  fault?: string;
   store: TStore;
   scenario: MockScenario;
   /**
@@ -75,7 +82,19 @@ function compile<TStore, TContext>(
 declare global {
   interface Window {
     __sushimonMockRequests?: string[];
+    /**
+     * Instrumentación de PRUEBAS (Playwright, F20): `{ 'POST /v1/orders': ['lost-response', 'price-change'] }`. Cada solicitud a esa
+     * ruta consume el siguiente fallo: `offline` (red caída ANTES de procesar), `lost-response` (el servidor procesa pero la
+     * respuesta se pierde: el cliente ve «sin conexión») u otro nombre que interpreta el handler (`price-change`, `busy`…).
+     */
+    __sushimonMockFaults?: Record<string, string[]>;
   }
+}
+
+function takeFault(routeKey: string): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  const queue = window.__sushimonMockFaults?.[routeKey];
+  return Array.isArray(queue) ? queue.shift() : undefined;
 }
 
 function recordRequest(method: string, path: string, query: RequestOptions['query']): void {
@@ -108,7 +127,7 @@ export function createMockClient<TStore, TContext = undefined>(
   const { scenario, latencyMs = 0 } = options;
 
   async function request<T>(path: string, req: RequestOptions = {}): Promise<T> {
-    const { method = 'GET', query, body, signal } = req;
+    const { method = 'GET', query, body, signal, headers } = req;
     recordRequest(method, path, query);
     if (scenario === 'loading') return new Promise<T>(() => {});
     await sleep(latencyMs, signal);
@@ -131,6 +150,8 @@ export function createMockClient<TStore, TContext = undefined>(
       if (route.method !== method) continue;
       const match = route.regex.exec(path);
       if (!match) continue;
+      const fault = takeFault(`${method} ${path}`);
+      if (fault === 'offline') throw new ApiError(0, 'offline', `${method} ${path} → sin conexión`);
       const params = Object.fromEntries(
         route.keys.map((key, i) => [key, decodeURIComponent(match[i + 1] ?? '')]),
       );
@@ -140,11 +161,18 @@ export function createMockClient<TStore, TContext = undefined>(
         params,
         query: toSearchParams(query),
         body: body === undefined ? undefined : structuredClone(body),
+        headers: Object.fromEntries(
+          Object.entries(headers ?? {}).map(([k, v]) => [k.toLowerCase(), v]),
+        ),
+        fault: fault === 'lost-response' ? undefined : fault,
         store: options.store,
         scenario,
         context: options.context?.() as TContext,
       });
       if (method !== 'GET') options.onWrite?.(options.store);
+      // El servidor procesó la solicitud, pero el cliente no recibió la respuesta (red caída tras el commit).
+      if (fault === 'lost-response')
+        throw new ApiError(0, 'offline', `${method} ${path} → sin conexión`);
       return (result === undefined ? undefined : structuredClone(result)) as T;
     }
     throw new ApiError(404, 'not_found', `Ruta mock no definida: ${method} ${path}`);
