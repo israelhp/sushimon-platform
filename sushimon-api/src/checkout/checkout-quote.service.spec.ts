@@ -16,6 +16,7 @@ import {
   MUNI_MISSING,
   MUNI_MIXCO,
   mid,
+  NOW,
   optionRow,
   ownZone,
   P1,
@@ -974,6 +975,79 @@ describe('CheckoutQuoteService (F19)', () => {
           .catch((x: unknown) => x);
         expect(statusOf(e)).toBe(400);
       }
+    });
+  });
+
+  describe('quoteWithEvidence (F20, aditivo)', () => {
+    it('quote() es el mismo resultado que quoteWithEvidence().quote', async () => {
+      const a = await h.service.quote(undefined, h.body());
+      const b = await h.service.quoteWithEvidence(undefined, h.body());
+      expect(b.quote).toEqual(a);
+    });
+
+    it('evidencia = payload del token (sin vigencia) con linesHash; null si no canProceed o sin secreto', async () => {
+      const { quote, evidence } = await h.service.quoteWithEvidence(undefined, h.body());
+      const verified = verifyQuoteToken(quote.quote.token as string, SECRET, NOW.getTime());
+      expect(verified.ok).toBe(true);
+      const { v, iat, exp, ...rest } = (verified.ok ? verified.payload : {}) as Record<
+        string,
+        unknown
+      >;
+      expect([v, typeof iat, typeof exp]).toEqual([1, 'number', 'number']);
+      expect(evidence).toEqual(rest);
+      expect(evidence?.linesHash).toEqual(expect.any(String));
+
+      h.state.accepted = false;
+      const blocked = await h.service.quoteWithEvidence(undefined, h.body());
+      expect(blocked.evidence).toBeNull();
+      expect(blocked.quote.quote.token).toBeNull();
+
+      const noSecret = checkoutHarness({ secret: undefined });
+      const r = await noSecret.service.quoteWithEvidence(undefined, noSecret.body());
+      expect(r.evidence).toBeNull();
+      expect(r.quote.quote.token).toBeNull();
+    });
+
+    it('linesHash cambia si cambia el precio de una línea; sin cambios es estable', async () => {
+      const first = await h.service.quoteWithEvidence(undefined, h.body());
+      const again = await h.service.quoteWithEvidence(undefined, h.body());
+      expect(again.evidence?.linesHash).toBe(first.evidence?.linesHash);
+      h.world.seedProduct({ ...(h.world.products.get(P1) as FakeProduct), basePrice: '86.00' });
+      const changed = await h.service.quoteWithEvidence(undefined, h.body());
+      expect(changed.evidence?.linesHash).not.toBe(first.evidence?.linesHash);
+    });
+
+    it('el lugar resuelto: PICKUP => null; municipio + zona; dirección guardada con su texto', async () => {
+      expect((await h.service.quoteWithEvidence(undefined, h.body())).resolved.place).toBeNull();
+      h.cover.result = coverageResult({ own: ownZone('15.00') });
+      const byZone = await h.service.quoteWithEvidence(
+        undefined,
+        h.body({
+          fulfillment: { type: 'DELIVERY', municipalityId: MUNI_GUATEMALA, zone: ' zona  10 ' },
+        }),
+      );
+      expect(byZone.resolved.place).toEqual({
+        municipalityId: MUNI_GUATEMALA,
+        municipalityName: 'Guatemala',
+        zone: 'Zona 10',
+        savedAddress: null,
+      });
+      const owner = principal('user-1');
+      h.ownerOf.set(ADDR_OWN, 'user-1');
+      const saved = await h.service.quoteWithEvidence(
+        owner,
+        h.body({ fulfillment: { type: 'DELIVERY', customerAddressId: ADDR_OWN } }),
+      );
+      expect(saved.resolved.place).toMatchObject({
+        municipalityName: 'Guatemala',
+        zone: 'Zona 10',
+        savedAddress: {
+          addressLine: 'Calle 1',
+          referenceNote: null,
+          latitude: null,
+          longitude: null,
+        },
+      });
     });
   });
 });

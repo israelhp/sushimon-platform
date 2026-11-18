@@ -24,7 +24,15 @@ export interface QuoteTokenPayload {
   total: string;
   inputHash: string;
   sub: string;
+  /**
+   * HMAC de las líneas efectivas (F20, ADR-0026 D2): detecta un cambio de línea que deja igual el total. OPCIONAL: los
+   * tokens emitidos antes de F20 (vigencia <= 10 min) no lo traen y siguen siendo válidos.
+   */
+  linesHash?: string;
 }
+
+/** Lo que la recotización deriva del cotizador y compara F20 contra el token (el payload sin `v`, `iat` y `exp`). */
+export type QuoteEvidence = Omit<QuoteTokenPayload, 'v' | 'iat' | 'exp'>;
 
 export type TokenVerification =
   | { ok: true; payload: QuoteTokenPayload }
@@ -38,7 +46,11 @@ function sign(secret: string, data: string): Buffer {
 }
 
 /** HMAC con clave y separación de dominios (`input`, `sub`): mismas entradas => mismo valor, irreversible sin el secreto. */
-export function keyedHash(secret: string, domain: 'input' | 'sub', data: string): string {
+export function keyedHash(
+  secret: string,
+  domain: 'input' | 'sub' | 'lines' | 'order-body',
+  data: string,
+): string {
   return b64(createHmac('sha256', secret).update(`${domain}\u0000${data}`).digest());
 }
 
@@ -50,6 +62,11 @@ export function subjectOf(secret: string, authUserId: string | null): string {
 /** Huella de la entrada canónica (ya normalizada y ordenada por el llamador). */
 export function inputHashOf(secret: string, canonical: unknown): string {
   return keyedHash(secret, 'input', JSON.stringify(canonical));
+}
+
+/** Huella de las líneas efectivas de la cotización (ya canónicas y en orden de índice). */
+export function linesHashOf(secret: string, canonical: unknown): string {
+  return keyedHash(secret, 'lines', JSON.stringify(canonical));
 }
 
 export function signQuoteToken(payload: QuoteTokenPayload, secret: string): string {
@@ -77,12 +94,13 @@ function isPayload(value: unknown): value is QuoteTokenPayload {
     typeof p['deliveryFee'] === 'string' &&
     typeof p['total'] === 'string' &&
     typeof p['inputHash'] === 'string' &&
-    typeof p['sub'] === 'string'
+    typeof p['sub'] === 'string' &&
+    (p['linesHash'] === undefined || typeof p['linesHash'] === 'string')
   );
 }
 
 /**
- * Verifica firma (en TIEMPO CONSTANTE) y vigencia. La firma se comprueba ANTES de interpretar el payload. Lo usará F20,
+ * Verifica firma (en TIEMPO CONSTANTE) y vigencia. La firma se comprueba ANTES de interpretar el payload. Lo usa F20,
  * que además debe comparar `sub` con el sujeto actual y recalcular con el mismo cotizador.
  */
 export function verifyQuoteToken(token: string, secret: string, nowMs: number): TokenVerification {

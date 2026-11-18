@@ -320,4 +320,89 @@ describe('AllExceptionsFilter', () => {
       expect(body['message']).toBe('Error interno del servidor');
     });
   });
+
+  describe('F20: pedidos', () => {
+    it('ORDERS_BUSY y ORDERS_UNAVAILABLE son públicos en 503 (mensaje fijo y `code`)', () => {
+      for (const code of ['ORDERS_BUSY', 'ORDERS_UNAVAILABLE']) {
+        const res = fakeRes();
+        new AllExceptionsFilter().catch(
+          codedException(HttpStatus.SERVICE_UNAVAILABLE, code, 'mensaje público'),
+          hostWith(res),
+        );
+        expect(res.json).toHaveBeenCalledWith(
+          expect.objectContaining({ statusCode: 503, code, message: 'mensaje público' }),
+        );
+      }
+    });
+
+    it('un 5xx con otro `code` sigue sin exponerlo', () => {
+      const res = fakeRes();
+      new AllExceptionsFilter().catch(
+        codedException(HttpStatus.SERVICE_UNAVAILABLE, 'ORDERS_INTERNAL', 'detalle interno'),
+        hostWith(res),
+      );
+      const body = res.json.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(body['code']).toBeUndefined();
+      expect(body['message']).toBe('Error interno del servidor');
+    });
+
+    it('propaga `changes`, `quote` y `blockers` (lista blanca) en 409/422 y descarta cualquier otra clave', () => {
+      const res = fakeRes();
+      new AllExceptionsFilter().catch(
+        new HttpException(
+          {
+            message: 'cambió',
+            code: 'QUOTE_CHANGED',
+            extra: {
+              changes: [{ field: 'total' }],
+              quote: { total: '1.00' },
+              secreto: 'x',
+              stack: 'y',
+            },
+          },
+          HttpStatus.CONFLICT,
+        ),
+        hostWith(res),
+      );
+      const body = res.json.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(body).toMatchObject({
+        code: 'QUOTE_CHANGED',
+        changes: [{ field: 'total' }],
+        quote: { total: '1.00' },
+      });
+      expect(body).not.toHaveProperty('secreto');
+      expect(body).not.toHaveProperty('stack');
+      expect(body).not.toHaveProperty('extra');
+    });
+
+    it('un 5xx NUNCA propaga `extra`', () => {
+      const res = fakeRes();
+      new AllExceptionsFilter().catch(
+        new HttpException(
+          { message: 'x', code: 'ORDERS_BUSY', extra: { quote: { secreto: 1 } } },
+          HttpStatus.SERVICE_UNAVAILABLE,
+        ),
+        hostWith(res),
+      );
+      expect(res.json.mock.calls[0]?.[0]).not.toHaveProperty('quote');
+    });
+
+    it('`retryAfter` fija la cabecera Retry-After; un valor no entero positivo se ignora', () => {
+      const res = fakeRes();
+      new AllExceptionsFilter().catch(
+        new HttpException(
+          { message: 'espera', code: 'IDEMPOTENCY_IN_PROGRESS', retryAfter: 1 },
+          409,
+        ),
+        hostWith(res),
+      );
+      expect(res.setHeader).toHaveBeenCalledWith('Retry-After', '1');
+      const bad = fakeRes();
+      new AllExceptionsFilter().catch(
+        new HttpException({ message: 'x', retryAfter: '1; evil' }, 409),
+        hostWith(bad),
+      );
+      expect(bad.setHeader).not.toHaveBeenCalledWith('Retry-After', expect.anything());
+    });
+  });
 });

@@ -14,11 +14,11 @@ import { checkoutBodyLimitMiddleware } from './checkout-body-limit.middleware.js
 import { CHECKOUT_DB_GATE, CHECKOUT_QUOTE_SECRET_TOKEN, checkoutBusy } from './checkout-errors.js';
 import { CheckoutQuoteService } from './checkout-quote.service.js';
 import { CheckoutController } from './checkout.controller.js';
+import { QuoteTokenVerifier } from './quote-token.verifier.js';
 
 /**
  * F19: cotización de checkout. Capa de COMPOSICIÓN: importa solo los lectores exportados de `branch-products`, `modifiers`,
- * `promotions`, `branch-schedule`, `delivery-coverage`, `customers` y `locations`; NINGÚN módulo la importa todavía (F20
- * importará `CheckoutQuoteService`) y no importa `store` (sin ciclos). No escribe en la BD ni tiene migración.
+ * `promotions`, `branch-schedule`, `delivery-coverage`, `customers` y `locations`; `OrdersModule` (F20) la importa para recotizar (`CheckoutQuoteService`) y verificar el token (`QuoteTokenVerifier`); no importa `store` (sin ciclos). No escribe en la BD ni tiene migración.
  */
 @Module({
   imports: [
@@ -33,6 +33,7 @@ import { CheckoutController } from './checkout.controller.js';
   controllers: [CheckoutController],
   providers: [
     CheckoutQuoteService,
+    QuoteTokenVerifier,
     { provide: CLOCK, useClass: SystemClock },
     {
       // Singleton del módulo: cupo por CONEXIONES reales (ver `splitGateBudget`), cola de 8 y espera de 1,5 s =>
@@ -54,7 +55,7 @@ import { CheckoutController } from './checkout.controller.js';
         config.get('CHECKOUT_QUOTE_SECRET', { infer: true }),
     },
   ],
-  exports: [CheckoutQuoteService],
+  exports: [CheckoutQuoteService, QuoteTokenVerifier],
 })
 export class CheckoutModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

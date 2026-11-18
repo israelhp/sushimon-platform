@@ -1,6 +1,8 @@
 import { createHmac } from 'node:crypto';
 import {
   inputHashOf,
+  keyedHash,
+  linesHashOf,
   signQuoteToken,
   subjectOf,
   verifyQuoteToken,
@@ -135,5 +137,34 @@ describe('quote-token (F19, fila 21)', () => {
     // Una firma de otro dominio (misma clave) sobre el mismo texto no valida como token.
     const forged = `${v}.${body}.${plain}`;
     expect(verifyQuoteToken(forged, SECRET, NOW)).toEqual({ ok: false, reason: 'BAD_SIGNATURE' });
+  });
+
+  describe('linesHash (F20, aditivo y opcional)', () => {
+    it('un token CON linesHash se firma y verifica; el campo viaja en el payload', () => {
+      const lh = linesHashOf(SECRET, [['p', 1, '85.00']]);
+      const v = verifyQuoteToken(signQuoteToken(payload({ linesHash: lh }), SECRET), SECRET, NOW);
+      expect(v).toMatchObject({ ok: true, payload: { linesHash: lh } });
+    });
+
+    it('un token SIN linesHash (emitido antes de F20) sigue siendo válido', () => {
+      const v = verifyQuoteToken(signQuoteToken(payload(), SECRET), SECRET, NOW);
+      expect(v.ok).toBe(true);
+      expect(v.ok && v.payload.linesHash).toBeUndefined();
+    });
+
+    it('un linesHash de tipo inválido => MALFORMED (firma válida pero payload incoherente)', () => {
+      const bad = signQuoteToken(payload({ linesHash: 5 as unknown as string }), SECRET);
+      expect(verifyQuoteToken(bad, SECRET, NOW)).toEqual({ ok: false, reason: 'MALFORMED' });
+    });
+
+    it('depende del secreto y de las líneas, con dominio propio distinto de input/sub/order-body', () => {
+      const lines = [['p', 1, '85.00']];
+      expect(linesHashOf(SECRET, lines)).toBe(linesHashOf(SECRET, lines));
+      expect(linesHashOf(SECRET, lines)).not.toBe(linesHashOf('z'.repeat(40), lines));
+      expect(linesHashOf(SECRET, lines)).not.toBe(linesHashOf(SECRET, [['p', 2, '85.00']]));
+      const json = JSON.stringify(lines);
+      const domains = ['input', 'sub', 'lines', 'order-body'] as const;
+      expect(new Set(domains.map((d) => keyedHash(SECRET, d, json))).size).toBe(4);
+    });
   });
 });

@@ -58,11 +58,45 @@ import type {
   CheckoutQuoteDto,
 } from './dto/checkout-quote-responses.dto.js';
 import { evaluateDiscounts, priceQuote, type EngineLine } from './quote-engine.js';
-import { inputHashOf, MIN_SECRET_LENGTH, signQuoteToken, subjectOf } from './quote-token.js';
+import { canonicalInput, canonicalLines } from './quote-canon.js';
+import {
+  inputHashOf,
+  linesHashOf,
+  MIN_SECRET_LENGTH,
+  signQuoteToken,
+  subjectOf,
+  type QuoteEvidence,
+} from './quote-token.js';
+
+export interface ResolvedSavedAddress {
+  addressLine: string;
+  referenceNote: string | null;
+  latitude: number | null;
+  longitude: number | null;
+}
+
+/** Lugar de entrega ya resuelto por la cotización (F20 lo copia al snapshot sin releer la BD). */
+export interface ResolvedPlace {
+  municipalityId: string;
+  municipalityName: string;
+  zone: string | null;
+  savedAddress: ResolvedSavedAddress | null;
+}
+
+/** Resultado de `quoteWithEvidence`: la cotización pública + lo que F20 compara contra el token + el lugar resuelto. */
+export interface QuoteWithEvidence {
+  quote: CheckoutQuoteDto;
+  /** Payload del token que se habría firmado; `null` si no `canProceed` o si no hay secreto utilizable. */
+  evidence: QuoteEvidence | null;
+  resolved: { place: ResolvedPlace | null };
+}
 
 /** Lo que la cotización necesita saber del lugar de entrega (municipio + zona ya resueltos). */
 interface Place {
   municipalityId: string;
+  municipalityName: string;
+  /** Dirección guardada del cliente (copia para el snapshot del pedido); `null` con municipio + zona. */
+  savedAddress: ResolvedSavedAddress | null;
   /** Zona normalizada (`null` = sin zona). En la ciudad de Guatemala, solo la forma canónica «Zona N». */
   zone: string | null;
   /** `true` si falta información obligatoria (ciudad de Guatemala sin «Zona N» válida): no se consulta cobertura. */
@@ -85,6 +119,11 @@ interface Loaded {
   coverage: DeliveryCoverageResult | null;
 }
 
+type QuoteBody = Pick<
+  CheckoutQuoteRequestDto,
+  'cart' | 'fulfillment' | 'couponCode' | 'clientView'
+>;
+
 type Settled<T> = { ok: true; value: T } | { ok: false; error: unknown };
 const settle = <T>(promise: Promise<T>): Promise<Settled<T>> =>
   promise.then(
@@ -103,32 +142,6 @@ function groupSelections(line: {
     else byGroup.set(s.groupId, [s.optionId]);
   }
   return [...byGroup].map(([groupId, modifierIds]) => ({ groupId, modifierIds }));
-}
-
-/** Entrada canónica (ordenada y normalizada) para la huella del token: dos entradas equivalentes dan la misma huella. */
-function canonicalInput(
-  body: CheckoutQuoteRequestDto,
-  coupon: string | null,
-  zoneLabel: string | null,
-): unknown {
-  const { cart, fulfillment } = body;
-  const lines = cart.lines
-    .map((l) => ({
-      p: l.productId.toLowerCase(),
-      q: l.quantity,
-      s: l.selections.map((x) => [x.groupId.toLowerCase(), x.optionId.toLowerCase()]).sort(),
-    }))
-    .sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1));
-  return {
-    b: cart.branchId.toLowerCase(),
-    t: fulfillment.type,
-    p: fulfillment.deliveryProvider ?? null,
-    a: fulfillment.customerAddressId?.toLowerCase() ?? null,
-    m: fulfillment.municipalityId?.toLowerCase() ?? null,
-    z: zoneLabel === null ? null : zoneLabel.toLowerCase(),
-    c: coupon,
-    l: lines,
-  };
 }
 
 /**
@@ -165,6 +178,17 @@ export class CheckoutQuoteService {
     principal: Principal | undefined,
     body: CheckoutQuoteRequestDto,
   ): Promise<CheckoutQuoteDto> {
+    return (await this.quoteWithEvidence(principal, body)).quote;
+  }
+
+  /**
+   * Misma cotización que `quote()` (que delega aquí sin cambiar su resultado) más la evidencia que F20 compara con el
+   * token y el lugar de entrega resuelto (ADR-0026 D2). Una sola pasada de lecturas; sin efectos.
+   */
+  async quoteWithEvidence(
+    principal: Principal | undefined,
+    body: Pick<CheckoutQuoteRequestDto, 'cart' | 'fulfillment' | 'couponCode' | 'clientView'>,
+  ): Promise<QuoteWithEvidence> {
     const { cart, fulfillment } = body;
     assertQuoteLimits(cart.lines);
     assertFulfillmentShape(fulfillment);
@@ -188,7 +212,7 @@ export class CheckoutQuoteService {
 
   private async load(
     principal: Principal | undefined,
-    body: CheckoutQuoteRequestDto,
+    body: QuoteBody,
     zoneLabel: string | null,
     coupon: string | null,
     at: Date,
@@ -243,7 +267,7 @@ export class CheckoutQuoteService {
   /** Municipio y zona del lugar de entrega. Dirección guardada: SIEMPRE con el cliente del JWT (404 igual si es ajena). */
   private async resolvePlace(
     principal: Principal | undefined,
-    fulfillment: CheckoutQuoteRequestDto['fulfillment'],
+    fulfillment: QuoteBody['fulfillment'],
     zoneLabel: string | null,
   ): Promise<Place | null> {
     if (fulfillment.type === 'PICKUP') return null;
@@ -255,8 +279,15 @@ export class CheckoutQuoteService {
       );
       return placeOf(
         address.municipality.id,
+        address.municipality.name,
         isGuatemalaCity(address.municipality.name, address.department.name),
         address.zone,
+        {
+          addressLine: address.addressLine,
+          referenceNote: address.referenceNote,
+          latitude: address.latitude,
+          longitude: address.longitude,
+        },
       );
     }
     const municipality = await this.locations.findMunicipality(
@@ -265,8 +296,10 @@ export class CheckoutQuoteService {
     if (!municipality) throw municipalityNotFound();
     return placeOf(
       municipality.id,
+      municipality.name,
       isGuatemalaCity(municipality.name, municipality.departmentName),
       zoneLabel,
+      null,
     );
   }
 
@@ -274,12 +307,12 @@ export class CheckoutQuoteService {
 
   private assemble(
     principal: Principal | undefined,
-    body: CheckoutQuoteRequestDto,
+    body: QuoteBody,
     loaded: Loaded,
     coupon: string | null,
     zoneLabel: string | null,
     at: Date,
-  ): CheckoutQuoteDto {
+  ): QuoteWithEvidence {
     const { cart, fulfillment } = body;
     const isDelivery = fulfillment.type === 'DELIVERY';
 
@@ -370,17 +403,25 @@ export class CheckoutQuoteService {
     const canProceed = blockers.length === 0;
     const generatedAt = at.toISOString();
     const expiresAt = new Date(at.getTime() + QUOTE_TTL_SECONDS * 1000);
-    return {
+    const evidence =
+      canProceed &&
+      this.secret !== undefined &&
+      this.secret.length >= MIN_SECRET_LENGTH &&
+      amounts.total !== null
+        ? this.evidenceOf(principal, body, coupon, zoneLabel, amounts, delivery)
+        : null;
+    const iat = Math.floor(at.getTime() / 1000);
+    const dto: CheckoutQuoteDto = {
       quote: {
         generatedAt,
         expiresAt: expiresAt.toISOString(),
         token:
-          canProceed &&
-          this.secret !== undefined &&
-          this.secret.length >= MIN_SECRET_LENGTH &&
-          amounts.total !== null
-            ? this.sign(principal, body, coupon, zoneLabel, at, amounts, delivery)
-            : null,
+          evidence === null
+            ? null
+            : signQuoteToken(
+                { v: 1, iat, exp: iat + QUOTE_TTL_SECONDS, ...evidence },
+                this.secret as string,
+              ),
       },
       currency: 'GTQ',
       branch: {
@@ -401,44 +442,60 @@ export class CheckoutQuoteService {
       blockers,
       notices,
     };
+    const place = loaded.place;
+    return {
+      quote: dto,
+      evidence,
+      resolved: {
+        place: place
+          ? {
+              municipalityId: place.municipalityId,
+              municipalityName: place.municipalityName,
+              zone: place.zone,
+              savedAddress: place.savedAddress,
+            }
+          : null,
+      },
+    };
   }
 
-  private sign(
+  /** Payload (sin vigencia) que firma el token y que F20 compara tras recotizar. */
+  private evidenceOf(
     principal: Principal | undefined,
-    body: CheckoutQuoteRequestDto,
+    body: QuoteBody,
     coupon: string | null,
     zoneLabel: string | null,
-    at: Date,
     amounts: ReturnType<typeof priceQuote>,
     delivery: CheckoutDeliveryDto | null,
-  ): string {
+  ): QuoteEvidence {
     const secret = this.secret as string;
-    const iat = Math.floor(at.getTime() / 1000);
-    return signQuoteToken(
-      {
-        v: 1,
-        iat,
-        exp: iat + QUOTE_TTL_SECONDS,
-        branchId: body.cart.branchId,
-        type: body.fulfillment.type,
-        provider: delivery?.selectedProvider ?? null,
-        subtotal: amounts.subtotal,
-        discountTotal: amounts.discountTotal,
-        deliveryFee: amounts.deliveryFee as string,
-        total: amounts.total as string,
-        inputHash: inputHashOf(secret, canonicalInput(body, coupon, zoneLabel)),
-        sub: subjectOf(secret, principal?.authUserId ?? null),
-      },
-      secret,
-    );
+    return {
+      branchId: body.cart.branchId,
+      type: body.fulfillment.type,
+      provider: delivery?.selectedProvider ?? null,
+      subtotal: amounts.subtotal,
+      discountTotal: amounts.discountTotal,
+      deliveryFee: amounts.deliveryFee as string,
+      total: amounts.total as string,
+      inputHash: inputHashOf(secret, canonicalInput(body, coupon, zoneLabel)),
+      sub: subjectOf(secret, principal?.authUserId ?? null),
+      linesHash: linesHashOf(secret, canonicalLines(amounts.lines)),
+    };
   }
 }
 
 /** Regla de zona de F05/C2: en la ciudad de Guatemala la zona es obligatoria con formato «Zona N»; si no, incompleta. */
-function placeOf(municipalityId: string, city: boolean, rawZone: string | null): Place {
-  if (!city) return { municipalityId, zone: rawZone, incomplete: false };
+function placeOf(
+  municipalityId: string,
+  municipalityName: string,
+  city: boolean,
+  rawZone: string | null,
+  savedAddress: ResolvedSavedAddress | null,
+): Place {
+  const base = { municipalityId, municipalityName, savedAddress };
+  if (!city) return { ...base, zone: rawZone, incomplete: false };
   const rule = applyZoneRule(rawZone, true);
   return rule.ok
-    ? { municipalityId, zone: rule.value, incomplete: false }
-    : { municipalityId, zone: null, incomplete: true };
+    ? { ...base, zone: rule.value, incomplete: false }
+    : { ...base, zone: null, incomplete: true };
 }

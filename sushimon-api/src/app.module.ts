@@ -29,6 +29,7 @@ import { BannersModule } from './banners/banners.module.js';
 import { BranchesModule } from './branches/branches.module.js';
 import { StoreModule } from './store/store.module.js';
 import { CheckoutModule } from './checkout/checkout.module.js';
+import { OrdersModule } from './orders/orders.module.js';
 import { StaffModule } from './staff/staff.module.js';
 import { CustomersModule } from './customers/customers.module.js';
 import { FavoritesModule } from './favorites/favorites.module.js';
@@ -88,6 +89,7 @@ import { HealthTokenGuard } from './health/health-token.guard.js';
     BannersModule,
     StoreModule,
     CheckoutModule,
+    OrdersModule,
     BranchScheduleModule,
     LocationsModule,
     DeliveryCoverageModule,

@@ -24,3 +24,10 @@
 - Una migración (0018) con tablas, triggers y secuencia; la int-spec contra BD real es condición para `VERIFIED`.
 - El pedido nace `pending` y sin cobro: los flujos de pago (F24/F25), tablero (F22), seguimiento (F21), reordenar (F23) y entrega (F28/F29) se montan sobre estas tablas de forma aditiva.
 - Riesgos aceptados: el número de pedido no es contiguo; un invitado pierde el acceso si pierde el token y no usa `lookup` (F21); el tope de `pending` no es atómico; la rotación del token de invitado en una repetición revoca el anterior.
+
+## Addendum (revisión de seguridad y rendimiento, 2026-11-18)
+
+- **D5 (token de invitado)**: una repetición idempotente emite un token ADICIONAL y no revoca el vigente (revocar permitiría a quien repita la petición expulsar al dueño); se conservan los 5 más recientes. Conocer clave + cuerpo equivale a poseer el pedido; por eso `Idempotency-Key` exige >= 10 caracteres distintos además del patrón. Sustituye lo dicho en D5 y D3 sobre «rotar y revocar».
+- **D8 (tope de pendientes)**: solo por `customer_id` de clientes autenticados; los invitados no se limitan por teléfono (denegación dirigida) y su freno son los throttles; P55 (captcha/verificación de teléfono) es condición previa a producción. El índice parcial por teléfono queda para uso futuro.
+- **`app.allow_order_cleanup`** (migración 0018): es un parámetro de configuración de usuario, no un control de acceso. El control real son los privilegios (`REVOKE` + RLS sin políticas) y la API nunca lo establece. Pendiente verificar al desplegar que el rol de conexión de la API no tiene `TRUNCATE`/`DELETE` donde no lo necesita.
+- **D7 (operación)**: `lock_timeout` de 2 s alineado con `maxWait`; dos adquisiciones del gate de pedidos por solicitud; la recotización nunca anida gates; 503 con `Retry-After` (2 s busy, 3 s unavailable). Requisito operativo `DB_POOL_MAX >= 5`.

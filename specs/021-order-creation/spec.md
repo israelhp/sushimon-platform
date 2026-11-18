@@ -48,7 +48,7 @@ Por qué cabecera y no query: la query queda en logs de acceso, historial, `Refe
 | 409  | `QUOTE_CHANGED`                                                                                         | La recotización difiere del token (proveedor, subtotal, descuento, tarifa, total o líneas)                             | `OrderQuoteConflict{changes, quote}`    |
 | 409  | `QUOTE_EXPIRED`                                                                                         | Token vencido (>10 min). Recotizar y reintentar                                                                        | `OrderQuoteConflict{changes:[], quote}` |
 | 409  | `IDEMPOTENCY_KEY_REUSED`                                                                                | Misma clave y cuerpo distinto                                                                                          | —                                       |
-| 409  | `IDEMPOTENCY_IN_PROGRESS`                                                                               | Esperar a una solicitud concurrente superó `lock_timeout` (3 s). `Retry-After: 1`. Reintentar con la MISMA clave       | —                                       |
+| 409  | `IDEMPOTENCY_IN_PROGRESS`                                                                               | Esperar a una solicitud concurrente superó `lock_timeout` (2 s). `Retry-After: 1`. Reintentar con la MISMA clave       | —                                       |
 | 422  | `QUOTE_INVALID`                                                                                         | Firma inválida, sujeto (`sub`) distinto, huella de entrada distinta del cuerpo, formato malformado                     | —                                       |
 | 422  | `CHECKOUT_BLOCKED`                                                                                      | La recotización trae `canProceed=false`                                                                                | `OrderBlocked{blockers}`                |
 | 422  | `DELIVERY_PROVIDER_NOT_SELECTABLE`                                                                      | Proveedor PEDIDOSYA (o cualquiera no `OWN`) elegido o resultante. Invariante propia de F20 (cinturón y tirantes)       | —                                       |
@@ -85,7 +85,7 @@ Plan de migración del mock (web-engineer): renombrar los borradores a `DraftOrd
 3. DTO validado (reutiliza los pipes y topes de F19: 30 líneas, 99 por línea, 200 unidades, 300 selecciones; 64 KB: `checkoutBodyLimitMiddleware` extendido a `POST /v1/orders`). Contacto normalizado (teléfono, correo) y notas saneadas.
 4. Actor: `principal` => `IdentityService.ensureCustomer(principal)` (crea la fila `customers` si no existe, patrón F04; NUNCA crea usuarios Supabase) y `customer_id` sale de ahí. Invitado => `customer_id` NULL.
 5. **Repetición** (consulta de la clave, §4) ANTES de validar el token: un reintento tras `QUOTE_EXPIRED` natural devuelve el pedido original.
-6. Tope de pedidos `pending` por actor/teléfono (provisional 3, P51): 429 `PENDING_ORDERS_LIMIT`.
+6. Tope de pedidos `pending` SOLO para clientes autenticados, por `customer_id` (provisional 3 en 24 h, P51): 429 `PENDING_ORDERS_LIMIT`. Los invitados NO se limitan por teléfono (permitiría a cualquiera bloquear el teléfono de otra persona); su freno son los throttles y P55 (condición previa a producción).
 7. Verificación del token (`verifyQuoteToken`): `MALFORMED`/`BAD_SIGNATURE`/`NOT_YET_VALID` => 422 `QUOTE_INVALID`; `EXPIRED` => 409 `QUOTE_EXPIRED` (con cotización nueva); `sub` != sujeto del actor => 422 `QUOTE_INVALID` (un token de invitado no sirve con sesión ni a la inversa; la web recotiza al cambiar de cuenta).
 8. **Recotización**: `CheckoutQuoteService.quoteWithEvidence(principal, {cart, fulfillment, couponCode})` (sin `clientView`), una sola vez, con el mismo cotizador y su `CHECKOUT_DB_GATE`. `canProceed=false` => 422 `CHECKOUT_BLOCKED{blockers}` (primero el invariante PEDIDOSYA). Comparación (política P52: rechazar CUALQUIER diferencia, también mejoras): `inputHash` distinto => 422 `QUOTE_INVALID`; `provider`/`subtotal`/`discountTotal`/`deliveryFee`/`total`/`linesHash` distintos => 409 `QUOTE_CHANGED{changes, quote}` con la cotización nueva (su token nuevo permite una nueva confirmación; la web exige re-aceptación y una `Idempotency-Key` nueva).
 9. Lecturas de snapshot (una oleada, 3 consultas por lote, sin N+1): nombres de productos, de modificadores y de promociones aplicadas (`findMany ... in`). El lugar (municipio, zona, dirección guardada) lo devuelve `quoteWithEvidence` (`resolved.place`), sin releer.
@@ -99,9 +99,9 @@ Alcance (`scope`): `customer:<customers.id>` o `guest`. Clave: `key_hash = sha25
 
 Protocolo:
 
-1. **Fast path** (1 consulta, fuera de transacción): `SELECT request_hash, order_id FROM order_idempotency_keys WHERE scope=$1 AND key_hash=$2 AND expires_at > now()`. Existe y `request_hash` igual => cargar el pedido y responder **200** + `Idempotent-Replayed: true` (invitado: revoca los tokens activos del pedido y emite uno nuevo; autenticado: `access=null`). Existe y distinto => 409 `IDEMPOTENCY_KEY_REUSED`.
+1. **Fast path** (1 consulta, fuera de transacción): `SELECT request_hash, order_id FROM order_idempotency_keys WHERE scope=$1 AND key_hash=$2 AND expires_at > now()`. Existe y `request_hash` igual => cargar el pedido y responder **200** + `Idempotent-Replayed: true` (invitado: emite un token ADICIONAL sin revocar el vigente y conserva solo los 5 más recientes; autenticado: `access=null`). Existe y distinto => 409 `IDEMPOTENCY_KEY_REUSED`.
 2. No existe => flujo normal (§3.6–3.9). Fila vencida con la misma clave: se borra de forma perezosa justo antes de la transacción (`DELETE ... WHERE scope=$1 AND key_hash=$2 AND expires_at <= now()`); además, con probabilidad 1/50 por creación, `DELETE ... WHERE id IN (SELECT id ... WHERE expires_at < now() LIMIT 100)`. Sin cron.
-3. **Transacción** (`READ COMMITTED`, una conexión; el primer paso es `SET LOCAL lock_timeout = '3s'`):
+3. **Transacción** (`READ COMMITTED`, una conexión; el primer paso es `SET LOCAL lock_timeout = '2s'`):
    a. `INSERT INTO order_idempotency_keys (id, scope, key_hash, request_hash, order_id, expires_at) VALUES (...) ON CONFLICT (scope, key_hash) DO NOTHING RETURNING id`. El `order_id` es un UUID generado en la aplicación y la FK `order_id -> orders` es `DEFERRABLE INITIALLY DEFERRED` (se comprueba al `COMMIT`): así la clave se reclama ANTES de gastar un número de secuencia.
    b. Si NO devuelve fila (otra transacción ya la tiene): `SELECT request_hash, order_id ...`; igual => se descarta la transacción (`ROLLBACK`) y se responde como repetición (200); distinto => 409 `IDEMPOTENCY_KEY_REUSED`.
    c. Si devuelve fila (somos dueños): `INSERT orders` (devuelve `order_number`), `createMany` de `order_addresses`, `order_items`, `order_item_modifiers`, `order_promotions`, `order_status_history` (una fila `NULL -> pending`), `order_access_tokens` (invitado), y `AuditService.record(tx, {action:'order.created', ...})` (mismo cliente transaccional). ~9 sentencias, por lote.
@@ -111,15 +111,15 @@ Protocolo:
 
 ### Los 7 escenarios
 
-| #   | Escenario                                 | Resultado                                                                                                                                                                 |
-| --- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Doble clic                                | La web envía una sola vez (`busy` + ref síncrona). Si dos peticiones llegan: igual que 5.                                                                                 |
-| 2   | Reenvío manual tras error                 | Misma clave si no cambió la huella de entrada: la repetición devuelve el pedido (200) o crea uno solo.                                                                    |
-| 3   | La red cae después del commit             | El cliente no vio la respuesta: reintenta con la misma clave => 200 con el mismo pedido y, si es invitado, un `guestToken` nuevo (el anterior se revoca). No se recotiza. |
-| 4   | Reintento con la misma clave              | Fast path: mismo pedido, sin recotizar ni validar vigencia del token, `Idempotent-Replayed: true`.                                                                        |
-| 5   | Dos solicitudes concurrentes, misma clave | Una gana el `INSERT`; la otra espera y recibe el mismo pedido (200) o 409 `IDEMPOTENCY_IN_PROGRESS` si superó 3 s. Nunca dos pedidos (UNIQUE).                            |
-| 6   | Misma clave con otros productos           | `request_hash` distinto => 409 `IDEMPOTENCY_KEY_REUSED`; no se crea ni se devuelve nada. La web genera una clave nueva al cambiar la huella.                              |
-| 7   | Reinicio del servidor                     | Todo vive en PostgreSQL: el estado sobrevive; una transacción cortada por el reinicio revierte entera (clave incluida).                                                   |
+| #   | Escenario                                 | Resultado                                                                                                                                                                        |
+| --- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Doble clic                                | La web envía una sola vez (`busy` + ref síncrona). Si dos peticiones llegan: igual que 5.                                                                                        |
+| 2   | Reenvío manual tras error                 | Misma clave si no cambió la huella de entrada: la repetición devuelve el pedido (200) o crea uno solo.                                                                           |
+| 3   | La red cae después del commit             | El cliente no vio la respuesta: reintenta con la misma clave => 200 con el mismo pedido y, si es invitado, un `guestToken` adicional (el anterior sigue válido). No se recotiza. |
+| 4   | Reintento con la misma clave              | Fast path: mismo pedido, sin recotizar ni validar vigencia del token, `Idempotent-Replayed: true`.                                                                               |
+| 5   | Dos solicitudes concurrentes, misma clave | Una gana el `INSERT`; la otra espera y recibe el mismo pedido (200) o 409 `IDEMPOTENCY_IN_PROGRESS` si superó 2 s. Nunca dos pedidos (UNIQUE).                                   |
+| 6   | Misma clave con otros productos           | `request_hash` distinto => 409 `IDEMPOTENCY_KEY_REUSED`; no se crea ni se devuelve nada. La web genera una clave nueva al cambiar la huella.                                     |
+| 7   | Reinicio del servidor                     | Todo vive en PostgreSQL: el estado sobrevive; una transacción cortada por el reinicio revierte entera (clave incluida).                                                          |
 
 ## 5. Número de pedido, estados y pagos
 
@@ -251,8 +251,8 @@ Snapshots: nombres, precios, cantidades, extras, descuento por línea, promocion
 
 - `@OptionalAuth()` en `createOrder` y `getOrder` (ya existe, ADR-0025 D2). `customer_id` siempre de la sesión; ningún `customerId` en el cuerpo. `customerAddressId` exige sesión y propiedad (404 idéntico; reutiliza `CustomerAddressesService.get`).
 - Throttle: `CREATE_ORDER_THROTTLE` = 10/min por IP (`default`) y 10/min por actor; `GET` 60/min por IP y 30/min por actor (los intentos con token inválido cuentan). 429 `RATE_LIMITED` con `Retry-After`. `TRUST_PROXY_HOPS` sigue siendo requisito de despliegue (F19 §9, M4).
-- Tope de pedidos `pending` por `customer_id` o por `customer_phone` normalizado (provisional 3; consulta por el índice parcial `orders_phone_pending_idx` / `orders_customer_placed_idx`): 429 `PENDING_ORDERS_LIMIT`. No es atómico (puede excederse por 1 bajo concurrencia); aceptado (P51).
-- Token de invitado: 32 bytes de `crypto.randomBytes` (256 bits), formato `smo_` + base64url, guardado como `sha256` (alta entropía: no necesita sal ni HMAC) en `order_access_tokens`; vigencia 14 días desde la creación (P49), revocable (`revoked_at`); se muestra una vez (y se rota en una repetición idempotente). Tabla propia (no columna) para poder rotar, tener varios y revocar sin tocar `orders` (F21 podrá añadir enlaces compartibles). Comparación por igualdad del hash indexado.
+- Tope de pedidos `pending` por `customer_id` SOLO de clientes autenticados (provisional 3 en 24 h; índice `orders_customer_placed_idx`): 429 `PENDING_ORDERS_LIMIT`. No es atómico (puede excederse por 1); aceptado (P51). NO se aplica a invitados por teléfono (denegación dirigida). El índice parcial `orders_phone_pending_idx` se conserva para uso futuro (p. ej. P55); hoy ninguna consulta lo usa.
+- Token de invitado: 32 bytes de `crypto.randomBytes` (256 bits), formato `smo_` + base64url, guardado como `sha256` (alta entropía: no necesita sal ni HMAC) en `order_access_tokens`; vigencia 14 días desde la creación (P49), revocable (`revoked_at`); se muestra al crear (y una repetición idempotente emite uno ADICIONAL sin revocar el vigente; solo se conservan los 5 más recientes). Tabla propia (no columna) para poder rotar, tener varios y revocar sin tocar `orders` (F21 podrá añadir enlaces compartibles). Comparación por igualdad del hash indexado.
 - Teléfono (GT): `^(\+?502)?[\s-]?[2-7][0-9]{3}[\s-]?[0-9]{4}$` => `+502XXXXXXXX`; correo `format: email` ≤ 254; nombre 2–120 sin caracteres de control; notas ≤ 280. Datos mínimos del invitado: nombre y teléfono (P50).
 - Sin PII en logs, ni en `audit_events`, ni en la clave de idempotencia (`key_hash`/`request_hash` irreversibles sin el secreto).
 
@@ -290,53 +290,53 @@ Autenticado: `contact` se omite o se precarga del perfil (F04) y es editable; la
 
 ## 11. Pruebas (U unitaria · S servicio con dobles · E e2e supertest · I int-spec con BD real · W Vitest web · P Playwright)
 
-| #   | Caso                                                                                                                                                                              | Nivel   |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| 1   | PICKUP válido: pedido `pending`, tarifa `0.00`, sin dirección                                                                                                                     | S, E, I |
-| 2   | DELIVERY OWN con zona: tarifa de zona, snapshot de dirección                                                                                                                      | S, I    |
-| 3   | OWN deshabilitado (flag apagado) o fuera de cobertura => 422 `CHECKOUT_BLOCKED` (`DELIVERY_UNVERIFIED`/`DELIVERY_UNAVAILABLE`), nada persistido                                   | S, E    |
-| 4   | PedidosYa sin cobertura / elegido => 422 `DELIVERY_PROVIDER_NOT_SELECTABLE`; invariante aunque el cotizador mienta (doble que devuelve PEDIDOSYA)                                 | U, S, E |
-| 5   | Cliente autenticado: `customer_id` de la sesión; `ensureCustomer` crea la fila; `customerId` en el cuerpo => 400                                                                  | S, E    |
-| 6   | Invitado: `customer_id` NULL, contacto obligatorio, `guestToken` emitido; autenticado: `access=null`                                                                              | S, E    |
-| 7   | Dirección guardada propia OK; ajena o inexistente => mismo 404; sin sesión => 401; `deliveryAddress` con `customerAddressId` => 400                                               | S, E    |
-| 8   | Carrito vacío, líneas/unidades/selecciones sobre el tope => 400; producto inexistente/inactivo/agotado => `CHECKOUT_BLOCKED`                                                      | S, E    |
-| 9   | Extras: válidos, obligatorios, máximo, opción inactiva; snapshot de nombres y precios de extras                                                                                   | S, I    |
-| 10  | Cantidades 1..99; precios por sucursal (override vs base) quedan en el snapshot                                                                                                   | S, I    |
-| 11  | Promociones/cupón: descuento por línea y `order_promotions` con monto y nombre; Σ `order_promotions` = `discount_total`                                                           | S, I    |
-| 12  | Sucursal cerrada => `CHECKOUT_BLOCKED` (`BRANCH_CLOSED`); sucursal inactiva => 422 `BRANCH_NOT_AVAILABLE`                                                                         | S, E    |
-| 13  | Token vencido => 409 `QUOTE_EXPIRED` con cotización nueva; reloj inyectado                                                                                                        | U, S    |
-| 14  | Token ausente => 400; malformado, firma mala, `sub` distinto (guest vs sesión), entrada distinta => 422 `QUOTE_INVALID`                                                           | U, S, E |
-| 15  | Cambio de precio/tarifa/descuento/línea entre cotización y pedido => 409 `QUOTE_CHANGED` con `changes` y `quote`; no persiste nada                                                | S, E    |
-| 16  | Mejora de precio también rechazada (P52); mismo total con líneas distintas => `QUOTE_CHANGED` (`lines`)                                                                           | S       |
-| 17  | Sin `CHECKOUT_QUOTE_SECRET` => 503 `ORDERS_UNAVAILABLE`, nada persistido                                                                                                          | S, E    |
-| 18  | Precisión: `total = subtotal − descuento + tarifa` (tabla y propiedad con 99 × 9999.99); CHECKs de la BD rechazan totales incoherentes                                            | U, I    |
-| 19  | Entrada con `price`, `total`, `deliveryFee`, `status`, `paid`, `coverage` => 400                                                                                                  | E       |
-| 20  | Número de pedido: identity única, creciente; 20 creaciones concurrentes sin duplicados; huecos tolerados                                                                          | I       |
-| 21  | Snapshots inmutables: cambiar nombre/precio del producto y del extra, o la dirección guardada, después del pedido no altera el pedido; UPDATE/DELETE de hijas fallan              | I       |
-| 22  | Historial inicial: una fila `NULL -> pending`; append-only (UPDATE/DELETE fallan)                                                                                                 | I       |
-| 23  | Rollback ante fallo parcial (falla `order_items`/auditoría): no quedan `orders`, hijas, token ni clave                                                                            | I       |
-| 24  | Idempotencia: misma clave y cuerpo => mismo pedido, 200 + `Idempotent-Replayed`, sin recotizar, aun con token vencido                                                             | S, E, I |
-| 25  | Idempotencia concurrente: N=10 `Promise.all` con la misma clave => 1 pedido, todas las respuestas con el mismo `id`                                                               | I       |
-| 26  | Misma clave con cuerpo distinto => 409 `IDEMPOTENCY_KEY_REUSED`; claves de actores distintos no se cruzan (cliente A, cliente B, invitado)                                        | S, I    |
-| 27  | Pérdida de respuesta (commit + corte): reintento devuelve el pedido; invitado recibe token nuevo y el anterior queda revocado (`GET` con el viejo => 404)                         | I       |
-| 28  | `IDEMPOTENCY_IN_PROGRESS` por `lock_timeout` con transacción retenida; clave vencida se purga perezosamente y permite crear de nuevo                                              | I       |
-| 29  | Reinicio: el estado de claves vive en la BD (nueva instancia del servicio ve la misma fila)                                                                                       | I       |
-| 30  | `GET /v1/orders/{id}`: dueño por JWT OK; ajeno por JWT => 404; invitado con token OK; token de otro pedido, vencido, revocado, ausente => 404 idéntico                            | S, E, I |
-| 31  | Cuerpo del 404 idéntico (mismo JSON) en todos los casos; `Cache-Control: private, no-store`; sin PII sensible en la respuesta (teléfono enmascarado, sin correo)                  | E       |
-| 32  | Rate limit de creación y de lectura (IP, actor); tope de `pending` por teléfono/cliente => 429 `PENDING_ORDERS_LIMIT`                                                             | E, I    |
-| 33  | No se marca nada pagado: `payment.status='NOT_STARTED'`; no se crean filas en `payments`/`deliveries`/`notifications`; `card` => 422                                              | S, I    |
-| 34  | No hay llamadas externas ni notificaciones: `OrderEventsPublisher` no-op invocado tras el commit; su fallo no afecta la respuesta; sin red (adaptador PedidosYa sin invocar)      | S       |
-| 35  | Auditoría `order.created` en la misma transacción, sin PII; `actor_id` NULL                                                                                                       | S, I    |
-| 36  | Sin N+1: contador de consultas ≤ presupuesto con 30 líneas; `ORDERS_BUSY` 503 y libera cupo                                                                                       | S, I    |
-| 37  | Contrato: `contracts:check` verde tras implementar; el cuerpo de `OrderCreateRequest` valida contra el esquema                                                                    | U       |
-| 38  | Web: clave estable ante reintento; nueva al cambiar la huella; un solo envío con doble clic; sessionStorage limpio tras éxito                                                     | W       |
-| 39  | Web: estados `ambiguo` → éxito con la misma clave; `QUOTE_CHANGED` con nuevo total y re-aceptación; `QUOTE_EXPIRED` recotiza; bloqueos; 409 clave; 429; 503; `ORDERS_UNAVAILABLE` | W       |
-| 40  | Web: éxito solo con respuesta del servidor; `clearAfterOrder` solo con id confirmado y solo tras éxito; carrito conservado ante cualquier error                                   | W       |
-| 41  | Web: confirmación muestra número, estado `pending`, resumen y texto honesto (sin aceptado/pagado); recarga reconstruye con `GET` + token o sesión                                 | W, P    |
-| 42  | Web: sin insignia «Simulación» en el pedido `http`; sí en `mock` y en la tarjeta Neonet                                                                                           | W       |
-| 43  | Playwright contra la API real: pickup invitado; delivery OWN; autenticado con dirección guardada (requiere sesión Supabase: no verificado hasta tenerla)                          | P       |
-| 44  | Responsive (móvil/escritorio), tema claro/oscuro, es/en, a11y (axe, `aria-live`, foco, botones ≥ 44 px) en confirmación y estados de error                                        | P       |
-| 45  | Seguimiento mock `/pedidos/[id]` sigue funcionando; `parity.test.ts` mock/contrato del `POST /v1/orders`                                                                          | W       |
+| #   | Caso                                                                                                                                                                                                  | Nivel   |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 1   | PICKUP válido: pedido `pending`, tarifa `0.00`, sin dirección                                                                                                                                         | S, E, I |
+| 2   | DELIVERY OWN con zona: tarifa de zona, snapshot de dirección                                                                                                                                          | S, I    |
+| 3   | OWN deshabilitado (flag apagado) o fuera de cobertura => 422 `CHECKOUT_BLOCKED` (`DELIVERY_UNVERIFIED`/`DELIVERY_UNAVAILABLE`), nada persistido                                                       | S, E    |
+| 4   | PedidosYa sin cobertura / elegido => 422 `DELIVERY_PROVIDER_NOT_SELECTABLE`; invariante aunque el cotizador mienta (doble que devuelve PEDIDOSYA)                                                     | U, S, E |
+| 5   | Cliente autenticado: `customer_id` de la sesión; `ensureCustomer` crea la fila; `customerId` en el cuerpo => 400                                                                                      | S, E    |
+| 6   | Invitado: `customer_id` NULL, contacto obligatorio, `guestToken` emitido; autenticado: `access=null`                                                                                                  | S, E    |
+| 7   | Dirección guardada propia OK; ajena o inexistente => mismo 404; sin sesión => 401; `deliveryAddress` con `customerAddressId` => 400                                                                   | S, E    |
+| 8   | Carrito vacío, líneas/unidades/selecciones sobre el tope => 400; producto inexistente/inactivo/agotado => `CHECKOUT_BLOCKED`                                                                          | S, E    |
+| 9   | Extras: válidos, obligatorios, máximo, opción inactiva; snapshot de nombres y precios de extras                                                                                                       | S, I    |
+| 10  | Cantidades 1..99; precios por sucursal (override vs base) quedan en el snapshot                                                                                                                       | S, I    |
+| 11  | Promociones/cupón: descuento por línea y `order_promotions` con monto y nombre; Σ `order_promotions` = `discount_total`                                                                               | S, I    |
+| 12  | Sucursal cerrada => `CHECKOUT_BLOCKED` (`BRANCH_CLOSED`); sucursal inactiva => 422 `BRANCH_NOT_AVAILABLE`                                                                                             | S, E    |
+| 13  | Token vencido => 409 `QUOTE_EXPIRED` con cotización nueva; reloj inyectado                                                                                                                            | U, S    |
+| 14  | Token ausente => 400; malformado, firma mala, `sub` distinto (guest vs sesión), entrada distinta => 422 `QUOTE_INVALID`                                                                               | U, S, E |
+| 15  | Cambio de precio/tarifa/descuento/línea entre cotización y pedido => 409 `QUOTE_CHANGED` con `changes` y `quote`; no persiste nada                                                                    | S, E    |
+| 16  | Mejora de precio también rechazada (P52); mismo total con líneas distintas => `QUOTE_CHANGED` (`lines`)                                                                                               | S       |
+| 17  | Sin `CHECKOUT_QUOTE_SECRET` => 503 `ORDERS_UNAVAILABLE`, nada persistido                                                                                                                              | S, E    |
+| 18  | Precisión: `total = subtotal − descuento + tarifa` (tabla y propiedad con 99 × 9999.99); CHECKs de la BD rechazan totales incoherentes                                                                | U, I    |
+| 19  | Entrada con `price`, `total`, `deliveryFee`, `status`, `paid`, `coverage` => 400                                                                                                                      | E       |
+| 20  | Número de pedido: identity única, creciente; 20 creaciones concurrentes sin duplicados; huecos tolerados                                                                                              | I       |
+| 21  | Snapshots inmutables: cambiar nombre/precio del producto y del extra, o la dirección guardada, después del pedido no altera el pedido; UPDATE/DELETE de hijas fallan                                  | I       |
+| 22  | Historial inicial: una fila `NULL -> pending`; append-only (UPDATE/DELETE fallan)                                                                                                                     | I       |
+| 23  | Rollback ante fallo parcial (falla `order_items`/auditoría): no quedan `orders`, hijas, token ni clave                                                                                                | I       |
+| 24  | Idempotencia: misma clave y cuerpo => mismo pedido, 200 + `Idempotent-Replayed`, sin recotizar, aun con token vencido                                                                                 | S, E, I |
+| 25  | Idempotencia concurrente: N=10 `Promise.all` con la misma clave => 1 pedido, todas las respuestas con el mismo `id`                                                                                   | I       |
+| 26  | Misma clave con cuerpo distinto => 409 `IDEMPOTENCY_KEY_REUSED`; claves de actores distintos no se cruzan (cliente A, cliente B, invitado)                                                            | S, I    |
+| 27  | Pérdida de respuesta (commit + corte): reintento devuelve el pedido; invitado recibe un token adicional y el original sigue válido (`GET` con ambos => 200; con más de 5 se revocan los más antiguos) | I       |
+| 28  | `IDEMPOTENCY_IN_PROGRESS` por `lock_timeout` con transacción retenida; clave vencida se purga perezosamente y permite crear de nuevo                                                                  | I       |
+| 29  | Reinicio: el estado de claves vive en la BD (nueva instancia del servicio ve la misma fila)                                                                                                           | I       |
+| 30  | `GET /v1/orders/{id}`: dueño por JWT OK; ajeno por JWT => 404; invitado con token OK; token de otro pedido, vencido, revocado, ausente => 404 idéntico                                                | S, E, I |
+| 31  | Cuerpo del 404 idéntico (mismo JSON) en todos los casos; `Cache-Control: private, no-store`; sin PII sensible en la respuesta (teléfono enmascarado, sin correo)                                      | E       |
+| 32  | Rate limit de creación y de lectura (IP, actor); tope de `pending` por cliente autenticado => 429 (invitado por teléfono NO) `PENDING_ORDERS_LIMIT`                                                   | E, I    |
+| 33  | No se marca nada pagado: `payment.status='NOT_STARTED'`; no se crean filas en `payments`/`deliveries`/`notifications`; `card` => 422                                                                  | S, I    |
+| 34  | No hay llamadas externas ni notificaciones: `OrderEventsPublisher` no-op invocado tras el commit; su fallo no afecta la respuesta; sin red (adaptador PedidosYa sin invocar)                          | S       |
+| 35  | Auditoría `order.created` en la misma transacción, sin PII; `actor_id` NULL                                                                                                                           | S, I    |
+| 36  | Sin N+1: contador de consultas ≤ presupuesto con 30 líneas; `ORDERS_BUSY` 503 y libera cupo                                                                                                           | S, I    |
+| 37  | Contrato: `contracts:check` verde tras implementar; el cuerpo de `OrderCreateRequest` valida contra el esquema                                                                                        | U       |
+| 38  | Web: clave estable ante reintento; nueva al cambiar la huella; un solo envío con doble clic; sessionStorage limpio tras éxito                                                                         | W       |
+| 39  | Web: estados `ambiguo` → éxito con la misma clave; `QUOTE_CHANGED` con nuevo total y re-aceptación; `QUOTE_EXPIRED` recotiza; bloqueos; 409 clave; 429; 503; `ORDERS_UNAVAILABLE`                     | W       |
+| 40  | Web: éxito solo con respuesta del servidor; `clearAfterOrder` solo con id confirmado y solo tras éxito; carrito conservado ante cualquier error                                                       | W       |
+| 41  | Web: confirmación muestra número, estado `pending`, resumen y texto honesto (sin aceptado/pagado); recarga reconstruye con `GET` + token o sesión                                                     | W, P    |
+| 42  | Web: sin insignia «Simulación» en el pedido `http`; sí en `mock` y en la tarjeta Neonet                                                                                                               | W       |
+| 43  | Playwright contra la API real: pickup invitado; delivery OWN; autenticado con dirección guardada (requiere sesión Supabase: no verificado hasta tenerla)                                              | P       |
+| 44  | Responsive (móvil/escritorio), tema claro/oscuro, es/en, a11y (axe, `aria-live`, foco, botones ≥ 44 px) en confirmación y estados de error                                                            | P       |
+| 45  | Seguimiento mock `/pedidos/[id]` sigue funcionando; `parity.test.ts` mock/contrato del `POST /v1/orders`                                                                                              | W       |
 
 ## 12. Criterios de aceptación
 
@@ -350,22 +350,22 @@ Autenticado: `contact` se omite o se precarga del perfil (F04) y es editable; la
 
 ## 13. Riesgos
 
-| Riesgo                                                                                     | Mitigación                                                                                                                |
-| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| `lock_timeout` y espera concurrente retienen conexiones del pool                           | `ORDERS_DB_GATE` propio, `lock_timeout` 3 s, cola acotada; prueba mixta F17+F19+F20 pendiente                             |
-| FK diferida y reclamación previa de la clave dependen de semántica de PostgreSQL           | int-spec #25/#28 con BD real obligatoria; no se marca `VERIFIED` sin ella                                                 |
-| Token de invitado en `sessionStorage` se pierde (otra pestaña/dispositivo)                 | Aceptado (P49); F21 aporta `lookup`; el 200 idempotente rota el token solo si hay misma clave                             |
-| Un token de invitado robado da acceso al pedido (dirección, nombre)                        | 256 bits, solo hash en BD, vigencia 14 días, revocable, 404 uniforme, throttle; sin correo ni coordenadas en la respuesta |
-| Rotación del token en repetición de invitado revoca el anterior (otra pestaña lo perdería) | Solo ocurre con la clave secreta del intento; documentado; la clave está en `sessionStorage` de la misma pestaña          |
-| Spam de pedidos de invitado (sin cuenta)                                                   | Throttle IP/actor, tope de `pending` por teléfono (P51), validación de teléfono GT; sin captcha en v1 (P55)               |
-| Cupón sin límites de uso (P15)                                                             | Se registra lo aplicado; el modelo de canjes es de F15/P15                                                                |
-| Comparación de líneas solo por totales + `linesHash`                                       | `linesHash` aditivo en el token (§10.2); sin él, un cambio compensado de líneas con igual total pasaría                   |
-| `PEDIDOSYA` aparece en el CHECK de `delivery_provider` pero F20 no lo crea                 | Invariante en servicio + prueba #4; F29 define cómo se crea                                                               |
-| Número de pedido revela volumen (secuencia visible)                                        | `START WITH 1001` y P53 (prefijo/ofuscación); no es credencial                                                            |
-| Tablas de F21/F22 asumen el catálogo de estados                                            | Catálogo en CHECK cerrado aquí; ampliarlo es una migración aditiva con ADR                                                |
-| Concurrencia sobre el tope de `pending`                                                    | Aceptado (no atómico); cota práctica por throttle                                                                         |
-| Datos personales sin política de retención                                                 | P56; no se copian a auditoría ni logs                                                                                     |
-| Prueba de `createMany` por lote con adaptador `pg` y claves UUID generadas en la app       | int-spec #20/#23; la API genera UUID (`randomUUID`) para evitar `RETURNING` por hijo                                      |
+| Riesgo                                                                                        | Mitigación                                                                                                                                                                                  |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lock_timeout` y espera concurrente retienen conexiones del pool                              | `ORDERS_DB_GATE` propio, `lock_timeout` 2 s, cola acotada; prueba mixta F17+F19+F20 pendiente                                                                                               |
+| FK diferida y reclamación previa de la clave dependen de semántica de PostgreSQL              | int-spec #25/#28 con BD real obligatoria; no se marca `VERIFIED` sin ella                                                                                                                   |
+| Token de invitado en `sessionStorage` se pierde (otra pestaña/dispositivo)                    | Aceptado (P49); F21 aporta `lookup`; el 200 idempotente rota el token solo si hay misma clave                                                                                               |
+| Un token de invitado robado da acceso al pedido (dirección, nombre)                           | 256 bits, solo hash en BD, vigencia 14 días, revocable, 404 uniforme, throttle; sin correo ni coordenadas en la respuesta                                                                   |
+| Repetición de invitado emite tokens adicionales (quien conozca clave + cuerpo obtiene acceso) | Conocer clave + cuerpo equivale a poseer el pedido (por eso la clave exige >= 10 caracteres distintos, S4); sin revocación del vigente no se puede expulsar al dueño; máx. 5 tokens activos |
+| Spam de pedidos de invitado (sin cuenta)                                                      | Throttle IP/actor y validación de teléfono GT; SIN tope por teléfono (denegación dirigida). **P55 (captcha/verificación de teléfono) es CONDICIÓN PREVIA A PRODUCCIÓN**                     |
+| Cupón sin límites de uso (P15)                                                                | Se registra lo aplicado; el modelo de canjes es de F15/P15                                                                                                                                  |
+| Comparación de líneas solo por totales + `linesHash`                                          | `linesHash` aditivo en el token (§10.2); sin él, un cambio compensado de líneas con igual total pasaría                                                                                     |
+| `PEDIDOSYA` aparece en el CHECK de `delivery_provider` pero F20 no lo crea                    | Invariante en servicio + prueba #4; F29 define cómo se crea                                                                                                                                 |
+| Número de pedido revela volumen (secuencia visible)                                           | `START WITH 1001` y P53 (prefijo/ofuscación); no es credencial                                                                                                                              |
+| Tablas de F21/F22 asumen el catálogo de estados                                               | Catálogo en CHECK cerrado aquí; ampliarlo es una migración aditiva con ADR                                                                                                                  |
+| Concurrencia sobre el tope de `pending`                                                       | Aceptado (no atómico); cota práctica por throttle                                                                                                                                           |
+| Datos personales sin política de retención                                                    | P56; no se copian a auditoría ni logs                                                                                                                                                       |
+| Prueba de `createMany` por lote con adaptador `pg` y claves UUID generadas en la app          | int-spec #20/#23; la API genera UUID (`randomUUID`) para evitar `RETURNING` por hijo                                                                                                        |
 
 ## 14. Reparto
 
@@ -373,3 +373,26 @@ Autenticado: `contact` se omite o se precarga del perfil (F04) y es editable; la
 - **api-engineer**: `src/orders/` (`orders.module.ts`, `orders.controller.ts`, `orders.service.ts` orquestación, `order-quote-guard.ts` verificación y comparación del token, `order-idempotency.ts`, `orders.repository.ts` transacción y lecturas, `order-snapshot.reader.ts`, `order-access-token.ts`, `order-mapper.ts`, `order-contact.policy.ts`, `order-number.ts`, `orders-errors.ts` (`ORDERS_DB_GATE`, `ordersBusy`, `ordersUnavailable`), `order-events.publisher.ts` (puerto + no-op), `dto/`), cambios aditivos F19 (§10), `AppThrottlerGuard` (`CREATE_ORDER_THROTTLE`, `ORDER_READ_THROTTLE`), `PUBLIC_5XX_CODES`, `splitGateBudget`, pruebas S/E/I.
 - **web-engineer**: archivos de §9, mock con paridad, `parity.test.ts`, pruebas W/P, i18n, `docs/ui/mock-data-strategy.md`.
 - **security-reviewer** (solo lectura) tras la API: idempotencia, token de invitado, IDOR/404 uniforme, PII, `OptionalAuth`, fail-closed. **qa-engineer** para la matriz. **performance-reviewer**: presupuesto de consultas y gate.
+
+## 15. Addendum de revisión (seguridad y rendimiento, 2026-11-18)
+
+Cambios aplicados tras las revisiones de security-reviewer y performance-reviewer:
+
+- **S1 (token de invitado)**: la repetición idempotente emite un token ADICIONAL y no revoca el vigente; solo se revocan los activos que excedan los 5 más recientes por pedido. Conocer clave + cuerpo equivale a poseer el pedido (por eso S4). Nota para el contrato: la descripción de `createOrder` en `openapi.yaml` todavía dice «el anterior queda revocado»; el texto debe actualizarse (sin cambio de forma).
+- **S2 (tope P51)**: solo clientes autenticados, por `customer_id`. Invitados: sin tope por teléfono; throttles + P55 (condición previa a producción). La descripción del 429 del contrato menciona «cliente o teléfono»: actualizar el texto.
+- **S3 (`app.allow_order_cleanup`)**: es un GUC de usuario; el control real son los privilegios (REVOKE + RLS) y la API nunca lo establece. La int-spec comprueba que `anon`/`authenticated` (si existen) no tengan privilegios sobre las tablas de pedidos. **Verificación pendiente**: que el rol de conexión de la API no tenga `TRUNCATE`/`DELETE` donde no lo necesita (se revisa al desplegar; no es automatizable en la int-spec).
+- **S4**: `Idempotency-Key` con < 10 caracteres distintos => 400 `IDEMPOTENCY_KEY_INVALID`. (Se usa 10 y no 16: un UUID v4 aleatorio tiene ~14-17 distintos y se rechazaría de forma habitual.)
+- **S5**: 503 `ORDERS_BUSY` (`Retry-After: 2`) y `ORDERS_UNAVAILABLE` (`Retry-After: 3`).
+- **P1**: dos adquisiciones del gate de pedidos por creación (pre-chequeos; snapshots + transacción) y dos por repetición (pre-chequeos; lectura + token); la recotización usa solo `CHECKOUT_DB_GATE` y nunca anida gates.
+- **P2 (REQUISITO OPERATIVO)**: `DB_POOL_MAX >= 5` en producción. Con `DB_POOL_MAX <= 3` (incluido el defecto) los tres gates suman el pool entero y dejan 0 conexiones a las rutas sin gate (auth, salud, backoffice). Con `DB_POOL_MAX >= 4` el reparto deja siempre >= 1 libre.
+- **P3**: `lock_timeout` de 2 s (constante `LOCK_TIMEOUT`) alineado con `maxWait` de la transacción (2 s).
+- **P4**: la purga puntual de la clave solo corre si la consulta de repetición vio la fila vencida; la purga por lote (1/50, <= 100 filas) se mantiene.
+- **P5**: prueba que satura a la vez `CHECKOUT_DB_GATE` y `ORDERS_DB_GATE` sin interbloqueo.
+
+### Riesgos aceptados adicionales (S6)
+
+- Rotar `CHECKOUT_QUOTE_SECRET` cambia las huellas de idempotencia: una repetición dentro de las 24 h con la misma clave daría 409 `IDEMPOTENCY_KEY_REUSED`. Rotar con una ventana sin pedidos en vuelo.
+- Una repetición de un pedido autenticado hecha sin sesión usa el alcance `guest` y crea otro pedido (el alcance forma parte de la unicidad).
+- `quoteToken` no es de un solo uso (limitado por throttles y por el tope de pendientes del cliente autenticado).
+- El token no se valida antes de tocar la BD porque la repetición idempotente lo omite a propósito (debe devolver el pedido original aunque el token haya vencido).
+- F22 (backoffice) debe ESCAPAR siempre notas y direcciones de pedidos (texto plano; prohibido `dangerouslySetInnerHTML`).

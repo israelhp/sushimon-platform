@@ -1071,9 +1071,9 @@ export interface paths {
          *     La clave se guarda con el pedido en la MISMA transacción, por actor (cliente o invitado), 24 h. Un 201 solo existe si el
          *     pedido está persistido.
          *     **Invitado**: la respuesta incluye `access.guestToken` (opaco, ≥ 256 bits, SOLO su hash se guarda) para consultar el
-         *     pedido con `X-Order-Token`. Se muestra al crear; en una repetición idempotente de invitado se EMITE OTRO y el anterior
-         *     queda revocado (el cliente pudo no haber recibido el primero). Cliente autenticado: `guestToken = null`.
-         *     **Anti-abuso**: límite de tasa por IP y por actor y tope de pedidos `pending` por cliente/teléfono (429).
+         *     pedido con `X-Order-Token`. Se muestra al crear; en una repetición idempotente de invitado se EMITE OTRO ADICIONAL y el anterior
+         *     NO se revoca (el cliente pudo no haber recibido el primero); solo se mantienen los 5 tokens más recientes por pedido. Cliente autenticado: `guestToken = null`.
+         *     **Anti-abuso**: límite de tasa por IP y por actor y tope de pedidos `pending` por cliente autenticado (429).
          *     Respuesta `Cache-Control: private, no-store`. Los datos de contacto no se registran en logs.
          */
         post: operations["createOrder"];
@@ -8006,7 +8006,7 @@ export interface operations {
                     "application/json": components["schemas"]["OrderBlocked"] | components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `RATE_LIMITED` (IP/actor; `Retry-After`) o `PENDING_ORDERS_LIMIT` (demasiados pedidos `pending` del mismo cliente o teléfono). `Cache-Control: no-store`. */
+            /** @description `RATE_LIMITED` (IP/actor; `Retry-After`) o `PENDING_ORDERS_LIMIT` (demasiados pedidos `pending` del mismo cliente autenticado; los invitados no se bloquean por teléfono, P51/P55). `Cache-Control: no-store`. */
             429: {
                 headers: {
                     [name: string]: unknown;
