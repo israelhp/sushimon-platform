@@ -398,5 +398,23 @@ Cobertura mínima de la int-spec contra PostgreSQL real (datos `zz-` sembrados y
   personal 1, asignaciones 1, `auth.users` 3, clientes 3, `audit_events` 159).
 - **Hallazgo real corregido**: `from`/`to` se pasan ahora como ISO con `::timestamptz` (igual que el cursor). Los instantes de
   entrada se truncan al segundo (`parseInstant`): la ventana de la prueba usa segundos enteros.
-- **No ejecutado**: API HTTP real en un puerto propio con tokens firmados y navegador contra la API real. La capa HTTP está cubierta
-  solo por e2e con dobles y Playwright en modo mock. Login real (Google/Supabase + TOTP) tampoco se ejercitó.
+- **API HTTP real** (API compilada en un puerto propio contra la BD de pruebas; JWT HS256 de prueba firmados con un secreto temporal en
+  memoria; datos `zzv23` sembrados: 2 clientes, 2 sucursales, catálogo con extras, 7 pedidos de clientes y 1 de invitado con token): lista
+  (orden, `publicStatus`, `itemCount`, keyset 2+2 sin duplicados, filtros de estado/sucursal/fechas, 401 sin JWT, 400 por cursor
+  basura y `limit=0`, cliente B solo ve lo suyo, jamás pedidos ajenos ni de invitado), recibo (dueño 200; ajeno, inexistente, de invitado
+  con JWT, token de otro pedido, sin credenciales => 404; JWT inválido 401; invitado con token 200; sin motivo, sin id interno ni
+  correo; teléfono enmascarado; `NOT_FISCAL`), vista previa (AVAILABLE con `PRICE_CHANGED`; `PRODUCT_INACTIVE` y `PRODUCT_OUT_OF_STOCK`;
+  `OPTION_INACTIVE` + `REQUIRED_SELECTION_MISSING`; otra sucursal; sucursal inexistente 404; campo extra 400; cuerpo > 2 KB 413;
+  invitado con token 200; el número de pedidos del cliente no cambió) y compatibilidad con el seguimiento de F21. Todas las
+  respuestas con `Cache-Control: private, no-store` y `Vary: Authorization`.
+- **Navegador contra la API real** (web en modo `http` con sesión de demostración y cabecera `Authorization` inyectada): pestañas «En
+  curso»/«Historial», sin fugas de motivo, correo ni teléfono en el DOM, detalle, recibo (también en `@media print`) y recibo de
+  invitado con token en `sessionStorage`; pedido ajeno sin token => «No pudimos mostrar este recibo»; «Volver a pedir» para
+  pedido en curso («¿Pedir otro igual?»), entregado (con cambio de precio), rechazado (sin productos añadibles, botón deshabilitado),
+  cancelado («Configurar»), carrito con contenido (Añadir/Reemplazar), otra sucursal (solo Reemplazar con confirmación). axe sin
+  violaciones (recibo de invitado, lista, diálogo y recibo en móvil con tema oscuro) y sin desbordamiento horizontal a 390 px.
+- **Sembrado y borrado**: todo lo sembrado (incluidos clientes, `auth.users` de prueba, catálogo y pedidos) se eliminó; conteos finales
+  = línea base y sin filas `zzv23`.
+- **No ejecutado**: login real (Google/Supabase + TOTP; se usó la sesión de demostración y tokens firmados de prueba); la sucursal sembrada
+  no tiene horario, por lo que «no recibe pedidos ahora» se vio solo como aviso; «Configurar» abre la hoja del producto sin precargar
+  las opciones (limitación conocida).
