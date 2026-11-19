@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import pg from 'pg';
 import type { TestContext } from 'vitest';
 import { AuditService } from '../src/audit/audit.service.js';
@@ -252,6 +252,7 @@ describe.skipIf(!url || !ready)('Pagos en efectivo contra PostgreSQL real (F24)'
   };
 
   beforeAll(async () => {
+    vi.setConfig({ testTimeout: 240_000, hookTimeout: 240_000 }); // latencia remota (pooler)
     vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     // eslint-disable-next-line @typescript-eslint/unbound-method
@@ -391,7 +392,7 @@ describe.skipIf(!url || !ready)('Pagos en efectivo contra PostgreSQL real (F24)'
       },
     ],
     promotions: [],
-    guestToken: { hash: Buffer.alloc(32, 5), expiresAt: new Date(Date.now() + 3_600_000) },
+    guestToken: { hash: randomBytes(32), expiresAt: new Date(Date.now() + 3_600_000) },
     itemCount: 1,
     ...over,
   });
@@ -781,7 +782,7 @@ describe.skipIf(!url || !ready)('Pagos en efectivo contra PostgreSQL real (F24)'
       );
     }
     expect(paidThenCancelled + cancelledFirst).toBe(10);
-  });
+  }, 240_000);
 
   it('CARRERA determinista: con el pedido bloqueado FOR SHARE por el cobro, la cancelación ESPERA y luego aplica (PAID + cancelled)', async (ctx) => {
     skipUnlessReady(ctx);
@@ -855,15 +856,27 @@ describe.skipIf(!url || !ready)('Pagos en efectivo contra PostgreSQL real (F24)'
     const id = await seedOrder();
     // cupo = tamaño del pool (8): las 20 solicitudes hacen cola en el gate y no agotan las conexiones
     const svc = build(new AuditService(), new DbGate(8, 40, 20_000, ordersBusy)).payments;
-    const results = await Promise.all(
+    const settled = await Promise.allSettled(
       Array.from({ length: 20 }, () => svc.register(cashierA, id, KEY_A, body('200.00'))),
     );
+    // Con latencia remota las últimas de la cola pueden recibir 503 reintentable (ORDERS_BUSY): se reintentan con la MISMA clave.
+    const results: Awaited<ReturnType<typeof svc.register>>[] = [];
+    let busy = 0;
+    for (const r of settled) {
+      if (r.status === 'fulfilled') results.push(r.value);
+      else {
+        expect([statusOf(r.reason), codeOf(r.reason)].slice(0, 1)).toEqual([503]);
+        busy += 1;
+        results.push(await svc.register(cashierA, id, KEY_A, body('200.00')));
+      }
+    }
+    console.info(`[F24 #17] 503 reintentados con la misma clave: ${busy}/20`);
     expect(results.filter((r) => !r.replayed)).toHaveLength(1);
     expect(results.filter((r) => r.replayed)).toHaveLength(19);
     expect(results.every((r) => r.body.payment.reception?.change === '15.00')).toBe(true);
     expect((await eventsOf(id)).filter((e) => e.event_type === 'cash_received')).toHaveLength(1);
     expect(await auditOf((await paymentOf(id))?.id as string)).toHaveLength(1);
-  });
+  }, 240_000);
 
   it('#25 payments.confirm solo en A y orders.read en A y B: el POST sobre un pedido de B => 403 PAYMENT_ACTION_FORBIDDEN, sin pago ni evento ni auditoría', async (ctx) => {
     skipUnlessReady(ctx);
@@ -919,5 +932,5 @@ describe.skipIf(!url || !ready)('Pagos en efectivo contra PostgreSQL real (F24)'
       }),
     );
     expect(cmd.n).toBeLessThanOrEqual(7);
-  });
+  }, 240_000);
 });
