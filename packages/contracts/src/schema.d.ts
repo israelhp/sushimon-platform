@@ -1167,6 +1167,244 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pedidos del backoffice (paginado por cursor, ligero)
+         * @description F22 (spec 023, ADR-0028). Exige `orders.read` y `aal2`. LISTADO ligero (sin líneas, modificadores, promociones, dirección ni historial: eso es `getAdminOrder`). Alcance por sucursal EN SQL
+         *     (`branch_id = ANY(sucursales con orders.read)`; con alcance global, todas): nunca se filtra en la web. `branchId` fuera de alcance o inexistente => 404 `BRANCH_NOT_FOUND`.
+         *     Filtros: `status` (lista separada por comas), `fulfillmentType`, `q` (2..40: número `1042`/`MON-001042` => igualdad por número; otro texto => nombre del cliente, contiene, sin distinguir
+         *     mayúsculas; NO busca por teléfono ni correo: P70), `from`/`to` (instantes de `placedAt`; por defecto `from = ahora − 7 días`; rango máximo 92 días, si no 400). Orden FIJO `placedAt` descendente, `id`
+         *     descendente; paginación por CURSOR opaco (`nextCursor`; `null` = última página); un cursor alterado o de otra consulta => 400 `ORDER_CURSOR_INVALID` (el alcance se aplica SIEMPRE en la consulta, así
+         *     que manipularlo no revela nada). Sin conteo total (el tablero trae los conteos). Una consulta para la página con el conteo de unidades agregado (sin N+1). `no-store`.
+         */
+        get: operations["listAdminOrders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/orders/board": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tablero de pedidos agregado por estado (conteos y primeras N por columna)
+         * @description F22 (spec 023, ADR-0028). Exige `orders.read` y `aal2`. Vista OPERATIVA pensada para polling: una columna por estado del catálogo con el CONTEO real y las primeras `limit` tarjetas (más
+         *     antiguas primero en las columnas activas, para atender primero lo que espera más; las terminales, las más recientes). Columnas ACTIVAS (`pending`, `accepted`, `preparing`, `ready`,
+         *     `on_the_way`): TODOS los pedidos activos sin importar su antigüedad (un pedido viejo sin atender debe verse). Columnas TERMINALES (`delivered`, `picked_up`, `rejected`, `cancelled`): solo las
+         *     últimas `terminalWindowHours` (24 h) por `placedAt`, con tope fijo de 10 tarjetas cada una. `hasMore=true` si hay más que las mostradas (se ven en el listado). Alcance por sucursal en SQL
+         *     como `listAdminOrders`. `summary.pending` y `summary.oldestPendingAt` alimentan el aviso de pedidos nuevos (la web compara contra el sondeo anterior). `pollAfterSeconds` es la sugerencia del
+         *     servidor (constante; la web la acota a 10..60 s, pausa con la pestaña oculta y respeta `Retry-After`). Presupuesto: ≤ 4 sentencias SQL por consulta (conteos, tarjetas por `LATERAL` sobre
+         *     `orders_branch_status_placed_idx`, unidades por lote, sucursales). `no-store`.
+         */
+        get: operations["getAdminOrderBoard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/orders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detalle completo de un pedido para el personal (líneas, dirección, totales e historial)
+         * @description F22 (spec 023, ADR-0028). Exige `orders.read` y `aal2`. Snapshots inmutables de F20 (líneas con modificadores, promociones, dirección, totales) + `contact` (nombre y TELÉFONO completos: el
+         *     personal los necesita para atender; el correo NO se expone, P70) + `payment` (solo la preferencia declarada; `status` honesto `NOT_STARTED` = «sin pago registrado» hasta F24; NO se inventan
+         *     estados de pago) + `history` (hasta 50 eventos MÁS RECIENTES en orden cronológico `changed_at, id`, con el nombre mínimo de quien actuó; `historyTruncated`) + `availableActions` (lo que ESTE
+         *     personal puede hacer AHORA, calculado en el servidor con la matriz de transiciones, la modalidad y sus permisos por sucursal; la web no duplica la regla). Pedido inexistente o de una sucursal
+         *     fuera del alcance de `orders.read` => el MISMO 404 `ORDER_NOT_FOUND` (anti-IDOR). El historial va dentro del detalle (no hay `/history` aparte: una sola ida y vuelta al abrir la ficha).
+         *     ≤ 7 sentencias SQL. `no-store`.
+         */
+        get: operations["getAdminOrder"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/orders/{id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acepta un pedido (`pending` → `accepted`)
+         * @description F22 (spec 023, ADR-0028). Exige `orders.accept` y `aal2`; además el permiso debe cubrir la sucursal DEL PEDIDO (alcance por sucursal: sin él => 403 `ORDER_ACTION_FORBIDDEN`) y el personal debe poder
+         *     VER el pedido (`orders.read` en esa sucursal; si no => el mismo 404 `ORDER_NOT_FOUND` que un pedido inexistente). Cuerpo con `expectedStatus` OBLIGATORIO: el estado que la persona vio en pantalla. La
+         *     actualización es COMPARE-AND-SET (`UPDATE … WHERE id AND status = expectedStatus`) en una sola transacción con la fila de `order_status_history` (`old_status`, `new_status`, `changed_by`, `reason`)
+         *     y el evento de `audit_events`; los estados solo avanzan (no hay ciclos), así que `status` actúa como versión sin ABA. Estado actual ≠ `expectedStatus` => 409 `ORDER_STATE_CONFLICT` con `current`
+         *     (sin escribir nada). REPETICIÓN IDEMPOTENTE: si el estado actual YA es el destino y el último evento del historial es exactamente `expectedStatus` → destino, responde 200 con `transition.replayed=true`
+         *     SIN duplicar historial ni auditoría, sea quien sea el actor (`appliedByMe` lo indica). Transición no permitida (terminal, modalidad, salto de estados, estado de origen imposible) => 422
+         *     `ORDER_TRANSITION_INVALID`. La respuesta trae `pendingActions` INFORMATIVAS (revisiones que quedan para otra feature; nunca se ejecutan aquí). `no-store`.
+         *     Desde `pending`. Cualquier modalidad.
+         */
+        post: operations["acceptAdminOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/orders/{id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rechaza un pedido nuevo (`pending` → `rejected`, motivo obligatorio)
+         * @description F22 (spec 023, ADR-0028). Exige `orders.reject` y `aal2`; además el permiso debe cubrir la sucursal DEL PEDIDO (alcance por sucursal: sin él => 403 `ORDER_ACTION_FORBIDDEN`) y el personal debe poder
+         *     VER el pedido (`orders.read` en esa sucursal; si no => el mismo 404 `ORDER_NOT_FOUND` que un pedido inexistente). Cuerpo con `expectedStatus` OBLIGATORIO: el estado que la persona vio en pantalla. La
+         *     actualización es COMPARE-AND-SET (`UPDATE … WHERE id AND status = expectedStatus`) en una sola transacción con la fila de `order_status_history` (`old_status`, `new_status`, `changed_by`, `reason`)
+         *     y el evento de `audit_events`; los estados solo avanzan (no hay ciclos), así que `status` actúa como versión sin ABA. Estado actual ≠ `expectedStatus` => 409 `ORDER_STATE_CONFLICT` con `current`
+         *     (sin escribir nada). REPETICIÓN IDEMPOTENTE: si el estado actual YA es el destino y el último evento del historial es exactamente `expectedStatus` → destino, responde 200 con `transition.replayed=true`
+         *     SIN duplicar historial ni auditoría, sea quien sea el actor (`appliedByMe` lo indica). Transición no permitida (terminal, modalidad, salto de estados, estado de origen imposible) => 422
+         *     `ORDER_TRANSITION_INVALID`. La respuesta trae `pendingActions` INFORMATIVAS (revisiones que quedan para otra feature; nunca se ejecutan aquí). `no-store`.
+         *     Desde `pending`. `reason` obligatorio (3..280 caracteres recortados; falta => 400 `ORDER_REASON_REQUIRED`); es texto INTERNO: nunca se muestra al cliente (P64).
+         */
+        post: operations["rejectAdminOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/orders/{id}/start-preparing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inicia la preparación (`accepted` → `preparing`)
+         * @description F22 (spec 023, ADR-0028). Exige `orders.prepare` y `aal2`; además el permiso debe cubrir la sucursal DEL PEDIDO (alcance por sucursal: sin él => 403 `ORDER_ACTION_FORBIDDEN`) y el personal debe poder
+         *     VER el pedido (`orders.read` en esa sucursal; si no => el mismo 404 `ORDER_NOT_FOUND` que un pedido inexistente). Cuerpo con `expectedStatus` OBLIGATORIO: el estado que la persona vio en pantalla. La
+         *     actualización es COMPARE-AND-SET (`UPDATE … WHERE id AND status = expectedStatus`) en una sola transacción con la fila de `order_status_history` (`old_status`, `new_status`, `changed_by`, `reason`)
+         *     y el evento de `audit_events`; los estados solo avanzan (no hay ciclos), así que `status` actúa como versión sin ABA. Estado actual ≠ `expectedStatus` => 409 `ORDER_STATE_CONFLICT` con `current`
+         *     (sin escribir nada). REPETICIÓN IDEMPOTENTE: si el estado actual YA es el destino y el último evento del historial es exactamente `expectedStatus` → destino, responde 200 con `transition.replayed=true`
+         *     SIN duplicar historial ni auditoría, sea quien sea el actor (`appliedByMe` lo indica). Transición no permitida (terminal, modalidad, salto de estados, estado de origen imposible) => 422
+         *     `ORDER_TRANSITION_INVALID`. La respuesta trae `pendingActions` INFORMATIVAS (revisiones que quedan para otra feature; nunca se ejecutan aquí). `no-store`.
+         *     Desde `accepted`. Cualquier modalidad.
+         */
+        post: operations["startPreparingAdminOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/orders/{id}/mark-ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Marca el pedido como listo (`preparing` → `ready`)
+         * @description F22 (spec 023, ADR-0028). Exige `orders.prepare` y `aal2`; además el permiso debe cubrir la sucursal DEL PEDIDO (alcance por sucursal: sin él => 403 `ORDER_ACTION_FORBIDDEN`) y el personal debe poder
+         *     VER el pedido (`orders.read` en esa sucursal; si no => el mismo 404 `ORDER_NOT_FOUND` que un pedido inexistente). Cuerpo con `expectedStatus` OBLIGATORIO: el estado que la persona vio en pantalla. La
+         *     actualización es COMPARE-AND-SET (`UPDATE … WHERE id AND status = expectedStatus`) en una sola transacción con la fila de `order_status_history` (`old_status`, `new_status`, `changed_by`, `reason`)
+         *     y el evento de `audit_events`; los estados solo avanzan (no hay ciclos), así que `status` actúa como versión sin ABA. Estado actual ≠ `expectedStatus` => 409 `ORDER_STATE_CONFLICT` con `current`
+         *     (sin escribir nada). REPETICIÓN IDEMPOTENTE: si el estado actual YA es el destino y el último evento del historial es exactamente `expectedStatus` → destino, responde 200 con `transition.replayed=true`
+         *     SIN duplicar historial ni auditoría, sea quien sea el actor (`appliedByMe` lo indica). Transición no permitida (terminal, modalidad, salto de estados, estado de origen imposible) => 422
+         *     `ORDER_TRANSITION_INVALID`. La respuesta trae `pendingActions` INFORMATIVAS (revisiones que quedan para otra feature; nunca se ejecutan aquí). `no-store`.
+         *     Desde `preparing`. En DELIVERY el pedido queda `ready` esperando el despacho (F28/F29): esta operación NO despacha ni asigna repartidor ni solicita a ningún proveedor.
+         */
+        post: operations["markReadyAdminOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/orders/{id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Completa la entrega en sucursal de un pedido PICKUP (`ready` → `picked_up`)
+         * @description F22 (spec 023, ADR-0028). Exige `orders.complete` y `aal2`; además el permiso debe cubrir la sucursal DEL PEDIDO (alcance por sucursal: sin él => 403 `ORDER_ACTION_FORBIDDEN`) y el personal debe poder
+         *     VER el pedido (`orders.read` en esa sucursal; si no => el mismo 404 `ORDER_NOT_FOUND` que un pedido inexistente). Cuerpo con `expectedStatus` OBLIGATORIO: el estado que la persona vio en pantalla. La
+         *     actualización es COMPARE-AND-SET (`UPDATE … WHERE id AND status = expectedStatus`) en una sola transacción con la fila de `order_status_history` (`old_status`, `new_status`, `changed_by`, `reason`)
+         *     y el evento de `audit_events`; los estados solo avanzan (no hay ciclos), así que `status` actúa como versión sin ABA. Estado actual ≠ `expectedStatus` => 409 `ORDER_STATE_CONFLICT` con `current`
+         *     (sin escribir nada). REPETICIÓN IDEMPOTENTE: si el estado actual YA es el destino y el último evento del historial es exactamente `expectedStatus` → destino, responde 200 con `transition.replayed=true`
+         *     SIN duplicar historial ni auditoría, sea quien sea el actor (`appliedByMe` lo indica). Transición no permitida (terminal, modalidad, salto de estados, estado de origen imposible) => 422
+         *     `ORDER_TRANSITION_INVALID`. La respuesta trae `pendingActions` INFORMATIVAS (revisiones que quedan para otra feature; nunca se ejecutan aquí). `no-store`.
+         *     Solo PICKUP desde `ready`. En DELIVERY => 422 (`delivered` lo produce F28 con la entrega propia; con PedidosYa no hay acción: `BLOCKED_EXTERNAL`). No registra cobros (F24).
+         */
+        post: operations["completeAdminOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/orders/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancela un pedido (`pending|accepted|preparing|ready` → `cancelled`, motivo obligatorio)
+         * @description F22 (spec 023, ADR-0028). Exige `orders.cancel` y `aal2`; además el permiso debe cubrir la sucursal DEL PEDIDO (alcance por sucursal: sin él => 403 `ORDER_ACTION_FORBIDDEN`) y el personal debe poder
+         *     VER el pedido (`orders.read` en esa sucursal; si no => el mismo 404 `ORDER_NOT_FOUND` que un pedido inexistente). Cuerpo con `expectedStatus` OBLIGATORIO: el estado que la persona vio en pantalla. La
+         *     actualización es COMPARE-AND-SET (`UPDATE … WHERE id AND status = expectedStatus`) en una sola transacción con la fila de `order_status_history` (`old_status`, `new_status`, `changed_by`, `reason`)
+         *     y el evento de `audit_events`; los estados solo avanzan (no hay ciclos), así que `status` actúa como versión sin ABA. Estado actual ≠ `expectedStatus` => 409 `ORDER_STATE_CONFLICT` con `current`
+         *     (sin escribir nada). REPETICIÓN IDEMPOTENTE: si el estado actual YA es el destino y el último evento del historial es exactamente `expectedStatus` → destino, responde 200 con `transition.replayed=true`
+         *     SIN duplicar historial ni auditoría, sea quien sea el actor (`appliedByMe` lo indica). Transición no permitida (terminal, modalidad, salto de estados, estado de origen imposible) => 422
+         *     `ORDER_TRANSITION_INVALID`. La respuesta trae `pendingActions` INFORMATIVAS (revisiones que quedan para otra feature; nunca se ejecutan aquí). `no-store`.
+         *     Desde `pending`, `accepted`, `preparing` o `ready`; NUNCA desde `on_the_way` ni desde un estado terminal (422). `reason` obligatorio (3..280; falta => 400 `ORDER_REASON_REQUIRED`), interno. NO reembolsa ni cancela entregas: informa `pendingActions` (`payment_review`, `delivery_cancellation`).
+         */
+        post: operations["cancelAdminOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/categories": {
         parameters: {
             query?: never;
@@ -2589,7 +2827,7 @@ export interface components {
             details?: string[];
             /**
              * @description Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16: `BANNER_NOT_FOUND`, `BANNER_CODE_TAKEN`, `BANNER_VERSION_CONFLICT`, `BANNER_IMAGE_INVALID`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_LIMIT_REACHED`, `BANNER_SCOPE_FORBIDDEN` (403), `BANNERS_BUSY` (503 reintentable); F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); F20: `IDEMPOTENCY_KEY_INVALID` (400), `QUOTE_CHANGED` (409), `QUOTE_EXPIRED` (409), `IDEMPOTENCY_KEY_REUSED` (409), `IDEMPOTENCY_IN_PROGRESS` (409), `QUOTE_INVALID` (422), `CHECKOUT_BLOCKED` (422), `DELIVERY_PROVIDER_NOT_SELECTABLE` (422), `CONTACT_INCOMPLETE` (422), `PAYMENT_METHOD_UNAVAILABLE` (422), `PENDING_ORDERS_LIMIT` (429), `ORDERS_BUSY` (503 reintentable), `ORDERS_UNAVAILABLE` (503); 404 de dirección ajena sin código). Los clientes deben ramificar por `code`, nunca por `message`.
+             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16: `BANNER_NOT_FOUND`, `BANNER_CODE_TAKEN`, `BANNER_VERSION_CONFLICT`, `BANNER_IMAGE_INVALID`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_LIMIT_REACHED`, `BANNER_SCOPE_FORBIDDEN` (403), `BANNERS_BUSY` (503 reintentable); F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); F20: `IDEMPOTENCY_KEY_INVALID` (400), `QUOTE_CHANGED` (409), `QUOTE_EXPIRED` (409), `IDEMPOTENCY_KEY_REUSED` (409), `IDEMPOTENCY_IN_PROGRESS` (409), `QUOTE_INVALID` (422), `CHECKOUT_BLOCKED` (422), `DELIVERY_PROVIDER_NOT_SELECTABLE` (422), `CONTACT_INCOMPLETE` (422), `PAYMENT_METHOD_UNAVAILABLE` (422), `PENDING_ORDERS_LIMIT` (429), `ORDERS_BUSY` (503 reintentable), `ORDERS_UNAVAILABLE` (503); 404 de dirección ajena sin código; F22: `ORDER_NOT_FOUND` (404), `ORDER_REASON_REQUIRED` (400), `ORDER_CURSOR_INVALID` (400), `ORDER_ACTION_FORBIDDEN` (403), `ORDER_STATE_CONFLICT` (409), `ORDER_TRANSITION_INVALID` (422; `violations[].code`: `ORDER_TERMINAL`, `ORDER_FULFILLMENT_MISMATCH`, `ORDER_SOURCE_INVALID`, `ORDER_DISPATCH_NOT_AVAILABLE`, `ORDER_PROVIDER_BLOCKED_EXTERNAL`, `ORDER_CANCEL_NOT_ALLOWED`); 503 reintentable: `ORDERS_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
              */
             code?: string;
             /** @description Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09). */
@@ -5032,6 +5270,237 @@ export interface components {
         AdminBannerOrder: {
             items: components["schemas"]["AdminBannerOrderItem"][];
         };
+        /**
+         * @description Acciones que el backoffice puede ofrecer sobre un pedido. `accept|reject|start_preparing|mark_ready|complete|cancel` se ejecutan con las operaciones `…AdminOrder` de F22; `dispatch`
+         *     es RESERVADA (F28 entrega propia; F29 PedidosYa) y NUNCA está habilitada en F22: se informa deshabilitada para que la web diferencie reparto propio y externo sin inventar capacidades.
+         *     Los clientes deben tolerar valores futuros.
+         * @enum {string}
+         */
+        AdminOrderAction: "accept" | "reject" | "start_preparing" | "mark_ready" | "complete" | "cancel" | "dispatch";
+        /**
+         * @description Estado de una acción para ESTE personal y ESTE pedido. `enabled=false` con `NO_PERMISSION`: la web la OCULTA; con `DISPATCH_NOT_AVAILABLE` (entrega propia: llega con F28) o
+         *     `PROVIDER_BLOCKED_EXTERNAL` (PedidosYa: integración pendiente de documentación/credenciales) la muestra DESHABILITADA con el motivo. Solo se listan las acciones que existen para el estado y la
+         *     modalidad del pedido (un terminal no lista ninguna).
+         */
+        AdminOrderActionState: {
+            action: components["schemas"]["AdminOrderAction"];
+            enabled: boolean;
+            /**
+             * @description `null` si `enabled`. Los clientes deben tolerar valores futuros.
+             * @enum {string|null}
+             */
+            disabledReason: "NO_PERMISSION" | "DISPATCH_NOT_AVAILABLE" | "PROVIDER_BLOCKED_EXTERNAL" | null;
+        };
+        /** @description Fila ligera para tablero y listado (sin líneas, dirección, teléfono ni correo). `itemCount` = unidades (suma de cantidades). Importes como cadenas decimales GTQ. */
+        AdminOrderSummary: {
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            orderNumber: number;
+            /** @example MON-001042 */
+            displayNumber: string;
+            status: components["schemas"]["OrderLifecycleStatus"];
+            /** Format: uuid */
+            branchId: string;
+            branchName: string;
+            /** @enum {string} */
+            fulfillmentType: "PICKUP" | "DELIVERY";
+            /** @description `null` en PICKUP. */
+            deliveryProvider: components["schemas"]["CourierProvider"] | null;
+            customerName: string;
+            itemCount: number;
+            total: components["schemas"]["CheckoutMoney"];
+            /** @description Solo la preferencia declarada; NO es un pago (F24). */
+            paymentMethodPreference: components["schemas"]["OrderPaymentPreference"] | null;
+            /**
+             * Format: date-time
+             * @description Pedido programado (P42: hoy siempre `null`; la programación es `MOCK_ONLY`).
+             */
+            scheduledFor: string | null;
+            /** Format: date-time */
+            placedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            availableActions: components["schemas"]["AdminOrderActionState"][];
+        };
+        AdminOrderPage: {
+            items: components["schemas"]["AdminOrderSummary"][];
+            /** @description Cursor opaco de la página siguiente; `null` = no hay más. */
+            nextCursor: string | null;
+            /** Format: date-time */
+            generatedAt: string;
+        };
+        AdminOrderBoardSummary: {
+            /** @description Pedidos `pending` dentro del alcance (conteo real, no solo las tarjetas mostradas). */
+            pending: number;
+            /** @description Pedidos en `pending`, `accepted`, `preparing`, `ready` u `on_the_way`. */
+            active: number;
+            /**
+             * Format: date-time
+             * @description `placedAt` del `pending` más antiguo (`null` si no hay); sirve para resaltar la espera sin inventar un SLA.
+             */
+            oldestPendingAt: string | null;
+        };
+        AdminOrderBoardColumn: {
+            status: components["schemas"]["OrderLifecycleStatus"];
+            /** @description Conteo real de la columna (activas: todos; terminales: dentro de `terminalWindowHours`). */
+            count: number;
+            hasMore: boolean;
+            items: components["schemas"]["AdminOrderSummary"][];
+        };
+        /** @description Tablero agregado. `columns` siempre trae los 9 estados del catálogo en este orden fijo. */
+        AdminOrderBoard: {
+            /** Format: date-time */
+            generatedAt: string;
+            /**
+             * Format: uuid
+             * @description La sucursal pedida; `null` = todas las del alcance.
+             */
+            branchId: string | null;
+            /** @enum {integer} */
+            terminalWindowHours: 24;
+            pollAfterSeconds: number;
+            summary: components["schemas"]["AdminOrderBoardSummary"];
+            columns: components["schemas"]["AdminOrderBoardColumn"][];
+        };
+        /**
+         * @description Una fila de `order_status_history` para el PERSONAL. `actorName` = nombre del empleado que actuó (`null` si fue el cliente/sistema, p. ej. la creación, o si el empleado ya no existe);
+         *     nunca el identificador ni el correo. `reason` es texto interno y solo lo ve el personal con `orders.read`.
+         */
+        AdminOrderHistoryEntry: {
+            seq: number;
+            status: components["schemas"]["OrderLifecycleStatus"];
+            previousStatus: components["schemas"]["OrderLifecycleStatus"] | null;
+            /** Format: date-time */
+            at: string;
+            actorName: string | null;
+            reason: string | null;
+        };
+        /** @description Datos de contacto para atender el pedido. Sin correo. No se registran en logs ni en auditoría. */
+        AdminOrderContact: {
+            fullName: string;
+            /** @example +50255551234 */
+            phone: string;
+        };
+        /** @description Detalle para el personal: todo `AdminOrderSummary` más líneas/promociones/dirección (snapshots de F20), contacto, notas del cliente, desglose de importes, pago honesto e historial. */
+        AdminOrderDetail: components["schemas"]["AdminOrderSummary"] & {
+            /** @enum {string} */
+            currency: "GTQ";
+            lines: components["schemas"]["OrderDetailLine"][];
+            promotions: components["schemas"]["OrderDetailPromotion"][];
+            /** @description `null` en PICKUP. */
+            address: components["schemas"]["OrderDetailAddress"] | null;
+            contact: components["schemas"]["AdminOrderContact"];
+            notes: string | null;
+            subtotal: components["schemas"]["CheckoutMoney"];
+            extrasTotal: components["schemas"]["CheckoutMoney"];
+            discountTotal: components["schemas"]["CheckoutMoney"];
+            deliveryFee: components["schemas"]["CheckoutMoney"];
+            payment: components["schemas"]["OrderDetailPayment"];
+            history: components["schemas"]["AdminOrderHistoryEntry"][];
+            /** @description `true` si hay más de 50 eventos (se devuelven los 50 más recientes; faltan los más antiguos). */
+            historyTruncated: boolean;
+        };
+        /**
+         * @example {
+         *       "expectedStatus": "pending"
+         *     }
+         */
+        AdminOrderCommandRequest: {
+            /** @description Estado que la persona vio al decidir. Debe ser un origen válido del comando; si el pedido ya cambió => 409. */
+            expectedStatus: components["schemas"]["OrderLifecycleStatus"];
+        };
+        /**
+         * @example {
+         *       "expectedStatus": "pending",
+         *       "reason": "Sin existencias de salmón"
+         *     }
+         */
+        AdminOrderReasonRequest: {
+            expectedStatus: components["schemas"]["OrderLifecycleStatus"];
+            /** @description Motivo INTERNO (recortado; sin caracteres de control). Se guarda en el historial y la auditoría; nunca se muestra al cliente (P64). No escribir datos personales. */
+            reason: string;
+        };
+        AdminOrderTransition: {
+            from: components["schemas"]["OrderLifecycleStatus"];
+            to: components["schemas"]["OrderLifecycleStatus"];
+            /**
+             * Format: date-time
+             * @description Momento REAL en que se aplicó la transición (en una repetición, el de la original).
+             */
+            at: string;
+            /** @description `true` = el pedido ya estaba en el destino por esta misma transición; no se escribió nada nuevo. */
+            replayed: boolean;
+            /** @description Quién la aplicó fue la misma persona que llama (útil para distinguir un doble clic de otra persona). */
+            appliedByMe: boolean;
+        };
+        /**
+         * @description Revisión que queda PENDIENTE para otra feature tras cancelar/rechazar; informativa, jamás se ejecuta aquí. `payment_review`: la preferencia es transferencia bancaria y puede haber un pago por
+         *     conciliar o devolver (F24/F26; hoy es una regla provisional por la preferencia, no un hecho de pago). `delivery_cancellation`: existe una entrega activa por cancelar (solo la reporta el puerto
+         *     `OrderFulfillmentPort` de F28/F29; en F22 nunca aparece). Los clientes deben tolerar valores futuros.
+         * @enum {string}
+         */
+        AdminOrderPendingAction: "payment_review" | "delivery_cancellation";
+        /**
+         * @example {
+         *       "order": {
+         *         "id": "7b7c3d52-6a0f-4a8e-9a53-0f3a1e0b9c11",
+         *         "orderNumber": 1042,
+         *         "displayNumber": "MON-001042",
+         *         "status": "cancelled",
+         *         "branchId": "0b6f6a52-1c55-4c0e-8f3a-3a5d6a3c2b10",
+         *         "branchName": "Sushi Mon Zona 10",
+         *         "fulfillmentType": "PICKUP",
+         *         "deliveryProvider": null,
+         *         "customerName": "Ana López",
+         *         "itemCount": 3,
+         *         "total": "185.00",
+         *         "paymentMethodPreference": "bank_transfer",
+         *         "scheduledFor": null,
+         *         "placedAt": "2026-11-18T18:02:11.000Z",
+         *         "updatedAt": "2026-11-18T18:20:41.512Z",
+         *         "availableActions": []
+         *       },
+         *       "transition": {
+         *         "from": "accepted",
+         *         "to": "cancelled",
+         *         "at": "2026-11-18T18:20:41.512Z",
+         *         "replayed": false,
+         *         "appliedByMe": true
+         *       },
+         *       "pendingActions": [
+         *         "payment_review"
+         *       ]
+         *     }
+         */
+        AdminOrderTransitionResult: {
+            order: components["schemas"]["AdminOrderSummary"];
+            transition: components["schemas"]["AdminOrderTransition"];
+            pendingActions: components["schemas"]["AdminOrderPendingAction"][];
+        };
+        AdminOrderStateSnapshot: {
+            status: components["schemas"]["OrderLifecycleStatus"];
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        /**
+         * @description 409 `ORDER_STATE_CONFLICT` (el pedido ya no está en `expectedStatus`) y 422 `ORDER_TRANSITION_INVALID` (transición imposible). Hereda `ErrorResponse` y añade el estado ACTUAL para que la web
+         *     refresque sin otra consulta. En el 422, `violations[].code` ∈ `ORDER_TERMINAL`, `ORDER_FULFILLMENT_MISMATCH`, `ORDER_SOURCE_INVALID`, `ORDER_DISPATCH_NOT_AVAILABLE`, `ORDER_PROVIDER_BLOCKED_EXTERNAL`,
+         *     `ORDER_CANCEL_NOT_ALLOWED`.
+         * @example {
+         *       "statusCode": 409,
+         *       "error": "CONFLICT",
+         *       "message": "El pedido cambió mientras lo veías",
+         *       "code": "ORDER_STATE_CONFLICT",
+         *       "current": {
+         *         "status": "rejected",
+         *         "updatedAt": "2026-11-18T18:20:41.512Z"
+         *       }
+         *     }
+         */
+        AdminOrderStateError: components["schemas"]["ErrorResponse"] & {
+            current: components["schemas"]["AdminOrderStateSnapshot"];
+        };
     };
     responses: never;
     parameters: {
@@ -5067,6 +5536,8 @@ export interface components {
         ProductMediaId: string;
         /** @description UUID del producto (`products.id`) cuyo precio de sucursal se gestiona (F13). */
         BranchProductId: string;
+        /** @description UUID del pedido (`orders.id`). */
+        AdminOrderId: string;
     };
     requestBodies: never;
     headers: never;
@@ -8299,6 +8770,879 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PublicCategoryTree"];
+                };
+            };
+        };
+    };
+    listAdminOrders: {
+        parameters: {
+            query?: {
+                branchId?: string;
+                /** @description Uno o varios estados separados por comas (p. ej. `pending,accepted`). */
+                status?: components["schemas"]["OrderLifecycleStatus"][];
+                fulfillmentType?: "PICKUP" | "DELIVERY";
+                q?: string;
+                /** @description Instante ISO 8601 con zona. Sin zona => 400. */
+                from?: string;
+                /** @description Instante ISO 8601 con zona; mayor que `from` y a lo sumo 92 días después (si no, 400). */
+                to?: string;
+                /** @description Cursor opaco devuelto por la página anterior (`nextCursor`). */
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de pedidos */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderPage"];
+                };
+            };
+            /** @description Parámetros inválidos, rango excesivo o `ORDER_CURSOR_INVALID` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `orders.read` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `BRANCH_NOT_FOUND` (filtro `branchId` inexistente o fuera de alcance) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAdminOrderBoard: {
+        parameters: {
+            query?: {
+                /** @description Una sucursal concreta; sin él, todas las del alcance de `orders.read`. */
+                branchId?: string;
+                /** @description Tarjetas por columna ACTIVA. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Tablero */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderBoard"];
+                };
+            };
+            /** @description Parámetros inválidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `orders.read` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `BRANCH_NOT_FOUND` (filtro `branchId` inexistente o fuera de alcance) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAdminOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del pedido (`orders.id`). */
+                id: components["parameters"]["AdminOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Detalle del pedido */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderDetail"];
+                };
+            };
+            /** @description El identificador no es un UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `orders.read` o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDER_NOT_FOUND`: no existe o está fuera del alcance (misma respuesta) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    acceptAdminOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del pedido (`orders.id`). */
+                id: components["parameters"]["AdminOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminOrderCommandRequest"];
+            };
+        };
+        responses: {
+            /** @description Transición aplicada (o repetición idempotente: `transition.replayed=true`) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderTransitionResult"];
+                };
+            };
+            /** @description Identificador no UUID, cuerpo inválido o campos desconocidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `orders.accept` o la sesión no es aal2 (`MFA_REQUIRED`); `ORDER_ACTION_FORBIDDEN` si tiene el permiso pero no en la sucursal del pedido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDER_NOT_FOUND`: el pedido no existe o su sucursal está fuera del alcance de `orders.read` (misma respuesta) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDER_STATE_CONFLICT`: el estado actual ya no es `expectedStatus` (otra persona lo cambió); el cuerpo trae `current` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderStateError"];
+                };
+            };
+            /** @description `ORDER_TRANSITION_INVALID`: transición no permitida para el estado o la modalidad (ver `violations[].code`); el cuerpo trae `current` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderStateError"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rejectAdminOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del pedido (`orders.id`). */
+                id: components["parameters"]["AdminOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminOrderReasonRequest"];
+            };
+        };
+        responses: {
+            /** @description Transición aplicada (o repetición idempotente: `transition.replayed=true`) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderTransitionResult"];
+                };
+            };
+            /** @description Identificador no UUID, cuerpo inválido o campos desconocidos; `ORDER_REASON_REQUIRED` si falta el motivo */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `orders.reject` o la sesión no es aal2 (`MFA_REQUIRED`); `ORDER_ACTION_FORBIDDEN` si tiene el permiso pero no en la sucursal del pedido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDER_NOT_FOUND`: el pedido no existe o su sucursal está fuera del alcance de `orders.read` (misma respuesta) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDER_STATE_CONFLICT`: el estado actual ya no es `expectedStatus` (otra persona lo cambió); el cuerpo trae `current` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderStateError"];
+                };
+            };
+            /** @description `ORDER_TRANSITION_INVALID`: transición no permitida para el estado o la modalidad (ver `violations[].code`); el cuerpo trae `current` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderStateError"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    startPreparingAdminOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del pedido (`orders.id`). */
+                id: components["parameters"]["AdminOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminOrderCommandRequest"];
+            };
+        };
+        responses: {
+            /** @description Transición aplicada (o repetición idempotente: `transition.replayed=true`) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderTransitionResult"];
+                };
+            };
+            /** @description Identificador no UUID, cuerpo inválido o campos desconocidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `orders.prepare` o la sesión no es aal2 (`MFA_REQUIRED`); `ORDER_ACTION_FORBIDDEN` si tiene el permiso pero no en la sucursal del pedido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDER_NOT_FOUND`: el pedido no existe o su sucursal está fuera del alcance de `orders.read` (misma respuesta) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDER_STATE_CONFLICT`: el estado actual ya no es `expectedStatus` (otra persona lo cambió); el cuerpo trae `current` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderStateError"];
+                };
+            };
+            /** @description `ORDER_TRANSITION_INVALID`: transición no permitida para el estado o la modalidad (ver `violations[].code`); el cuerpo trae `current` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderStateError"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    markReadyAdminOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del pedido (`orders.id`). */
+                id: components["parameters"]["AdminOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminOrderCommandRequest"];
+            };
+        };
+        responses: {
+            /** @description Transición aplicada (o repetición idempotente: `transition.replayed=true`) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderTransitionResult"];
+                };
+            };
+            /** @description Identificador no UUID, cuerpo inválido o campos desconocidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `orders.prepare` o la sesión no es aal2 (`MFA_REQUIRED`); `ORDER_ACTION_FORBIDDEN` si tiene el permiso pero no en la sucursal del pedido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDER_NOT_FOUND`: el pedido no existe o su sucursal está fuera del alcance de `orders.read` (misma respuesta) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDER_STATE_CONFLICT`: el estado actual ya no es `expectedStatus` (otra persona lo cambió); el cuerpo trae `current` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderStateError"];
+                };
+            };
+            /** @description `ORDER_TRANSITION_INVALID`: transición no permitida para el estado o la modalidad (ver `violations[].code`); el cuerpo trae `current` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderStateError"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    completeAdminOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del pedido (`orders.id`). */
+                id: components["parameters"]["AdminOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminOrderCommandRequest"];
+            };
+        };
+        responses: {
+            /** @description Transición aplicada (o repetición idempotente: `transition.replayed=true`) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderTransitionResult"];
+                };
+            };
+            /** @description Identificador no UUID, cuerpo inválido o campos desconocidos */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `orders.complete` o la sesión no es aal2 (`MFA_REQUIRED`); `ORDER_ACTION_FORBIDDEN` si tiene el permiso pero no en la sucursal del pedido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDER_NOT_FOUND`: el pedido no existe o su sucursal está fuera del alcance de `orders.read` (misma respuesta) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDER_STATE_CONFLICT`: el estado actual ya no es `expectedStatus` (otra persona lo cambió); el cuerpo trae `current` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderStateError"];
+                };
+            };
+            /** @description `ORDER_TRANSITION_INVALID`: transición no permitida para el estado o la modalidad (ver `violations[].code`); el cuerpo trae `current` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderStateError"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cancelAdminOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del pedido (`orders.id`). */
+                id: components["parameters"]["AdminOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminOrderReasonRequest"];
+            };
+        };
+        responses: {
+            /** @description Transición aplicada (o repetición idempotente: `transition.replayed=true`) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderTransitionResult"];
+                };
+            };
+            /** @description Identificador no UUID, cuerpo inválido o campos desconocidos; `ORDER_REASON_REQUIRED` si falta el motivo */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `orders.cancel` o la sesión no es aal2 (`MFA_REQUIRED`); `ORDER_ACTION_FORBIDDEN` si tiene el permiso pero no en la sucursal del pedido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDER_NOT_FOUND`: el pedido no existe o su sucursal está fuera del alcance de `orders.read` (misma respuesta) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDER_STATE_CONFLICT`: el estado actual ya no es `expectedStatus` (otra persona lo cambió); el cuerpo trae `current` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderStateError"];
+                };
+            };
+            /** @description `ORDER_TRANSITION_INVALID`: transición no permitida para el estado o la modalidad (ver `violations[].code`); el cuerpo trae `current` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderStateError"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

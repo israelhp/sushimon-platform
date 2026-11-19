@@ -2766,7 +2766,8 @@
         "actions": "Acciones",
         "emptyTitle": "Sin resultados",
         "emptyText": "Ningún pedido coincide con los filtros.",
-        "detail": "Ver detalle de {code}"
+        "detail": "Ver detalle de {code}",
+        "label": "Tabla de pedidos"
       },
       "type": {
         "delivery": "Delivery",
@@ -2883,6 +2884,211 @@
           "saturated": "Sucursal saturada",
           "incompleteContact": "Datos de contacto incompletos"
         }
+      },
+      "live": {
+        "announce": "{count, plural, one {Pedido nuevo: {codes}} other {# pedidos nuevos: {codes}}}",
+        "summary": "{active} en curso · {pending} nuevos",
+        "sound": {
+          "on": "Sonido de pedidos nuevos: activado",
+          "off": "Sonido de pedidos nuevos: apagado"
+        },
+        "board": {
+          "groups": {
+            "nuevo": "Nuevo",
+            "aceptado": "Aceptado",
+            "preparacion": "Preparación",
+            "listo": "Listo",
+            "en_camino": "En camino",
+            "finalizados": "Finalizados"
+          },
+          "hints": {
+            "nuevo": "Acéptalos o recházalos",
+            "aceptado": "Pasan a cocina",
+            "preparacion": "En la cocina",
+            "listo": "Esperan al cliente o al reparto",
+            "en_camino": "Con el repartidor",
+            "finalizados": "Últimas 24 horas"
+          },
+          "empties": {
+            "nuevo": "Sin pedidos nuevos",
+            "aceptado": "Nada por iniciar",
+            "preparacion": "Cocina libre",
+            "listo": "Nada por entregar",
+            "en_camino": "Nadie en ruta",
+            "finalizados": "Aún no hay finalizados"
+          },
+          "more": "+{count} más · ver en la tabla",
+          "hint": "Toca una tarjeta para ver el pedido completo. Los pedidos nuevos se resaltan.",
+          "freshCount": "{count, plural, one {# nuevo} other {# nuevos}}"
+        },
+        "status": {
+          "pending": "Nuevo",
+          "accepted": "Aceptado",
+          "preparing": "En preparación",
+          "ready": "Listo",
+          "on_the_way": "En camino",
+          "delivered": "Entregado",
+          "picked_up": "Entregado en sucursal",
+          "rejected": "Rechazado",
+          "cancelled": "Cancelado"
+        },
+        "type": {
+          "pickup": "Recoger",
+          "pickupLong": "Recoger en tienda",
+          "own": "Reparto propio",
+          "pedidosya": "PedidosYa"
+        },
+        "actions": {
+          "accept": "Aceptar pedido",
+          "acceptShort": "Aceptar",
+          "reject": "Rechazar",
+          "rejectShort": "Rechazar",
+          "cancel": "Cancelar pedido",
+          "cancelShort": "Cancelar",
+          "start_preparing": "Iniciar preparación",
+          "start_preparingShort": "Preparar",
+          "mark_ready": "Marcar listo",
+          "mark_readyShort": "Listo",
+          "complete": "Entregar en sucursal",
+          "completeShort": "Entregar",
+          "dispatch": "Despachar",
+          "dispatchShort": "Despachar"
+        },
+        "dispatch": {
+          "own": "La asignación de repartidor llegará con la gestión de entregas.",
+          "pedidosya": "Integración pendiente de documentación del proveedor."
+        },
+        "conn": {
+          "rate": "Demasiadas solicitudes. Se reintentará automáticamente en unos {seconds} s.",
+          "auth": "Tu sesión expiró. Vuelve a iniciar sesión para ver los pedidos.",
+          "lost": "No pudimos cargar los pedidos de esta vista.",
+          "retry": "Reintentar",
+          "offline": "Sin conexión: última actualización {wait}.",
+          "offlineNoData": "Sin conexión: aún no hay datos de esta vista.",
+          "gaveUp": "Dejamos de reintentar automáticamente."
+        },
+        "toast": {
+          "done": "Pedido #{code}: {status}.",
+          "replayedMine": "Este pedido ya estaba en ese estado.",
+          "replayedOther": "Otra persona ya lo había hecho: el pedido #{code} está en «{status}».",
+          "conflict": "El pedido #{code} cambió: ahora está «{status}». Actualizamos la vista; revisa y vuelve a decidir.",
+          "conflictUnknown": "El pedido #{code} cambió. Actualizamos la vista; revisa y vuelve a decidir.",
+          "invalid": {
+            "ORDER_TERMINAL": "El pedido ya terminó y no admite cambios.",
+            "ORDER_FULFILLMENT_MISMATCH": "Esa acción no corresponde a la modalidad del pedido.",
+            "ORDER_SOURCE_INVALID": "Esa acción no se puede hacer desde el estado en que estaba el pedido.",
+            "ORDER_DISPATCH_NOT_AVAILABLE": "El despacho aún no está disponible.",
+            "ORDER_PROVIDER_BLOCKED_EXTERNAL": "La integración con el proveedor está pendiente.",
+            "ORDER_CANCEL_NOT_ALLOWED": "No se puede cancelar un pedido que ya salió a entrega.",
+            "default": "Esa acción no está permitida para este pedido."
+          },
+          "forbidden": "No tienes permiso para esta acción en esta sucursal.",
+          "mfa": "Verifica tu segundo factor (MFA) para continuar.",
+          "auth": "Tu sesión expiró. Vuelve a iniciar sesión.",
+          "notFound": "Pedido no disponible. Actualizamos la vista.",
+          "reason": "Indica un motivo de al menos 3 caracteres.",
+          "rate": "Demasiadas solicitudes. Reintenta en {seconds} s.",
+          "busy": "El sistema está ocupado. Reintenta en {seconds} s.",
+          "network": "Sin conexión: no sabemos si el cambio del pedido #{code} se aplicó. Actualiza la vista antes de repetirlo.",
+          "unknown": "No se pudo completar la acción. Intenta de nuevo."
+        },
+        "pending": {
+          "payment_review": "Revisar pago pendiente: el cliente eligió transferencia. Es solo un aviso; no se ejecutó ninguna acción de pago.",
+          "delivery_cancellation": "Hay una entrega por cancelar. Es solo un aviso; no se ejecutó ninguna acción de entrega."
+        },
+        "reason": {
+          "back": "Volver",
+          "suggestions": "Motivos sugeridos",
+          "label": "Motivo (obligatorio, solo para uso interno)",
+          "pii": "El cliente no verá este motivo. No escribas datos personales.",
+          "counter": "{count}/{max}",
+          "error": {
+            "required": "Escribe el motivo.",
+            "short": "El motivo debe tener al menos 3 caracteres.",
+            "long": "El motivo no puede superar 280 caracteres.",
+            "control": "El motivo contiene caracteres no permitidos."
+          },
+          "suggestion": {
+            "soldOut": "Producto agotado",
+            "outOfZone": "Fuera de zona de cobertura",
+            "saturated": "Sucursal saturada",
+            "incompleteContact": "Datos de contacto incompletos"
+          },
+          "reject": {
+            "title": "Rechazar pedido",
+            "consequences": "El pedido pasará a «Rechazado» y no podrá reactivarse. Se registra quién lo hizo y el motivo.",
+            "confirm": "Confirmar rechazo"
+          },
+          "cancel": {
+            "title": "Cancelar pedido",
+            "consequences": "El pedido pasará a «Cancelado» y no podrá reactivarse. Si el cliente eligió transferencia verás un aviso de pago por revisar; no se ejecuta ninguna acción de cobro ni de entrega.",
+            "confirm": "Confirmar cancelación"
+          }
+        },
+        "drawer": {
+          "eyebrow": "Pedido web · {day} {time} · {branch}",
+          "today": "Hoy",
+          "late": "Sin aceptar +{minutes} min",
+          "summary": "{type} · {items} · {total} · {wait}",
+          "rejected": "Pedido rechazado. Motivo: {reason}",
+          "cancelled": "Pedido cancelado. Motivo: {reason}",
+          "completed": "Pedido finalizado. No hay acciones pendientes.",
+          "customer": "Cliente",
+          "call": "Llamar",
+          "deliverTitle": "Entrega",
+          "pickupTitle": "Recoge en tienda",
+          "zone": "zona {zone}",
+          "city": "Ciudad de Guatemala",
+          "notes": "Observaciones del cliente",
+          "courier": "Reparto · {provider}",
+          "products": "Productos",
+          "note": "Nota: {note}",
+          "promotion": "Promoción: {name}",
+          "subtotal": "Subtotal",
+          "extras": "Extras",
+          "discount": "Descuento",
+          "shipping": "Envío cotizado al cliente",
+          "total": "TOTAL",
+          "payment": "Pago",
+          "paymentNone": "Sin pago registrado",
+          "paymentPreference": "El cliente indicó: {method}",
+          "paymentNoPreference": "Sin preferencia de pago",
+          "method": {
+            "cash": "efectivo",
+            "bank_transfer": "transferencia bancaria"
+          },
+          "history": "Historial de estados",
+          "by": "por {name}",
+          "reasonLabel": "Motivo: {reason}",
+          "historyTruncated": "Se muestran los 50 eventos más recientes.",
+          "loading": "Cargando el pedido…",
+          "retry": "Reintentar",
+          "error": {
+            "notFound": "Pedido no disponible.",
+            "forbidden": "No tienes permiso para ver este pedido.",
+            "auth": "Tu sesión expiró. Vuelve a iniciar sesión.",
+            "mfa": "Verifica tu segundo factor (MFA) para ver el pedido.",
+            "network": "No pudimos cargar el pedido."
+          },
+          "noteHint": "Revisa el estado actual del pedido antes de volver a intentarlo."
+        },
+        "table": {
+          "range": "Fecha",
+          "rangeLabel": "Rango de fechas",
+          "last7": "7 días",
+          "custom": "Elegir",
+          "from": "Desde",
+          "to": "Hasta",
+          "rangeInvalid": "El rango de fechas no es válido (máximo {days} días y «Hasta» no puede ser anterior a «Desde»).",
+          "searchMin": "Escribe al menos {min} caracteres para buscar.",
+          "loadMore": "Cargar más",
+          "loading": "Cargando…"
+        },
+        "card": {
+          "fresh": "Recién llegado",
+          "oldest": "Más antiguo sin aceptar"
+        },
+        "pendingNotice": "{count, plural, one {Hay # pedido sin aceptar} other {Hay # pedidos sin aceptar}}"
       }
     },
     "mfa": {

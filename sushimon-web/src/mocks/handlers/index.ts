@@ -1,6 +1,7 @@
 import type { MockRoutes } from '@/lib/data-access/mock-client';
 import type { MockContext, MockStore } from '../store';
 import * as account from './account';
+import * as adminOrders from './admin-orders';
 import * as admin from './backoffice-admin';
 import * as banners from './banners';
 import * as bo from './backoffice';
@@ -89,6 +90,16 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'GET /v1/backoffice/categories': admin.listBoCategories,
   'POST /v1/backoffice/categories': admin.createCategory,
   'PATCH /v1/backoffice/categories/:id': admin.updateCategory,
+  // F22: pedidos del backoffice (contrato `admin-orders`, SIMULADO con la forma real). `board` ANTES de `:id`.
+  'GET /v1/admin/orders': adminOrders.listAdminOrders,
+  'GET /v1/admin/orders/board': adminOrders.getAdminOrderBoard,
+  'GET /v1/admin/orders/:id': adminOrders.getAdminOrder,
+  'POST /v1/admin/orders/:id/accept': adminOrders.acceptAdminOrder,
+  'POST /v1/admin/orders/:id/reject': adminOrders.rejectAdminOrder,
+  'POST /v1/admin/orders/:id/start-preparing': adminOrders.startPreparingAdminOrder,
+  'POST /v1/admin/orders/:id/mark-ready': adminOrders.markReadyAdminOrder,
+  'POST /v1/admin/orders/:id/complete': adminOrders.completeAdminOrder,
+  'POST /v1/admin/orders/:id/cancel': adminOrders.cancelAdminOrder,
   // F07: administración de sucursales (contrato)
   'GET /v1/admin/branches': branches.listAdminBranches,
   'POST /v1/admin/branches': branches.createAdminBranch,

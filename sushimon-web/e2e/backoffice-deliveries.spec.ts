@@ -17,8 +17,12 @@ const nav = (page: Page) => page.getByRole('navigation', { name: 'Menú principa
 const row = (page: Page, code = ORDER) => page.locator('.trow', { hasText: code });
 
 async function openDispatch(page: Page) {
-  await page.goto('/backoffice/pedidos');
-  await card(page).getByRole('button', { name: 'Despachar pedido' }).click();
+  // F22: en Pedidos «Despachar» está deshabilitado; el despacho simulado se abre desde el Panel (alertas).
+  await page.goto('/backoffice/panel');
+  await page
+    .locator('.alert', { hasText: ORDER })
+    .getByRole('button', { name: 'Despachar' })
+    .click();
   const modal = page.getByRole('dialog', { name: 'Despachar pedido' });
   await expect(modal.getByText('Simulación')).toBeVisible();
   return modal;
@@ -30,6 +34,8 @@ async function advanceToEnd(page: Page, drawerName: RegExp) {
   const advance = drawer.getByRole('button', {
     name: /Avanzar estado logístico|Marcar como entregado|Marcar salida/,
   });
+  // F22: el detalle real se pide al abrir; hay que esperar a que cargue antes de buscar los botones.
+  await expect(drawer.getByText('Productos', { exact: true })).toBeVisible();
   // El mock tarda ~150 ms por solicitud y cada avance hace dos (acción + refetch): el botón tarda
   // ~300 ms en actualizarse. En el último paso el botón desaparece entre `count()` y `click()`; en ese
   // caso el flujo terminó. Si el clic falla y el botón SIGUE ahí, es un fallo real y se relanza.
@@ -66,8 +72,9 @@ test('encargado: despacha con PedidosYa (cotización → confirmar), lo ve en En
   await page.keyboard.press('Escape');
   await expect(drawer).toHaveCount(0);
 
-  // Pedidos: el pedido queda con logística, ya sin botón de despacho.
-  await expect(card(page).getByRole('button', { name: 'Despachar pedido' })).toHaveCount(0);
+  // Pedidos: el despacho sigue deshabilitado (F28); el pedido queda con su logística simulada.
+  await page.goto('/backoffice/pedidos');
+  await expect(card(page).getByRole('button', { name: 'Despachar' })).toBeDisabled();
 
   // Entregas: aparece con referencia simulada PY-GT-… y estado logístico.
   await nav(page)
@@ -83,7 +90,7 @@ test('encargado: despacha con PedidosYa (cotización → confirmar), lo ve en En
     .getByRole('button', { name: `Ver seguimiento de ${ORDER}` })
     .click();
   const detail = await advanceToEnd(page, /MON-307051/);
-  await expect(detail.getByText('Pedido entregado. No hay acciones pendientes.')).toBeVisible();
+  await expect(detail.getByText('Pedido finalizado. No hay acciones pendientes.')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(row(page).getByText('Entregado', { exact: true })).toBeVisible();
 });

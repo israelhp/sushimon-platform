@@ -99,6 +99,20 @@ export const ORDER_TRACKING_THROTTLE = {
   actor: { limit: 60, ttl: 60_000 },
 };
 
+/**
+ * Backoffice de pedidos (F22, spec 023 §6.7). Lecturas (tablero sondeado a ~15 s por pestaña, varias pestañas tras un NAT):
+ * 240/min por IP y 90/min por actor. Comandos: 120/min por IP y 60/min por actor. Contadores propios de cada ruta,
+ * independientes de los de F20/F21.
+ */
+export const ADMIN_ORDERS_READ_THROTTLE = {
+  default: { limit: 240, ttl: 60_000 },
+  actor: { limit: 90, ttl: 60_000 },
+};
+export const ADMIN_ORDERS_COMMAND_THROTTLE = {
+  default: { limit: 120, ttl: 60_000 },
+  actor: { limit: 60, ttl: 60_000 },
+};
+
 /** Throttler adicional «por actor»: solo cuenta en las rutas que declaran un límite `actor`. */
 export const ACTOR_THROTTLER = 'actor';
 

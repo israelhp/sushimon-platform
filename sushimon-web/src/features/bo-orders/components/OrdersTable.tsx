@@ -5,32 +5,42 @@ import { IconEye } from '@/components/icons/bo';
 import { StatusPill } from '@/components/ui/Pill';
 import { branchShortName, useShell } from '@/features/backoffice-shell/shell-context';
 import { cn } from '@/lib/cn';
-import type { DraftOrder } from '@/lib/data-access/models';
+import type { AdminOrderSummary } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
-import { toBackofficeColumn } from '@/lib/order-status';
+import { localDate, localTime } from '@/lib/time';
 import { useOrderDetail } from '../order-detail-context';
-import { itemCount, nextAction, orderCode, orderTime } from '../order-view';
-import { useOrderActions } from '../use-order-actions';
-import { ACTION_CLASS, COLUMN_TONE, useOrderText } from '../use-order-text';
+import { STATUS_TONE, useAdminOrderText } from '../use-admin-order-text';
+import { PrimaryActionButton } from './ActionButton';
 
-/** Tabla de pedidos (`cols-orders`): una fila por pedido con su siguiente acción y el botón de detalle. */
-export function OrdersTable({ orders }: { orders: readonly DraftOrder[] }) {
+/** Tabla de pedidos reales (`cols-orders`): el servidor ya los ordena y filtra; aquí no se reordena nada. */
+export function OrdersTable({
+  orders,
+  today,
+  fresh,
+}: {
+  orders: readonly AdminOrderSummary[];
+  /** `YYYY-MM-DD` de hoy en America/Guatemala (según el servidor) para rotular «Hoy». */
+  today: string | null;
+  fresh: ReadonlySet<string>;
+}) {
   const t = useTranslations('backoffice.orders.table');
   return (
     <div className="tscroll">
-      <div className="min-orders">
-        <div className="thead cols-orders">
-          <span>{t('order')}</span>
-          <span>{t('client')}</span>
-          <span>{t('date')}</span>
-          <span>{t('branch')}</span>
-          <span>{t('items')}</span>
-          <span>{t('total')}</span>
-          <span>{t('status')}</span>
-          <span style={{ textAlign: 'right' }}>{t('actions')}</span>
+      <div className="min-orders" role="table" aria-label={t('label')}>
+        <div className="thead cols-orders" role="row">
+          <span role="columnheader">{t('order')}</span>
+          <span role="columnheader">{t('client')}</span>
+          <span role="columnheader">{t('date')}</span>
+          <span role="columnheader">{t('branch')}</span>
+          <span role="columnheader">{t('items')}</span>
+          <span role="columnheader">{t('total')}</span>
+          <span role="columnheader">{t('status')}</span>
+          <span role="columnheader" style={{ textAlign: 'right' }}>
+            {t('actions')}
+          </span>
         </div>
         {orders.map((order) => (
-          <OrderRow key={order.id} order={order} />
+          <OrderRow key={order.id} order={order} today={today} fresh={fresh.has(order.id)} />
         ))}
         {orders.length === 0 ? (
           <div className="empty">
@@ -43,55 +53,63 @@ export function OrdersTable({ orders }: { orders: readonly DraftOrder[] }) {
   );
 }
 
-function OrderRow({ order }: { order: DraftOrder }) {
+function OrderRow({
+  order,
+  today,
+  fresh,
+}: {
+  order: AdminOrderSummary;
+  today: string | null;
+  fresh: boolean;
+}) {
   const t = useTranslations('backoffice.orders');
-  const { grants, branchById } = useShell();
+  const { branchById } = useShell();
   const detail = useOrderDetail();
-  const text = useOrderText();
-  const actions = useOrderActions();
-  const action = nextAction(order, grants);
-  const column = toBackofficeColumn(order);
+  const text = useAdminOrderText();
+  const code = `#${order.displayNumber}`;
+  const placed = new Date(order.placedAt);
+  const day = localDate(placed);
 
   return (
-    <div className={cn('trow cols-orders', order.status === 'received' && 'hl')}>
-      <button type="button" className="tid" onClick={() => detail.open(order.id)}>
-        {orderCode(order)}
-      </button>
-      <div>
-        <div className="cell-main trunc">{order.customer.name}</div>
-        <div className="cell-sub">{text.typeLong(order)}</div>
+    <div
+      role="row"
+      className={cn('trow cols-orders', (order.status === 'pending' || fresh) && 'hl')}
+    >
+      <div role="cell">
+        <button type="button" className="tid" onClick={() => detail.open(order.id)}>
+          {code}
+        </button>
       </div>
-      <div className="hide-sm">
-        <div className="cell-main">{t('drawer.today')}</div>
-        <div className="cell-sub num">{orderTime(order)}</div>
+      <div role="cell">
+        <div className="cell-main trunc">{order.customerName}</div>
+        <div className="cell-sub">{text.typeLabel(order, true)}</div>
       </div>
-      <div className="hide-sm">
-        <span className="btag">{branchShortName(branchById(order.branchId), order.branchId)}</span>
+      <div role="cell" className="hide-sm">
+        <div className="cell-main">{day === today ? t('drawer.today') : day}</div>
+        <div className="cell-sub num">{localTime(placed)}</div>
       </div>
-      <div className="num hide-sm" style={{ fontWeight: 700 }}>
-        {itemCount(order)}
+      <div role="cell" className="hide-sm">
+        <span className="btag">
+          {branchShortName(branchById(order.branchId), order.branchName)}
+        </span>
       </div>
-      <div className="num strong">{formatMoney(order.total)}</div>
-      <div>
-        <StatusPill zone="bo" tone={COLUMN_TONE[column]}>
-          {text.statusLabel(order)}
+      <div role="cell" className="num hide-sm" style={{ fontWeight: 700 }}>
+        {order.itemCount}
+      </div>
+      <div role="cell" className="num strong">
+        {formatMoney(Number(order.total))}
+      </div>
+      <div role="cell">
+        <StatusPill zone="bo" tone={STATUS_TONE[order.status]}>
+          {text.statusLabel(order.status)}
         </StatusPill>
       </div>
-      <div className="row-actions">
-        {action ? (
-          <button
-            type="button"
-            className={cn('btn sm', ACTION_CLASS[action])}
-            disabled={actions.pending}
-            onClick={() => actions.run(order, action)}
-          >
-            {text.actionLabel(action, true)}
-          </button>
-        ) : null}
+      <div role="cell" className="row-actions">
+        <PrimaryActionButton order={order} short />
         <button
           type="button"
           className="icon-btn"
-          aria-label={t('table.detail', { code: orderCode(order) })}
+          aria-label={t('table.detail', { code })}
           onClick={() => detail.open(order.id)}
         >
           <IconEye />

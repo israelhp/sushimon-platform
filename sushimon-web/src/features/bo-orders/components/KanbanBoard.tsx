@@ -2,51 +2,80 @@
 
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
-import type { DraftOrder } from '@/lib/data-access/models';
-import { BACKOFFICE_COLUMNS } from '@/lib/order-status';
-import { groupByColumn } from '../order-view';
-import { COLUMN_DOT } from '../use-order-text';
+import { useBoardFeed } from '../board-feed';
+import type { BoardGroup, BoardGroupKey } from '../admin-orders-model';
 import { OrderCard } from './OrderCard';
 
-/** Tablero kanban: Nuevo · Aceptado · Preparación · Listo · En camino · Entregado. */
-export function KanbanBoard({ orders, now }: { orders: readonly DraftOrder[]; now: Date | null }) {
-  const t = useTranslations('backoffice.orders');
-  const groups = groupByColumn(orders);
-  const DELIVERED_LIMIT = 10;
+/** Punto de color de cada columna del tablero (ST_DOT del prototipo). */
+const GROUP_DOT: Record<BoardGroupKey, string> = {
+  nuevo: 'k-coral',
+  aceptado: 'k-neutral',
+  preparacion: 'k-amber',
+  listo: 'k-violet',
+  en_camino: 'k-blue',
+  finalizados: 'k-green',
+};
+
+/**
+ * Tablero kanban real: Nuevo · Aceptado · Preparación · Listo · En camino · Finalizados. Los conteos son los REALES del servidor y
+ * «+N más» apunta a la tabla filtrada. El orden de cada columna lo decide el servidor (activas: más antiguas primero).
+ */
+export function KanbanBoard({
+  groups,
+  onShowAll,
+}: {
+  groups: readonly BoardGroup[];
+  onShowAll: (group: BoardGroup) => void;
+}) {
+  const t = useTranslations('backoffice.orders.live');
+  const feed = useBoardFeed();
+  const oldestPendingId = feed.board?.columns.find((c) => c.status === 'pending')?.items[0]?.id;
+
   return (
     <>
       <div className="board">
-        {BACKOFFICE_COLUMNS.map((column) => {
-          const all = groups[column];
-          // "Entregado" acumula todo el día: se muestran los más recientes y el resto queda en la tabla.
-          const items = column === 'entregado' ? all.slice(0, DELIVERED_LIMIT) : all;
+        {groups.map((group) => {
+          const hidden = Math.max(0, group.count - group.items.length);
           return (
             <section
-              key={column}
-              className={cn('kcol', column === 'nuevo' && all.length > 0 && 'hot')}
-              aria-label={t(`columns.${column}`)}
+              key={group.key}
+              className={cn('kcol', group.key === 'nuevo' && group.count > 0 && 'hot')}
+              aria-label={t(`board.groups.${group.key}`)}
             >
               <div className="kcol-h">
-                <span className={cn('kdot', COLUMN_DOT[column])} aria-hidden="true" />
-                <span className="kcol-t">{t(`columns.${column}`)}</span>
-                <span className="count-chip">{all.length}</span>
+                <span className={cn('kdot', GROUP_DOT[group.key])} aria-hidden="true" />
+                <span className="kcol-t">{t(`board.groups.${group.key}`)}</span>
+                {group.key === 'nuevo' && feed.freshCount > 0 ? (
+                  <span className="count-chip fresh-chip">
+                    {t('board.freshCount', { count: feed.freshCount })}
+                  </span>
+                ) : null}
+                <span className="count-chip">{group.count}</span>
               </div>
-              <div className="kcol-hint">{t(`hints.${column}`)}</div>
-              {items.map((order) => (
-                <OrderCard key={order.id} order={order} now={now} />
+              <div className="kcol-hint">{t(`board.hints.${group.key}`)}</div>
+              {group.items.map((order) => (
+                <OrderCard
+                  key={order.id}
+                  order={order}
+                  serverNow={feed.serverNow}
+                  fresh={feed.fresh.has(order.id)}
+                  oldest={order.id === oldestPendingId && group.key === 'nuevo' && group.count > 1}
+                />
               ))}
-              {all.length === 0 ? <div className="kempty">{t(`empties.${column}`)}</div> : null}
-              {all.length > items.length ? (
-                <div className="kempty">
-                  {t('moreDelivered', { shown: items.length, total: all.length })}
-                </div>
+              {group.count === 0 ? (
+                <div className="kempty">{t(`board.empties.${group.key}`)}</div>
+              ) : null}
+              {hidden > 0 || (group.hasMore && group.items.length > 0) ? (
+                <button type="button" className="link-btn" onClick={() => onShowAll(group)}>
+                  {t('board.more', { count: Math.max(1, hidden) })}
+                </button>
               ) : null}
             </section>
           );
         })}
       </div>
       <div className="sm" style={{ fontWeight: 600 }}>
-        {t('boardHint')}
+        {t('board.hint')}
       </div>
     </>
   );

@@ -250,6 +250,26 @@ export type OrderCreated = S['OrderCreated'];
 export type OrderQuoteChange = S['OrderQuoteChange'];
 export type OrderQuoteConflict = S['OrderQuoteConflict'];
 export type OrderBlocked = S['OrderBlocked'];
+/**
+ * F22 (spec 023, ADR-0028): pedidos del backoffice (tag `admin-orders`). La web nunca decide la matriz de transiciones:
+ * usa `availableActions` que calcula el servidor.
+ */
+export type AdminOrderAction = S['AdminOrderAction'];
+export type AdminOrderActionState = S['AdminOrderActionState'];
+export type AdminOrderSummary = S['AdminOrderSummary'];
+export type AdminOrderPage = S['AdminOrderPage'];
+export type AdminOrderBoard = S['AdminOrderBoard'];
+export type AdminOrderBoardColumn = S['AdminOrderBoardColumn'];
+export type AdminOrderBoardSummary = S['AdminOrderBoardSummary'];
+export type AdminOrderDetail = S['AdminOrderDetail'];
+export type AdminOrderHistoryEntry = S['AdminOrderHistoryEntry'];
+export type AdminOrderContact = S['AdminOrderContact'];
+export type AdminOrderCommandRequest = S['AdminOrderCommandRequest'];
+export type AdminOrderReasonRequest = S['AdminOrderReasonRequest'];
+export type AdminOrderTransition = S['AdminOrderTransition'];
+export type AdminOrderPendingAction = S['AdminOrderPendingAction'];
+export type AdminOrderTransitionResult = S['AdminOrderTransitionResult'];
+export type AdminOrderStateSnapshot = S['AdminOrderStateSnapshot'];
 export type OrderLookupRequest = S['OrderLookupRequest'];
 export type CardPaymentRequest = S['CardPaymentRequest'];
 export type PaymentResult = S['PaymentResult'];

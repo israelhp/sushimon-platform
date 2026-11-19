@@ -12,9 +12,8 @@ import {
 } from '@/components/icons/bo';
 import { useToast } from '@/components/ui/Toast';
 import { useOrderDetail } from '@/features/bo-orders/order-detail-context';
-import { orderCode, sortForColumn } from '@/features/bo-orders/order-view';
-import { useOrderText } from '@/features/bo-orders/use-order-text';
-import { useScopedOrders } from '@/features/bo-orders/use-scoped-orders';
+import { useBoardFeed } from '@/features/bo-orders/board-feed';
+import { useAdminOrderText } from '@/features/bo-orders/use-admin-order-text';
 import { useAuth } from '@/features/session/auth-provider';
 import { useDemoSession } from '@/features/session/demo-session';
 import { cn } from '@/lib/cn';
@@ -26,6 +25,7 @@ import { BoThemeButton } from './BoThemeButton';
 import { LOGIN_PATH, screenFromPath, screenHref } from './nav';
 import { branchShortName, useShell } from './shell-context';
 import { avatarStyle, formatTopbarDate, staffInitials } from './staff-display';
+import { useDataClient } from '@/lib/data-access/provider';
 import { useNow } from './use-now';
 import { PopoverRoot, usePopover } from './use-popover';
 
@@ -35,6 +35,7 @@ export function Topbar({ newCount }: { newCount: number }) {
   const pathname = usePathname();
   const shell = useShell();
   const now = useNow();
+  const isMock = useDataClient().kind === 'mock';
   const screen = screenFromPath(pathname);
   const branch = shell.branchId ? shell.branchById(shell.branchId) : undefined;
   const branchTitle = !shell.branchId
@@ -67,21 +68,23 @@ export function Topbar({ newCount }: { newCount: number }) {
         <span style={{ color: 'var(--bo-text)' }}>{now ? formatTopbarDate(now) : ''}</span>
       </div>
       {shell.ring && shell.soundOn ? (
-        <span className="sound" role="status">
+        <span className="sound" aria-hidden="true">
           <IconVolume />
           <span>{t('shell.ringing')}</span>
         </span>
       ) : null}
-      <button
-        type="button"
-        className="btn sm"
-        title={t('shell.demoOrderHint')}
-        disabled={shell.simulating}
-        onClick={shell.simulateOrder}
-      >
-        <IconZap />
-        <span className="sim-label">{t('shell.demoOrder')}</span>
-      </button>
+      {isMock ? (
+        <button
+          type="button"
+          className="btn sm"
+          title={t('shell.demoOrderHint')}
+          disabled={shell.simulating}
+          onClick={shell.simulateOrder}
+        >
+          <IconZap />
+          <span className="sim-label">{t('shell.demoOrder')}</span>
+        </button>
+      ) : null}
       <BoThemeButton />
       <NotificationsMenu newCount={newCount} />
       <UserMenu />
@@ -94,13 +97,11 @@ function NotificationsMenu({ newCount }: { newCount: number }) {
   const shell = useShell();
   const popover = usePopover();
   const detail = useOrderDetail();
-  const orders = useScopedOrders();
-  const now = useNow();
-  const text = useOrderText();
-  const fresh = sortForColumn(
-    'nuevo',
-    (orders.data ?? []).filter((o) => o.status === 'received'),
-  );
+  const feed = useBoardFeed();
+  const text = useAdminOrderText();
+  const isMock = useDataClient().kind === 'mock';
+  // Nuevos = columna `pending` del tablero real (más antiguos primero, como los atiende la cocina).
+  const fresh = feed.groups?.find((g) => g.key === 'nuevo')?.items ?? [];
 
   return (
     <PopoverRoot className="notif-wrap" open={popover.open} onDismiss={popover.close}>
@@ -149,17 +150,17 @@ function NotificationsMenu({ newCount }: { newCount: number }) {
                 </span>
                 <span className="grow">
                   <span className="strong" style={{ display: 'block', fontSize: 13.5 }}>
-                    {t('item', { code: orderCode(order), client: order.customer.name })}
+                    {t('item', { code: `#${order.displayNumber}`, client: order.customerName })}
                   </span>
                   <span className="muted sm" style={{ display: 'block' }}>
                     {t('itemMeta', {
-                      branch: branchShortName(shell.branchById(order.branchId), order.branchId),
-                      type: text.typeLong(order),
-                      total: formatMoney(order.total),
+                      branch: branchShortName(shell.branchById(order.branchId), order.branchName),
+                      type: text.typeLabel(order, true),
+                      total: formatMoney(Number(order.total)),
                     })}
                   </span>
                   <span className="xs" style={{ display: 'block', marginTop: 2, fontWeight: 700 }}>
-                    {text.waitText(order, now)}
+                    {text.waitText(order.placedAt, feed.serverNow)}
                   </span>
                 </span>
               </button>
@@ -170,11 +171,13 @@ function NotificationsMenu({ newCount }: { newCount: number }) {
               </div>
             ) : null}
           </div>
-          <div className="notif-foot">
-            <button type="button" className="btn sm block" onClick={shell.simulateOrder}>
-              {t('simulate')}
-            </button>
-          </div>
+          {isMock ? (
+            <div className="notif-foot">
+              <button type="button" className="btn sm block" onClick={shell.simulateOrder}>
+                {t('simulate')}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </PopoverRoot>

@@ -1,236 +1,304 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import {
-  IconAlert,
-  IconBike,
-  IconCheck,
-  IconFileText,
-  IconMapPin,
-  IconPhone,
-} from '@/components/icons/bo';
+import { useEffect, useState } from 'react';
+import { IconBike, IconFileText, IconMapPin, IconPhone } from '@/components/icons/bo';
 import { Banner } from '@/components/ui/Banner';
 import { Drawer } from '@/components/ui/Drawer';
 import { StatusPill } from '@/components/ui/Pill';
 import { SimulationBadge } from '@/components/ui/SimulationBadge';
-import { useRiders } from '@/features/backoffice/hooks';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { formatTopbarDate } from '@/features/backoffice-shell/staff-display';
-import { useNow } from '@/features/backoffice-shell/use-now';
-import { useShell } from '@/features/backoffice-shell/shell-context';
+import { branchShortName, useShell } from '@/features/backoffice-shell/shell-context';
+import { useDataClient } from '@/lib/data-access/provider';
 import { cn } from '@/lib/cn';
-import type { DraftOrder, OrderStatusEvent } from '@/lib/data-access/models';
+import type {
+  AdminOrderDetail,
+  AdminOrderPendingAction,
+  AdminOrderSummary,
+} from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
-import { toBackofficeColumn } from '@/lib/order-status';
 import { localDate, localTime } from '@/lib/time';
-import { useOrderDetail } from '../order-detail-context';
 import {
-  dispatchBlockedForRole,
-  historyNewestFirst,
-  initials,
-  isLate,
-  nextAction,
-  orderCode,
-  orderTime,
+  LATE_MINUTES,
+  classifyCommandError,
+  isLatePending,
   progressSteps,
-  toBackofficeLogistics,
-  trackSteps,
-} from '../order-view';
-import { useOrderActions } from '../use-order-actions';
-import { usePastOrder } from '../use-past-order';
-import { useScopedOrders } from '../use-scoped-orders';
-import { COLUMN_TONE, LOGISTICS_TONE, useOrderText } from '../use-order-text';
+  reasonActions,
+  type CommandError,
+} from '../admin-orders-model';
+import { useBoardFeed } from '../board-feed';
+import { useAdminOrderDetail } from '../hooks';
+import { useOrderDetail } from '../order-detail-context';
+import { useAdminOrderActions, type ActionResult } from '../use-admin-order-actions';
+import { STATUS_TONE, useAdminOrderText } from '../use-admin-order-text';
+import { DispatchNotice, PrimaryActionButton } from './ActionButton';
+import { LegacyLogisticsSection } from './LegacyLogistics';
+import { ReasonModal, type ReasonKind } from './ReasonModal';
 
 const phoneHref = (phone: string) => `tel:${phone.replace(/[^0-9+]/g, '')}`;
+const money = (value: string) => formatMoney(Number(value));
 
-/** Drawer de detalle del pedido: productos, notas, totales, historial, entrega/logística y acciones por rol. */
+/**
+ * Drawer de detalle del pedido REAL: líneas, totales, contacto, historial y las acciones que el servidor permite. Es UN solo
+ * diálogo en todos los estados (cargando, error, con datos): así el foco y la trampa de foco no se pierden al llegar la respuesta.
+ */
 export function OrderDrawer({ orderId }: { orderId: string }) {
   const detail = useOrderDetail();
-  const orders = useScopedOrders();
-  const todayOrder = orders.data?.find((o) => o.id === orderId);
-  // Pedido de un día anterior (abierto desde Entregas): se consulta ese día.
-  const past = usePastOrder(orderId, detail.day, !todayOrder && orders.isSuccess);
-  const order = todayOrder ?? past.order;
-  const t = useTranslations('backoffice.orders.drawer');
+  const feed = useBoardFeed();
+  const query = useAdminOrderDetail(orderId);
+  const t = useTranslations('backoffice.orders.live.drawer');
+  const actions = useAdminOrderActions();
+  const [reasonKind, setReasonKind] = useState<ReasonKind | null>(null);
+  const [pending, setPending] = useState<readonly AdminOrderPendingAction[]>([]);
+  // Texto visible (además del aviso del toast) de la última acción que falló: estado actual y qué hacer.
+  const [note, setNote] = useState<string | null>(null);
+  const onResult = (r: ActionResult) => {
+    if (r.ok) setNote(null);
+    else if (r.text) setNote(r.text);
+  };
+  const card = feed.board?.columns.flatMap((c) => c.items).find((o) => o.id === orderId);
+  const order = query.data;
 
-  if (!order) {
-    // Cargando (o el pedido ya no está en la lista de hoy): panel mínimo para no dejar el foco perdido.
-    return (
-      <Drawer open zone="bo" title={`#${orderId}`} onClose={detail.close}>
-        <div className="empty-mini" role="status">
-          {orders.isError ? t('title') : '…'}
-        </div>
+  // La tarjeta cambió en el tablero (otra persona actuó): el detalle abierto se vuelve a leer (sin bucle: solo si la tarjeta es más nueva).
+  const { refetch } = query;
+  const known = order?.updatedAt;
+  const fetching = query.isFetching;
+  useEffect(() => {
+    if (card && known && !fetching && card.updatedAt > known) void refetch();
+  }, [card, known, fetching, refetch]);
+
+  const error = !order && query.isError ? classifyCommandError(query.error) : null;
+  const busy = actions.pending && actions.pendingId === orderId;
+
+  return (
+    <>
+      <Drawer
+        open
+        zone="bo"
+        title={`#${order?.displayNumber ?? card?.displayNumber ?? orderId}`}
+        eyebrow={order ? <DrawerEyebrow order={order} /> : undefined}
+        headerExtra={order ? <DrawerHeader order={order} /> : undefined}
+        footer={
+          order ? (
+            <DrawerFooter order={order} busy={busy} onReason={setReasonKind} onResult={onResult} />
+          ) : undefined
+        }
+        onClose={detail.close}
+      >
+        {order ? (
+          <DrawerBody order={order} pending={pending} note={note} />
+        ) : error ? (
+          <Banner zone="bo" tone={error.kind === 'notFound' ? 'neutral' : 'danger'} role="alert">
+            {t(`error.${errorKey(error)}`)}{' '}
+            {error.kind === 'network' || error.kind === 'unknown' || error.kind === 'busy' ? (
+              <button type="button" className="link-btn" onClick={() => void query.refetch()}>
+                {t('retry')}
+              </button>
+            ) : null}
+          </Banner>
+        ) : (
+          <div role="status" aria-busy="true" className="col gap8">
+            <span className="sr-only">{t('loading')}</span>
+            <Skeleton zone="bo" style={{ height: 64, borderRadius: 12 }} />
+            <Skeleton zone="bo" style={{ height: 120, borderRadius: 12 }} />
+            <Skeleton zone="bo" style={{ height: 160, borderRadius: 12 }} />
+          </div>
+        )}
       </Drawer>
-    );
-  }
-  return <OrderDrawerContent order={order} onClose={detail.close} />;
+
+      {order && reasonKind ? (
+        <ReasonModal
+          kind={reasonKind}
+          order={order}
+          pending={busy}
+          onSubmit={async (reason) => {
+            const result = await actions.run(order, reasonKind, reason);
+            onResult(result);
+            if (result.ok) setPending(result.outcome.pending);
+            return result;
+          }}
+          onClose={() => {
+            setReasonKind(null);
+            // Si el botón que abrió el modal ya no existe (el pedido cambió), el foco va al encabezado del detalle.
+            setTimeout(() => {
+              const active = document.activeElement;
+              if (!active || active === document.body) {
+                document
+                  .querySelector<HTMLElement>('aside.drawer, [data-zone="bo"] .drawer')
+                  ?.focus();
+              }
+            }, 0);
+          }}
+        />
+      ) : null}
+    </>
+  );
 }
 
-function OrderDrawerContent({ order, onClose }: { order: DraftOrder; onClose: () => void }) {
-  const t = useTranslations('backoffice.orders');
-  const td = useTranslations('backoffice.orders.drawer');
-  const { grants, can, branchById } = useShell();
-  const detail = useOrderDetail();
-  const now = useNow();
-  const text = useOrderText();
-  const actions = useOrderActions();
+function errorKey(error: CommandError): 'notFound' | 'forbidden' | 'auth' | 'mfa' | 'network' {
+  switch (error.kind) {
+    case 'notFound':
+      return 'notFound';
+    case 'forbidden':
+      return 'forbidden';
+    case 'auth':
+      return 'auth';
+    case 'mfa':
+      return 'mfa';
+    default:
+      return 'network';
+  }
+}
 
-  const column = toBackofficeColumn(order);
-  const isDelivery = order.fulfillment === 'delivery';
-  const branch = branchById(order.branchId);
-  const late = isLate(order, now);
-  const action = nextAction(order, grants);
-  const blocked = dispatchBlockedForRole(order, grants);
+function DrawerEyebrow({ order }: { order: AdminOrderDetail }) {
+  const td = useTranslations('backoffice.orders.live.drawer');
+  const feed = useBoardFeed();
+  const placed = new Date(order.placedAt);
+  return (
+    <>
+      {td('eyebrow', {
+        day:
+          feed.serverNow !== null && localDate(placed) === localDate(new Date(feed.serverNow))
+            ? td('today')
+            : formatTopbarDate(placed),
+        time: localTime(placed),
+        branch: order.branchName,
+      })}
+    </>
+  );
+}
+
+function DrawerHeader({ order }: { order: AdminOrderDetail }) {
+  const td = useTranslations('backoffice.orders.live.drawer');
+  const feed = useBoardFeed();
+  const text = useAdminOrderText();
+  const late = feed.serverNow !== null && isLatePending(order, feed.serverNow);
   const steps = progressSteps(order);
-  const canAcceptReject =
-    action === 'accept' &&
-    can('orders.accept', order.branchId) &&
-    can('orders.reject', order.branchId);
-  const hasActions = action !== null || blocked;
-
-  const eyebrow = td('eyebrow', {
-    day:
-      now && localDate(new Date(order.createdAt)) !== localDate(now)
-        ? formatTopbarDate(new Date(order.createdAt))
-        : td('today'),
-    time: orderTime(order),
-    branch: branch?.name ?? order.branchId,
-  });
-
-  const headerExtra = (
+  const lastReason = [...order.history].reverse().find((h) => h.reason)?.reason ?? null;
+  return (
     <>
       <div className="row gap8 wrap">
-        <StatusPill zone="bo" tone={COLUMN_TONE[column]}>
-          {text.statusLabel(order)}
+        <StatusPill zone="bo" tone={STATUS_TONE[order.status]}>
+          {text.statusLabel(order.status)}
         </StatusPill>
-        {late ? <span className="late">{td('late')}</span> : null}
+        {late ? <span className="late">{td('late', { minutes: LATE_MINUTES })}</span> : null}
         <span className="sm" style={{ fontWeight: 700 }}>
           {td('summary', {
-            type: text.typeLong(order),
-            items: text.itemsLabel(order),
-            total: formatMoney(order.total),
-            wait: text.waitText(order, now),
+            type: text.typeLabel(order, true),
+            items: text.itemsLabel(order.itemCount),
+            total: money(order.total),
+            wait: text.waitText(order.placedAt, feed.serverNow),
           })}
         </span>
       </div>
-      {column !== 'cancelado' ? (
+      {steps.length > 0 ? (
         <div className="steps">
           {steps.map((s) => (
-            <div key={s.column} className={cn('step', s.state)}>
+            <div key={s.status} className={cn('step', s.state)}>
               <div className="sb" />
-              <span className="trunc">{t(`columns.${s.column}`)}</span>
+              <span className="trunc">{text.statusLabel(s.status)}</span>
             </div>
           ))}
         </div>
       ) : null}
-      {column === 'cancelado' ? (
+      {order.status === 'rejected' || order.status === 'cancelled' ? (
         <Banner zone="bo" tone="neutral">
-          {td('rejected', { reason: order.rejectionReason ?? '—' })}
+          {td(order.status === 'rejected' ? 'rejected' : 'cancelled', {
+            reason: lastReason ?? '—',
+          })}
         </Banner>
       ) : null}
-      {column === 'entregado' ? (
+      {order.status === 'delivered' || order.status === 'picked_up' ? (
         <Banner zone="bo" tone="success">
-          {td('delivered')}
+          {td('completed')}
         </Banner>
       ) : null}
     </>
   );
+}
 
-  const footer = hasActions ? (
+function DrawerFooter({
+  order,
+  busy,
+  onReason,
+  onResult,
+}: {
+  order: AdminOrderDetail;
+  busy: boolean;
+  onReason: (kind: ReasonKind) => void;
+  onResult: (result: ActionResult) => void;
+}) {
+  const t = useTranslations('backoffice.orders.live');
+  const reasons = reasonActions(order);
+  const summary: AdminOrderSummary = order;
+  if (
+    reasons.length === 0 &&
+    !order.availableActions.some((a) => a.enabled || a.action === 'dispatch')
+  ) {
+    return null;
+  }
+  return (
     <>
-      {action === 'accept' ? (
-        <>
-          <button
-            type="button"
-            className="btn btn-primary grow"
-            disabled={actions.pending}
-            onClick={() => actions.run(order, 'accept')}
-          >
-            <IconCheck />
-            {t('actions.accept')}
-          </button>
-          {canAcceptReject ? (
-            <button type="button" className="btn btn-ghost danger" onClick={detail.openReject}>
-              {t('actions.reject')}
-            </button>
-          ) : null}
-        </>
-      ) : null}
-      {action === 'prepare' ? (
+      <PrimaryActionButton order={summary} block withIcon onResult={onResult} />
+      {reasons.map((action) => (
         <button
+          key={action}
           type="button"
-          className="btn btn-primary grow"
-          disabled={actions.pending}
-          onClick={() => actions.run(order, 'prepare')}
+          className="btn btn-ghost danger"
+          disabled={busy}
+          onClick={() => onReason(action)}
         >
-          {t('actions.prepare')}
+          {t(`actions.${action}`)}
         </button>
-      ) : null}
-      {action === 'ready' ? (
-        <button
-          type="button"
-          className="btn btn-primary grow"
-          disabled={actions.pending}
-          onClick={() => actions.run(order, 'ready')}
-        >
-          <IconCheck />
-          {t('actions.ready')}
-        </button>
-      ) : null}
-      {action === 'dispatch' ? (
-        <button
-          type="button"
-          className="btn btn-primary grow lg"
-          onClick={() => actions.run(order, 'dispatch')}
-        >
-          <IconBike />
-          {t('actions.dispatch').toUpperCase()}
-        </button>
-      ) : null}
-      {blocked ? (
-        <Banner zone="bo" tone="warning" className="grow" role="status">
-          {t('actions.dispatchBlocked')}
-        </Banner>
-      ) : null}
-      {action === 'deliver' ? (
-        <button
-          type="button"
-          className="btn btn-green grow"
-          disabled={actions.pending}
-          onClick={() => actions.run(order, 'deliver')}
-        >
-          <IconCheck />
-          {t('actions.handover')}
-        </button>
-      ) : null}
+      ))}
+      <DispatchNotice order={summary} />
     </>
-  ) : undefined;
+  );
+}
+
+function DrawerBody({
+  order,
+  pending,
+  note,
+}: {
+  order: AdminOrderDetail;
+  pending: readonly AdminOrderPendingAction[];
+  note: string | null;
+}) {
+  const t = useTranslations('backoffice.orders.live');
+  const td = useTranslations('backoffice.orders.live.drawer');
+  const { branchById } = useShell();
+  const client = useDataClient();
+  const detail = useOrderDetail();
+  const text = useAdminOrderText();
+  const isDelivery = order.fulfillmentType === 'DELIVERY';
+  const branch = branchById(order.branchId);
 
   return (
-    <Drawer
-      open
-      zone="bo"
-      title={orderCode(order)}
-      eyebrow={eyebrow}
-      headerExtra={headerExtra}
-      footer={footer}
-      onClose={onClose}
-    >
+    <>
+      {note ? (
+        // Sin `role`: el aviso (toast) ya tiene su región live; esto deja el texto visible en el detalle.
+        <Banner zone="bo" tone="warning">
+          {note} {td('noteHint')}
+        </Banner>
+      ) : null}
+      {pending.length > 0 ? (
+        <Banner zone="bo" tone="warning" role="status">
+          {pending.map((p) => t(`pending.${p}`)).join(' ')}
+        </Banner>
+      ) : null}
+
       <section>
         <div className="sect-t">{td('customer')}</div>
         <div className="info-card">
-          <div
-            className="avatar"
-            style={{ background: 'var(--bo-muted)', color: 'var(--bo-on-primary)' }}
-          >
-            {initials(order.customer.name)}
-          </div>
           <div className="grow">
-            <div className="strong">{order.customer.name}</div>
+            <div className="strong">{order.contact.fullName}</div>
             <div className="muted sm num" style={{ fontWeight: 600 }}>
-              {order.customer.phone}
+              {order.contact.phone}
             </div>
           </div>
-          <a className="btn sm" href={phoneHref(order.customer.phone)}>
+          <a className="btn sm" href={phoneHref(order.contact.phone)}>
             <IconPhone />
             {td('call')}
           </a>
@@ -245,70 +313,132 @@ function OrderDrawerContent({ order, onClose }: { order: DraftOrder; onClose: ()
             <div className="grow">
               <div className="strong">
                 {isDelivery && order.address
-                  ? `${order.address.line}${order.address.zone ? ` · ${order.address.zone}` : ''}`
-                  : `${branch?.name ?? order.branchId}${branch ? ` · ${branch.zoneLabel}` : ''}`}
+                  ? `${order.address.addressLine}${order.address.zone ? ` · ${td('zone', { zone: order.address.zone })}` : ''}`
+                  : `${order.branchName}${branch ? ` · ${branchShortName(branch)}` : ''}`}
               </div>
               <div className="muted sm" style={{ fontWeight: 600 }}>
-                {isDelivery ? (order.address?.municipality ?? td('city')) : td('city')}
+                {isDelivery && order.address
+                  ? [order.address.municipalityName, order.address.referenceNote]
+                      .filter(Boolean)
+                      .join(' · ')
+                  : td('city')}
               </div>
             </div>
-            <span className="zone-tag">{text.typeShort(order)}</span>
+            <span className="zone-tag">{text.typeLabel(order)}</span>
           </div>
-          {order.note ? (
+          {order.notes ? (
             <div className="info-row">
               <IconFileText />
               <div>
                 <div className="muted xs" style={{ fontWeight: 700 }}>
                   {td('notes')}
                 </div>
-                <div style={{ fontWeight: 600 }}>{order.note}</div>
+                <div style={{ fontWeight: 600 }}>{order.notes}</div>
               </div>
             </div>
           ) : null}
         </div>
       </section>
 
-      {isDelivery ? <LogisticsSection order={order} /> : null}
+      {isDelivery ? (
+        <section>
+          <div className="sect-t">
+            {td('courier', { provider: text.typeLabel(order) })}{' '}
+            {order.deliveryProvider === 'PEDIDOSYA' ? (
+              <SimulationBadge kind="simulation" zone="bo" />
+            ) : null}
+          </div>
+          <div className="empty-mini">
+            <IconBike size="sm" />{' '}
+            {text.dispatchNote(
+              order.deliveryProvider === 'PEDIDOSYA'
+                ? 'PROVIDER_BLOCKED_EXTERNAL'
+                : 'DISPATCH_NOT_AVAILABLE',
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      {isDelivery && client.kind === 'mock' ? (
+        <LegacyLogisticsSection orderId={order.id} day={detail.day} />
+      ) : null}
 
       <section>
         <div className="sect-t">{td('products')}</div>
         <div className="items">
           {order.lines.map((line, i) => (
-            <div key={`${line.productId}-${i}`} className="item">
+            <div key={`${line.productName}-${i}`} className="item">
               <span className="qty">{line.quantity}×</span>
               <span className="grow">
-                {line.name}
-                {line.note ? (
+                {line.productName}
+                {line.modifiers.map((m, j) => (
+                  <span key={`${m.name}-${j}`} className="muted xs" style={{ display: 'block' }}>
+                    + {m.name}
+                  </span>
+                ))}
+                {line.notes ? (
                   <>
                     <br />
-                    <span className="note-tag">{td('note', { note: line.note })}</span>
+                    <span className="note-tag">{td('note', { note: line.notes })}</span>
                   </>
                 ) : null}
               </span>
-              <span className="num">{formatMoney(line.subtotal)}</span>
+              <span className="num">{money(line.lineTotal)}</span>
             </div>
           ))}
         </div>
+        {order.promotions.length > 0 ? (
+          <div className="totals">
+            {order.promotions.map((p, i) => (
+              <div key={`${p.name}-${i}`} className="tline">
+                <span>{td('promotion', { name: p.name })}</span>
+                <span className="num">-{money(p.amount)}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <div className="totals">
           <div className="tline">
             <span>{td('subtotal')}</span>
-            <span className="num">{formatMoney(order.subtotal)}</span>
+            <span className="num">{money(order.subtotal)}</span>
           </div>
-          {order.discount > 0 ? (
+          {Number(order.extrasTotal) > 0 ? (
+            <div className="tline">
+              <span>{td('extras')}</span>
+              <span className="num">{money(order.extrasTotal)}</span>
+            </div>
+          ) : null}
+          {Number(order.discountTotal) > 0 ? (
             <div className="tline">
               <span>{td('discount')}</span>
-              <span className="num">-{formatMoney(order.discount)}</span>
+              <span className="num">-{money(order.discountTotal)}</span>
             </div>
           ) : null}
           {isDelivery ? (
             <div className="tline">
               <span>{td('shipping')}</span>
-              <span className="num">{formatMoney(order.deliveryFee)}</span>
+              <span className="num">{money(order.deliveryFee)}</span>
             </div>
           ) : null}
           <div className="tline total">
             <span>{td('total')}</span>
-            <span className="num">{formatMoney(order.total)}</span>
+            <span className="num">{money(order.total)}</span>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div className="sect-t">{td('payment')}</div>
+        <div className="info-row">
+          <div className="grow">
+            <div className="strong">{td('paymentNone')}</div>
+            <div className="muted sm" style={{ fontWeight: 600 }}>
+              {order.payment.methodPreference
+                ? td('paymentPreference', {
+                    method: td(`method.${order.payment.methodPreference}`),
+                  })
+                : td('paymentNoPreference')}
+            </div>
           </div>
         </div>
       </section>
@@ -316,161 +446,25 @@ function OrderDrawerContent({ order, onClose }: { order: DraftOrder; onClose: ()
       <section>
         <div className="sect-t">{td('history')}</div>
         <div className="hist">
-          {historyNewestFirst(order).map((event, i) => (
-            <div key={`${event.at}-${i}`}>
-              <span className="num strong">{localTime(new Date(event.at))}</span>
-              <span>{historyLabel(event, t)}</span>
+          {[...order.history].reverse().map((entry) => (
+            <div key={entry.seq}>
+              <span className="num strong">
+                {localDate(new Date(entry.at))} {localTime(new Date(entry.at))}
+              </span>
+              <span>
+                {text.statusLabel(entry.status)}
+                {entry.actorName ? ` · ${td('by', { name: entry.actorName })}` : ''}
+                {entry.reason ? ` · ${td('reasonLabel', { reason: entry.reason })}` : ''}
+              </span>
             </div>
           ))}
         </div>
+        {order.historyTruncated ? (
+          <div className="xs muted" style={{ fontWeight: 600 }}>
+            {td('historyTruncated')}
+          </div>
+        ) : null}
       </section>
-    </Drawer>
-  );
-}
-
-type Translator = ReturnType<typeof useTranslations<'backoffice.orders'>>;
-
-/** Etiqueta del evento del historial (pedido, pago o logística). */
-function historyLabel(event: OrderStatusEvent, t: Translator): string {
-  if (event.kind === 'order') {
-    const base = t(`history.${event.status as 'received'}`);
-    return event.reason ? t('history.withReason', { label: base, reason: event.reason }) : base;
-  }
-  if (event.kind === 'payment') return t('history.payment', { status: event.status });
-  return t('history.delivery', { status: event.status });
-}
-
-function LogisticsSection({ order }: { order: DraftOrder }) {
-  const t = useTranslations('backoffice.orders');
-  const td = useTranslations('backoffice.orders.drawer');
-  const { can } = useShell();
-  const text = useOrderText();
-  const actions = useOrderActions();
-  const delivery = order.delivery;
-  const isOwn = delivery?.provider === 'own';
-  const isPedidosYa = delivery?.provider === 'pedidosya';
-  const providerLabel = delivery
-    ? td(isOwn ? 'providerOwn' : 'providerPedidosya')
-    : td('providerNone');
-  const logisticsKey = toBackofficeLogistics(order);
-  const canAdvance =
-    !!delivery &&
-    delivery.status !== 'delivered' &&
-    delivery.status !== 'failed' &&
-    can('deliveries.update', order.branchId);
-
-  return (
-    <section>
-      <div className="sect-t">
-        {td('courier', { provider: providerLabel })}{' '}
-        {isPedidosYa ? <SimulationBadge kind="simulation" zone="bo" /> : null}
-      </div>
-      {delivery ? (
-        <>
-          <div className="info-card">
-            <div
-              className="avatar"
-              style={{ background: 'var(--bo-secondary-soft)', color: 'var(--bo-secondary)' }}
-            >
-              <IconBike />
-            </div>
-            <div className="grow">
-              <div className="strong">{delivery.riderName ?? td('pending')}</div>
-              <div
-                className="muted xs"
-                style={{ fontWeight: 700, fontFamily: 'ui-monospace, Menlo, Consolas, monospace' }}
-              >
-                {delivery.reference ?? '—'}
-              </div>
-            </div>
-            {isOwn ? <RiderCallButton order={order} /> : null}
-            <StatusPill zone="bo" tone={LOGISTICS_TONE[logisticsKey]}>
-              {text.logisticsLabel(order)}
-            </StatusPill>
-          </div>
-          <div className="times" style={{ marginTop: 10 }}>
-            <div>
-              <span className="xs muted" style={{ fontWeight: 700 }}>
-                {td('requested')}
-              </span>
-              <b className="num">{localTime(new Date(delivery.requestedAt))}</b>
-            </div>
-            <div>
-              <span className="xs muted" style={{ fontWeight: 700 }}>
-                {td('eta')}
-              </span>
-              <b className="num">
-                {delivery.status === 'delivered'
-                  ? t('status.entregado')
-                  : delivery.etaAt
-                    ? localTime(new Date(delivery.etaAt))
-                    : td('etaPending')}
-              </b>
-            </div>
-            <div>
-              <span className="xs muted" style={{ fontWeight: 700 }}>
-                {isOwn ? td('costOwn') : td('costPedidosya')}
-              </span>
-              <b className="num">
-                {isOwn
-                  ? formatMoney(order.deliveryFee)
-                  : delivery.cost != null
-                    ? formatMoney(delivery.cost)
-                    : '—'}
-              </b>
-            </div>
-          </div>
-          <div className="track" style={{ marginTop: 10 }}>
-            {trackSteps(delivery).map((s) => (
-              <div key={s.key} className={cn('trk', s.state)}>
-                <span className="tdot" />
-                {t(`logisticsStatus.${s.key}`)}
-              </div>
-            ))}
-          </div>
-          {canAdvance && isPedidosYa ? (
-            <button
-              type="button"
-              className="btn sm btn-ghost block mt8"
-              style={{ border: '1px dashed var(--bo-line-strong)' }}
-              disabled={actions.pending}
-              onClick={() => actions.advanceDelivery(order)}
-            >
-              {td('advance')}
-            </button>
-          ) : null}
-          {canAdvance && isOwn ? (
-            <button
-              type="button"
-              className="btn btn-primary block mt8"
-              disabled={actions.pending}
-              onClick={() => actions.advanceDelivery(order)}
-            >
-              {delivery.status === 'assigned' ? td('ownDepart') : td('ownDeliver')}
-            </button>
-          ) : null}
-          <div className="xs muted mt8" style={{ fontWeight: 700 }}>
-            {isPedidosYa ? td('etaNotePedidosya') : td('etaNoteOwn')}
-          </div>
-        </>
-      ) : (
-        <div className="empty-mini">
-          <IconAlert size="sm" /> {td('noRider')}
-        </div>
-      )}
-    </section>
-  );
-}
-
-/** Llamar al repartidor propio (el teléfono viene del listado de repartidores de la sucursal). */
-function RiderCallButton({ order }: { order: DraftOrder }) {
-  const td = useTranslations('backoffice.orders.drawer');
-  const riders = useRiders(order.branchId);
-  const phone = riders.data?.find((r) => r.id === order.delivery?.riderId)?.phone;
-  if (!phone) return null;
-  return (
-    <a className="btn sm" href={phoneHref(phone)} aria-label={td('callRider')}>
-      <IconPhone />
-    </a>
+    </>
   );
 }
