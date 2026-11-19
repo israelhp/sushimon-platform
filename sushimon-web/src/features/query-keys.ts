@@ -1,6 +1,7 @@
 import type { StoreMenuParams } from '@/lib/store-rules';
 import type { AdminProductFilters } from '@/services/products';
 import type { DeliveryZoneFilters } from '@/services/delivery-zones';
+import type { OrderHistoryFilters } from './orders/history/history-model';
 import type { AdminOrderListFilters } from '@/services/admin-orders';
 import type { BackofficeOrderFilters, DeliveryFilters } from '@/services/backoffice-orders';
 import type { ReportFilters } from '@/services/backoffice-admin';
@@ -175,6 +176,12 @@ export const queryKeys = {
      */
     tracking: (scope: string | null, id: string) =>
       ['orders', 'tracking', scope ?? 'guest', id] as const,
+    /**
+     * F23: recibo NO fiscal (`OrderReceipt`), aislado por cuenta o invitado y por pedido (`gcTime` 60 s, sin reintentos). NUNCA
+     * lleva la credencial de invitado ni se persiste; `isOtherIdentity` lo descarta al cambiar de identidad o cerrar sesión.
+     */
+    receipt: (scope: string | null, id: string) =>
+      ['orders', 'receipt', scope ?? 'guest', id] as const,
   },
   /**
    * F06 (spec 010 D15): datos del CLIENTE con la IDENTIDAD en la raíz (`scope` = id de Supabase Auth, o `demo:<correo>` en el
@@ -189,9 +196,14 @@ export const queryKeys = {
       me: (scope: string) => ['customer', scope, 'account', 'me'] as const,
       addresses: (scope: string) => ['customer', scope, 'account', 'addresses'] as const,
     },
-    /** Pedidos DEL CLIENTE (SIMULADOS hasta F20). Su invalidación va por `customerOrdersPredicate`. */
+    /**
+     * Pedidos DEL CLIENTE. `history` = historial REAL paginado (F23; la clave lleva la identidad y los filtros, jamás
+     * `keepPreviousData` entre ellos); `mine` = pedidos BORRADOR simulados (solo mock). Su invalidación va por `customerOrdersPredicate`.
+     */
     orders: {
       mine: (scope: string) => ['customer', scope, 'orders', 'mine'] as const,
+      history: (scope: string, filters: OrderHistoryFilters) =>
+        ['customer', scope, 'orders', 'history', filters] as const,
     },
     favorites: {
       all: (scope: string) => ['customer', scope, 'favorites'] as const,

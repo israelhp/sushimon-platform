@@ -156,6 +156,17 @@ export class FakeProductsRepo {
     );
   }
 
+  findSlugsAndNamesByIds(
+    ids: readonly string[],
+  ): Promise<{ id: string; slug: string; name: string }[]> {
+    this.calls.push('findSlugsAndNames');
+    return Promise.resolve(
+      [...this.products.values()]
+        .filter((p) => ids.includes(p.id) && p.active)
+        .map((p) => ({ id: p.id, slug: p.slug, name: p.name })),
+    );
+  }
+
   findMediaByProductIds(productIds: readonly string[], firstOnly = false): Promise<MediaRow[]> {
     this.calls.push('findMedia');
     const out: MediaRow[] = [];

@@ -91,11 +91,11 @@ describe('Mi cuenta con Supabase Auth real (identidad real, sin sesión demo)', 
     expect(
       screen.queryByRole('heading', { name: 'Iniciá sesión para usar esta sección' }),
     ).not.toBeInTheDocument();
-    // Sin pedidos del cliente (F20 sin API): el hub real no los consulta.
+    // Abrir Mis direcciones no consulta pedidos.
     expect(calls).not.toContain('/v1/me/orders');
   });
 
-  it('hub real: perfil con secciones de datos, direcciones y favoritos; sin pedidos simulados ni insignia', async () => {
+  it('hub real: perfil con secciones de datos, direcciones, favoritos y pedidos (sin consultarlos ni insignia)', async () => {
     auth.api = { ...auth.api, status: 'authenticated' };
     auth.identity = { data: IDENTITY, isError: false, isPending: false };
     const calls: string[] = [];
@@ -105,7 +105,10 @@ describe('Mi cuenta con Supabase Auth real (identidad real, sin sesión demo)', 
       'href',
       '/cuenta/direcciones',
     );
-    expect(screen.queryByRole('link', { name: /Mis pedidos/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Mis pedidos/ })).toHaveAttribute(
+      'href',
+      '/cuenta/pedidos',
+    );
     expect(screen.queryByText('Simulación')).not.toBeInTheDocument();
     expect(calls).not.toContain('/v1/me/orders');
   });

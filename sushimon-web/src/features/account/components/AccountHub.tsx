@@ -15,7 +15,6 @@ import { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
 import { SimulationBadge } from '@/components/ui/SimulationBadge';
 import { useToast } from '@/components/ui/Toast';
-import { isOrderInProgress } from '@/lib/order-status';
 import { useAuth } from '@/features/session/auth-provider';
 import { useIdentity } from '@/features/session/auth-queries';
 import { useDemoSession } from '@/features/session/demo-session';
@@ -27,7 +26,7 @@ import { useAuthModal } from '@/features/store-shell/store-shell-context';
 import { addressTitle } from '../address-format';
 import { useAddressLabels } from '../use-address-labels';
 import { useFavoriteIds } from '@/features/favorites/hooks';
-import { useAddresses, useMe, useMyOrders } from '../hooks';
+import { useAddresses, useMe } from '../hooks';
 import { HubCard } from './HubCard';
 
 function Heading() {
@@ -54,11 +53,10 @@ export function AccountHub() {
 }
 
 /**
- * Cuenta con Supabase Auth real: perfil de `GET /v1/me` y secciones de datos, direcciones y favoritos (F04–F06).
- * Los pedidos del cliente llegan con F20 (hoy no hay API), así que aquí no se simulan ni se consultan.
+ * Cuenta con Supabase Auth real: perfil de `GET /v1/me` y secciones de datos, direcciones, favoritos (F04–F06) y pedidos (F23).
+ * El hub NO consulta pedidos: la sección «Mis pedidos» pide su historial al abrirla (sin llamadas innecesarias al abrir Mi cuenta).
  */
 function RealAccountHub() {
-  const t = useTranslations('account');
   const tAuth = useTranslations('auth');
   const auth = useAuth();
   const me = useIdentity();
@@ -72,14 +70,7 @@ function RealAccountHub() {
   }
   if (auth.status === 'anonymous' || me.isError || !me.data) return <SignedOutHub />;
   const { customer, email } = me.data;
-  return (
-    <SignedInHub
-      name={customer.fullName}
-      email={email ?? customer.email ?? ''}
-      real
-      note={t('realModulesPending')}
-    />
-  );
+  return <SignedInHub name={customer.fullName} email={email ?? customer.email ?? ''} real />;
 }
 
 function SignedOutHub() {
@@ -143,13 +134,11 @@ function SignedInHub({
   name,
   email,
   real = false,
-  note,
 }: {
   name: string;
   email: string;
-  /** Supabase Auth real: sin insignia de simulación, cierre de sesión real y sin pedidos (F20 sin API). */
+  /** Supabase Auth real: sin insignia de simulación y con cierre de sesión real. */
   real?: boolean;
-  note?: string;
 }) {
   const t = useTranslations('account');
   const tAuth = useTranslations('auth');
@@ -162,15 +151,12 @@ function SignedInHub({
   const me = useMe();
   const addresses = useAddresses();
   const favorites = useFavoriteIds();
-  const orders = useMyOrders({ enabled: !real });
   const auth = useAuth();
 
   const profile = me.data;
   const ready = !!profile && !!addresses.data && favorites.isLoaded;
   const labels = useAddressLabels();
   const defaultAddress = addresses.data?.find((a) => a.isDefault);
-  const orderCount = orders.data?.length ?? 0;
-  const activeCount = (orders.data ?? []).filter(isOrderInProgress).length;
 
   const addressesSub = ready
     ? defaultAddress
@@ -218,7 +204,7 @@ function SignedInHub({
         </button>
       </section>
 
-      {me.isError || addresses.isError || favorites.isError || (!real && orders.isError) ? (
+      {me.isError || addresses.isError || favorites.isError ? (
         <ErrorNotice
           className="mt-4"
           message={tHub('loadError')}
@@ -226,7 +212,6 @@ function SignedInHub({
             void me.refetch();
             void addresses.refetch();
             favorites.refetch();
-            if (!real) void orders.refetch();
           }}
         />
       ) : null}
@@ -250,24 +235,13 @@ function SignedInHub({
           title={tHub('favorites')}
           sub={ready ? tHub('favoritesSub', { a: favorites.total }) : tHub('loading')}
         />
-        {real ? null : (
-          <HubCard
-            href="/cuenta/pedidos"
-            icon={icon(ClipboardList)}
-            title={tHub('orders')}
-            sub={tHub('ordersSub', { a: orderCount, b: activeCount })}
-            badge={
-              activeCount > 0 ? (
-                <span
-                  className="h-2 w-2 animate-pulse rounded-full bg-primary"
-                  aria-hidden="true"
-                />
-              ) : undefined
-            }
-          />
-        )}
+        <HubCard
+          href="/cuenta/pedidos"
+          icon={icon(ClipboardList)}
+          title={tHub('orders')}
+          sub={tHub('ordersSub')}
+        />
       </nav>
-      {note ? <p className="mt-4 text-[14px] text-muted">{note}</p> : null}
 
       <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
         <Link href={STORE_ROUTES.track} className="btn w-full no-underline">

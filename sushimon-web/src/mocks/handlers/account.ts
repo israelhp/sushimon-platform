@@ -353,8 +353,11 @@ export const setMyDefaultAddress: Handler = (req): CustomerAddressResponse => {
   return toAddressResponse(address, address.id);
 };
 
-/** GET /v1/me/orders — pedidos del cliente (por correo), más recientes primero. */
-export const listMyOrders: Handler = (req) => {
+/**
+ * GET /v1/demo/me/orders — SOLO mock: pedidos BORRADOR del cliente (por correo), más recientes primero. El historial real
+ * (`GET /v1/me/orders`, forma `MyOrderPage`) es `order-history.ts`.
+ */
+export const listMyDraftOrders: Handler = (req) => {
   const { profile } = requireCustomer(req);
   const email = req.context.session.customer?.email.trim().toLowerCase() ?? profile.email;
   const orders = req.store.orders

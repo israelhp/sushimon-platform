@@ -134,6 +134,13 @@ export interface PlacedOrderRecord {
   /** Correo de la cuenta de demostración dueña; `null` = invitado. */
   ownerEmail: string | null;
   tokens: { token: string; expiresAt: string; revoked: boolean }[];
+  /**
+   * F23: lo que el snapshot real conserva por línea y `OrderDetail` no expone (ids de producto y de opción), en el orden de
+   * `detail.lines`/`modifiers`. Alimenta «Volver a pedir». Ausente en registros antiguos (se diagnostican como producto retirado).
+   */
+  lineRefs?: { productId: string | null; modifiers: { modifierId: string | null }[] }[];
+  /** F23: registro derivado de un pedido BORRADOR sembrado (historial de la cuenta de demostración); su estado sigue al borrador. */
+  derived?: boolean;
 }
 
 export interface CustomerAccount {

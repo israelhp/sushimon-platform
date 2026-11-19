@@ -153,6 +153,21 @@ export class ProductsRepository {
     });
   }
 
+  /**
+   * Slug y nombre de varios productos en UNA consulta. CONTRATO (F23): SOLO para productos que el llamador ya decidió
+   * ordenables (`BranchOffersService.inspect` => `OK`); filtra `active: true` como defensa, pero NO comprueba la visibilidad
+   * de la categoría: no usarlo para exponer productos al público. Solo lectura.
+   */
+  async findSlugsAndNamesByIds(
+    ids: readonly string[],
+  ): Promise<{ id: string; slug: string; name: string }[]> {
+    if (ids.length === 0) return [];
+    return this.prisma.product.findMany({
+      where: { id: { in: [...ids] }, active: true },
+      select: { id: true, slug: true, name: true },
+    });
+  }
+
   /** Media de varios productos en UNA consulta (orden: producto, sort_order). Con `firstOnly`, solo `sort_order = 0`. */
   async findMediaByProductIds(
     productIds: readonly string[],

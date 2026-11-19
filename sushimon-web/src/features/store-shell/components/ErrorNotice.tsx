@@ -39,7 +39,10 @@ export function ErrorNotice({
             if (!waiting) onRetry();
           }}
           aria-disabled={waiting || undefined}
-          className={cn('link-btn !min-h-0 text-sm', waiting && 'cursor-not-allowed opacity-70')}
+          className={cn(
+            'link-btn !min-h-[44px] text-sm',
+            waiting && 'cursor-not-allowed opacity-70',
+          )}
         >
           {waiting ? t('retryIn', { a: left }) : t('retry')}
         </button>

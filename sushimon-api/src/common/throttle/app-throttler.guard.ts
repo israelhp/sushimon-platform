@@ -100,6 +100,24 @@ export const ORDER_TRACKING_THROTTLE = {
 };
 
 /**
+ * Historial, recibo y vista previa de «Volver a pedir» (F23, spec 024 §5.8). Contadores propios de cada ruta, independientes de
+ * los de F20/F21/F22. Lista: 120/min por IP y 60/min por actor. Recibo: 60/30 (igual que `getOrder`). Vista previa: 30/15 (es la ruta
+ * más cara, ~7 sentencias). Los intentos con token inválido también cuentan.
+ */
+export const MY_ORDERS_LIST_THROTTLE = {
+  default: { limit: 120, ttl: 60_000 },
+  actor: { limit: 60, ttl: 60_000 },
+};
+export const ORDER_RECEIPT_THROTTLE = {
+  default: { limit: 60, ttl: 60_000 },
+  actor: { limit: 30, ttl: 60_000 },
+};
+export const ORDER_REORDER_PREVIEW_THROTTLE = {
+  default: { limit: 30, ttl: 60_000 },
+  actor: { limit: 15, ttl: 60_000 },
+};
+
+/**
  * Backoffice de pedidos (F22, spec 023 §6.7). Lecturas (tablero sondeado a ~15 s por pestaña, varias pestañas tras un NAT):
  * 240/min por IP y 90/min por actor. Comandos: 120/min por IP y 60/min por actor. Contadores propios de cada ruta,
  * independientes de los de F20/F21.

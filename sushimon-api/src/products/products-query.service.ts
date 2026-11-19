@@ -134,6 +134,29 @@ export class ProductsQueryService {
     return out;
   }
 
+  /**
+   * Presentación (slug, nombre vigente e imagen principal) de productos YA decididos como visibles por el llamador (F23,
+   * «Volver a pedir»: `BranchOffersService.inspect` dio `OK`). SOLO lectura, 2 consultas (productos + media `sort_order = 0`),
+   * sin árbol de categorías. No comprueba visibilidad: no sustituye a `findVisibleSummariesByIds`. La imagen es la URL guardada
+   * (la misma que sirve la ficha pública).
+   */
+  async findPresentationByIds(
+    ids: readonly string[],
+  ): Promise<Map<string, { slug: string; name: string; imageUrl: string | null }>> {
+    const unique = [...new Set(ids)];
+    const out = new Map<string, { slug: string; name: string; imageUrl: string | null }>();
+    if (unique.length === 0) return out;
+    const [rows, media] = await Promise.all([
+      this.repo.findSlugsAndNamesByIds(unique),
+      this.repo.findMediaByProductIds(unique, true),
+    ]);
+    const first = new Map(media.map((m) => [m.productId, m.url]));
+    for (const row of rows) {
+      out.set(row.id, { slug: row.slug, name: row.name, imageUrl: first.get(row.id) ?? null });
+    }
+    return out;
+  }
+
   async listAdmin(query: AdminProductsQuery): Promise<AdminProductPageView> {
     const pattern = buildSearchPattern(query.q);
     const [page, categories] = await Promise.all([

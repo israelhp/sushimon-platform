@@ -54,7 +54,7 @@ function canSee(req: Req, order: DraftOrder): boolean {
   );
 }
 
-function visibleOrder(req: Req, id: string): DraftOrder {
+export function visibleOrder(req: Req, id: string): DraftOrder {
   const order = findOrder(req.store, id);
   if (!canSee(req, order)) fail(404, 'Pedido no encontrado');
   return order;

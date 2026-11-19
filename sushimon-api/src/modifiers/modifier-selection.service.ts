@@ -12,6 +12,7 @@ import {
 import { ModifiersRepository } from './modifiers.repository.js';
 import type {
   ModifierSelection,
+  OfferGroup,
   ModifierSelectionBatchItem,
   ModifierSelectionBatchResult,
   ModifierSelectionResult,
@@ -42,6 +43,17 @@ export class ModifierSelectionService {
     const rows = await this.repo.findOffer(productId);
     if (rows === null) throw productNotFound();
     return validateSelections(buildOfferGroups(rows), selections);
+  }
+
+  /**
+   * Lector de SOLO LECTURA (F23, spec 024 §8.4): grupos y opciones ACTUALES (incluidos los inactivos, con su bandera) de
+   * VARIOS productos en UNA consulta (`findOffersMany`), sin validar nada. Un producto inexistente no aparece en el mapa.
+   * No cambia el comportamiento de `validate`/`validateMany`.
+   */
+  async findOffers(productIds: readonly string[]): Promise<Map<string, OfferGroup[]>> {
+    if (productIds.length === 0) return new Map();
+    const rows = await this.repo.findOffersMany([...new Set(productIds)]);
+    return new Map([...rows].map(([productId, offer]) => [productId, buildOfferGroups(offer)]));
   }
 
   /**

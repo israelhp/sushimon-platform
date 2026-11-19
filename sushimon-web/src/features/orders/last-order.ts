@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from 'react';
 import type { DraftOrder, OrderLine } from '@/lib/data-access/models';
 import { createPersistedStore } from '@/lib/persisted-store';
-import { useMyOrders } from '@/features/account/hooks';
+import { useMyDraftOrders } from '@/features/account/hooks';
 import { useDemoSession } from '@/features/session/demo-session';
 import { isOrderInProgress } from '@/lib/order-status';
 
@@ -64,7 +64,7 @@ export interface LastOrderState {
 /** Último pedido del cliente (cuenta de demostración o resumen del dispositivo). */
 export function useLastOrder(): LastOrderState {
   const { customer } = useDemoSession();
-  const mine = useMyOrders();
+  const mine = useMyDraftOrders();
   const stored = useSyncExternalStore(
     lastOrderStore.subscribe,
     lastOrderStore.get,

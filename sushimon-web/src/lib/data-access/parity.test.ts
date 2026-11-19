@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { OrderCreateRequest } from '@/lib/data-access/models';
 import type { MockScenario } from '@/mocks/scenarios';
 import { createHarness, type TestHarness } from '@/mocks/testing';
+import { validateContract } from '@/test/contract-schema';
 import * as account from '@/services/account';
 import * as adminOrders from '@/services/admin-orders';
 import * as admin from '@/services/backoffice-admin';
@@ -866,7 +867,7 @@ describe('paridad mock ↔ http', () => {
       (c) => account.deleteAddress(c, 'addr-1'),
       (c) => favorites.addMyFavorite(c, 'dumplings'),
       (c) => favorites.removeMyFavorite(c, 'dumplings'),
-      (c) => account.listMyOrders(c),
+      (c) => orders.listMyOrders(c),
     ];
     // Se ejecuta de forma intercalada para que ambas sesiones cambien a la vez.
     const a: Outcome[] = [];
@@ -1316,6 +1317,101 @@ describe('paridad mock ↔ http', () => {
         [503, 'ORDERS_BUSY', 2],
       ]);
       expect(viaHttp).toEqual(mock);
+    } finally {
+      delete (globalThis as { window?: unknown }).window;
+    }
+  });
+
+  it('F23: historial, recibo y vista previa de reorden (forma del contrato, 401/404/400 y Retry-After) producen lo mismo con mock y con http', async () => {
+    const p = pair();
+    const DEMO_HISTORY = '00000000-0000-4000-8000-000000479850';
+    const steps: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => orders.listMyOrders(c), // 401 sin sesión
+      async (c) => {
+        p.asCustomer();
+        return orders.listMyOrders(c, { status: ['delivered', 'picked_up'], limit: 1 });
+      },
+      async (c) => {
+        const first = await orders.listMyOrders(c, { limit: 1 });
+        return orders.listMyOrders(c, { limit: 1 }, first.nextCursor);
+      },
+      (c) => orders.listMyOrders(c, {}, 'cursor-roto'), // 400 ORDER_CURSOR_INVALID
+      (c) => orders.listMyOrders(c, { from: '2026-11-01T00:00:00' }), // 400 sin zona
+      async (c) => ({ ...(await orders.getOrderReceipt(c, DEMO_HISTORY)), generatedAt: '' }),
+      (c) => orders.getOrderReceipt(c, '00000000-0000-4000-8000-0000000000aa'), // 404
+      async (c) => ({ ...(await orders.previewOrderReorder(c, DEMO_HISTORY)), generatedAt: '' }),
+      (c) => orders.previewOrderReorder(c, DEMO_HISTORY, { branchId: 'no-existe' }), // 404 BRANCH_NOT_FOUND
+      (c) => orders.previewOrderReorder(c, '00000000-0000-4000-8000-0000000000aa'), // 404 sin code
+    ];
+    // Se ejecuta intercalado para que ambas sesiones cambien a la vez.
+    const a: Outcome[] = [];
+    const b: Outcome[] = [];
+    for (const step of steps) {
+      a.push(...(await run([step], p.mock.client)));
+      b.push(...(await run([step], p.http)));
+    }
+    expect(b).toEqual(a);
+    expect(a.map((x) => ('error' in x ? x.error.status : 200))).toEqual([
+      401, 200, 200, 400, 400, 200, 404, 200, 404, 404,
+    ]);
+    expect((a[3] as { error: { businessCode?: string } }).error.businessCode).toBe(
+      'ORDER_CURSOR_INVALID',
+    );
+    expect((a[8] as { error: { businessCode?: string } }).error.businessCode).toBe(
+      'BRANCH_NOT_FOUND',
+    );
+    expect((a[9] as { error: { businessCode?: string } }).error.businessCode).toBeUndefined();
+  });
+
+  it('F23: las respuestas del mock validan contra los esquemas del contrato (MyOrderPage, OrderReceipt, OrderReorderPreview)', async () => {
+    const p = pair();
+    p.asCustomer();
+    const page = await orders.listMyOrders(p.mock.client);
+    expect(validateContract('MyOrderPage', page)).toEqual([]);
+    const id = page.items[2]!.id; // MON-479850: producto retirado y precio cambiado
+    expect(
+      validateContract('OrderReceipt', await orders.getOrderReceipt(p.mock.client, id)),
+    ).toEqual([]);
+    const preview = await orders.previewOrderReorder(p.mock.client, id);
+    expect(validateContract('OrderReorderPreview', preview)).toEqual([]);
+    // Control de la propia validación: una forma rota se detecta.
+    expect(validateContract('MyOrderPage', { items: [{}], nextCursor: 5 })).not.toEqual([]);
+  });
+
+  it('F23: los fallos 429/503 del historial, el recibo y la vista previa llegan igual por http (Retry-After incluido)', async () => {
+    const p = pair();
+    p.asCustomer();
+    const DEMO_HISTORY = '00000000-0000-4000-8000-000000479850';
+    const routes: Record<string, (c: DataClient) => Promise<unknown>> = {
+      'GET /v1/me/orders': (c) => orders.listMyOrders(c),
+      [`GET /v1/orders/${DEMO_HISTORY}/receipt`]: (c) => orders.getOrderReceipt(c, DEMO_HISTORY),
+      [`POST /v1/orders/${DEMO_HISTORY}/reorder-preview`]: (c) =>
+        orders.previewOrderReorder(c, DEMO_HISTORY),
+    };
+    (globalThis as { window?: unknown }).window = {
+      __sushimonMockFaults: Object.fromEntries(
+        Object.keys(routes).map((r) => [r, ['rate-limited', 'busy', 'rate-limited', 'busy']]),
+      ),
+    };
+    try {
+      const outcome = async (read: (c: DataClient) => Promise<unknown>, c: DataClient) => {
+        try {
+          await read(c);
+          return 'ok';
+        } catch (e) {
+          if (!(e instanceof ApiError)) throw e;
+          return [e.status, e.businessCode, e.retryAfterSec];
+        }
+      };
+      for (const read of Object.values(routes)) {
+        const mock = [await outcome(read, p.mock.client), await outcome(read, p.mock.client)];
+        const viaHttp = [await outcome(read, p.http), await outcome(read, p.http)];
+        expect(mock).toEqual([
+          [429, 'RATE_LIMITED', 2],
+          [503, 'ORDERS_BUSY', 2],
+        ]);
+        expect(viaHttp).toEqual(mock);
+      }
     } finally {
       delete (globalThis as { window?: unknown }).window;
     }

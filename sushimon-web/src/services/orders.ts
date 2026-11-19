@@ -5,10 +5,15 @@ import type {
   DraftCreateOrderRequest,
   DraftOrder,
   Incident,
+  MyOrderPage,
   OrderCreateRequest,
   OrderCreated,
   OrderDetail,
+  OrderLifecycleStatus,
   OrderLookupRequest,
+  OrderReceipt,
+  OrderReorderPreview,
+  OrderReorderRequest,
   OrderTracking,
   PaymentResult,
 } from '@/lib/data-access/models';
@@ -98,3 +103,71 @@ export const createIncident = (client: DataClient, input: CreateIncidentRequest)
 /** 🎭 Solo mock: "Ver siguiente estado (simulación)". En http no existe (404). */
 export const advanceOrderDemo = (client: DataClient, id: string) =>
   client.post<DraftOrder>(paths.demoAdvanceOrder(id));
+
+// ── F23 (spec 024): historial, recibo y «Volver a pedir» ────────────────────────────────────────────────────────────────────────
+
+export interface MyOrderFilters {
+  /** Estados del catálogo `OrderLifecycleStatus` (se envían como lista separada por comas). */
+  status?: readonly OrderLifecycleStatus[];
+  branchId?: string;
+  /** Instantes ISO 8601 CON zona (la web los calcula en America/Guatemala). `from` inclusivo, `to` exclusivo. */
+  from?: string;
+  to?: string;
+  limit?: number;
+}
+
+/**
+ * F23 — `GET /v1/me/orders` (`listMyOrders`): historial del cliente autenticado, orden fijo `placed_at DESC, id DESC`, paginado por
+ * cursor opaco (`nextCursor`). Requiere sesión (401 sin ella; la web ni siquiera la emite). Los filtros los aplica el servidor.
+ */
+export const listMyOrders = (
+  client: DataClient,
+  filters: MyOrderFilters = {},
+  cursor?: string | null,
+  signal?: AbortSignal,
+) =>
+  client.get<MyOrderPage>(paths.myOrders(), {
+    signal,
+    query: {
+      status: filters.status?.length ? filters.status.join(',') : undefined,
+      branchId: filters.branchId,
+      from: filters.from,
+      to: filters.to,
+      limit: filters.limit,
+      cursor: cursor ?? undefined,
+    },
+  });
+
+/**
+ * F23 — `GET /v1/orders/{id}/receipt` (`getOrderReceipt`): datos del recibo NO fiscal desde los snapshots del pedido. Misma
+ * autorización que `getOrder` (dueño por sesión o `X-Order-Token`, nunca en la URL; cualquier otro caso es el mismo 404).
+ */
+export const getOrderReceipt = (
+  client: DataClient,
+  id: string,
+  options: { guestToken?: string | null; signal?: AbortSignal } = {},
+) =>
+  client.request<OrderReceipt>(paths.orderReceipt(id), {
+    method: 'GET',
+    signal: options.signal,
+    ...(options.guestToken ? { headers: { 'X-Order-Token': options.guestToken } } : {}),
+  });
+
+/**
+ * F23 — `POST /v1/orders/{id}/reorder-preview` (`previewOrderReorder`): vista previa de SOLO LECTURA contra el catálogo vigente.
+ * No crea pedidos ni guarda nada y no lleva `Idempotency-Key`. El cuerpo es opcional (`{}` = sucursal del pedido original); jamás
+ * lleva precios, líneas ni cantidades.
+ */
+export const previewOrderReorder = (
+  client: DataClient,
+  id: string,
+  options: { branchId?: string | null; guestToken?: string | null; signal?: AbortSignal } = {},
+) => {
+  const body: OrderReorderRequest = options.branchId ? { branchId: options.branchId } : {};
+  return client.request<OrderReorderPreview>(paths.orderReorderPreview(id), {
+    method: 'POST',
+    body,
+    signal: options.signal,
+    ...(options.guestToken ? { headers: { 'X-Order-Token': options.guestToken } } : {}),
+  });
+};

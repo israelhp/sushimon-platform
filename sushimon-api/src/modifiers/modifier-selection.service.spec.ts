@@ -296,3 +296,36 @@ describe('ModifierSelectionService.validateMany (F19)', () => {
     expect(repo.calls.filter((c) => c === 'findOffer')).toHaveLength(0);
   });
 });
+
+describe('ModifierSelectionService.findOffers (F23, solo lectura)', () => {
+  it('UNA consulta por lote; grupos y opciones vigentes INCLUIDOS inactivos, en orden; el inexistente no aparece', async () => {
+    const { service, repo } = setup();
+    const out = await service.findOffers([
+      P.roll,
+      P.sin,
+      P.roll,
+      '00000000-0000-4000-8000-0000000000ff',
+    ]);
+    expect(repo.count('findOffersMany')).toBe(1);
+    expect(repo.count('findOffer')).toBe(0);
+    expect([...out.keys()].sort()).toEqual([P.roll, P.sin].sort());
+    const groups = out.get(P.roll) ?? [];
+    expect(groups.map((g) => g.id)).toEqual([G.salsas, G.extras]);
+    expect(groups[0]?.options.map((o) => [o.id, o.active])).toEqual([
+      [OPT(1), true],
+      [OPT(2), true],
+      [OPT(3), false],
+    ]);
+    expect(out.get(P.sin)).toEqual([]);
+  });
+
+  it('sin ids => mapa vacío sin tocar la base; no altera validate/validateMany', async () => {
+    const { service, repo } = setup();
+    expect((await service.findOffers([])).size).toBe(0);
+    expect(repo.count('findOffersMany')).toBe(0);
+    const r = await service.validateMany([
+      { productId: P.roll, selections: [{ groupId: G.salsas, modifierIds: [OPT(1)] }] },
+    ]);
+    expect(r[0]).toMatchObject({ status: 'OK', extraTotal: '1.50' });
+  });
+});

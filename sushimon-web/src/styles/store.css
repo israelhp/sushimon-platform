@@ -475,3 +475,59 @@
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * F23 · Recibo imprimible (spec 024 §9.3). SOLO al imprimir: se ocultan el encabezado, el pie, la navegación, los diálogos, el
+ * carrito y todo lo marcado con `data-print-hide`; el recibo fuerza fondo blanco y texto negro (también si la pantalla está en
+ * tema oscuro) y tipografía de 11–12 pt. La leyenda «no es una factura» (`.receipt-legend`) se imprime SIEMPRE. Sin colores hex:
+ * solo palabras clave (`white`, `black`, `gray`).
+ */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+  html,
+  body,
+  [data-zone='store'] {
+    background: white !important;
+    color: black !important;
+  }
+  [data-zone='store']
+    :is(header, footer, nav, [data-print-hide], [role='dialog'], [role='alertdialog']) {
+    display: none !important;
+  }
+  /* Barra móvil inferior, botón flotante del carrito, avisos (toasts) y cualquier capa fija: no se imprimen. */
+  [data-zone='store'] .fixed {
+    display: none !important;
+  }
+  [data-zone='store'] main {
+    padding: 0 !important;
+  }
+  [data-zone='store'] .receipt-page {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  [data-zone='store'] .receipt {
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    font-size: 11.5pt;
+    line-height: 1.4;
+  }
+  [data-zone='store'] .receipt,
+  [data-zone='store'] .receipt * {
+    color: black !important;
+    background: transparent !important;
+    border-color: gray !important;
+  }
+  [data-zone='store'] .receipt .receipt-row {
+    break-inside: avoid;
+  }
+  [data-zone='store'] .receipt .receipt-legend {
+    display: block !important;
+    border: 1px solid gray !important;
+    padding: 6pt 8pt;
+  }
+}
