@@ -61,6 +61,16 @@ export const paths = {
   // Backoffice
   staffMe: () => '/v1/backoffice/me',
   dashboard: () => '/v1/backoffice/dashboard',
+  /** F22 (contrato `admin-orders`): listado, tablero, detalle y los seis comandos de transición de pedidos. */
+  adminOrders: () => '/v1/admin/orders',
+  adminOrderBoard: () => '/v1/admin/orders/board',
+  adminOrder: (id: string) => `/v1/admin/orders/${seg(id)}`,
+  adminOrderAccept: (id: string) => `/v1/admin/orders/${seg(id)}/accept`,
+  adminOrderReject: (id: string) => `/v1/admin/orders/${seg(id)}/reject`,
+  adminOrderStartPreparing: (id: string) => `/v1/admin/orders/${seg(id)}/start-preparing`,
+  adminOrderMarkReady: (id: string) => `/v1/admin/orders/${seg(id)}/mark-ready`,
+  adminOrderComplete: (id: string) => `/v1/admin/orders/${seg(id)}/complete`,
+  adminOrderCancel: (id: string) => `/v1/admin/orders/${seg(id)}/cancel`,
   boOrders: () => '/v1/backoffice/orders',
   boOrderStatus: (id: string) => `/v1/backoffice/orders/${seg(id)}/status`,
   boOrderDispatch: (id: string) => `/v1/backoffice/orders/${seg(id)}/dispatch`,

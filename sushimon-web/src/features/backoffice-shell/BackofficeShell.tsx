@@ -5,7 +5,7 @@ import { useEffect, type ReactNode } from 'react';
 import { OrderDetailHost } from '@/features/bo-orders/components/OrderDetailHost';
 import { OrderDetailProvider } from '@/features/bo-orders/order-detail-context';
 import { DispatchModalProvider } from '@/features/bo-orders/use-dispatch-modal';
-import { useScopedOrders } from '@/features/bo-orders/use-scoped-orders';
+import { BoardFeedProvider, useBoardFeed } from '@/features/bo-orders/board-feed';
 import { Sidebar } from './Sidebar';
 import { StaffGate } from './StaffGate';
 import { BackofficeShellProvider, useShell } from './shell-context';
@@ -23,8 +23,10 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
       <BackofficeShellProvider>
         <OrderDetailProvider>
           <DispatchModalProvider>
-            <ShellFrame>{children}</ShellFrame>
-            <OrderDetailHost />
+            <BoardFeedProvider>
+              <ShellFrame>{children}</ShellFrame>
+              <OrderDetailHost />
+            </BoardFeedProvider>
           </DispatchModalProvider>
         </OrderDetailProvider>
       </BackofficeShellProvider>
@@ -35,8 +37,8 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
 function ShellFrame({ children }: { children: ReactNode }) {
   const t = useTranslations('backoffice.shell');
   const shell = useShell();
-  const orders = useScopedOrders({ poll: true });
-  const newCount = (orders.data ?? []).filter((o) => o.status === 'received').length;
+  // F22: el contador de «nuevos» sale del tablero real (un único sondeador, vive en `BoardFeedProvider`).
+  const newCount = useBoardFeed().pendingCount;
 
   useEffect(() => {
     if (!shell.mobileNavOpen) return;

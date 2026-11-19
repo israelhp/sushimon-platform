@@ -62,6 +62,36 @@ describe('paths', () => {
     expect(Object.keys(mockRoutes)).not.toContain('GET /v1/backoffice/promotions');
   });
 
+  it('F22: rutas de pedidos del backoffice (contrato admin-orders) y su espejo en el mock', () => {
+    expect(paths.adminOrders()).toBe('/v1/admin/orders');
+    expect(paths.adminOrderBoard()).toBe('/v1/admin/orders/board');
+    expect(paths.adminOrder('o 1')).toBe('/v1/admin/orders/o%201');
+    expect(paths.adminOrderAccept('o1')).toBe('/v1/admin/orders/o1/accept');
+    expect(paths.adminOrderReject('o1')).toBe('/v1/admin/orders/o1/reject');
+    expect(paths.adminOrderStartPreparing('o1')).toBe('/v1/admin/orders/o1/start-preparing');
+    expect(paths.adminOrderMarkReady('o1')).toBe('/v1/admin/orders/o1/mark-ready');
+    expect(paths.adminOrderComplete('o1')).toBe('/v1/admin/orders/o1/complete');
+    expect(paths.adminOrderCancel('o1')).toBe('/v1/admin/orders/o1/cancel');
+    const keys = Object.keys(mockRoutes);
+    for (const key of [
+      'GET /v1/admin/orders',
+      'GET /v1/admin/orders/board',
+      'GET /v1/admin/orders/:id',
+      'POST /v1/admin/orders/:id/accept',
+      'POST /v1/admin/orders/:id/reject',
+      'POST /v1/admin/orders/:id/start-preparing',
+      'POST /v1/admin/orders/:id/mark-ready',
+      'POST /v1/admin/orders/:id/complete',
+      'POST /v1/admin/orders/:id/cancel',
+    ]) {
+      expect(keys).toContain(key);
+    }
+    // `board` se registra ANTES de `:id` (si no, «board» sería un id).
+    expect(keys.indexOf('GET /v1/admin/orders/board')).toBeLessThan(
+      keys.indexOf('GET /v1/admin/orders/:id'),
+    );
+  });
+
   it('F12: rutas de modificadores (grupos, opciones y asociación a productos)', () => {
     expect(paths.adminModifierGroups()).toBe('/v1/admin/modifier-groups');
     expect(paths.adminModifierGroup('g 1')).toBe('/v1/admin/modifier-groups/g%201');

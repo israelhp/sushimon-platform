@@ -1,76 +1,90 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
 import { branchShortName, useShell } from '@/features/backoffice-shell/shell-context';
 import { cn } from '@/lib/cn';
-import type { DraftOrder } from '@/lib/data-access/models';
+import type { AdminOrderSummary } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
+import { localTime } from '@/lib/time';
+import { useTranslations } from 'next-intl';
+import { LATE_MINUTES, isLatePending } from '../admin-orders-model';
 import { useOrderDetail } from '../order-detail-context';
-import { isLate, nextAction, orderCode, orderTime } from '../order-view';
-import { useOrderActions } from '../use-order-actions';
-import { ACTION_CLASS, useOrderText } from '../use-order-text';
+import { useAdminOrderText } from '../use-admin-order-text';
+import { DispatchNotice, PrimaryActionButton } from './ActionButton';
 
-/** Tarjeta del tablero (`kcard`): abre el detalle y ofrece la siguiente acción del rol. */
-export function OrderCard({ order, now }: { order: DraftOrder; now: Date | null }) {
+/** Tarjeta del tablero (`kcard`): abre el detalle y ofrece la acción de avance que el servidor permite a esta persona. */
+export function OrderCard({
+  order,
+  serverNow,
+  fresh,
+  oldest,
+}: {
+  order: AdminOrderSummary;
+  serverNow: number | null;
+  /** Llegó en el último sondeo y la persona aún no interactúa. */
+  fresh: boolean;
+  /** Es el `pending` más antiguo (espera mayor). */
+  oldest: boolean;
+}) {
   const t = useTranslations('backoffice.orders');
-  const { grants, branchById } = useShell();
+  const tl = useTranslations('backoffice.orders.live');
+  const { branchById } = useShell();
   const detail = useOrderDetail();
-  const text = useOrderText();
-  const actions = useOrderActions();
-  const action = nextAction(order, grants);
-  const late = isLate(order, now);
-  const logistics = order.delivery !== null;
+  const text = useAdminOrderText();
+  const late = serverNow !== null && isLatePending(order, serverNow);
+  const code = `#${order.displayNumber}`;
 
   return (
-    <div className={cn('kcard', order.status === 'received' && 'new')}>
+    <div
+      className={cn(
+        'kcard',
+        order.status === 'pending' && 'new',
+        fresh && 'fresh',
+        oldest && 'oldest',
+      )}
+      data-fresh={fresh || undefined}
+    >
       <button
         type="button"
         className="kcard-main"
-        title={t('table.detail', { code: orderCode(order) })}
+        title={t('table.detail', { code })}
         onClick={() => detail.open(order.id)}
       >
         <span className="row gap8" style={{ width: '100%' }}>
           <b className="num" style={{ fontSize: 15 }}>
-            {orderCode(order)}
+            {code}
           </b>
           <span className="xs muted" style={{ fontWeight: 700 }}>
-            {orderTime(order)}
+            {localTime(new Date(order.placedAt))}
           </span>
           <span className="spacer" />
-          <span className={late ? 'late' : 'wait'}>{text.waitText(order, now)}</span>
+          <span className={late ? 'late' : 'wait'}>{text.waitText(order.placedAt, serverNow)}</span>
         </span>
-        <span className="strong trunc" style={{ display: 'block', maxWidth: '100%', fontSize: 15 }}>
-          {order.customer.name}
-        </span>
-        <span className="row gap6 wrap" style={{ width: '100%' }}>
-          <span className="zone-tag">{text.typeShort(order)}</span>
-          <span className="btag">
-            {branchShortName(branchById(order.branchId), order.branchId)}
-          </span>
-          <span className="sm" style={{ fontWeight: 600 }}>
-            {text.itemsLabel(order)}
-          </span>
-          <span className="spacer" />
-          <b className="num">{formatMoney(order.total)}</b>
-        </span>
-        {logistics ? (
-          <span className="sm" style={{ fontWeight: 700, color: 'var(--bo-blue-text)' }}>
-            {order.delivery?.provider === 'pedidosya'
-              ? t('logistics', { label: text.logisticsLabel(order) })
-              : text.logisticsLabel(order)}
+        {fresh || oldest || late ? (
+          <span className="row gap6 wrap">
+            {fresh ? <span className="zone-tag">{tl('card.fresh')}</span> : null}
+            {oldest ? <span className="zone-tag">{tl('card.oldest')}</span> : null}
+            {late ? (
+              <span className="late">{tl('drawer.late', { minutes: LATE_MINUTES })}</span>
+            ) : null}
           </span>
         ) : null}
+        <span className="strong trunc" style={{ display: 'block', maxWidth: '100%', fontSize: 15 }}>
+          {order.customerName}
+        </span>
+        <span className="row gap6 wrap" style={{ width: '100%' }}>
+          <span className="zone-tag">{text.typeLabel(order)}</span>
+          <span className="btag">
+            {branchShortName(branchById(order.branchId), order.branchName)}
+          </span>
+          <span className="sm" style={{ fontWeight: 600 }}>
+            {text.itemsLabel(order.itemCount)}
+          </span>
+          <span className="spacer" />
+          <b className="num">{formatMoney(Number(order.total))}</b>
+        </span>
       </button>
-      {action ? (
-        <button
-          type="button"
-          className={cn('btn sm block', ACTION_CLASS[action])}
-          disabled={actions.pending}
-          onClick={() => actions.run(order, action)}
-        >
-          {text.actionLabel(action)}
-        </button>
-      ) : null}
+      <PrimaryActionButton order={order} block />
+      <DispatchNotice order={order} compact />
     </div>
   );
 }

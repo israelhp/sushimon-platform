@@ -4,6 +4,7 @@ import type { OrderCreateRequest } from '@/lib/data-access/models';
 import type { MockScenario } from '@/mocks/scenarios';
 import { createHarness, type TestHarness } from '@/mocks/testing';
 import * as account from '@/services/account';
+import * as adminOrders from '@/services/admin-orders';
 import * as admin from '@/services/backoffice-admin';
 import * as banners from '@/services/banners';
 import * as bo from '@/services/backoffice-orders';
@@ -1315,6 +1316,114 @@ describe('paridad mock ↔ http', () => {
         [503, 'ORDERS_BUSY', 2],
       ]);
       expect(viaHttp).toEqual(mock);
+    } finally {
+      delete (globalThis as { window?: unknown }).window;
+    }
+  });
+
+  it('F22: pedidos del backoffice (tablero, listado, detalle, comandos; 400/403/404/409/422) producen lo mismo con mock y con http', async () => {
+    const p = pair();
+    p.asStaff('manager');
+    const day = { from: '2026-11-11T00:00:00-06:00', to: '2026-11-11T23:59:59.999-06:00' };
+    const steps: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => adminOrders.getAdminOrderBoard(c),
+      (c) => adminOrders.getAdminOrderBoard(c, 'sucursal-2'), // 404 BRANCH_NOT_FOUND
+      (c) => adminOrders.listAdminOrders(c, { ...day, limit: 5 }),
+      (c) => adminOrders.listAdminOrders(c, { ...day, q: 'MON-307057' }),
+      (c) => adminOrders.listAdminOrders(c, { ...day, status: ['volando' as never] }), // 400
+      (c) => adminOrders.getAdminOrder(c, 'MON-307051'),
+      (c) => adminOrders.getAdminOrder(c, 'MON-307058'), // 404 ORDER_NOT_FOUND (otra sucursal)
+      (c) =>
+        adminOrders.runAdminOrderCommand(c, {
+          id: 'MON-307057',
+          command: 'reject',
+          expectedStatus: 'pending',
+          reason: ' ',
+        }), // 400 ORDER_REASON_REQUIRED
+      (c) =>
+        adminOrders.runAdminOrderCommand(c, {
+          id: 'MON-307057',
+          command: 'start-preparing',
+          expectedStatus: 'pending',
+        }), // 422 ORDER_TRANSITION_INVALID
+      (c) =>
+        adminOrders.runAdminOrderCommand(c, {
+          id: 'MON-307051',
+          command: 'complete',
+          expectedStatus: 'ready',
+        }), // 422 ORDER_FULFILLMENT_MISMATCH
+      (c) =>
+        adminOrders.runAdminOrderCommand(c, {
+          id: 'MON-307057',
+          command: 'accept',
+          expectedStatus: 'pending',
+        }),
+      (c) =>
+        adminOrders.runAdminOrderCommand(c, {
+          id: 'MON-307057',
+          command: 'accept',
+          expectedStatus: 'pending',
+        }), // 200 replayed
+      (c) =>
+        adminOrders.runAdminOrderCommand(c, {
+          id: 'MON-307057',
+          command: 'reject',
+          expectedStatus: 'pending',
+          reason: 'Sin existencias',
+        }), // 409 ORDER_STATE_CONFLICT
+    ];
+    const a = await run(steps, p.mock.client);
+    expect(await run(steps, p.http)).toEqual(a);
+    expect(a.map((x) => ('error' in x ? x.error.status : 200))).toEqual([
+      200, 404, 200, 200, 400, 200, 404, 400, 422, 422, 200, 200, 409,
+    ]);
+    const errors = a.flatMap((x) => ('error' in x ? [x.error.businessCode] : []));
+    expect(errors).toEqual([
+      'BRANCH_NOT_FOUND',
+      undefined,
+      'ORDER_NOT_FOUND',
+      'ORDER_REASON_REQUIRED',
+      'ORDER_TRANSITION_INVALID',
+      'ORDER_TRANSITION_INVALID',
+      'ORDER_STATE_CONFLICT',
+    ]);
+    expect((a[11] as { ok: { transition: { replayed: boolean } } }).ok.transition.replayed).toBe(
+      true,
+    );
+  });
+
+  it('F22: el estado actual (`current`) del 409 y el Retry-After del 429 llegan igual por http', async () => {
+    const backend = createHarness();
+    backend.asStaff('admin');
+    const http = httpBackedBy(backend);
+    await adminOrders.runAdminOrderCommand(http, {
+      id: 'MON-307057',
+      command: 'reject',
+      expectedStatus: 'pending',
+      reason: 'Sin existencias',
+    });
+    const conflict = await adminOrders
+      .runAdminOrderCommand(http, {
+        id: 'MON-307057',
+        command: 'accept',
+        expectedStatus: 'pending',
+      })
+      .catch((e: unknown) => e);
+    expect(conflict).toBeInstanceOf(ApiError);
+    expect((conflict as ApiError).body).toMatchObject({
+      code: 'ORDER_STATE_CONFLICT',
+      current: { status: 'rejected' },
+    });
+    (globalThis as unknown as { window: Window }).window = {
+      __sushimonMockFaults: { 'GET /v1/admin/orders/board': ['rate-limited'] },
+    } as unknown as Window;
+    try {
+      const limited = await adminOrders.getAdminOrderBoard(http).catch((e: unknown) => e);
+      expect(limited).toMatchObject({
+        status: 429,
+        businessCode: 'RATE_LIMITED',
+        retryAfterSec: 12,
+      });
     } finally {
       delete (globalThis as { window?: unknown }).window;
     }

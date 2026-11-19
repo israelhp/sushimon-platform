@@ -1,6 +1,7 @@
 import type { StoreMenuParams } from '@/lib/store-rules';
 import type { AdminProductFilters } from '@/services/products';
 import type { DeliveryZoneFilters } from '@/services/delivery-zones';
+import type { AdminOrderListFilters } from '@/services/admin-orders';
 import type { BackofficeOrderFilters, DeliveryFilters } from '@/services/backoffice-orders';
 import type { ReportFilters } from '@/services/backoffice-admin';
 import type { AdminBranchFilters } from '@/services/branches';
@@ -222,6 +223,20 @@ export const queryKeys = {
     me: ['backoffice', 'me'] as const,
     dashboard: (branchId?: string) => ['backoffice', 'dashboard', branchId ?? 'all'] as const,
     orders: (filters: BackofficeOrderFilters = {}) => ['orders', 'backoffice', filters] as const,
+    /**
+     * F22 (spec 023 §10.2): pedidos REALES del backoffice. La clave lleva SIEMPRE la persona (`staffKey` = id del personal) y la
+     * sucursal/filtros; jamás se usa `keepPreviousData` entre claves distintas. Al cerrar sesión o cambiar de persona se descarta
+     * todo `['backoffice','adminOrders']` (lo hace `DemoSessionProvider.resetCaches`). Sin persistencia del contenido.
+     */
+    adminOrders: {
+      all: ['backoffice', 'adminOrders'] as const,
+      board: (staffKey: string | null, branchId: string | null | undefined) =>
+        ['backoffice', 'adminOrders', staffKey ?? 'anon', 'board', branchId ?? 'all'] as const,
+      list: (staffKey: string | null, filters: AdminOrderListFilters) =>
+        ['backoffice', 'adminOrders', staffKey ?? 'anon', 'list', filters] as const,
+      detail: (staffKey: string | null, id: string) =>
+        ['backoffice', 'adminOrders', staffKey ?? 'anon', 'detail', id] as const,
+    },
     deliveries: (filters: DeliveryFilters = {}) => ['orders', 'deliveries', filters] as const,
     riders: (branchId?: string) => ['backoffice', 'riders', branchId ?? 'all'] as const,
     categories: ['catalog', 'backoffice', 'categories'] as const,

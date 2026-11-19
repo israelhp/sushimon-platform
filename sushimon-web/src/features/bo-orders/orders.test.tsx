@@ -1,8 +1,9 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackofficeShell } from '@/features/backoffice-shell/BackofficeShell';
 import type { StaffRole } from '@/lib/data-access/models';
+import type { MockStore } from '@/mocks/store';
 import { renderBackoffice } from '@/test/backoffice-providers';
 import { resetNavigationMock } from '@/test/next-navigation-mock';
 import { OrdersScreen } from './components/OrdersScreen';
@@ -10,13 +11,16 @@ import { OrdersScreen } from './components/OrdersScreen';
 vi.mock('next/navigation', async () => await import('@/test/next-navigation-mock'));
 
 beforeEach(() => resetNavigationMock('/backoffice/pedidos'));
+afterEach(() => {
+  delete window.__sushimonMockFaults;
+});
 
-const renderOrders = (role: StaffRole = 'manager') =>
+const renderOrders = (role: StaffRole = 'manager', prepareStore?: (store: MockStore) => void) =>
   renderBackoffice(
     <BackofficeShell>
       <OrdersScreen />
     </BackofficeShell>,
-    { role },
+    { role, prepareStore },
   );
 
 const column = (name: string) => screen.getByRole('region', { name });
@@ -26,153 +30,392 @@ const card = (code: string) => {
   return within(el as HTMLElement);
 };
 
-describe('tablero de pedidos', () => {
-  it('muestra las columnas del prototipo con los pedidos de la sucursal del encargado', async () => {
+describe('tablero de pedidos (datos reales por /v1/admin/orders, simulados)', () => {
+  it('muestra las 6 columnas con los pedidos y conteos de la sucursal del encargado', async () => {
     await renderOrders();
     expect(await screen.findByText('#MON-307057')).toBeVisible();
-    for (const name of ['Nuevo', 'Aceptado', 'Preparación', 'Listo', 'En camino', 'Entregado']) {
+    for (const name of ['Nuevo', 'Aceptado', 'Preparación', 'Listo', 'En camino', 'Finalizados']) {
       expect(column(name)).toBeVisible();
     }
     expect(within(column('Nuevo')).getByText('#MON-307057')).toBeVisible();
     expect(within(column('Aceptado')).getByText('#MON-307055')).toBeVisible();
-    // Solo la sucursal 1: el pedido de Zona 10 (sucursal 2) no aparece.
+    // Solo la sucursal 1: el pedido de Zona 10 (sucursal 2) no aparece (el alcance lo aplica el servidor).
     expect(screen.queryByText('#MON-307058')).toBeNull();
     expect(screen.getByText(/en curso · \d+ nuevos/)).toBeVisible();
   });
 
-  it('muestra el tiempo transcurrido con el reloj de la demo y marca el atraso', async () => {
+  it('calcula la espera con el reloj del servidor y marca el atraso del pendiente', async () => {
     await renderOrders();
     await screen.findByText('#MON-307057');
-    const c = card('#MON-307057');
-    expect(c.getByText('hace 8 min')).toHaveClass('late');
+    expect(card('#MON-307057').getByText('hace 8 min')).toHaveClass('late');
     expect(card('#MON-307055').getByText('hace 15 min')).toHaveClass('wait');
   });
 
-  it('avanza un pedido: aceptar → preparar → listo, con aviso y cambio de columna', async () => {
+  it('diferencia recoger, reparto propio y PedidosYa en las tarjetas', async () => {
+    await renderOrders('admin', (store) => {
+      const order = store.orders.find((o) => o.id === 'MON-307052')!;
+      order.delivery = {
+        provider: 'pedidosya',
+        status: 'searching',
+        riderId: null,
+        riderName: null,
+        reference: null,
+        cost: null,
+        requestedAt: order.createdAt,
+        etaAt: null,
+        deliveredAt: null,
+        simulated: true,
+      };
+    });
+    await screen.findByText('#MON-307051');
+    expect(card('#MON-307057').getByText('Recoger')).toBeVisible();
+    expect(card('#MON-307051').getByText('Reparto propio')).toBeVisible();
+    expect(card('#MON-307052').getByText('PedidosYa')).toBeVisible();
+  });
+
+  it('avanza un pedido con confirmación del servidor: aceptar → preparar → listo → entregar', async () => {
     await renderOrders();
     await screen.findByText('#MON-307057');
     await userEvent.click(card('#MON-307057').getByRole('button', { name: 'Aceptar pedido' }));
-    expect(await screen.findByText('Pedido #MON-307057 aceptado')).toBeVisible();
+    expect(await screen.findByText(/Pedido #MON-307057: Aceptado\./)).toBeVisible();
     await waitFor(() => expect(within(column('Aceptado')).getByText('#MON-307057')).toBeVisible());
 
-    await userEvent.click(
-      card('#MON-307057').getByRole('button', { name: 'Marcar en preparación' }),
-    );
+    await userEvent.click(card('#MON-307057').getByRole('button', { name: 'Iniciar preparación' }));
     await waitFor(() =>
       expect(within(column('Preparación')).getByText('#MON-307057')).toBeVisible(),
     );
     await userEvent.click(card('#MON-307057').getByRole('button', { name: 'Marcar listo' }));
     await waitFor(() => expect(within(column('Listo')).getByText('#MON-307057')).toBeVisible());
-    // Recoger en tienda: la siguiente acción es entregar al cliente (no despachar).
-    expect(card('#MON-307057').getByRole('button', { name: 'Entregado al cliente' })).toBeVisible();
+    // Recoger en tienda: la siguiente acción es completar en sucursal (no despachar).
+    await userEvent.click(
+      card('#MON-307057').getByRole('button', { name: 'Entregar en sucursal' }),
+    );
+    await waitFor(() =>
+      expect(within(column('Finalizados')).getByText('#MON-307057')).toBeVisible(),
+    );
   });
 
-  it('rechaza con motivo desde el detalle y lo deja en el historial', async () => {
+  it('el detalle muestra líneas, totales, contacto, pago honesto, entrega e historial con actor', async () => {
+    await renderOrders();
+    await screen.findByText('#MON-307051');
+    await userEvent.click(screen.getByText('#MON-307051')); // botón principal de la tarjeta
+    const drawer = await screen.findByRole('dialog', { name: /MON-307051/ });
+    expect(await within(drawer).findByText('Productos')).toBeVisible();
+    expect(within(drawer).getByText('TOTAL')).toBeVisible();
+    expect(within(drawer).getByText('Envío cotizado al cliente')).toBeVisible();
+    expect(within(drawer).getByText('Historial de estados')).toBeVisible();
+    expect(within(drawer).getByText('Sin pago registrado')).toBeVisible();
+    expect(within(drawer).getByText('+502 3398-4471')).toBeVisible();
+    expect(within(drawer).getByText(/Avenida Reforma 8-60/)).toBeVisible();
+  });
+});
+
+describe('rechazar y cancelar con motivo', () => {
+  it('rechaza con motivo obligatorio (3–280, recortado) desde el detalle y lo deja en el historial', async () => {
     await renderOrders();
     await screen.findByText('#MON-307057');
-    await userEvent.click(screen.getByText('#MON-307057')); // abre el detalle (botón principal de la tarjeta)
+    await userEvent.click(screen.getByText('#MON-307057'));
     const drawer = await screen.findByRole('dialog', { name: /MON-307057/ });
-    expect(within(drawer).getByText('Sin aceptar +5 min')).toBeVisible();
+    expect(await within(drawer).findByText('Sin aceptar +5 min')).toBeVisible();
     await userEvent.click(within(drawer).getByRole('button', { name: 'Rechazar' }));
 
     const modal = await screen.findByRole('dialog', { name: 'Rechazar pedido' });
-    expect(within(modal).getByText('Elige el motivo. Se notificará al cliente.')).toBeVisible();
-    await userEvent.click(within(modal).getByRole('button', { name: 'Producto agotado' }));
+    expect(within(modal).getByText(/#MON-307057 · José Pablo Ruiz/)).toBeVisible();
+    expect(within(modal).getByText(/No escribas datos personales/)).toBeVisible();
+    // Sin motivo: error de campo y NADA se envía.
+    await userEvent.click(within(modal).getByRole('button', { name: 'Confirmar rechazo' }));
+    expect(await within(modal).findByRole('alert')).toHaveTextContent('Escribe el motivo.');
+    await userEvent.type(within(modal).getByRole('textbox', { name: /Motivo/ }), 'ab');
+    await userEvent.click(within(modal).getByRole('button', { name: 'Confirmar rechazo' }));
+    expect(await within(modal).findByRole('alert')).toHaveTextContent('al menos 3 caracteres');
+    expect(column('Nuevo')).toHaveTextContent('#MON-307057');
 
-    expect(await screen.findByText('Pedido #MON-307057 rechazado')).toBeVisible();
+    await userEvent.click(within(modal).getByRole('button', { name: 'Producto agotado' }));
+    await userEvent.click(within(modal).getByRole('button', { name: 'Confirmar rechazo' }));
+    expect(await screen.findByText(/Pedido #MON-307057: Rechazado\./)).toBeVisible();
     expect(
-      await within(drawer).findByText('Pedido rechazado. Motivo: Producto agotado'),
+      await within(drawer).findByText('Pedido rechazado. Motivo: ab · Producto agotado'),
     ).toBeVisible();
+    expect(await within(drawer).findByText(/por Marco Antonio Gómez/)).toBeVisible();
     expect(screen.queryByRole('dialog', { name: 'Rechazar pedido' })).toBeNull();
     await waitFor(() => expect(within(column('Nuevo')).queryByText('#MON-307057')).toBeNull());
   });
 
-  it('el detalle muestra productos, totales, entrega e historial', async () => {
+  it('el foco entra al modal y, al cerrar con Esc, vuelve al botón que lo abrió (sin enviar nada)', async () => {
     await renderOrders();
-    await screen.findByText('#MON-307051');
-    await userEvent.click(screen.getByText('#MON-307051')); // abre el detalle (botón principal de la tarjeta)
-    const drawer = await screen.findByRole('dialog', { name: /MON-307051/ });
-    expect(within(drawer).getByText('Productos')).toBeVisible();
-    expect(within(drawer).getByText('TOTAL')).toBeVisible();
-    expect(within(drawer).getByText('Envío cotizado al cliente')).toBeVisible();
-    expect(within(drawer).getByText('Historial de estados')).toBeVisible();
-    expect(within(drawer).getByText(/Aún sin repartidor/)).toBeVisible();
-  });
-
-  it('si otro usuario ya cambió el pedido, el servidor responde y la UI avisa del error', async () => {
-    const view = await renderOrders();
     await screen.findByText('#MON-307057');
-    // Cambio "del servidor" con la tarjeta ya pintada (la UI aún cree que está Nuevo).
-    await view
-      .api()
-      .client.patch('/v1/backoffice/orders/MON-307057/status', { status: 'accepted' });
-    await userEvent.click(card('#MON-307057').getByRole('button', { name: 'Aceptar pedido' }));
-    expect(await screen.findByText(/No se pudo actualizar el pedido/)).toBeVisible();
-  });
-});
-
-describe('permisos por rol en Pedidos', () => {
-  it('el encargado despacha: abre el modal Despachar (simulación) y no cambia el estado al abrirlo', async () => {
-    await renderOrders('manager');
-    await screen.findByText('#MON-307051');
-    await userEvent.click(card('#MON-307051').getByRole('button', { name: 'Despachar pedido' }));
-    const modal = await screen.findByRole('dialog', { name: 'Despachar pedido' });
-    expect(within(modal).getByRole('button', { name: /PedidosYa Courier/ })).toBeVisible();
-    expect(within(modal).getByText('Simulación')).toBeVisible();
-    expect(within(column('Listo')).getByText('#MON-307051')).toBeVisible();
+    await userEvent.click(screen.getByText('#MON-307057'));
+    const drawer = await screen.findByRole('dialog', { name: /MON-307057/ });
+    const opener = await within(drawer).findByRole('button', { name: 'Rechazar' });
+    await userEvent.click(opener);
+    const modal = await screen.findByRole('dialog', { name: 'Rechazar pedido' });
+    await waitFor(() =>
+      expect(within(modal).getByRole('textbox', { name: /Motivo/ })).toHaveFocus(),
+    );
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Rechazar pedido' })).toBeNull(),
+    );
+    expect(opener).toHaveFocus();
+    expect(within(column('Nuevo')).getByText('#MON-307057')).toBeVisible();
   });
 
-  it('cocina no despacha: ve el bloqueo informativo en el detalle', async () => {
-    await renderOrders('kitchen');
-    await screen.findByText('#MON-307051');
-    expect(screen.queryByRole('button', { name: /Despachar/ })).toBeNull();
-    await userEvent.click(screen.getByText('#MON-307051')); // abre el detalle (botón principal de la tarjeta)
-    const drawer = await screen.findByRole('dialog', { name: /MON-307051/ });
-    expect(within(drawer).getByText(/Un encargado de sucursal lo despachará/)).toBeVisible();
-    expect(within(drawer).queryByRole('button', { name: /DESPACHAR/ })).toBeNull();
+  it('el foco inicial va al campo del motivo; Esc con texto escrito cierra sin enviar y devuelve el foco', async () => {
+    await renderOrders();
+    await screen.findByText('#MON-307057');
+    await userEvent.click(screen.getByText('#MON-307057'));
+    const drawer = await screen.findByRole('dialog', { name: /MON-307057/ });
+    const opener = await within(drawer).findByRole('button', { name: 'Rechazar' });
+    await userEvent.click(opener);
+    const modal = await screen.findByRole('dialog', { name: 'Rechazar pedido' });
+    const field = within(modal).getByRole('textbox', { name: /Motivo/ });
+    await waitFor(() => expect(field).toHaveFocus());
+    await userEvent.type(field, 'Sin existencias');
+    // Foco atrapado: Tab recorre solo el modal.
+    for (let i = 0; i < 12; i++) {
+      await userEvent.tab();
+      expect(modal.contains(document.activeElement)).toBe(true);
+    }
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Rechazar pedido' })).toBeNull(),
+    );
+    expect(opener).toHaveFocus();
+    expect(within(column('Nuevo')).getByText('#MON-307057')).toBeVisible();
   });
 
-  it('cocina sí avanza la preparación', async () => {
-    await renderOrders('kitchen');
-    await screen.findByText('#MON-307055');
+  it('409 desde el modal: cierra, deja el texto visible en el detalle y el foco no se pierde', async () => {
+    await renderOrders();
+    await screen.findByText('#MON-307057');
+    await userEvent.click(screen.getByText('#MON-307057'));
+    const drawer = await screen.findByRole('dialog', { name: /MON-307057/ });
+    await userEvent.click(await within(drawer).findByRole('button', { name: 'Cancelar pedido' }));
+    const modal = await screen.findByRole('dialog', { name: 'Cancelar pedido' });
+    window.__sushimonMockFaults = { 'POST /v1/admin/orders/MON-307057/cancel': ['other-rejected'] };
+    await userEvent.type(
+      within(modal).getByRole('textbox', { name: /Motivo/ }),
+      'Cliente no contesta',
+    );
+    await userEvent.click(within(modal).getByRole('button', { name: 'Confirmar cancelación' }));
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Cancelar pedido' })).toBeNull(),
+    );
+    // Texto visible en el detalle (sin una tercera región live) con el estado actual y qué hacer.
+    const banner = await within(drawer).findByText(/cambió: ahora está «Rechazado»/);
+    expect(banner).toBeVisible();
+    expect(banner.closest('[role="status"],[role="alert"]')).toBeNull();
+    expect(within(drawer).getByText(/Revisa el estado actual/)).toBeVisible();
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+  });
+
+  it('muestra «Hay N sin aceptar» y las etiquetas de texto (no solo color) del pendiente atrasado', async () => {
+    await renderOrders();
+    await screen.findByText('#MON-307057');
+    expect(screen.getByText(/Hay \d+ pedidos? sin aceptar/)).toBeVisible();
     expect(
-      card('#MON-307055').getByRole('button', { name: 'Marcar en preparación' }),
+      within(card('#MON-307057').getByText('Sin aceptar +5 min').parentElement!).getByText(
+        'Sin aceptar +5 min',
+      ),
+    ).toBeVisible();
+  });
+
+  it('cancelar muestra las consecuencias y deja un aviso informativo de pago (sin ejecutarlo)', async () => {
+    await renderOrders('admin');
+    await screen.findByText('#MON-307056');
+    await userEvent.click(screen.getByText('#MON-307056'));
+    const drawer = await screen.findByRole('dialog', { name: /MON-307056/ });
+    await userEvent.click(await within(drawer).findByRole('button', { name: 'Cancelar pedido' }));
+    const modal = await screen.findByRole('dialog', { name: 'Cancelar pedido' });
+    expect(within(modal).getByText(/no podrá reactivarse/)).toBeVisible();
+    await userEvent.type(
+      within(modal).getByRole('textbox', { name: /Motivo/ }),
+      '  Cliente no contesta  ',
+    );
+    await userEvent.click(within(modal).getByRole('button', { name: 'Confirmar cancelación' }));
+    expect(await screen.findByText(/Pedido #MON-307056: Cancelado\./)).toBeVisible();
+    // pendingActions: solo informativas.
+    expect((await within(drawer).findAllByText(/Revisar pago pendiente/)).length).toBeGreaterThan(
+      0,
+    );
+    expect(
+      await within(drawer).findByText('Pedido cancelado. Motivo: Cliente no contesta'),
     ).toBeVisible();
   });
 });
 
-describe('vista de tabla', () => {
-  const openTable = async () => {
+describe('conflictos y errores', () => {
+  it('409: si otra persona ya cambió el pedido, avisa el estado actual y refresca sin reintentar', async () => {
+    const view = await renderOrders();
+    await screen.findByText('#MON-307057');
+    // Cambio "del servidor" con la tarjeta ya pintada (la UI aún cree que está Nuevo).
+    await view.api().client.post('/v1/admin/orders/MON-307057/reject', {
+      expectedStatus: 'pending',
+      reason: 'Sin existencias',
+    });
+    await userEvent.click(card('#MON-307057').getByRole('button', { name: 'Aceptar pedido' }));
+    expect(await screen.findByText(/cambió: ahora está «Rechazado»/)).toBeVisible();
+    await waitFor(() => expect(within(column('Nuevo')).queryByText('#MON-307057')).toBeNull());
+  });
+
+  it('200 replayed: distingue la repetición propia de la hecha por otra persona', async () => {
+    const view = await renderOrders();
+    await screen.findByText('#MON-307057');
+    window.__sushimonMockFaults = {
+      'POST /v1/admin/orders/MON-307057/accept': ['other-applied'],
+    };
+    await userEvent.click(card('#MON-307057').getByRole('button', { name: 'Aceptar pedido' }));
+    expect(
+      await screen.findByText(
+        /Otra persona ya lo había hecho: el pedido #MON-307057 está en «Aceptado»/,
+      ),
+    ).toBeVisible();
+    // Repetición propia (doble envío tras un timeout): mismo actor.
+    await view
+      .api()
+      .client.post('/v1/admin/orders/MON-307055/start-preparing', { expectedStatus: 'accepted' });
+    await userEvent.click(card('#MON-307055').getByRole('button', { name: 'Iniciar preparación' }));
+    expect(await screen.findByText('Este pedido ya estaba en ese estado.')).toBeVisible();
+  });
+
+  it('un fallo de red NO se convierte en un estado del pedido', async () => {
     await renderOrders();
+    await screen.findByText('#MON-307057');
+    window.__sushimonMockFaults = { 'POST /v1/admin/orders/MON-307057/accept': ['offline'] };
+    await userEvent.click(card('#MON-307057').getByRole('button', { name: 'Aceptar pedido' }));
+    expect(
+      await screen.findByText(/no sabemos si el cambio del pedido #MON-307057 se aplicó/),
+    ).toBeVisible();
+    expect(within(column('Nuevo')).getByText('#MON-307057')).toBeVisible();
+  });
+
+  it('429 y 503 piden esperar con los segundos del servidor', async () => {
+    await renderOrders();
+    await screen.findByText('#MON-307057');
+    window.__sushimonMockFaults = {
+      'POST /v1/admin/orders/MON-307057/accept': ['rate-limited', 'busy'],
+    };
+    await userEvent.click(card('#MON-307057').getByRole('button', { name: 'Aceptar pedido' }));
+    expect(await screen.findByText('Demasiadas solicitudes. Reintenta en 12 s.')).toBeVisible();
+    await userEvent.click(card('#MON-307057').getByRole('button', { name: 'Aceptar pedido' }));
+    expect(await screen.findByText('El sistema está ocupado. Reintenta en 2 s.')).toBeVisible();
+  });
+});
+
+describe('permisos por rol (salen de availableActions del servidor)', () => {
+  it('el despacho aparece DESHABILITADO con la razón de reparto propio', async () => {
+    await renderOrders('manager');
+    await screen.findByText('#MON-307051');
+    const dispatch = card('#MON-307051').getByRole('button', { name: 'Despachar' });
+    expect(dispatch).toBeDisabled();
+    expect(
+      card('#MON-307051').getByText(
+        'La asignación de repartidor llegará con la gestión de entregas.',
+      ),
+    ).toBeVisible();
+  });
+
+  it('PedidosYa: despacho deshabilitado con «Integración pendiente de documentación del proveedor»', async () => {
+    await renderOrders('admin', (store) => {
+      const order = store.orders.find((o) => o.id === 'MON-307052')!;
+      order.delivery = {
+        provider: 'pedidosya',
+        status: 'searching',
+        riderId: null,
+        riderName: null,
+        reference: null,
+        cost: null,
+        requestedAt: order.createdAt,
+        etaAt: null,
+        deliveredAt: null,
+        simulated: true,
+      };
+    });
+    await screen.findByText('#MON-307052');
+    expect(card('#MON-307052').getByRole('button', { name: 'Despachar' })).toBeDisabled();
+    expect(
+      card('#MON-307052').getByText('Integración pendiente de documentación del proveedor.'),
+    ).toBeVisible();
+  });
+
+  it('cocina avanza la preparación pero NO ve cancelar; staff no ve rechazar', async () => {
+    await renderOrders('kitchen');
+    await screen.findByText('#MON-307055');
+    expect(card('#MON-307055').getByRole('button', { name: 'Iniciar preparación' })).toBeVisible();
+    await userEvent.click(screen.getByText('#MON-307055'));
+    const drawer = await screen.findByRole('dialog', { name: /MON-307055/ });
+    await within(drawer).findByText('Productos');
+    expect(within(drawer).queryByRole('button', { name: 'Cancelar pedido' })).toBeNull();
+  });
+
+  it('staff puede aceptar pero no rechazar', async () => {
+    await renderOrders('staff');
+    await screen.findByText('#MON-307057');
+    await userEvent.click(screen.getByText('#MON-307057'));
+    const drawer = await screen.findByRole('dialog', { name: /MON-307057/ });
+    await within(drawer).findByText('Productos');
+    expect(within(drawer).getByRole('button', { name: 'Aceptar pedido' })).toBeVisible();
+    expect(within(drawer).queryByRole('button', { name: 'Rechazar' })).toBeNull();
+  });
+
+  it('un pedido finalizado no ofrece ninguna acción', async () => {
+    await renderOrders('admin');
+    await screen.findByText('#MON-307057');
+    const done = within(column('Finalizados'));
+    const first = done.getAllByRole('button').find((b) => b.classList.contains('kcard-main'))!;
+    await userEvent.click(first);
+    const drawer = await screen.findByRole('dialog');
+    await within(drawer).findByText('Productos');
+    expect(
+      within(drawer).queryByRole('button', { name: /Aceptar|Rechazar|Cancelar|Marcar|Iniciar/ }),
+    ).toBeNull();
+  });
+});
+
+describe('vista de tabla', () => {
+  const openTable = async (role: StaffRole = 'manager') => {
+    const view = await renderOrders(role);
     await screen.findByText('#MON-307057');
     await userEvent.click(screen.getByRole('button', { name: 'Tabla' }));
     await screen.findByText('Todos los pedidos');
+    await screen.findByRole('button', { name: 'Ver detalle de #MON-307057' });
+    return view;
   };
 
-  it('lista los pedidos con contadores por estado', async () => {
+  it('lista los pedidos de hoy y filtra por estado en el servidor', async () => {
     await openTable();
     const tabs = screen.getByRole('tablist', { name: 'Filtrar por estado' });
     expect(within(tabs).getByRole('tab', { name: /^Todos/ })).toHaveAttribute(
       'aria-selected',
       'true',
     );
-    expect(screen.getByRole('button', { name: 'Ver detalle de #MON-307057' })).toBeVisible();
-    await userEvent.click(within(tabs).getByRole('tab', { name: /^Nuevo/ }));
-    expect(screen.getByRole('heading', { name: 'Nuevo' })).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Ver detalle de #MON-307055' })).toBeNull();
+    await userEvent.click(within(tabs).getByRole('tab', { name: /^Aceptado/ }));
+    expect(await screen.findByRole('heading', { name: 'Aceptado' })).toBeVisible();
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Ver detalle de #MON-307057' })).toBeNull(),
+    );
+    expect(screen.getByRole('button', { name: 'Ver detalle de #MON-307055' })).toBeVisible();
   });
 
-  it('filtra por búsqueda y por tipo, y limpia los filtros', async () => {
+  it('busca por nombre en el servidor, filtra por tipo y limpia los filtros', async () => {
     await openTable();
     await userEvent.type(screen.getByRole('searchbox', { name: 'Buscar pedidos' }), 'diego');
-    expect(screen.getByRole('button', { name: 'Ver detalle de #MON-307055' })).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Ver detalle de #MON-307057' })).toBeNull();
-
+    expect(await screen.findByRole('button', { name: 'Ver detalle de #MON-307055' })).toBeVisible();
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Ver detalle de #MON-307057' })).toBeNull(),
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Delivery' }));
     expect(await screen.findByText('Sin resultados')).toBeVisible();
-
     await userEvent.click(screen.getByRole('button', { name: 'Limpiar filtros' }));
-    expect(screen.getByRole('button', { name: 'Ver detalle de #MON-307057' })).toBeVisible();
+    expect(await screen.findByRole('button', { name: 'Ver detalle de #MON-307057' })).toBeVisible();
+  });
+
+  it('busca por número (1042 o MON-001042) con igualdad', async () => {
+    await openTable();
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Buscar pedidos' }), 'MON-307057');
+    expect(await screen.findByRole('button', { name: 'Ver detalle de #MON-307057' })).toBeVisible();
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Ver detalle de #MON-307055' })).toBeNull(),
+    );
   });
 
   it('el encargado tiene su sucursal fija en los chips', async () => {
@@ -182,7 +425,48 @@ describe('vista de tabla', () => {
       'aria-pressed',
       'true',
     );
-    // Solo sucursales autorizadas (grants del contexto): las ajenas no se ofrecen.
     expect(within(chips).queryByRole('button', { name: 'Sucursal 2' })).toBeNull();
+  });
+
+  it('pagina por cursor: «Cargar más» añade filas sin duplicados', async () => {
+    await openTable('admin');
+    const rows = () => screen.getAllByRole('button', { name: /^Ver detalle de #MON/ });
+    const before = rows().length;
+    expect(before).toBe(25);
+    await userEvent.click(screen.getByRole('button', { name: 'Cargar más' }));
+    await waitFor(() => expect(rows().length).toBeGreaterThan(before));
+    const names = rows().map((r) => r.getAttribute('aria-label'));
+    expect(new Set(names).size).toBe(names.length);
+  });
+});
+
+describe('un solo camino de datos (spec 023 §10.1, #55)', () => {
+  it('la pantalla Pedidos solo usa /v1/admin/orders*: nunca /v1/backoffice/orders*, /v1/demo/* ni el despacho', async () => {
+    window.__sushimonMockRequests = [];
+    try {
+      await renderOrders();
+      await screen.findByText('#MON-307057');
+      await userEvent.click(card('#MON-307057').getByRole('button', { name: 'Aceptar pedido' }));
+      await screen.findByText(/Pedido #MON-307057: Aceptado\./);
+      await userEvent.click(screen.getByText('#MON-307055'));
+      await screen.findByRole('dialog', { name: /MON-307055/ });
+      await userEvent.keyboard('{Escape}');
+      await userEvent.click(screen.getByRole('button', { name: 'Tabla' }));
+      await screen.findByText('Todos los pedidos');
+      await screen.findByRole('button', { name: 'Ver detalle de #MON-307057' });
+
+      const requests = window.__sushimonMockRequests ?? [];
+      const orderCalls = requests.filter((r) => r.includes('/orders'));
+      expect(orderCalls.length).toBeGreaterThan(3);
+      for (const r of orderCalls) expect(r).toMatch(/ \/v1\/admin\/orders/);
+      // Ninguna ruta de pedidos legada ni de despacho (la sucursal del shell sigue usando su propio endpoint).
+      const legacy = requests.filter(
+        (r) => /\/orders|dispatch|\/deliveries/.test(r) && !/ \/v1\/admin\/orders/.test(r),
+      );
+      expect(legacy).toEqual([]);
+      expect(requests).toContain('POST /v1/admin/orders/MON-307057/accept');
+    } finally {
+      delete window.__sushimonMockRequests;
+    }
   });
 });

@@ -27,6 +27,8 @@ export function invalidateOrders(qc: QueryClient) {
   void qc.invalidateQueries({ queryKey: queryKeys.orders.all });
   void qc.invalidateQueries({ predicate: customerOrdersPredicate });
   void qc.invalidateQueries({ queryKey: ['backoffice', 'dashboard'] });
+  // F22: tablero, listado y detalle REALES del backoffice (los cambios del mock legado y del pedido demo también los afectan).
+  void qc.invalidateQueries({ queryKey: queryKeys.backoffice.adminOrders.all });
 }
 
 function useOrderMutation<TArgs, TResult>(

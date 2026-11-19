@@ -219,7 +219,8 @@ describe('Banners (backoffice)', () => {
         .find((r) => r.code === 'manager')!
         .permissions.push('banners.read', 'banners.create', 'banners.update', 'promotions.read'),
     );
-    await screen.findByText(/banners$/);
+    // El contador y el pie de página pueden pintarse en el mismo ciclo: basta con que aparezca alguno.
+    await screen.findAllByText(/banners$/);
     expect(codesInOrder()).toContain('fin-de-mes');
     expect(
       screen.getByRole('switch', { name: 'Activar Los favoritos de los MONcheros' }),

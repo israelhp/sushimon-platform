@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useToast } from '@/components/ui/Toast';
+import { primeBeep } from '@/lib/beep';
 import { useSimulateIncomingOrder } from '@/features/backoffice/hooks';
 import { useDemoSession } from '@/features/session/demo-session';
 import { useAdminContext } from '@/features/staff/hooks';
@@ -61,6 +62,23 @@ export interface ShellApi {
 const ShellContext = createContext<ShellApi | null>(null);
 
 const RING_MS = 3200;
+/** Preferencia de UI (NO es autenticación): aviso sonoro de pedidos nuevos, apagado por defecto (F22 spec 023 §10.4). */
+export const SOUND_PREF_KEY = 'monsushi-bo-orders-sound';
+
+function readSoundPref(): boolean {
+  try {
+    return typeof window !== 'undefined' && window.localStorage.getItem(SOUND_PREF_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+function writeSoundPref(on: boolean) {
+  try {
+    window.localStorage.setItem(SOUND_PREF_KEY, on ? '1' : '0');
+  } catch {
+    // preferencia opcional
+  }
+}
 
 export function BackofficeShellProvider({ children }: { children: ReactNode }) {
   const t = useTranslations('backoffice.shell.notifications');
@@ -69,7 +87,12 @@ export function BackofficeShellProvider({ children }: { children: ReactNode }) {
   const branchesQuery = useBranches();
   const [pickedBranch, setPickedBranch] = useState<string | undefined>(undefined);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [soundOn, setSoundOn] = useState(true);
+  const [soundOn, setSoundOnState] = useState(readSoundPref);
+  const setSoundOn = useCallback((on: boolean) => {
+    if (on) primeBeep(); // dentro del gesto que lo activa
+    setSoundOnState(on);
+    writeSoundPref(on);
+  }, []);
   const [ring, setRing] = useState(false);
   const simulate = useSimulateIncomingOrder();
 
@@ -147,6 +170,7 @@ export function BackofficeShellProvider({ children }: { children: ReactNode }) {
       branches,
       mobileNavOpen,
       soundOn,
+      setSoundOn,
       ring,
       simulateOrder,
       simulate.isPending,

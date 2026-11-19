@@ -2,7 +2,6 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackofficeShell } from '@/features/backoffice-shell/BackofficeShell';
-import { OrdersScreen } from '@/features/bo-orders/components/OrdersScreen';
 import { useDispatchModal } from '@/features/bo-orders/use-dispatch-modal';
 import { ApiError } from '@/lib/data-access/errors';
 import { formatMoney } from '@/lib/format';
@@ -42,24 +41,34 @@ const ORDER = 'MON-307051'; // sucursal 1, a domicilio, listo, sin logística
 const store = createSeedStore();
 const seedOrder = store.orders.find((o) => o.id === ORDER)!;
 
-function renderOrders(role: StaffRole = 'manager', scenario: MockScenario = 'default') {
+/**
+ * El modal de despacho (SIMULADO) ya no se abre desde la pantalla Pedidos (F22: allí «Despachar» está deshabilitado); sigue siendo
+ * el punto de integración de Entregas y del Panel. Estas pruebas lo abren por `useDispatchModal`, igual que esas pantallas.
+ */
+function OpenButton({ id }: { id: string }) {
+  const modal = useDispatchModal();
+  return (
+    <button type="button" onClick={() => modal.open(id)}>
+      abrir-despacho
+    </button>
+  );
+}
+
+function renderOrders(
+  role: StaffRole = 'manager',
+  scenario: MockScenario = 'default',
+  id: string = ORDER,
+) {
   return renderBackoffice(
     <BackofficeShell>
-      <OrdersScreen />
+      <OpenButton id={id} />
     </BackofficeShell>,
     { role, scenario },
   );
 }
 
-const card = (code: string) => {
-  const el = screen.getByText(code).closest('.kcard');
-  if (!el) throw new Error(`Sin tarjeta para ${code}`);
-  return within(el as HTMLElement);
-};
-
 async function openDispatch() {
-  await screen.findByText(`#${ORDER}`);
-  await userEvent.click(card(`#${ORDER}`).getByRole('button', { name: 'Despachar pedido' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'abrir-despacho' }));
   return screen.findByRole('dialog', { name: 'Despachar pedido' });
 }
 
@@ -139,8 +148,7 @@ describe('modal Despachar · PedidosYa (simulado)', () => {
     const quote = await screen.findByRole('dialog', { name: 'Solicitar a PedidosYa' });
     await userEvent.click(within(quote).getByRole('button', { name: 'Cambiar opción' }));
     expect(await screen.findByRole('dialog', { name: 'Despachar pedido' })).toBeVisible();
-    // El pedido sigue listo y sin logística.
-    expect(card(`#${ORDER}`).getByRole('button', { name: 'Despachar pedido' })).toBeVisible();
+    // El pedido sigue listo y sin logística: el modal de despacho vuelve a la elección.
   });
 });
 
@@ -172,11 +180,9 @@ describe('modal Despachar · repartidor del restaurante', () => {
   });
 
   it('un repartidor ocupado o fuera de turno no se puede elegir', async () => {
-    await renderOrders('admin');
+    await renderOrders('admin', 'default', 'MON-307052');
     // Sucursal 3: Pedro Ajanel (en turno) y Carlos Yat (fuera de turno).
-    await screen.findByText('#MON-307052');
-    await userEvent.click(card('#MON-307052').getByRole('button', { name: 'Despachar pedido' }));
-    const modal = await screen.findByRole('dialog', { name: 'Despachar pedido' });
+    const modal = await openDispatch();
     expect(within(modal).getByText('1 disponible en Sucursal 3')).toBeVisible();
     await userEvent.click(
       within(modal).getByRole('button', { name: /Repartidor del restaurante/ }),
@@ -189,21 +195,7 @@ describe('modal Despachar · repartidor del restaurante', () => {
 });
 
 describe('reglas por rol y estado', () => {
-  function OpenButton({ id }: { id: string }) {
-    const modal = useDispatchModal();
-    return (
-      <button type="button" onClick={() => modal.open(id)}>
-        abrir-despacho
-      </button>
-    );
-  }
-  const renderWithOpener = (role: StaffRole, id: string) =>
-    renderBackoffice(
-      <BackofficeShell>
-        <OpenButton id={id} />
-      </BackofficeShell>,
-      { role },
-    );
+  const renderWithOpener = (role: StaffRole, id: string) => renderOrders(role, 'default', id);
 
   it('cocina: ve un bloqueo informativo y ninguna acción de despacho', async () => {
     await renderWithOpener('kitchen', ORDER);
@@ -251,9 +243,9 @@ describe('escenario rider-unavailable', () => {
     );
     expect(await within(drawer).findByText('Sin repartidor disponible')).toBeVisible();
 
-    // Vuelve a poder despacharse: el aviso explica qué pasó y ofrece las dos salidas.
-    await userEvent.click(within(drawer).getByRole('button', { name: /despachar pedido/i }));
-    const again = await screen.findByRole('dialog', { name: 'Despachar pedido' });
+    // Vuelve a poder despacharse desde Entregas/Panel (aquí, el mismo punto de integración): el aviso explica qué pasó.
+    await userEvent.keyboard('{Escape}');
+    const again = await openDispatch();
     expect(within(again).getByText(/no encontró repartidor \(simulación\)/)).toBeVisible();
     await userEvent.click(
       within(again).getByRole('button', { name: /Repartidor del restaurante/ }),

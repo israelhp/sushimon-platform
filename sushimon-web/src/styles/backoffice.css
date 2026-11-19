@@ -2928,7 +2928,46 @@
   }
   [data-zone='bo'] .kcard.new {
     border: 2px solid var(--bo-primary);
-    box-shadow: 0 6px 18px rgba(220, 38, 38, 0.18);
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--bo-primary) 18%, transparent);
+  }
+  /* F22: pedido recién llegado en el último sondeo (hasta que la persona interactúa) y el pendiente más antiguo. */
+  [data-zone='bo'] .kcard.fresh {
+    outline: 3px solid var(--bo-primary);
+    outline-offset: 2px;
+    background: var(--bo-primary-soft);
+  }
+  [data-zone='bo'] .kcard.oldest {
+    border-style: dashed;
+  }
+  [data-zone='bo'] .count-chip.fresh-chip {
+    background: var(--bo-primary);
+    color: var(--bo-on-primary);
+  }
+  /* Objetivos táctiles ≥ 44 px en las acciones de pedidos (tarjeta, detalle y modal de motivo). */
+  @media (max-width: 640px) {
+    [data-zone='bo'] .kcard .btn,
+    [data-zone='bo'] .drawer .btn,
+    [data-zone='bo'] .modal .btn,
+    [data-zone='bo'] .chip,
+    [data-zone='bo'] .tab,
+    [data-zone='bo'] .seg button,
+    [data-zone='bo'] .link-btn,
+    [data-zone='bo'] .kcard-main {
+      min-height: 44px;
+    }
+    [data-zone='bo'] .link-btn {
+      display: inline-flex;
+      align-items: center;
+    }
+  }
+  /* Datos conservados de la MISMA clave mientras no hay conexión: atenuados, nunca ocultos. */
+  [data-zone='bo'] .is-stale {
+    opacity: 0.85;
+    border-bottom: 3px dashed var(--bo-line-strong);
+  }
+  [data-zone='bo'] .dispatch-note {
+    display: flex;
+    flex-direction: column;
   }
   [data-zone='bo'] .kcard-main {
     border: 0;

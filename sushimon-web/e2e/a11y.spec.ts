@@ -172,14 +172,15 @@ export const A11Y_ROUTES: RouteCase[] = [
     staff: 'admin',
   },
   {
-    path: '/backoffice/pedidos',
+    // F22: el despacho simulado ya no se abre desde Pedidos (allí está deshabilitado); sigue en las alertas del Panel.
+    path: '/backoffice/panel',
     label: 'encargado, modal Despachar',
-    ready: { role: 'heading', name: 'Pedidos' },
+    ready: { role: 'heading', name: /Buenas/ },
     staff: 'manager',
     step: async (page) => {
       await page
-        .locator('.kcard', { hasText: '#MON-307051' })
-        .getByRole('button', { name: 'Despachar pedido' })
+        .locator('.alert', { hasText: '#MON-307051' })
+        .getByRole('button', { name: 'Despachar' })
         .click();
       await page.getByRole('dialog', { name: 'Despachar pedido' }).waitFor();
     },
