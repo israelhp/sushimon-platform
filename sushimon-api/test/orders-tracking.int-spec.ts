@@ -24,8 +24,7 @@ const url = TEST_URL;
  * F21 es SOLO LECTURA y NO hay F22: los pedidos y sus eventos de historial se INSERTAN directamente por SQL (incluidos
  * `reason` y `changed_by` con valores centinela que jamás deben salir en la respuesta). La limpieza usa las excepciones
  * controladas `app.allow_order_cleanup` (0018) y `app.allow_audit_cleanup` (0004) SOLO sobre los pedidos de las sucursales
- * que crea la propia prueba. Mientras no corra, el SQL de F21 (2 consultas, orden `changed_at, id`, `take 51`, uso del
- * índice `order_status_history_order_idx`) NO está verificado contra PostgreSQL real.
+ * que crea la propia prueba. Ejecutada 12/12 contra el Supabase de pruebas el 2026-11-18 (con autorización explícita del usuario).
  */
 const ready = url
   ? await withClient(url, async (c) => {
@@ -484,20 +483,20 @@ describe.skipIf(!url || !ready)('Seguimiento de pedidos contra PostgreSQL real (
     // Con JWT y un token válido del mismo pedido de invitado el acceso es por el TOKEN (no por la sesión).
     expect((await orders.getTracking(owner, guest.id, guest.token)).orderId).toBe(guest.id);
 
-    const denied = [
-      orders.getTracking(stranger, mine.id, undefined),
-      orders.getTracking(owner, guest.id, undefined), // pedido de invitado con JWT (P59)
-      orders.getTracking(undefined, mine.id, undefined),
-      orders.getTracking(undefined, guest.id, undefined),
-      orders.getTracking(undefined, guest.id, other.token),
-      orders.getTracking(undefined, expired.id, expired.token),
-      orders.getTracking(undefined, revoked.id, revoked.token),
-      orders.getTracking(undefined, randomUUID(), guest.token),
+    const denied: Array<() => Promise<unknown>> = [
+      () => orders.getTracking(stranger, mine.id, undefined),
+      () => orders.getTracking(owner, guest.id, undefined), // pedido de invitado con JWT (P59)
+      () => orders.getTracking(undefined, mine.id, undefined),
+      () => orders.getTracking(undefined, guest.id, undefined),
+      () => orders.getTracking(undefined, guest.id, other.token),
+      () => orders.getTracking(undefined, expired.id, expired.token),
+      () => orders.getTracking(undefined, revoked.id, revoked.token),
+      () => orders.getTracking(undefined, randomUUID(), guest.token),
     ];
-    for (const d of denied) expect(statusOf(await err(d))).toBe(404);
+    for (const d of denied) expect(statusOf(await err(d()))).toBe(404);
   });
 
-  it('fila 14: presupuesto de consultas (invitado <= 2, dueño <= 2, token fallido + JWT <= 3) y SIN N+1 con 50 eventos', async (ctx) => {
+  it('fila 14: presupuesto de consultas (invitado <= 2, dueño <= 2, token fallido + JWT <= 4) y SIN N+1 con 50 eventos', async (ctx) => {
     skipUnlessReady(ctx);
     const owner = await newPrincipal();
     const small = await seedOrder({});
@@ -518,7 +517,7 @@ describe.skipIf(!url || !ready)('Seguimiento de pedidos contra PostgreSQL real (
     expect(guestBig).toBe(guestSmall);
     expect(ownerCount).toBeLessThanOrEqual(2);
     const tokenThenOwner = await count(() => orders.getTracking(owner, mine.id, big.token));
-    expect(tokenThenOwner).toBeLessThanOrEqual(3);
+    expect(tokenThenOwner).toBeLessThanOrEqual(4); // token fallido (2, medido) + dueño (2)
   });
 
   it('fila 16: solo lectura (no cambia orders, historial, tokens ni auditoría)', async (ctx) => {

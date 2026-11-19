@@ -191,7 +191,11 @@ export function OrderTrackingScreen({ orderId }: { orderId: string }) {
   const token = readGuestToken(orderId);
   const tracking = useOrderTracking(orderId, token);
   const { data } = tracking;
-  const summary = useOrderDetail(orderId, token, { once: true });
+  const summary = useOrderDetail(orderId, token, {
+    once: true,
+    // Sin sesión ni credencial (acceso perdido) no se emite NINGUNA solicitud, tampoco la del resumen.
+    enabled: !tracking.pending && !tracking.noCredentials,
+  });
   const titleRef = useRef<HTMLHeadingElement>(null);
   const focused = useRef(false);
 

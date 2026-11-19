@@ -97,7 +97,7 @@ export function useDraftOrderLoader() {
 export function useOrderDetail(
   id: string | null | undefined,
   guestToken: string | null,
-  options: { once?: boolean } = {},
+  options: { once?: boolean; enabled?: boolean } = {},
 ) {
   const client = useDataClient();
   const identity = useCustomerScope();
@@ -105,7 +105,7 @@ export function useOrderDetail(
   return useQuery<OrderDetail, ApiError>({
     queryKey: queryKeys.orders.placed(scope, id ?? ''),
     queryFn: ({ signal }) => getOrder(client, id as string, { guestToken, signal }),
-    enabled: !!id && identity.state !== 'pending',
+    enabled: !!id && identity.state !== 'pending' && options.enabled !== false,
     retry: false,
     gcTime: 60_000,
     // F21 `once`: el resumen del seguimiento se consulta UNA vez (el polling usa solo `getOrderTracking`).

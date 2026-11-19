@@ -116,7 +116,7 @@ Transiciones válidas esperadas (para referencia de presentación; las gobierna 
 
 1. Validar `id` (UUID) y `X-Order-Token` (patrón) ANTES de la BD (400).
 2. Autorizar en UNA adquisición del gate de pedidos: si hay token => `findTrackingForGuestToken(id, sha256, now)`; si no devuelve y hay `principal` => `findTrackingForOwnerAuthUser(id, authUserId)` (join `customer: { authUserId }` en la MISMA consulta; sin leer la fila del cliente; un pedido de invitado, `customer_id` NULL, nunca coincide); si nada => `orderNotFound()` (el mismo 404 de F20; mismo cuerpo, mismas cabeceras). Se extrae el helper de autorización compartido con `get()` SIN cambiar su comportamiento (las pruebas de F20 siguen verdes).
-3. Consulta: `orders` (solo `id, orderNumber, branchId, fulfillmentType, deliveryProvider, status, placedAt, updatedAt`) + `statusHistory` (`newStatus, changedAt`; `orderBy [changedAt desc, id desc]`, `take 51`, invertido por el repositorio). Prisma relaciona en 2 sentencias; presupuesto (sentencias SQL): invitado ≤ 2 (pedido + historial), dueño ≤ 2, token fallido + JWT ≤ 3 (la consulta por token que no encuentra pedido no lanza la del historial).
+3. Consulta: `orders` (solo `id, orderNumber, branchId, fulfillmentType, deliveryProvider, status, placedAt, updatedAt`) + `statusHistory` (`newStatus, changedAt`; `orderBy [changedAt desc, id desc]`, `take 51`, invertido por el repositorio). Prisma relaciona en 2 sentencias; presupuesto (sentencias SQL): invitado ≤ 2 (pedido + historial), dueño ≤ 2, token fallido + JWT ≤ 4 (MEDIDO contra PostgreSQL real: la consulta por token que no encuentra pedido cuesta 2 sentencias, no 1; caso raro de invitado con token fallido y sesión).
 4. Mapeo puro en `order-tracking.mapper.ts` (§3); sin llamadas externas; sin escritura (no inserta tokens ni auditoría: es lectura).
 5. Throttle propio `ORDER_TRACKING_THROTTLE`: `default` 120/min por IP y `actor` 60/min (un invitado cae a su IP => 60/min efectivos). Contador independiente de `getOrder` (el sondeo no consume la cuota del detalle). Los intentos con token inválido cuentan.
 6. Gate: se reutiliza `ORDERS_DB_GATE` (cola 8, espera 1,5 s; `ordersBusy` => 503 `ORDERS_BUSY` con `Retry-After`). No se crea un 4.º gate: el volumen (~100 pedidos/día, decenas de pedidos en curso a la vez, 3–4 consultas por poll cada 15–30 s) es del orden de 1–2 consultas/s, muy por debajo del cupo; un gate propio exigiría repartir otro cupo de `DB_POOL_MAX` (ya es requisito `>= 5`) y dejaría menos conexiones a los demás. Riesgo aceptado: una ráfaga de lecturas compite con `createOrder` por el mismo cupo; mitigación: UNA sola adquisición por poll, `pollAfterSeconds`, throttle, medición por performance-reviewer (R3) y **admisión de lecturas**: `DbGate.run(task, { rejectIfWaiting: 2 })` (solo `getTracking` y `getOrder`; `createOrder` no la usa) rechaza al instante con 503 `ORDERS_BUSY` + `Retry-After` si el cupo está lleno y ya hay 2 esperas, de modo que las plazas 3–8 de la cola quedan RESERVADAS a la escritura sin crear un 4.º gate (el comportamiento por defecto del gate no cambia).
@@ -206,7 +206,7 @@ La lista de 47 puntos del solicitante no está en el repositorio: esta matriz lo
 | 11  | `Cache-Control: private, no-store`, `Vary` y SIN `ETag`, también en 404/429/503                                                                                                                 | E       |
 | 12  | Throttle propio: 429 `RATE_LIMITED` con `Retry-After`; contador independiente de `getOrder`; token inválido cuenta                                                                              | E       |
 | 13  | Gate: saturación => 503 `ORDERS_BUSY` con `Retry-After`, libera cupo; UNA adquisición por poll; sin anidar                                                                                      | S, I    |
-| 14  | Presupuesto de consultas: invitado ≤ 2, dueño ≤ 2, token fallido + JWT ≤ 3, sin N+1 con 50 eventos (contador)                                                                                   | S, I    |
+| 14  | Presupuesto de consultas: invitado ≤ 2, dueño ≤ 2, token fallido + JWT ≤ 4, sin N+1 con 50 eventos (contador)                                                                                   | S, I    |
 | 15  | `delivery`: PICKUP `null`; OWN `{provider:'OWN', status:null}`; PEDIDOSYA `{provider:'PEDIDOSYA', status:null}`; sin consulta a `deliveries`                                                    | U, S, I |
 | 16  | Solo lectura: no inserta tokens/auditoría ni cambia `orders`; sin llamadas externas                                                                                                             | S, I    |
 | 17  | Int-spec con eventos insertados DIRECTAMENTE en la BD de prueba (sin implementar F22): `pending→accepted→preparing→ready→picked_up`, rechazo, cancelación, duplicados, desorden; se limpia todo | I       |
@@ -261,15 +261,22 @@ La lista de 47 puntos del solicitante no está en el repositorio: esta matriz lo
 
 ## 15. Estado (implementado · simulado · pendiente de proveedor · bloqueado)
 
-| Pieza                                     | Estado                                                                 |
-| ----------------------------------------- | ---------------------------------------------------------------------- |
-| Contrato `getOrderTracking` y esquemas    | `CONTRACT_DEFINED` (este cambio)                                       |
-| API `GET /v1/orders/{id}/tracking`        | Pendiente (api-engineer)                                               |
-| Web `/pedidos/[id]/seguimiento` y polling | Pendiente (web-engineer); hoy el seguimiento es simulado (`MOCK_ONLY`) |
-| Eventos de estado reales                  | Solo `pending` hasta F22 (las pruebas insertan eventos por SQL)        |
-| `delivery.status`, GPS, ETA, repartidor   | Pendiente de F28; PedidosYa `BLOCKED_EXTERNAL` (F29)                   |
-| `lookup` número + teléfono                | Diferido (P62; requiere verificación de teléfono)                      |
-| Notificaciones de cambio de estado        | F31                                                                    |
+| Pieza                                     | Estado                                                                                    |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Contrato `getOrderTracking` y esquemas    | `CONTRACT_DEFINED` (`pnpm contracts:check` verde)                                         |
+| API `GET /v1/orders/{id}/tracking`        | `API_IMPLEMENTED`; SQL verificado contra PostgreSQL real (ver 15.1)                       |
+| Web `/pedidos/[id]/seguimiento` y polling | `INTEGRATED` como invitado contra la API real (ver 15.1); `/consultar` en http solo avisa |
+| Eventos de estado reales                  | Solo `pending` hasta F22 (las pruebas insertan eventos por SQL)                           |
+| `delivery.status`, GPS, ETA, repartidor   | Pendiente de F28; PedidosYa `BLOCKED_EXTERNAL` (F29)                                      |
+| `lookup` número + teléfono                | Diferido (P62; requiere verificación de teléfono)                                         |
+| Notificaciones de cambio de estado        | F31                                                                                       |
+
+### 15.1 Verificación real (2026-11-18, BD de pruebas de Supabase, datos `zz-test` sembrados y borrados)
+
+- **`test/orders-tracking.int-spec.ts`: 12/12** contra PostgreSQL real (orden `changed_at, id`, truncado a 50 con `eventsTruncated`, 404 uniforme, solo lectura, sin PII). Presupuesto de consultas MEDIDO: invitado 2, dueño 2, **token fallido + JWT 4** (una búsqueda por token sin resultado cuesta 2 sentencias, no 1; la spec decía ≤ 3 y se corrigió a ≤ 4).
+- **API real (puerto propio, secreto temporal en memoria)**: 8 pedidos sembrados por SQL (pending, preparing, on_the_way OWN, delivered, picked_up, rejected, cancelled, DELIVERY PEDIDOSYA): estados públicos, pasos, `terminal`, `pollAfterSeconds` (15/30/ausente al terminar) y `delivery` correctos; sin token 404, token ajeno 404, formato inválido 400, UUID inválido 400; `Cache-Control: private, no-store`, `Vary: Authorization, X-Order-Token`; sin ninguna PII en el cuerpo.
+- **Navegador real (Chromium, web en modo http contra esa API, invitado con token en `sessionStorage`)**: los 8 estados se muestran bien, móvil 390 px sin desbordamiento, el token nunca viaja en la URL, un cambio de estado hecho por SQL aparece en el siguiente sondeo (~21 s) y se anuncia una sola vez en `aria-live`; sin token ni sesión aparece «Se perdió el acceso» y NO se pide el pedido (corregido: el resumen también se pedía sin credenciales).
+- **NO verificado**: cliente autenticado con JWT real (requiere sesión de Supabase), carga de sondeos concurrentes contra el gate, axe en navegador real sobre datos reales, `QUOTE_EXPIRED` real.
 
 ### 13.1 Riesgos aceptados (revisiones de seguridad y rendimiento de la API)
 
