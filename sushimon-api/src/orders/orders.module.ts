@@ -6,6 +6,16 @@ import { checkoutBodyLimitMiddleware } from '../checkout/checkout-body-limit.mid
 import { CheckoutModule } from '../checkout/checkout.module.js';
 import { DbGate, splitGateBudget } from '../common/concurrency/db-gate.js';
 import type { Env } from '../config/env.js';
+import { AdminOrdersCommandsService } from './admin/admin-orders-commands.service.js';
+import { AdminOrdersQueryService } from './admin/admin-orders-query.service.js';
+import { AdminOrdersController } from './admin/admin-orders.controller.js';
+import { AdminOrdersRepository } from './admin/admin-orders.repository.js';
+import { OrderTransitionsService } from './admin/order-transitions.service.js';
+import { NoDeliveryFulfillment, ORDER_FULFILLMENT_PORT } from './ports/order-fulfillment.port.js';
+import {
+  ORDER_PAYMENT_READ_PORT,
+  ProvisionalPaymentRule,
+} from './ports/order-payment-read.port.js';
 import { OrderQuoteGuard } from './order-quote-guard.js';
 import { OrderSnapshotReader } from './order-snapshot.reader.js';
 import { NoopOrderEventsPublisher, ORDER_EVENTS_PUBLISHER } from './order-events.publisher.js';
@@ -15,17 +25,30 @@ import { OrdersRepository } from './orders.repository.js';
 import { OrdersService } from './orders.service.js';
 
 /**
- * F20: creación y lectura de pedidos. Importa `CheckoutModule` (cotizador y verificador del token); NUNCA al revés (sin
+ * RIESGO ACEPTADO (F22, spec 023 §13 R11): el backoffice (lecturas y comandos de `/v1/admin/orders`), la creación de pedidos
+ * (F20) y el seguimiento (F21) comparten UN solo `ORDERS_DB_GATE` (no hay gate propio del backoffice). Producción requiere
+ * `DB_POOL_MAX >= 9` (ver `splitGateBudget`); con el defecto el cupo de pedidos es 1. El guard de personal lee los `grants`
+ * (1 sentencia por solicitud) FUERA del gate.
+ *
+ * F20: creación y lectura de pedidos; F22: gestión de pedidos del backoffice (`/v1/admin/orders`). Importa `CheckoutModule` (cotizador y verificador del token); NUNCA al revés (sin
  * ciclos). `IdentityService` y `PrismaService` vienen de módulos globales. Sin pagos, entregas ni notificaciones reales.
  */
 @Module({
   imports: [CheckoutModule, AuditModule],
-  controllers: [OrdersController],
+  controllers: [OrdersController, AdminOrdersController],
+  exports: [OrderTransitionsService, AdminOrdersRepository],
   providers: [
     OrdersService,
     OrdersRepository,
     OrderSnapshotReader,
     OrderQuoteGuard,
+    // F22: gestión de pedidos del backoffice. Un solo servicio de transiciones (F28 lo reutiliza con su transacción).
+    AdminOrdersRepository,
+    AdminOrdersQueryService,
+    AdminOrdersCommandsService,
+    OrderTransitionsService,
+    { provide: ORDER_FULFILLMENT_PORT, useClass: NoDeliveryFulfillment },
+    { provide: ORDER_PAYMENT_READ_PORT, useClass: ProvisionalPaymentRule },
     { provide: CLOCK, useClass: SystemClock },
     { provide: ORDER_EVENTS_PUBLISHER, useClass: NoopOrderEventsPublisher },
     {

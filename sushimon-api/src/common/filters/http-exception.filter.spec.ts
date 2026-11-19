@@ -375,6 +375,42 @@ describe('AllExceptionsFilter', () => {
       expect(body).not.toHaveProperty('extra');
     });
 
+    it('F22: propaga `current` en 409 y 422 junto a `violations`, sin otras claves; en 5xx no', () => {
+      for (const status of [HttpStatus.CONFLICT, HttpStatus.UNPROCESSABLE_ENTITY]) {
+        const res = fakeRes();
+        new AllExceptionsFilter().catch(
+          new HttpException(
+            {
+              message: 'x',
+              code: 'ORDER_STATE_CONFLICT',
+              extra: {
+                current: { status: 'accepted', updatedAt: '2026-11-18T18:00:00.000Z' },
+                otra: 1,
+              },
+            },
+            status,
+          ),
+          hostWith(res),
+        );
+        const body = res.json.mock.calls[0]?.[0] as Record<string, unknown>;
+        expect(body['current']).toEqual({
+          status: 'accepted',
+          updatedAt: '2026-11-18T18:00:00.000Z',
+        });
+        expect(body).not.toHaveProperty('otra');
+        expect(body).not.toHaveProperty('extra');
+      }
+      const busy = fakeRes();
+      new AllExceptionsFilter().catch(
+        new HttpException(
+          { message: 'x', code: 'ORDERS_BUSY', extra: { current: { status: 'x' } } },
+          503,
+        ),
+        hostWith(busy),
+      );
+      expect(busy.json.mock.calls[0]?.[0]).not.toHaveProperty('current');
+    });
+
     it('un 5xx NUNCA propaga `extra`', () => {
       const res = fakeRes();
       new AllExceptionsFilter().catch(
