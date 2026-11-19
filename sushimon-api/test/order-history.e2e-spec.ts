@@ -672,7 +672,13 @@ describe('GET /v1/orders/{id}/receipt (e2e, F23)', () => {
       currency: 'GTQ',
       status: 'picked_up',
       contact: { phoneMasked: '****1234' },
-      payment: { status: 'NOT_STARTED' },
+      payment: {
+        method: 'CASH',
+        status: 'PENDING',
+        amountPaid: null,
+        tendered: null,
+        change: null,
+      },
       total: '165.00',
     });
   });
@@ -707,7 +713,7 @@ describe('GET /v1/orders/{id}/receipt (e2e, F23)', () => {
     ] as const) {
       const r = (await receipt(oid(n)).expect(200)).body as Body;
       expect(r['status']).toBe(status);
-      expect(r['payment']).toMatchObject({ status: 'NOT_STARTED' });
+      expect(r['payment']).toMatchObject({ status: 'PENDING' });
     }
   });
 

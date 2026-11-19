@@ -69,12 +69,16 @@ export class OrderDetailContactDto {
   phoneMasked!: string;
 }
 
+/** Pago con vocabulario PÚBLICO (F24): siempre efectivo; sin empleado, historial ni auditoría. */
 export class OrderDetailPaymentDto {
-  @ApiProperty({ type: String, enum: ['cash', 'bank_transfer'], nullable: true })
-  methodPreference!: 'cash' | 'bank_transfer' | null;
+  @ApiProperty({ type: String, enum: ['CASH'] })
+  method!: 'CASH';
 
-  @ApiProperty({ type: String, enum: ['NOT_STARTED'] })
-  status!: 'NOT_STARTED';
+  @ApiProperty({ type: String, enum: ['PENDING', 'PAID'] })
+  status!: 'PENDING' | 'PAID';
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  paidAt!: string | null;
 }
 
 export class OrderDetailDto {

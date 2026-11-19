@@ -28,6 +28,21 @@ export class OrderReceiptFulfillmentDto {
   provider!: 'OWN' | 'PEDIDOSYA' | null;
 }
 
+/**
+ * Pago del RECIBO NO fiscal (F24): lo público (`method`, `status`, `paidAt`) + importe aplicado (= total), efectivo entregado y
+ * cambio (solo con `PAID`; con `PENDING`, `null`). El cambio NO es ingreso. Sin identidad del empleado.
+ */
+export class OrderReceiptPaymentDto extends OrderDetailPaymentDto {
+  @ApiProperty({ type: String, nullable: true, example: '185.00' })
+  amountPaid!: string | null;
+
+  @ApiProperty({ type: String, nullable: true, example: '200.00' })
+  tendered!: string | null;
+
+  @ApiProperty({ type: String, nullable: true, example: '15.00' })
+  change!: string | null;
+}
+
 export class OrderReceiptDto {
   @ApiProperty({ type: String, enum: ['NOT_FISCAL'] })
   fiscalStatus!: 'NOT_FISCAL';
@@ -89,6 +104,6 @@ export class OrderReceiptDto {
   @ApiProperty({ type: String })
   total!: string;
 
-  @ApiProperty({ type: OrderDetailPaymentDto })
-  payment!: OrderDetailPaymentDto;
+  @ApiProperty({ type: OrderReceiptPaymentDto })
+  payment!: OrderReceiptPaymentDto;
 }

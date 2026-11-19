@@ -1,4 +1,5 @@
 import { displayNumberOf, toOrderDetail } from '../order-mapper.js';
+import { publicPaymentStatus, toPaymentSummary } from '../payments/payment-view.js';
 import type {
   AdminHistoryRow,
   AdminOrderDetailRecord,
@@ -30,7 +31,9 @@ export function toSummary(row: AdminOrderRow, actions: ActionState[]): AdminOrde
     customerName: row.customerName,
     itemCount: row.itemCount,
     total: row.total,
-    paymentMethodPreference: row.paymentMethodPreference as 'cash' | 'bank_transfer' | null,
+    // F24: solo `cash`; un valor histórico retirado (`bank_transfer`) se lee `null`.
+    paymentMethodPreference: row.paymentMethodPreference === 'cash' ? 'cash' : null,
+    paymentStatus: publicPaymentStatus(row.paymentStatus),
     scheduledFor: row.scheduledFor ? row.scheduledFor.toISOString() : null,
     placedAt: row.placedAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -53,6 +56,7 @@ export function toHistoryEntries(rows: AdminHistoryRow[]): AdminOrderHistoryEntr
 export function toDetail(
   detail: AdminOrderDetailRecord,
   actions: ActionState[],
+  canConfirmPayment: boolean,
 ): AdminOrderDetailDto {
   const base = toOrderDetail(detail.record);
   return {
@@ -67,7 +71,18 @@ export function toDetail(
     extrasTotal: base.extrasTotal,
     discountTotal: base.discountTotal,
     deliveryFee: base.deliveryFee,
-    payment: base.payment,
+    // F24: resumen de pago con `registration` calculado para ESTE personal; sin sentencia adicional (sale de la fila del pedido).
+    payment: toPaymentSummary(
+      {
+        orderStatus: detail.row.status,
+        fulfillmentType: detail.row.fulfillmentType,
+        deliveryProvider: detail.row.deliveryProvider,
+        total: detail.row.total,
+        paymentStatus: detail.row.paymentStatus,
+        paidAt: detail.row.paymentPaidAt,
+      },
+      canConfirmPayment,
+    ),
     history: toHistoryEntries(detail.history),
     historyTruncated: detail.historyTruncated,
   };

@@ -65,7 +65,7 @@ describe('mapeo de respuesta de pedidos (F20)', () => {
       subtotal: '185.00',
       total: '183.00',
       contact: { fullName: 'Ana Pérez', phoneMasked: '****1234' },
-      payment: { methodPreference: 'cash', status: 'NOT_STARTED' },
+      payment: { method: 'CASH', status: 'PENDING', paidAt: null },
       placedAt: '2026-11-16T22:00:00.000Z',
     });
     expect(dto.lines[0]).toMatchObject({
@@ -107,7 +107,7 @@ describe('mapeo de respuesta de pedidos (F20)', () => {
     expect(dto).toMatchObject({
       address: null,
       deliveryProvider: null,
-      payment: { methodPreference: null, status: 'NOT_STARTED' },
+      payment: { method: 'CASH', status: 'PENDING', paidAt: null },
     });
   });
 

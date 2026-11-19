@@ -46,7 +46,13 @@ import type { OrderCreateRequestDto } from '../src/orders/dto/order-create-reque
 import { PromotionCandidatesService } from '../src/promotions/promotion-candidates.service.js';
 import { PromotionEvaluator } from '../src/promotions/promotion-evaluator.js';
 import { PromotionsRepository } from '../src/promotions/promotions.repository.js';
-import { cleanupTestData, ensureAuthStub, TEST_URL, withClient } from './support/db.js';
+import {
+  cleanupTestData,
+  ensureAuthStub,
+  TEST_URL,
+  withClient,
+  deletePaymentsOf,
+} from './support/db.js';
 import { globalStaff } from './support/staff-context.js';
 
 const url = TEST_URL;
@@ -337,6 +343,7 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
             [ids],
           );
           await c.query('DELETE FROM app.order_items WHERE order_id = ANY($1::uuid[])', [ids]);
+          await deletePaymentsOf(c, ids); // F24 (0019): FK RESTRICT hacia orders
           await c.query('DELETE FROM app.orders WHERE id = ANY($1::uuid[])', [ids]);
           await c.query(
             "DELETE FROM app.audit_events WHERE entity_type = 'order' AND entity_id = ANY($1::uuid[])",

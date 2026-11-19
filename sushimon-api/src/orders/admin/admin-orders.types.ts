@@ -16,6 +16,10 @@ export interface AdminOrderRow {
   /** Cadena decimal exacta (`"185.00"`). */
   total: string;
   paymentMethodPreference: string | null;
+  /** F24: `pending` | `paid` (LEFT JOIN `payments`); `null` = pedido histórico sin fila de pago (se lee `PENDING`). */
+  paymentStatus: string | null;
+  /** F24: `payments.received_at` (instante del servidor); `null` si no está pagado. */
+  paymentPaidAt: Date | null;
   scheduledFor: Date | null;
   placedAt: Date;
   updatedAt: Date;

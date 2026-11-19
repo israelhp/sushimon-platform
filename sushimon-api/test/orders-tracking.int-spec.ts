@@ -14,7 +14,13 @@ import { issueGuestToken } from '../src/orders/order-access-token.js';
 import { ordersBusy } from '../src/orders/orders-errors.js';
 import { OrdersRepository } from '../src/orders/orders.repository.js';
 import { OrdersService } from '../src/orders/orders.service.js';
-import { cleanupTestData, ensureAuthStub, TEST_URL, withClient } from './support/db.js';
+import {
+  cleanupTestData,
+  ensureAuthStub,
+  TEST_URL,
+  withClient,
+  deletePaymentsOf,
+} from './support/db.js';
 
 const url = TEST_URL;
 
@@ -250,6 +256,7 @@ describe.skipIf(!url || !ready)('Seguimiento de pedidos contra PostgreSQL real (
           for (const t of ['order_access_tokens', 'order_status_history', 'order_addresses']) {
             await c.query(`DELETE FROM app.${t} WHERE order_id = ANY($1::uuid[])`, [ids]);
           }
+          await deletePaymentsOf(c, ids); // F24 (0019): FK RESTRICT hacia orders
           await c.query('DELETE FROM app.orders WHERE id = ANY($1::uuid[])', [ids]);
           await c.query(
             "DELETE FROM app.audit_events WHERE entity_type = 'order' AND entity_id = ANY($1::uuid[])",

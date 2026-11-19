@@ -342,7 +342,7 @@ describe('valores fuera de catálogo (nunca se exponen crudos)', () => {
       [1, 'pending'],
       [2, 'accepted'],
     ]);
-    expect(JSON.stringify(t)).not.toContain('paid');
+    expect(JSON.stringify(t.events)).not.toContain('paid');
   });
 
   it('un orders.status desconocido se presenta como pending/received, no terminal', () => {
@@ -389,6 +389,7 @@ describe('delivery y forma de la respuesta', () => {
         'events',
         'eventsTruncated',
         'delivery',
+        'payment',
         'pollAfterSeconds',
       ].sort(),
     );

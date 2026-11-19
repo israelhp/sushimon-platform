@@ -13,7 +13,7 @@ import type {
 } from './orders.types.js';
 import type { IssuedGuestToken } from './order-access-token.js';
 import { hashesEqual } from './order-idempotency.js';
-import { ordersBusy } from './orders-errors.js';
+import { ordersBusy, ordersUnavailable } from './orders-errors.js';
 import { TRACKING_HISTORY_READ_LIMIT } from './order-tracking.mapper.js';
 import type { OrderTrackingRecord } from './order-tracking.types.js';
 
@@ -45,6 +45,16 @@ const ORDER_SELECT = {
   deliveryFee: true,
   total: true,
   paymentMethodPreference: true,
+  // F24: pago real (relación 1:1 por `UNIQUE(order_id)`); sin empleado, hashes ni historial.
+  payment: {
+    select: {
+      status: true,
+      amount: true,
+      tenderedAmount: true,
+      changeAmount: true,
+      receivedAt: true,
+    },
+  },
   placedAt: true,
   updatedAt: true,
   address: {
@@ -86,6 +96,7 @@ const TRACKING_SELECT = {
   status: true,
   placedAt: true,
   updatedAt: true,
+  payment: { select: { status: true, receivedAt: true } },
   statusHistory: {
     orderBy: [{ changedAt: 'desc' }, { id: 'desc' }],
     take: TRACKING_HISTORY_READ_LIMIT,
@@ -94,16 +105,35 @@ const TRACKING_SELECT = {
 } satisfies Prisma.OrderSelect;
 
 type TrackingRow = Prisma.OrderGetPayload<{ select: typeof TRACKING_SELECT }>;
+type OrderRow = Prisma.OrderGetPayload<{ select: typeof ORDER_SELECT }>;
+
+/** `Prisma.Decimal` -> `DecimalLike` y `tenderedAmount`/`changeAmount` -> `tendered`/`change` (el dominio no conoce Prisma). */
+function toOrderRecord(row: OrderRow | null): OrderRecord | null {
+  if (!row) return null;
+  const { payment, ...order } = row;
+  return {
+    ...order,
+    payment: payment
+      ? {
+          status: payment.status,
+          amount: payment.amount,
+          tendered: payment.tenderedAmount,
+          change: payment.changeAmount,
+          receivedAt: payment.receivedAt,
+        }
+      : null,
+  };
+}
 
 function toTrackingRecord(row: TrackingRow | null): OrderTrackingRecord | null {
   if (!row) return null;
-  const { statusHistory, ...order } = row;
+  const { statusHistory, payment, ...order } = row;
   // La consulta trae los MÁS RECIENTES (desc) para no perder el último evento; se entregan en orden cronológico.
-  return { ...order, history: [...statusHistory].reverse() };
+  return { ...order, payment, history: [...statusHistory].reverse() };
 }
 
 /**
- * Acceso a datos de los pedidos (F20, spec 021 §4 y §7). La transacción de creación SOLO escribe (~9 sentencias por
+ * Acceso a datos de los pedidos (F20, spec 021 §4 y §7). La transacción de creación SOLO escribe (~10 sentencias por
  * lote, 1 conexión, sin red): reclama la clave de idempotencia ANTES de gastar un número de secuencia. El SQL aquí NO se
  * ha ejecutado contra PostgreSQL real salvo por `test/orders.int-spec.ts` (ver su cabecera).
  */
@@ -264,6 +294,21 @@ export class OrdersRepository {
         await tx.orderStatusHistory.create({
           data: { orderId: order.orderId, oldStatus: null, newStatus: 'pending' },
         });
+        // F24 (spec 025 §5.5): el pago en efectivo nace `pending` en la MISMA transacción, en UNA sentencia (CTE: pago + evento
+        // `created`), leyendo `orders.total` y el método `cash` dentro de la sentencia. Un reintento idempotente retorna ARRIBA
+        // (ruta `replay`) antes de llegar aquí, y `UNIQUE(order_id)` lo garantiza además. Sin el método `cash` activo (seed
+        // ausente) no se inserta nada => revierte TODO con 503 `ORDERS_UNAVAILABLE` (fail-closed).
+        const paymentRows = await tx.$executeRaw`
+          WITH p AS (
+            INSERT INTO app.payments (order_id, method_id, branch_id, amount)
+            SELECT o.id, m.id, o.branch_id, o.total
+              FROM app.orders o JOIN app.payment_methods m ON m.code = 'cash' AND m.active
+             WHERE o.id = ${order.orderId}::uuid
+            RETURNING id, order_id, amount
+          )
+          INSERT INTO app.payment_events (payment_id, order_id, event_type, amount)
+          SELECT id, order_id, 'created', amount FROM p`;
+        if (paymentRows !== 1) throw ordersUnavailable();
         if (order.guestToken) {
           await tx.orderAccessToken.create({
             data: {
@@ -303,30 +348,36 @@ export class OrdersRepository {
   // ---------- lecturas ----------
 
   /** Pedido por id (ya autorizado por el llamador: repetición idempotente). */
-  findById(id: string): Promise<OrderRecord | null> {
-    return this.prisma.order.findUnique({ where: { id }, select: ORDER_SELECT });
+  async findById(id: string): Promise<OrderRecord | null> {
+    return toOrderRecord(
+      await this.prisma.order.findUnique({ where: { id }, select: ORDER_SELECT }),
+    );
   }
 
   /** Pedido del cliente dueño (`customer_id` = el de la sesión). Un pedido de invitado (NULL) nunca coincide. */
-  findForCustomer(id: string, customerId: string): Promise<OrderRecord | null> {
-    return this.prisma.order.findFirst({ where: { id, customerId }, select: ORDER_SELECT });
+  async findForCustomer(id: string, customerId: string): Promise<OrderRecord | null> {
+    return toOrderRecord(
+      await this.prisma.order.findFirst({ where: { id, customerId }, select: ORDER_SELECT }),
+    );
   }
 
   /** Pedido accesible con un token de invitado vigente y no revocado (compara el sha256 indexado). */
-  findForGuestToken(id: string, tokenHash: Buffer, now: Date): Promise<OrderRecord | null> {
-    return this.prisma.order.findFirst({
-      where: {
-        id,
-        accessTokens: {
-          some: {
-            tokenHash: new Uint8Array(tokenHash),
-            revokedAt: null,
-            expiresAt: { gt: now },
+  async findForGuestToken(id: string, tokenHash: Buffer, now: Date): Promise<OrderRecord | null> {
+    return toOrderRecord(
+      await this.prisma.order.findFirst({
+        where: {
+          id,
+          accessTokens: {
+            some: {
+              tokenHash: new Uint8Array(tokenHash),
+              revokedAt: null,
+              expiresAt: { gt: now },
+            },
           },
         },
-      },
-      select: ORDER_SELECT,
-    });
+        select: ORDER_SELECT,
+      }),
+    );
   }
 
   /**

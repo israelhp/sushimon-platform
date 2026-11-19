@@ -29,6 +29,14 @@ export function buildOrderRecord(
     deliveryFee: dec(order.deliveryFee),
     total: dec(order.total),
     paymentMethodPreference: order.paymentMethodPreference,
+    // F24: el pago nace `pending` en la MISMA transacción (misma forma que la lectura posterior).
+    payment: {
+      status: 'pending',
+      amount: dec(order.total),
+      tendered: null,
+      change: null,
+      receivedAt: null,
+    },
     placedAt: created.placedAt,
     updatedAt: created.updatedAt,
     address: order.address

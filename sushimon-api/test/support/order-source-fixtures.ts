@@ -20,6 +20,7 @@ export const source = (over: Partial<OrderSource> = {}): OrderSource => ({
   deliveryFee: '15.00',
   total: '165.00',
   paymentMethodPreference: 'cash',
+  payment: { status: 'pending', amount: '165.00', tendered: null, change: null, receivedAt: null },
   placedAt: new Date('2026-11-18T19:42:10.000Z'),
   updatedAt: new Date('2026-11-18T20:15:44.000Z'),
   address: {

@@ -25,10 +25,8 @@ export function toMyOrderSummary(row: MyOrderRow): MyOrderSummaryDto {
     itemCount: row.itemCount,
     total: row.total,
     currency: 'GTQ',
-    paymentMethodPreference:
-      row.paymentMethodPreference === 'cash' || row.paymentMethodPreference === 'bank_transfer'
-        ? row.paymentMethodPreference
-        : null,
+    // F24: solo `cash`; un valor histórico retirado (`bank_transfer`) se lee `null`.
+    paymentMethodPreference: row.paymentMethodPreference === 'cash' ? 'cash' : null,
     placedAt: row.placedAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

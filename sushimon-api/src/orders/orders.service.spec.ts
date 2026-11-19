@@ -87,7 +87,7 @@ describe('OrdersService (F20)', () => {
         orderNumber: 1001,
         displayNumber: 'MON-001001',
         contact: { fullName: 'Ana Pérez', phoneMasked: '****1234' },
-        payment: { methodPreference: null, status: 'NOT_STARTED' },
+        payment: { method: 'CASH', status: 'PENDING', paidAt: null },
       });
       expect(order.lines).toEqual([
         expect.objectContaining({
@@ -221,17 +221,13 @@ describe('OrdersService (F20)', () => {
       nothingPersisted();
     });
 
-    it('preferencia de pago: cash/bank_transfer se guardan como preferencia; card => 422 sin escribir pagos', async () => {
+    it('preferencia de pago F24: cash se guarda como preferencia y el pago nace CASH/PENDING', async () => {
       const cash = await h.orders.create(
         undefined,
         KEY_A,
         await h.orderBody({ paymentMethodPreference: 'cash' }),
       );
-      expect(cash.body.order.payment).toEqual({ methodPreference: 'cash', status: 'NOT_STARTED' });
-      const card = await err(
-        h.orders.create(undefined, KEY_B, await h.orderBody({ paymentMethodPreference: 'card' })),
-      );
-      expect([statusOf(card), codeOf(card)]).toEqual([422, 'PAYMENT_METHOD_UNAVAILABLE']);
+      expect(cash.body.order.payment).toEqual({ method: 'CASH', status: 'PENDING', paidAt: null });
       expect(h.ordersRepo.orders.size).toBe(1);
     });
 

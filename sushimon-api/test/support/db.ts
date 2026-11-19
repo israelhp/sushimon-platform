@@ -155,3 +155,15 @@ export async function withClient<T>(url: string, fn: (c: pg.Client) => Promise<T
     await client.end();
   }
 }
+
+/**
+ * F24 (0019): borra los pagos y sus eventos de los pedidos dados ANTES de borrar los pedidos (FK RESTRICT). Exige estar dentro
+ * de una transacción con `SET LOCAL app.allow_order_cleanup = 'on'` (los triggers de `payments` y `payment_events` lo exigen).
+ * Si 0019 aún no está aplicada no hace nada. Solo para limpieza de datos `zz-` de las pruebas.
+ */
+export async function deletePaymentsOf(c: pg.Client, orderIds: string[]): Promise<void> {
+  const found = await c.query<{ oid: string | null }>(`SELECT to_regclass('app.payments') AS oid`);
+  if (!found.rows[0]?.oid) return;
+  await c.query('DELETE FROM app.payment_events WHERE order_id = ANY($1::uuid[])', [orderIds]);
+  await c.query('DELETE FROM app.payments WHERE order_id = ANY($1::uuid[])', [orderIds]);
+}

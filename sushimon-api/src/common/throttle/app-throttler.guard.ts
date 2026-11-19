@@ -131,6 +131,19 @@ export const ADMIN_ORDERS_COMMAND_THROTTLE = {
   actor: { limit: 60, ttl: 60_000 },
 };
 
+/**
+ * Pagos en efectivo del backoffice (F24, spec 025 §6.7). Lecturas: 120/min por IP y 60/min por actor. Registrar el cobro es un
+ * acto manual: 60/min por IP y 30/min por actor (frena la automatización). Contadores propios, independientes de F20–F23.
+ */
+export const ADMIN_PAYMENTS_READ_THROTTLE = {
+  default: { limit: 120, ttl: 60_000 },
+  actor: { limit: 60, ttl: 60_000 },
+};
+export const ADMIN_PAYMENTS_COMMAND_THROTTLE = {
+  default: { limit: 60, ttl: 60_000 },
+  actor: { limit: 30, ttl: 60_000 },
+};
+
 /** Throttler adicional «por actor»: solo cuenta en las rutas que declaran un límite `actor`. */
 export const ACTOR_THROTTLER = 'actor';
 

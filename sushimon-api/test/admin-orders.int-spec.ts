@@ -23,8 +23,15 @@ import {
 import { OrderTransitionsService } from '../src/orders/admin/order-transitions.service.js';
 import { ordersBusy } from '../src/orders/orders-errors.js';
 import { NoDeliveryFulfillment } from '../src/orders/ports/order-fulfillment.port.js';
-import { ProvisionalPaymentRule } from '../src/orders/ports/order-payment-read.port.js';
-import { cleanupTestData, ensureAuthStub, TEST_URL, withClient } from './support/db.js';
+import { PaymentsReadAdapter } from '../src/orders/payments/payments-read.adapter.js';
+import { PaymentsRepository } from '../src/orders/payments/payments.repository.js';
+import {
+  cleanupTestData,
+  ensureAuthStub,
+  TEST_URL,
+  withClient,
+  deletePaymentsOf,
+} from './support/db.js';
 import { globalStaff, ROLE_PERMISSIONS, scopedStaff } from './support/staff-context.js';
 
 const url = TEST_URL;
@@ -108,7 +115,8 @@ describe.skipIf(!url || !ready)('Gestión de pedidos contra PostgreSQL real (F22
     provider?: 'OWN' | 'PEDIDOSYA' | null;
     placedAt?: Date;
     units?: number;
-    payment?: 'cash' | 'bank_transfer' | null;
+    /** F24: solo `cash` (el trigger de 0019 rechaza `bank_transfer` en INSERT). */
+    payment?: 'cash' | null;
     /** `false` = sin evento de historial coherente con el estado (historial inconsistente, fila 23). */
     consistentHistory?: boolean;
     name?: string;
@@ -216,7 +224,7 @@ describe.skipIf(!url || !ready)('Gestión de pedidos contra PostgreSQL real (F22
         authorization,
         gate,
         new NoDeliveryFulfillment(),
-        new ProvisionalPaymentRule(),
+        new PaymentsReadAdapter(new PaymentsRepository(prisma, auditService)),
       ),
       queries: new AdminOrdersQueryService(r, authorization, clock, gate),
     };
@@ -289,6 +297,7 @@ describe.skipIf(!url || !ready)('Gestión de pedidos contra PostgreSQL real (F22
           for (const t of ['order_status_history', 'order_addresses', 'order_items']) {
             await c.query(`DELETE FROM app.${t} WHERE order_id = ANY($1::uuid[])`, [ids]);
           }
+          await deletePaymentsOf(c, ids); // F24 (0019): FK RESTRICT hacia orders
           await c.query('DELETE FROM app.orders WHERE id = ANY($1::uuid[])', [ids]);
           await c.query(
             "DELETE FROM app.audit_events WHERE entity_type = 'order' AND entity_id = ANY($1::uuid[])",
@@ -668,7 +677,8 @@ describe.skipIf(!url || !ready)('Gestión de pedidos contra PostgreSQL real (F22
     const detail = await measure(() => queries.detail(staff, old));
     expect(detail.n).toBeLessThanOrEqual(7);
     expect(detail.result).toMatchObject({
-      payment: { status: 'NOT_STARTED' },
+      // F24: pedido sembrado por SQL directo (sin fila de pago) = histórico: se lee CASH/PENDING y no es cobrable.
+      payment: { method: 'CASH', status: 'PENDING', registration: { allowed: false } },
       contact: { fullName: NAME },
       historyTruncated: false,
     });

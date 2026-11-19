@@ -1,3 +1,5 @@
+import type { OrderPaymentRecord } from './orders.types.js';
+
 /** Tipos del seguimiento de pedidos (F21, spec 022). Desacoplados de Prisma para poder usar dobles en pruebas. */
 
 /** Un evento de `order_status_history` tal como se LEE: sin `id`, `old_status`, `changed_by` ni `reason` (privacidad). */
@@ -20,5 +22,7 @@ export interface OrderTrackingRecord {
   status: string;
   placedAt: Date;
   updatedAt: Date;
+  /** F24: pago del pedido (LEFT JOIN en la lectura del pedido); `null`/ausente = sin fila de pago (se lee `PENDING`). */
+  payment?: Pick<OrderPaymentRecord, 'status' | 'receivedAt'> | null;
   history: OrderTrackingHistoryEntry[];
 }

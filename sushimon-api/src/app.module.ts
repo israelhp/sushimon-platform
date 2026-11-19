@@ -104,7 +104,11 @@ export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
     consumer.apply(requestIdMiddleware, rejectProtoKeysMiddleware).forRoutes('*path');
     // Todo el backoffice: nunca se almacena en caché (incluidos 401/403).
-    consumer.apply(noStoreMiddleware).forRoutes('admin/*path');
+    // F24: `admin/orders/:id/payment…` queda fuera porque `OrdersModule` le fija `private, no-store` (más estricto).
+    consumer
+      .apply(noStoreMiddleware)
+      .exclude('admin/orders/:id/payment', 'admin/orders/:id/payment/*path')
+      .forRoutes('admin/*path');
     // Perfil propio del cliente (F01 + F04): datos personales, nunca en caché compartida.
     // F23: `/v1/me/orders` queda fuera porque `configureApp` ya le fija `private, no-store` + `Vary: Authorization` (más estricto).
     consumer.apply(noStoreMiddleware).exclude('me/orders').forRoutes('me', 'me/*path');

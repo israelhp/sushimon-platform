@@ -51,6 +51,7 @@ function fakeTx(
   excessTokens: { id: string }[] = [],
 ) {
   const log: string[] = [];
+  const state = { paymentRows: 1 };
   const rec = <T>(name: string, value: T) =>
     vi.fn<(...args: unknown[]) => Promise<T>>(() => {
       log.push(name);
@@ -77,6 +78,12 @@ function fakeTx(
     orderItemModifier: { createMany: rec('modifiers', { count: 1 }) },
     orderPromotion: { createMany: rec('promotions', { count: 1 }) },
     orderStatusHistory: { create: rec('history', {}) },
+    // F24: CTE `payments` + `payment_events` en UNA sentencia; devuelve las filas insertadas (1 = pago creado).
+    $executeRaw: vi.fn((_strings: unknown, ..._values: unknown[]) => {
+      void _values;
+      log.push('payment');
+      return Promise.resolve(state.paymentRows);
+    }),
     orderAccessToken: {
       create: rec('token', {}),
       updateMany: rec('token.revoke', { count: 1 }),
@@ -99,7 +106,7 @@ function fakeTx(
     prisma as unknown as PrismaService,
     audit as unknown as AuditService,
   );
-  return { repo, tx, audit, log, prisma };
+  return { repo, tx, audit, log, prisma, state };
 }
 
 describe('OrdersRepository.createOrder (F20: orden y alcance de la transacción)', () => {
@@ -114,6 +121,7 @@ describe('OrdersRepository.createOrder (F20: orden y alcance de la transacción)
       'order',
       'items',
       'history',
+      'payment',
       'token',
       'audit',
     ]);
@@ -124,6 +132,33 @@ describe('OrdersRepository.createOrder (F20: orden y alcance de la transacción)
     };
     expect(data.skipDuplicates).toBe(true);
     expect(data.data[0]).toMatchObject({ scope: 'guest', orderId: order().orderId });
+  });
+
+  it('F24: el pago CASH pendiente se inserta en la MISMA transacción, DESPUÉS del pedido y SOLO en la ruta de creación (1 sentencia)', async () => {
+    const { repo, tx, log } = fakeTx(1);
+    await repo.createOrder(claim, order());
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(log.indexOf('payment')).toBeGreaterThan(log.indexOf('order'));
+    const sql = (tx.$executeRaw.mock.calls[0]?.[0] as readonly string[]).join('?');
+    expect(sql).toContain('INSERT INTO app.payments');
+    expect(sql).toContain('INSERT INTO app.payment_events');
+    expect(sql).toContain("'created'");
+    expect(sql).toContain('o.total'); // el importe sale del pedido DENTRO de la sentencia (nunca del cliente)
+  });
+
+  it('F24: sin el método `cash` activo (0 filas) revierte TODO con 503 ORDERS_UNAVAILABLE (fail-closed)', async () => {
+    const h = fakeTx(1);
+    h.state.paymentRows = 0;
+    await expect(h.repo.createOrder(claim, order())).rejects.toMatchObject({
+      response: { code: 'ORDERS_UNAVAILABLE' },
+    });
+    expect(h.log).not.toContain('audit'); // la auditoría (posterior) nunca se escribe: la transacción lanza y revierte
+  });
+
+  it('F24: la repetición idempotente NO inserta pago (retorna antes de escribir)', async () => {
+    const h = fakeTx(0, { requestHash: claim.requestHash, orderId: 'otro-pedido' });
+    await h.repo.createOrder(claim, order());
+    expect(h.tx.$executeRaw).not.toHaveBeenCalled();
   });
 
   it('READ COMMITTED explícito', async () => {
@@ -172,6 +207,7 @@ describe('OrdersRepository.createOrder (F20: orden y alcance de la transacción)
       'modifiers',
       'promotions',
       'history',
+      'payment',
       'audit',
     ]);
     expect(tx.orderAccessToken.create).not.toHaveBeenCalled();
@@ -184,7 +220,9 @@ describe('OrdersRepository.createOrder (F20: orden y alcance de la transacción)
       orderId: 'otro-pedido',
     });
     expect(
-      same.log.filter((l) => ['order', 'items', 'history', 'token', 'audit'].includes(l)),
+      same.log.filter((l) =>
+        ['order', 'items', 'history', 'payment', 'token', 'audit'].includes(l),
+      ),
     ).toEqual([]);
 
     const other = fakeTx(0, { requestHash: Buffer.alloc(32, 9), orderId: 'otro-pedido' });
@@ -411,6 +449,7 @@ describe('OrdersRepository: seguimiento (F21)', () => {
         'fulfillmentType',
         'id',
         'orderNumber',
+        'payment',
         'placedAt',
         'status',
         'statusHistory',

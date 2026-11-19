@@ -222,7 +222,7 @@ describe('POST /v1/orders y GET /v1/orders/{id} (e2e, F20)', () => {
         address: null,
         displayNumber: 'MON-001001',
         contact: { fullName: 'Ana Pérez', phoneMasked: '****1234' },
-        payment: { methodPreference: null, status: 'NOT_STARTED' },
+        payment: { method: 'CASH', status: 'PENDING', paidAt: null },
       });
       expect(Object.keys(created.order).sort()).toEqual(
         [
@@ -442,15 +442,18 @@ describe('POST /v1/orders y GET /v1/orders/{id} (e2e, F20)', () => {
       });
     });
 
-    it('`card` => 422 PAYMENT_METHOD_UNAVAILABLE; `cash` se guarda solo como preferencia', async () => {
-      const card = await post(await orderOf({ paymentMethodPreference: 'card' })).expect(422);
-      expect((card.body as Body)['code']).toBe('PAYMENT_METHOD_UNAVAILABLE');
+    it('F24: `card` y `bank_transfer` => 400 de validación (solo efectivo); `cash` => pago CASH/PENDING', async () => {
+      for (const method of ['card', 'bank_transfer']) {
+        const res = await post(await orderOf({ paymentMethodPreference: method })).expect(400);
+        expect((res.body as Body)['code']).not.toBe('PAYMENT_METHOD_UNAVAILABLE');
+      }
       const cash = await post(await orderOf({ paymentMethodPreference: 'cash' }), {
         key: KEY_B,
       }).expect(201);
       expect((cash.body as { order: { payment: Body } }).order.payment).toEqual({
-        methodPreference: 'cash',
-        status: 'NOT_STARTED',
+        method: 'CASH',
+        status: 'PENDING',
+        paidAt: null,
       });
     });
 

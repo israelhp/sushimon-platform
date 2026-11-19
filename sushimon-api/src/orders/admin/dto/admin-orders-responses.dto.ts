@@ -2,9 +2,9 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   OrderDetailAddressDto,
   OrderDetailLineDto,
-  OrderDetailPaymentDto,
   OrderDetailPromotionDto,
 } from '../../dto/order-responses.dto.js';
+import { AdminOrderPaymentSummaryDto } from '../../payments/dto/admin-payments.dto.js';
 import { ORDER_STATUSES } from '../order-transition.matrix.js';
 
 /** Esquemas de respuesta de `/v1/admin/orders` (contrato: `AdminOrder*`). Importes: cadenas decimales GTQ. */
@@ -68,8 +68,15 @@ export class AdminOrderSummaryDto {
   @ApiProperty({ type: String, example: '185.00' })
   total!: string;
 
-  @ApiProperty({ type: String, enum: ['cash', 'bank_transfer'], nullable: true })
-  paymentMethodPreference!: 'cash' | 'bank_transfer' | null;
+  @ApiProperty({ type: String, enum: ['cash'], nullable: true })
+  paymentMethodPreference!: 'cash' | null;
+
+  @ApiProperty({
+    type: String,
+    enum: ['PENDING', 'PAID'],
+    description: 'F24: estado de pago real (efectivo); independiente del estado del pedido.',
+  })
+  paymentStatus!: 'PENDING' | 'PAID';
 
   @ApiProperty({ type: String, format: 'date-time', nullable: true })
   scheduledFor!: string | null;
@@ -199,8 +206,8 @@ export class AdminOrderDetailDto extends AdminOrderSummaryDto {
   @ApiProperty({ type: String })
   deliveryFee!: string;
 
-  @ApiProperty({ type: OrderDetailPaymentDto })
-  payment!: OrderDetailPaymentDto;
+  @ApiProperty({ type: AdminOrderPaymentSummaryDto })
+  payment!: AdminOrderPaymentSummaryDto;
 
   @ApiProperty({ type: [AdminOrderHistoryEntryDto] })
   history!: AdminOrderHistoryEntryDto[];
