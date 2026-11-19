@@ -212,7 +212,7 @@ export function CashPaymentModal({ payment, code, onClose }: Props) {
       <dl className="tline total" style={{ margin: 0 }}>
         <dt>{tm('due')}</dt>
         <dd className="num" style={{ margin: 0 }} data-testid="cash-due">
-          {money(payment.outstanding)}
+          {money(payment.amountDue)}
         </dd>
       </dl>
 

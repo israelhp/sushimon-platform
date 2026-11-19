@@ -3525,5 +3525,9 @@
     [data-zone='bo'] .btn {
       min-height: 44px;
     }
+    [data-zone='bo'] .modal-h .icon-btn {
+      min-width: 44px;
+      min-height: 44px;
+    }
   }
 }
