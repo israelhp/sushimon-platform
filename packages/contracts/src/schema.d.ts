@@ -135,6 +135,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Historial de pedidos del cliente autenticado (paginado por cursor, ligero)
+         * @description F23 (spec 024, ADR-0029). SOLO los pedidos del cliente del JWT: el propietario sale del `sub` del token (join `orders.customer_id` -> `customers.auth_user_id`);
+         *     no existe `customerId` en la ruta, la consulta ni el cuerpo. Los pedidos de INVITADO (`customer_id` NULL) NUNCA aparecen aquí (no hay vinculación
+         *     automática por correo o teléfono, P59/P77): un invitado consulta cada pedido por separado con `X-Order-Token` (`getOrder`, `getOrderTracking`, `getOrderReceipt`).
+         *     Un usuario sin fila de cliente recibe `items: []` (la lectura no crea el perfil). Un JWT inválido => 401.
+         *     LISTADO ligero: SIN líneas, modificadores, promociones, dirección ni historial (el detalle es `getOrder`, que se reutiliza; no existe `/v1/me/orders/{id}`).
+         *     `itemCount` = unidades (suma de cantidades) agregadas en SQL. Se incluyen TODOS los estados, también `rejected` y `cancelled` (P76); el motivo interno
+         *     de rechazo/cancelación NUNCA se expone (P64). Filtros EN SQL: `status` (lista separada por comas del catálogo), `branchId`, `from`/`to` (instantes de `placedAt`;
+         *     sin ellos se pagina todo el historial; con ambos el rango máximo es 366 días, si no 400). Orden FIJO `placedAt` descendente, `id` descendente; paginación por
+         *     CURSOR opaco (`nextCursor`; `null` = última página); un cursor alterado => 400 `ORDER_CURSOR_INVALID` (el alcance se aplica SIEMPRE en la consulta, así que
+         *     manipularlo no revela nada). Sin conteo total. `Cache-Control: private, no-store`, `Vary: Authorization`, sin `ETag`.
+         */
+        get: operations["listMyOrders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me/favorites": {
         parameters: {
             query?: never;
@@ -1137,6 +1166,66 @@ export interface paths {
         get: operations["getOrderTracking"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orders/{id}/receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recibo NO FISCAL de un pedido propio (datos para la vista imprimible)
+         * @description F23 (spec 024, ADR-0029). Entrega los DATOS del recibo, construidos SOLO desde los snapshots del pedido (líneas, extras, promociones, dirección, importes);
+         *     nunca recalcula desde el catálogo ni guarda un documento (no existe tabla de recibos). La vista imprimible (HTML + CSS `@media print`) es de la web; la API no
+         *     genera PDF. NO es una factura ni un documento tributario: `fiscalStatus` es siempre `NOT_FISCAL` (sin FEL, SAT ni NIT; P78).
+         *     **Autorización**: IDÉNTICA a `getOrder` (JWT del cliente dueño o cabecera `X-Order-Token`; el token NUNCA va en la URL). Inexistente, ajeno, token ausente/inválido/vencido/
+         *     revocado o pedido de invitado consultado con JWT => el MISMO 404. Disponible en TODOS los estados (también `rejected` y `cancelled`, P76): el recibo lleva el estado y NO afirma pago.
+         *     **Pago honesto**: `payment.status` es `NOT_STARTED` hasta F24 (la web muestra «Sin pago registrado» y la preferencia como «método elegido», nunca «pagado»).
+         *     **Qué NO contiene**: id de pedido o de líneas, ids de cliente/sucursal, tokens, correo, teléfono completo (solo enmascarado), coordenadas, motivo de rechazo/cancelación,
+         *     historial, actor ni notas administrativas. Las fechas son instantes UTC; `timeZone` indica la zona de presentación (`America/Guatemala`). `Cache-Control: private, no-store`,
+         *     `Vary: Authorization, X-Order-Token`, sin `ETag`.
+         */
+        get: operations["getOrderReceipt"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orders/{id}/reorder-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Vista previa de «Volver a pedir» contra el catálogo vigente (no crea nada)
+         * @description F23 (spec 024, ADR-0029). Valida las líneas de un pedido anterior contra el catálogo, los extras y los precios VIGENTES de la sucursal elegida y devuelve, por línea,
+         *     un diagnóstico y una línea candidata en la forma del contrato de carrito de F18/F19 (`CartQuoteLineInput`). Es una operación de SOLO LECTURA aunque use POST (lleva
+         *     cuerpo): NO crea pedidos, NO escribe en la BD, NO guarda borradores, NO exige `Idempotency-Key`, NO copia precios, promociones, cupón, tarifa de entrega, modalidad,
+         *     dirección ni método de pago del pedido original, y NO es una cotización: la cotización definitiva sigue siendo `POST /v1/checkout/quote` (F19) y el pedido `POST /v1/orders` (F20).
+         *     Los precios devueltos (`current`, `display`, `estimatedSubtotal`) son los efectivos de la sucursal ahora, solo para mostrar; el cliente NO los reenvía como verdad.
+         *     **Autorización**: IDÉNTICA a `getOrder` (JWT del cliente dueño o `X-Order-Token` de invitado). El invitado puede usarlo porque la respuesta no expone más del pedido que ya puede
+         *     ver (líneas y extras) ni nada del catálogo que no sea público. Inexistente, ajeno o token inválido => el MISMO 404 sin `code`.
+         *     **Sucursal**: `branchId` opcional; por defecto la del pedido original (`branch.sameBranch`). Una sucursal inexistente => 404 `BRANCH_NOT_FOUND`; inactiva o cerrada NO es un error: se informa
+         *     en `branch` y (inactiva) todas las líneas salen `UNAVAILABLE` con `BRANCH_UNAVAILABLE`.
+         *     **Algoritmo agrupado** (sin una petición por producto): lectura del pedido en UNA sentencia; disponibilidad de la sucursal, estado y precio de TODOS los productos, ofertas de modificadores de
+         *     TODOS los productos y datos de presentación en lotes. Las opciones se resuelven por `modifierId` (el snapshot no guarda el grupo). Una opción retirada o inactiva se OMITE y se informa; si el producto
+         *     exige selección nueva o cambió una regla de grupo la línea queda `NEEDS_CONFIGURATION` y NUNCA se sustituye automáticamente: el cliente la configura de nuevo.
+         *     `Cache-Control: private, no-store`, `Vary: Authorization, X-Order-Token`.
+         */
+        post: operations["previewOrderReorder"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4337,6 +4426,245 @@ export interface components {
             access: components["schemas"]["OrderGuestAccess"] | null;
         };
         /**
+         * @description F23 (spec 024). Fila del historial del cliente. Columnas mínimas: SIN líneas, modificadores, promociones, dirección, teléfono, correo ni notas. `publicStatus`/`terminal` salen del MISMO
+         *     mapeo de F21 (`OrderPublicStatus`), para que la web no lo reimplemente. Un `rejected`/`cancelled` se lista con su estado y NUNCA con el motivo interno (P64).
+         */
+        MyOrderSummary: {
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            orderNumber: number;
+            /** @example MON-001042 */
+            displayNumber: string;
+            status: components["schemas"]["OrderLifecycleStatus"];
+            publicStatus: components["schemas"]["OrderPublicStatus"];
+            /** @description `delivered`, `picked_up`, `rejected` o `cancelled` (no cambian más). */
+            terminal: boolean;
+            /** Format: uuid */
+            branchId: string;
+            branchName: string;
+            /** @enum {string} */
+            fulfillmentType: "PICKUP" | "DELIVERY";
+            deliveryProvider: components["schemas"]["CourierProvider"] | null;
+            /** @description Unidades del pedido (suma de cantidades de las líneas), agregadas en SQL. */
+            itemCount: number;
+            total: components["schemas"]["CheckoutMoney"];
+            /** @enum {string} */
+            currency: "GTQ";
+            /** @description Solo la preferencia declarada; NO es un pago (F24). */
+            paymentMethodPreference: components["schemas"]["OrderPaymentPreference"] | null;
+            /** Format: date-time */
+            placedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        MyOrderPage: {
+            items: components["schemas"]["MyOrderSummary"][];
+            /** @description Cursor opaco de la página siguiente; `null` = no hay más. */
+            nextCursor: string | null;
+            /** Format: date-time */
+            generatedAt: string;
+        };
+        /** @description Datos PÚBLICOS de la sucursal que atendió el pedido (sin id). */
+        OrderReceiptBranch: {
+            name: string;
+            address: string;
+            phone: string | null;
+        };
+        OrderReceiptFulfillment: {
+            /** @enum {string} */
+            type: "PICKUP" | "DELIVERY";
+            /** @description Tal como quedó registrado. Un pedido `PEDIDOSYA` histórico se muestra sin estados externos inventados (`BLOCKED_EXTERNAL`). */
+            provider: components["schemas"]["CourierProvider"] | null;
+        };
+        /**
+         * @description F23 (spec 024, ADR-0029). Datos del recibo NO fiscal construidos desde los snapshots del pedido (mismos importes que `OrderDetail`; `total = subtotal − discountTotal + deliveryFee`).
+         *     NO contiene id de pedido/líneas/cliente/sucursal, tokens, correo, teléfono completo, coordenadas, motivo de rechazo/cancelación, historial ni actor.
+         */
+        OrderReceipt: {
+            /**
+             * @description Siempre `NOT_FISCAL`: documento informativo, sin validez tributaria (sin FEL/SAT/NIT).
+             * @enum {string}
+             */
+            fiscalStatus: "NOT_FISCAL";
+            /** @example MON-001042 */
+            displayNumber: string;
+            status: components["schemas"]["OrderLifecycleStatus"];
+            publicStatus: components["schemas"]["OrderPublicStatus"];
+            /** Format: date-time */
+            placedAt: string;
+            /**
+             * Format: date-time
+             * @description Instante en que el servidor armó estos datos (no es una fecha de emisión fiscal).
+             */
+            generatedAt: string;
+            /** @enum {string} */
+            timeZone: "America/Guatemala";
+            /** @enum {string} */
+            currency: "GTQ";
+            branch: components["schemas"]["OrderReceiptBranch"];
+            fulfillment: components["schemas"]["OrderReceiptFulfillment"];
+            address: components["schemas"]["OrderDetailAddress"] | null;
+            contact: components["schemas"]["OrderDetailContact"];
+            lines: components["schemas"]["OrderDetailLine"][];
+            promotions: components["schemas"]["OrderDetailPromotion"][];
+            notes: string | null;
+            subtotal: components["schemas"]["CheckoutMoney"];
+            extrasTotal: components["schemas"]["CheckoutMoney"];
+            discountTotal: components["schemas"]["CheckoutMoney"];
+            deliveryFee: components["schemas"]["CheckoutMoney"];
+            total: components["schemas"]["CheckoutMoney"];
+            payment: components["schemas"]["OrderDetailPayment"];
+        };
+        /** @description Cuerpo opcional (`{}` o ausente = sucursal del pedido original). Cualquier otra propiedad (precios, líneas, cantidades, `customerId`) => 400. */
+        OrderReorderRequest: {
+            /**
+             * Format: uuid
+             * @description Sucursal contra la que se valida y se precia. Por defecto, la del pedido original.
+             */
+            branchId?: string;
+        };
+        /**
+         * @description `AVAILABLE`: la línea candidata se puede añadir tal cual (puede traer avisos informativos: `PRICE_CHANGED`, `QUANTITY_ADJUSTED`, `NOTE_DROPPED`).
+         *     `NEEDS_CONFIGURATION`: el producto se puede pedir pero el cliente debe volver a elegir (opción retirada/inactiva, selección obligatoria nueva o regla de grupo cambiada); `candidate`
+         *     trae solo lo retenido y NO debe añadirse al carrito sin que el cliente la configure. `UNAVAILABLE`: no se puede pedir en esa sucursal; sin `candidate`.
+         * @enum {string}
+         */
+        OrderReorderLineStatus: "AVAILABLE" | "NEEDS_CONFIGURATION" | "UNAVAILABLE";
+        /**
+         * @description Diagnóstico estable (los clientes ramifican por el código, no por texto; deben tolerar valores futuros). Bloqueantes de la línea: `PRODUCT_REMOVED` (el producto ya no existe),
+         *     `PRODUCT_INACTIVE` (inactivo o su categoría no es visible), `PRODUCT_OUT_OF_STOCK` (agotado en la sucursal), `BRANCH_UNAVAILABLE` (sucursal inactiva). Piden reconfigurar:
+         *     `OPTION_REMOVED` (la opción ya no se ofrece con el producto), `OPTION_INACTIVE` (la opción o su grupo están inactivos), `GROUP_RULE_CHANGED` (la selección retenida excede el máximo vigente
+         *     del grupo), `REQUIRED_SELECTION_MISSING` (hay un grupo obligatorio sin la selección mínima). Informativos: `PRICE_CHANGED` (precio por unidad vigente distinto del histórico, ambos con los extras
+         *     retenidos), `QUANTITY_ADJUSTED` (la cantidad histórica excedía el tope vigente), `NOTE_DROPPED` (la nota no cumple el formato vigente y se omitió).
+         * @enum {string}
+         */
+        OrderReorderIssueCode: "PRODUCT_REMOVED" | "PRODUCT_INACTIVE" | "PRODUCT_OUT_OF_STOCK" | "BRANCH_UNAVAILABLE" | "OPTION_REMOVED" | "OPTION_INACTIVE" | "GROUP_RULE_CHANGED" | "REQUIRED_SELECTION_MISSING" | "PRICE_CHANGED" | "QUANTITY_ADJUSTED" | "NOTE_DROPPED";
+        OrderReorderIssue: {
+            code: components["schemas"]["OrderReorderIssueCode"];
+            /**
+             * @description `blocking` = la línea no se puede añadir; `warning` = requiere acción del cliente; `info` = solo aviso.
+             * @enum {string}
+             */
+            severity: "info" | "warning" | "blocking";
+            /** Format: uuid */
+            groupId?: string | null;
+            groupName?: string | null;
+            /** Format: uuid */
+            optionId?: string | null;
+            /** @description Nombre de la opción tal como quedó en el pedido (snapshot) cuando ya no existe. */
+            optionName?: string | null;
+            /** @description Solo `PRICE_CHANGED`: precio por unidad del pedido original (con los extras retenidos). Informativo; NO se reutiliza. */
+            previousUnitPrice?: components["schemas"]["CheckoutMoney"] | null;
+            /** @description Solo `PRICE_CHANGED`: precio por unidad vigente en la sucursal (con los extras retenidos). */
+            currentUnitPrice?: components["schemas"]["CheckoutMoney"] | null;
+            /** @description Solo `QUANTITY_ADJUSTED`: cantidad original. */
+            from?: number | null;
+            /** @description Solo `QUANTITY_ADJUSTED`: cantidad propuesta. */
+            to?: number | null;
+        };
+        /** @description Lo que se pidió (snapshot del pedido, solo informativo). */
+        OrderReorderOriginalLine: {
+            productName: string;
+            quantity: number;
+            unitPrice: components["schemas"]["CheckoutMoney"];
+            extrasPerUnit: components["schemas"]["CheckoutMoney"];
+            modifiers: components["schemas"]["OrderDetailModifier"][];
+            notes: string | null;
+        };
+        /** @description Precios VIGENTES de la sucursal, solo para mostrar (el servidor recotiza en F19/F20). */
+        OrderReorderCurrent: {
+            /** @description Precio efectivo de la sucursal (F13), SIN extras. */
+            unitPrice: components["schemas"]["CheckoutMoney"];
+            /** @description Suma de los extras RETENIDOS a su precio vigente, por unidad. */
+            extrasPerUnit: components["schemas"]["CheckoutMoney"];
+        };
+        OrderReorderOptionDisplay: {
+            /** Format: uuid */
+            groupId: string;
+            /** Format: uuid */
+            optionId: string;
+            groupName: string;
+            optionName: string;
+            extraPrice: components["schemas"]["CheckoutMoney"];
+        };
+        /** @description Datos para pintar la línea del carrito sin otra petición (nombres vigentes). NO son fuente de verdad del precio. */
+        OrderReorderCandidateDisplay: {
+            name: string;
+            imageUrl: string | null;
+            unitPrice: components["schemas"]["CheckoutMoney"];
+            options: components["schemas"]["OrderReorderOptionDisplay"][];
+        };
+        /**
+         * @description Línea candidata. `line` es EXACTAMENTE `CartQuoteLineInput` (F18; solo ids, `selections` ordenadas por `groupId` y `optionId`); `slug`, `note` y `display` completan la línea del carrito local.
+         *     `note` es la observación del cliente en ese pedido (≤ 140), copiada solo si cumple el formato vigente.
+         */
+        OrderReorderCandidate: {
+            line: components["schemas"]["CartQuoteLineInput"];
+            slug: string;
+            note: string | null;
+            display: components["schemas"]["OrderReorderCandidateDisplay"];
+        };
+        /** @description Una línea del pedido original (mismo orden que `lineNo`) con su diagnóstico. */
+        OrderReorderLine: {
+            lineNo: number;
+            status: components["schemas"]["OrderReorderLineStatus"];
+            original: components["schemas"]["OrderReorderOriginalLine"];
+            /** @description `null` si el producto no existe, no es visible o la sucursal no está activa. */
+            current: components["schemas"]["OrderReorderCurrent"] | null;
+            issues: components["schemas"]["OrderReorderIssue"][];
+            /** @description `null` en `UNAVAILABLE`. En `NEEDS_CONFIGURATION` solo trae lo retenido y NO es agregable sin configurar. */
+            candidate: components["schemas"]["OrderReorderCandidate"] | null;
+        };
+        /** @description Sucursal contra la que se validó. `acceptingOrders=false` NO impide añadir al carrito (F19 decide al cotizar), solo avisa. */
+        OrderReorderBranch: {
+            /** Format: uuid */
+            originalBranchId: string;
+            /** Format: uuid */
+            requestedBranchId: string;
+            sameBranch: boolean;
+            name: string;
+            active: boolean;
+            acceptingOrders: boolean;
+            /** @enum {string} */
+            reason: "OPEN" | "INACTIVE" | "OUTSIDE_BUSINESS_HOURS" | "EXCEPTIONAL_CLOSURE" | "SCHEDULE_NOT_CONFIGURED";
+            /** Format: date-time */
+            nextOpensAt: string | null;
+        };
+        OrderReorderSummary: {
+            lines: number;
+            available: number;
+            needsConfiguration: number;
+            unavailable: number;
+            /** @description Líneas con aviso `PRICE_CHANGED`. */
+            priceChanged: number;
+            /** @description Unidades de las líneas `AVAILABLE` (tras ajustes). */
+            units: number;
+            /** @description ESTIMACIÓN de las líneas `AVAILABLE` a precios vigentes, sin promociones, cupón ni entrega. NO es una cotización. */
+            estimatedSubtotal: components["schemas"]["CheckoutMoney"];
+            /** @description `true` si al menos una línea es `AVAILABLE`. */
+            canAddAny: boolean;
+        };
+        /** @description F23 (spec 024, ADR-0029). Resultado de la vista previa. No crea ni guarda nada. La modalidad (`source.fulfillmentType`) y la dirección NO se copian: se eligen de nuevo en el checkout (F19). */
+        OrderReorderPreview: {
+            /** Format: date-time */
+            generatedAt: string;
+            /** @description Referencia informativa del pedido original (sin ids internos). */
+            source: {
+                /** @example MON-001042 */
+                displayNumber: string;
+                status: components["schemas"]["OrderLifecycleStatus"];
+                /** @enum {string} */
+                fulfillmentType: "PICKUP" | "DELIVERY";
+                deliveryProvider: components["schemas"]["CourierProvider"] | null;
+                /** Format: date-time */
+                placedAt: string;
+            };
+            branch: components["schemas"]["OrderReorderBranch"];
+            lines: components["schemas"]["OrderReorderLine"][];
+            summary: components["schemas"]["OrderReorderSummary"];
+        };
+        /**
          * @description Fase PÚBLICA normalizada del pedido (F21, spec 022 §3). El servidor entrega CÓDIGOS estables; las etiquetas y
          *     descripciones (es/en) las pone la web. Mapeo desde `OrderLifecycleStatus`: `pending`=>`received`, `accepted`=>`accepted`,
          *     `preparing`=>`preparing`, `ready`=>`ready`, `on_the_way`=>`on_the_way`, `delivered`|`picked_up`=>`completed` (la web
@@ -5761,6 +6089,102 @@ export interface operations {
             };
             /** @description Token ausente, inválido o expirado */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listMyOrders: {
+        parameters: {
+            query?: {
+                /** @description Estados del catálogo `OrderLifecycleStatus` separados por comas (p. ej. `pending,accepted,preparing,ready,on_the_way` para «en curso»). Un valor fuera del catálogo => 400. */
+                status?: string;
+                /** @description Filtra por sucursal del pedido. Una sucursal sin pedidos del cliente devuelve una página vacía (no se confirma si existe). */
+                branchId?: string;
+                /** @description Instante ISO 8601 con zona (inclusive). Sin zona => 400. */
+                from?: string;
+                /** @description Instante ISO 8601 con zona (exclusivo); mayor que `from` y a lo sumo 366 días después (si no, 400). */
+                to?: string;
+                /** @description Cursor opaco devuelto por la página anterior (`nextCursor`). */
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de pedidos del cliente (puede venir vacía) */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "7c1f0f52-3b5e-4c63-9a4d-5f6e8f0a1b2c",
+                     *           "orderNumber": 1042,
+                     *           "displayNumber": "MON-001042",
+                     *           "status": "picked_up",
+                     *           "publicStatus": "completed",
+                     *           "terminal": true,
+                     *           "branchId": "0b9d3c1e-8a52-4f0e-9b0a-1c2d3e4f5a6b",
+                     *           "branchName": "Sushi Mon Zona 10",
+                     *           "fulfillmentType": "PICKUP",
+                     *           "deliveryProvider": null,
+                     *           "itemCount": 3,
+                     *           "total": "165.00",
+                     *           "currency": "GTQ",
+                     *           "paymentMethodPreference": "cash",
+                     *           "placedAt": "2026-11-18T19:42:10.000Z",
+                     *           "updatedAt": "2026-11-18T20:15:44.000Z"
+                     *         }
+                     *       ],
+                     *       "nextCursor": null,
+                     *       "generatedAt": "2026-11-19T15:00:00.000Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["MyOrderPage"];
+                };
+            };
+            /** @description Parámetros inválidos (estado fuera del catálogo, fechas sin zona, rango excesivo) o `ORDER_CURSOR_INVALID` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` (IP y actor; contador propio de esta ruta). `Retry-After`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDERS_BUSY`, reintentable (`Retry-After`) */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8724,6 +9148,154 @@ export interface operations {
                 };
             };
             /** @description Pedido inexistente, ajeno o token inválido/vencido/revocado (respuesta idéntica a `getOrder`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` (IP y actor; contador propio de esta ruta). `Retry-After`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDERS_BUSY`, reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getOrderReceipt: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Token opaco de invitado (`smo_…`). Sin él se exige sesión del cliente dueño. */
+                "X-Order-Token"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Datos del recibo */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderReceipt"];
+                };
+            };
+            /** @description `id` o `X-Order-Token` con formato inválido */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token JWT presente e inválido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Pedido inexistente, ajeno o token inválido/vencido/revocado (respuesta idéntica a `getOrder`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` (IP y actor; contador propio de esta ruta). `Retry-After`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDERS_BUSY`, reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    previewOrderReorder: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Token opaco de invitado (`smo_…`). Sin él se exige sesión del cliente dueño. */
+                "X-Order-Token"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["OrderReorderRequest"];
+            };
+        };
+        responses: {
+            /** @description Diagnóstico por línea y resumen (puede no haber ninguna línea agregable) */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderReorderPreview"];
+                };
+            };
+            /** @description `id`, `X-Order-Token` o cuerpo inválidos (campos desconocidos, `branchId` que no es UUID) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token JWT presente e inválido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Pedido inexistente, ajeno o token inválido (idéntico a `getOrder`, sin `code`) o `BRANCH_NOT_FOUND` (sucursal pedida inexistente) */
             404: {
                 headers: {
                     [name: string]: unknown;
