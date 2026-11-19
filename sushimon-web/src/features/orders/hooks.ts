@@ -1,5 +1,6 @@
 'use client';
 
+import { useSyncExternalStore } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/lib/data-access/errors';
 import type { DraftOrder, OrderCreated, OrderDetail } from '@/lib/data-access/models';
@@ -10,12 +11,16 @@ import {
   createOrder,
   getDraftOrder,
   getOrder,
+  getOrderTracking,
   prepareDraftCardOrder,
   lookupOrder,
   payWithCard,
 } from '@/services/orders';
 import { useCustomerScope } from '../session/customer-scope';
 import { customerOrdersPredicate, queryKeys } from '../query-keys';
+import { useTrackingPolling, type TrackingPollState } from '../tracking/use-tracking-poll';
+
+const noopSubscribe = () => () => {};
 
 /** Invalida todo lo derivado de pedidos (detalle, cliente, backoffice, reportes, panel). */
 export function invalidateOrders(qc: QueryClient) {
@@ -89,17 +94,60 @@ export function useDraftOrderLoader() {
  * F20: pedido REAL por UUID (`GET /v1/orders/{id}`), con la sesión del dueño o la credencial de invitado (`X-Order-Token`).
  * Sin reintentos: un 404/401 es definitivo (otra pestaña, token vencido). La credencial no entra en la clave de caché.
  */
-export function useOrderDetail(id: string | null | undefined, guestToken: string | null) {
+export function useOrderDetail(
+  id: string | null | undefined,
+  guestToken: string | null,
+  options: { once?: boolean; enabled?: boolean } = {},
+) {
   const client = useDataClient();
   const identity = useCustomerScope();
   const scope = identity.state === 'ready' ? identity.scope : null;
   return useQuery<OrderDetail, ApiError>({
     queryKey: queryKeys.orders.placed(scope, id ?? ''),
     queryFn: ({ signal }) => getOrder(client, id as string, { guestToken, signal }),
-    enabled: !!id && identity.state !== 'pending',
+    enabled: !!id && identity.state !== 'pending' && options.enabled !== false,
     retry: false,
     gcTime: 60_000,
+    // F21 `once`: el resumen del seguimiento se consulta UNA vez (el polling usa solo `getOrderTracking`).
+    ...(options.once
+      ? { staleTime: Infinity, refetchOnWindowFocus: false, refetchOnReconnect: false }
+      : {}),
   });
+}
+
+export interface OrderTrackingResult extends TrackingPollState {
+  /** La identidad del cliente aún se está resolviendo: no se ha decidido si hay acceso. */
+  pending: boolean;
+  /** Invitado sin credencial ni sesión (otra pestaña/dispositivo, token vencido): NO se hizo ninguna solicitud. */
+  noCredentials: boolean;
+}
+
+/**
+ * F21: seguimiento REAL por UUID (`GET /v1/orders/{id}/tracking`) con polling controlado (`useTrackingPolling`). Misma autorización
+ * que `useOrderDetail`: sesión del dueño o credencial de invitado en `X-Order-Token`. Sin sesión NI credencial no se emite la
+ * solicitud (acceso perdido). NO usa `useOrder` (borrador simulado). La credencial no entra en la clave ni se persiste nada.
+ */
+export function useOrderTracking(
+  id: string | null | undefined,
+  guestToken: string | null,
+): OrderTrackingResult {
+  const client = useDataClient();
+  const identity = useCustomerScope();
+  const scope = identity.state === 'ready' ? identity.scope : null;
+  // Hasta hidratar no se decide el acceso (la credencial vive en `sessionStorage`): evita un desajuste servidor/cliente.
+  const mounted = useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false,
+  );
+  const resolved = identity.state !== 'pending' && mounted;
+  const hasCredentials = !!guestToken || identity.state === 'ready';
+  const poll = useTrackingPolling({
+    queryKey: queryKeys.orders.tracking(scope, id ?? ''),
+    enabled: !!id && resolved && hasCredentials,
+    fetcher: (signal) => getOrderTracking(client, id as string, { guestToken, signal }),
+  });
+  return { ...poll, pending: !resolved, noCredentials: !!id && resolved && !hasCredentials };
 }
 
 /** Consulta de invitado (número + teléfono). Un 404 no revela si el pedido existe. */

@@ -87,6 +87,8 @@ export function CheckoutFlow() {
   const [pending, setPending] = useState<{ order: DraftOrder; signature: string } | null>(null);
   /** Pedido REAL confirmado por el servidor (solo con la API real): se presenta como «pedido recibido». */
   const [placedId, setPlacedId] = useState<string | null>(null);
+  /** F21 (mock): UUID del pedido simulado para enlazar el seguimiento con la forma real `OrderTracking`. */
+  const [mockTrackingId, setMockTrackingId] = useState<string | null>(null);
   const routerRef = useRef(router);
   useEffect(() => {
     routerRef.current = router;
@@ -285,6 +287,7 @@ export function CheckoutFlow() {
     }
     const card = payment === 'card';
     const intent = buildIntent();
+    setMockTrackingId(created.order.id);
     setLoadingDraft(true);
     drafts
       .load(created.order.displayNumber, card)
@@ -374,7 +377,10 @@ export function CheckoutFlow() {
       </div>
     );
   }
-  if (confirmed) return <Confirmation order={confirmed} onOrderChange={setConfirmed} />;
+  if (confirmed)
+    return (
+      <Confirmation order={confirmed} onOrderChange={setConfirmed} trackingId={mockTrackingId} />
+    );
 
   const loadFailed =
     // `GET /v1/store/config` NO existe en la API (F10 pendiente): con `http` su 404 no es un fallo de carga del checkout.

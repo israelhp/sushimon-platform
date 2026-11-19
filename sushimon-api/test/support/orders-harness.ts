@@ -7,6 +7,7 @@ import { hashGuestToken } from '../../src/orders/order-access-token.js';
 import { hashesEqual } from '../../src/orders/order-idempotency.js';
 import { OrderQuoteGuard } from '../../src/orders/order-quote-guard.js';
 import { buildOrderRecord } from '../../src/orders/order-record.js';
+import type { OrderTrackingRecord } from '../../src/orders/order-tracking.types.js';
 import type { OrderEventsPublisher } from '../../src/orders/order-events.publisher.js';
 import type { SnapshotNames } from '../../src/orders/order-snapshot.reader.js';
 import { ordersBusy } from '../../src/orders/orders-errors.js';
@@ -196,6 +197,81 @@ export class FakeOrdersRepo {
     return Promise.resolve();
   }
 
+  // ---------- seguimiento (F21): solo lectura ----------
+
+  /** Historial controlado por la prueba (sustituye al derivado de `history`); simula filas insertadas por SQL. */
+  trackingEvents = new Map<string, { newStatus: string; changedAt: Date }[]>();
+  /** Si está definido, las lecturas de seguimiento fallan con este error (simula BD caída). */
+  trackingFailWith: unknown = null;
+
+  /** Fija el estado y el historial de un pedido (como si F22 ya hubiera operado). */
+  setTracking(
+    orderId: string,
+    status: string,
+    events: { newStatus: string; changedAt: Date }[],
+  ): void {
+    const stored = this.orders.get(orderId);
+    if (!stored) throw new Error('pedido inexistente en el doble');
+    stored.record.status = status;
+    this.trackingEvents.set(orderId, events);
+  }
+
+  private trackingOf(id: string): OrderTrackingRecord | null {
+    const record = this.orders.get(id)?.record;
+    if (!record) return null;
+    const history =
+      this.trackingEvents.get(id) ??
+      this.history
+        .filter((h) => h.orderId === id)
+        .map((h) => ({ newStatus: h.newStatus, changedAt: record.placedAt }));
+    return {
+      id: record.id,
+      orderNumber: record.orderNumber,
+      branchId: record.branchId,
+      fulfillmentType: record.fulfillmentType,
+      deliveryProvider: record.deliveryProvider,
+      status: record.status,
+      placedAt: record.placedAt,
+      updatedAt: record.updatedAt,
+      // como la consulta real: los 51 eventos más RECIENTES, en orden cronológico
+      history: history.slice(-51),
+    };
+  }
+
+  findTrackingForGuestToken(
+    id: string,
+    tokenHash: Buffer,
+    now: Date,
+  ): Promise<OrderTrackingRecord | null> {
+    this.calls.push('findTrackingForGuestToken');
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- simula el error crudo del driver
+    if (this.trackingFailWith) return Promise.reject(this.trackingFailWith);
+    const ok = this.tokens.some(
+      (t) =>
+        t.orderId === id && t.hash === hex(tokenHash) && t.revokedAt === null && t.expiresAt > now,
+    );
+    return Promise.resolve(ok ? this.trackingOf(id) : null);
+  }
+
+  /** `auth_user_id` -> `customers.id` (el join de la consulta real); lo cablea `ordersHarness`. */
+  customerIdOfAuthUser: (authUserId: string) => string | null = () => null;
+
+  findTrackingForOwnerAuthUser(
+    id: string,
+    authUserId: string,
+  ): Promise<OrderTrackingRecord | null> {
+    this.calls.push('findTrackingForOwnerAuthUser');
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- simula el error crudo del driver
+    if (this.trackingFailWith) return Promise.reject(this.trackingFailWith);
+    const record = this.orders.get(id)?.record;
+    const customerId = this.customerIdOfAuthUser(authUserId);
+    return Promise.resolve(
+      record && customerId !== null && record.customerId === customerId
+        ? this.trackingOf(id)
+        : null,
+    );
+  }
+
   tokenIsActive = (token: string, now: Date) =>
     this.tokens.some(
       (t) => t.hash === hex(hashGuestToken(token)) && t.revokedAt === null && t.expiresAt > now,
@@ -295,6 +371,7 @@ export function ordersHarness(
   const repo = new FakeOrdersRepo();
   const reader = new FakeSnapshotReader(h);
   const identity = new FakeIdentity();
+  repo.customerIdOfAuthUser = (a) => identity.customers.get(a)?.id ?? null;
   const verifier = new QuoteTokenVerifier(secret);
   const guard = new OrderQuoteGuard(verifier, h.service, h.clock);
   const published: { orderId: string; branchId: string }[] = [];

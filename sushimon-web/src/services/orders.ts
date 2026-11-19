@@ -9,6 +9,7 @@ import type {
   OrderCreated,
   OrderDetail,
   OrderLookupRequest,
+  OrderTracking,
   PaymentResult,
 } from '@/lib/data-access/models';
 import { paths } from '@/lib/data-access/paths';
@@ -45,6 +46,22 @@ export const getOrder = (
   options: { guestToken?: string | null; signal?: AbortSignal } = {},
 ) =>
   client.request<OrderDetail>(paths.order(id), {
+    method: 'GET',
+    signal: options.signal,
+    ...(options.guestToken ? { headers: { 'X-Order-Token': options.guestToken } } : {}),
+  });
+
+/**
+ * F21 — `GET /v1/orders/{id}/tracking` (`getOrderTracking`): seguimiento ligero para polling. Misma autorización que `getOrder`
+ * (sesión del dueño o `X-Order-Token`; cualquier otro caso es el mismo 404). La credencial viaja SOLO en la cabecera, jamás en la
+ * URL, y nunca es una lectura pública (`public: true` omitiría la sesión): con sesión también viaja `Authorization`.
+ */
+export const getOrderTracking = (
+  client: DataClient,
+  id: string,
+  options: { guestToken?: string | null; signal?: AbortSignal } = {},
+) =>
+  client.request<OrderTracking>(paths.orderTracking(id), {
     method: 'GET',
     signal: options.signal,
     ...(options.guestToken ? { headers: { 'X-Order-Token': options.guestToken } } : {}),

@@ -53,6 +53,7 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'POST /v1/demo/orders/:id/card': placement.prepareDraftCard,
   'POST /v1/orders/lookup': orders.lookupOrder,
   'GET /v1/orders/:id': orders.getOrder,
+  'GET /v1/orders/:id/tracking': placement.getOrderTracking,
   'POST /v1/payments/card': orders.payWithCard,
   'POST /v1/incidents': orders.createIncident,
   'POST /v1/job-applications': pub.createJobApplication,

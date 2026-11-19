@@ -2627,14 +2627,15 @@ paths:
       operationId: getOrder
       summary: Consulta un pedido propio (sesión del cliente dueño o token de invitado)
       description: |
-        F20 (spec 021, ADR-0026): detalle mínimo para la confirmación «pedido recibido». El seguimiento ampliado (línea de
-        tiempo, polling, `GET /v1/orders/{id}/tracking`) es F21; el acceso del personal es F22 (`/v1/admin/orders`).
+        F20 (spec 021, ADR-0026): detalle del pedido para la confirmación «pedido recibido». El seguimiento (estado, fases y
+        línea de tiempo, apto para polling) es `GET /v1/orders/{id}/tracking` (`getOrderTracking`, F21): este detalle se
+        consulta una vez y NO se usa para sondear. El acceso del personal es F22 (`/v1/admin/orders`).
         **Autorización** (solo servidor): (a) JWT del cliente dueño del pedido, o (b) cabecera `X-Order-Token` con el token
         de invitado emitido al crear (se compara su sha256; vigente y no revocado). El token NO va en la URL ni en query
         (evita fugas por logs de acceso y `Referer`). Cualquier otro caso (pedido inexistente, ajeno, token ausente, inválido,
         vencido o revocado) responde el MISMO 404 sin `code`. El `id` es el UUID del pedido, no el número visible.
         Minimización de PII: teléfono enmascarado, sin correo ni coordenadas. `Cache-Control: private, no-store`.
-        `POST /v1/orders/lookup` (número + teléfono) NO se implementa aquí (F21).
+        `POST /v1/orders/lookup` (número + teléfono) NO existe (diferido, P62; spec 022).
       tags: [orders]
       security:
         - {}
@@ -2686,6 +2687,79 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '503':
           description: '`ORDERS_BUSY`, reintentable'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/orders/{id}/tracking:
+    get:
+      operationId: getOrderTracking
+      summary: Seguimiento ligero de un pedido propio (estado actual, fases públicas y línea de tiempo real)
+      description: |
+        F21 (spec 022, ADR-0027). Respuesta pequeña pensada para POLLING moderado: SIN líneas, importes, contacto ni dirección
+        (eso lo entrega `getOrder` una sola vez). Solo CONSULTA y PRESENTA lo que ya está registrado: no cambia estados (F22), no
+        consulta a ningún proveedor externo y no inventa datos (sin GPS, ETA, repartidor ni tracking de PedidosYa, `BLOCKED_EXTERNAL`).
+        **Autorización**: IDÉNTICA a `getOrder` (JWT del cliente dueño o cabecera `X-Order-Token`; el token NUNCA va en la URL).
+        Pedido inexistente, ajeno, token ausente/inválido/vencido/revocado o pedido de invitado consultado con JWT => el MISMO 404
+        que `getOrder`. `Cache-Control: private, no-store`, `Vary: Authorization, X-Order-Token`, sin `ETag` (no hay `304`).
+        **Contenido**: `status` es el estado real del pedido (`orders.status`); `publicStatus` es su fase pública normalizada;
+        `steps` es el recorrido ESPERADO por modalidad con la hora real en que se alcanzó cada fase (`reachedAt: null` = aún no
+        ocurrida, nunca una hora estimada); `events` es `order_status_history` tal cual está registrado (orden `changed_at, id`,
+        máx. 50), sin `changed_by` ni `reason`. Un `rejected`/`cancelled` corta el recorrido (sin fases futuras). `delivery` solo
+        existe en pedidos DELIVERY y hoy solo trae el proveedor (`status` siempre `null` hasta F28/F29).
+        `pollAfterSeconds` es una SUGERENCIA del servidor para el siguiente refresco (`null` en estado terminal: no volver a
+        consultar); el cliente la acota a su propio rango y respeta `Retry-After` en 429/503.
+      tags: [orders]
+      security:
+        - {}
+        - bearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: X-Order-Token
+          in: header
+          required: false
+          description: 'Token opaco de invitado (`smo_…`). Sin él se exige sesión del cliente dueño.'
+          schema: { type: string, pattern: '^smo_[A-Za-z0-9_-]{43}$' }
+      responses:
+        '200':
+          description: Seguimiento del pedido
+          headers:
+            Cache-Control:
+              description: private, no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderTracking'
+        '400':
+          description: '`id` o `X-Order-Token` con formato inválido'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token JWT presente e inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Pedido inexistente, ajeno o token inválido/vencido/revocado (respuesta idéntica a `getOrder`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: '`RATE_LIMITED` (IP y actor; contador propio de esta ruta). `Retry-After`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`ORDERS_BUSY`, reintentable (`Retry-After`)'
           content:
             application/json:
               schema:
@@ -8469,7 +8543,7 @@ components:
     OrderLifecycleStatus:
       type: string
       description: |
-        Catálogo OFICIAL de estados del pedido (F20 define; F22 gobierna las transiciones). F20 solo escribe `pending`.
+        Catálogo OFICIAL de estados del pedido (F20 define; F22 gobierna las transiciones). F20 solo escribe `pending`. F21 los presenta como `OrderPublicStatus`.
         `pending` recibido; `accepted` aceptado por la sucursal; `preparing` en cocina; `ready` listo; `on_the_way` en camino
         (solo DELIVERY); `delivered` entregado al cliente (DELIVERY); `picked_up` recogido (PICKUP); `rejected` rechazado por
         la sucursal; `cancelled` cancelado. Es INDEPENDIENTE del pago (F24) y de la entrega (F28/F29). Los clientes deben
@@ -8603,8 +8677,8 @@ components:
     OrderDetail:
       type: object
       description: |
-        Pedido persistido (reemplaza al `Order` borrador para `http`; F21 lo amplía de forma ADITIVA: línea de tiempo,
-        entrega). Importes en cadenas decimales GTQ; `total = subtotal − discountTotal + deliveryFee`.
+        Pedido persistido (reemplaza al `Order` borrador para `http`). NO lleva línea de tiempo ni entrega: eso es
+        `OrderTracking` (F21, `getOrderTracking`). Importes en cadenas decimales GTQ; `total = subtotal − discountTotal + deliveryFee`.
       required:
         [
           id,
@@ -8685,6 +8759,113 @@ components:
           allOf: [{ $ref: '#/components/schemas/OrderGuestAccess' }]
           nullable: true
           description: '`null` si el pedido es de un cliente autenticado (accede con su sesión).'
+    OrderPublicStatus:
+      type: string
+      description: |
+        Fase PÚBLICA normalizada del pedido (F21, spec 022 §3). El servidor entrega CÓDIGOS estables; las etiquetas y
+        descripciones (es/en) las pone la web. Mapeo desde `OrderLifecycleStatus`: `pending`=>`received`, `accepted`=>`accepted`,
+        `preparing`=>`preparing`, `ready`=>`ready`, `on_the_way`=>`on_the_way`, `delivered`|`picked_up`=>`completed` (la web
+        distingue entrega/retiro con `fulfillmentType`), `rejected`=>`rejected`, `cancelled`=>`cancelled`. No existe fase de
+        «incidencia» ni de «pendiente de pago» (no son estados del pedido). Los clientes deben tolerar valores futuros.
+      enum: [received, accepted, preparing, ready, on_the_way, completed, rejected, cancelled]
+    OrderTrackingStep:
+      type: object
+      description: |
+        Una fase del recorrido esperado. `reachedAt` = `changed_at` del PRIMER evento registrado cuya fase pública es esta;
+        `null` = no ocurrida o sin registro (nunca una hora estimada). Una fase anterior a la actual con `reachedAt: null`
+        indica un salto de estados en el historial (se muestra como superada, sin hora).
+      required: [phase, reachedAt]
+      properties:
+        phase: { $ref: '#/components/schemas/OrderPublicStatus' }
+        reachedAt: { type: string, format: date-time, nullable: true }
+    OrderTrackingEvent:
+      type: object
+      description: |
+        Una fila de `order_status_history` tal como está registrada. Sin `changed_by`, sin `reason` y sin identificadores
+        internos. `seq` es la posición (desde 1) en el orden `changed_at, id` y solo sirve como clave estable de lista.
+      required: [seq, status, publicStatus, occurredAt]
+      properties:
+        seq: { type: integer, minimum: 1, maximum: 50 }
+        status: { $ref: '#/components/schemas/OrderLifecycleStatus' }
+        publicStatus: { $ref: '#/components/schemas/OrderPublicStatus' }
+        occurredAt:
+          {
+            type: string,
+            format: date-time,
+            description: 'ISO-8601 UTC; la web formatea en America/Guatemala.',
+          }
+    OrderTrackingDelivery:
+      type: object
+      description: |
+        Solo en pedidos DELIVERY. Hoy NO existe fuente de entregas (`deliveries`: F28/F29), por lo que únicamente se informa el
+        proveedor del pedido y `status` es SIEMPRE `null`. Nunca incluye repartidor, teléfono, ubicación, GPS ni ETA. Con
+        `PEDIDOSYA` (`BLOCKED_EXTERNAL`, F29) la web no muestra seguimiento externo.
+      required: [provider, status]
+      properties:
+        provider: { $ref: '#/components/schemas/CourierProvider' }
+        status:
+          type: string
+          nullable: true
+          description: |
+            RESERVADO para F28/F29 (estado de la entrega). Siempre `null` en F21; su enum se definirá con la fuente real
+            (ADR propio). Los clientes deben ignorar valores desconocidos.
+    OrderTracking:
+      type: object
+      description: |
+        Seguimiento ligero para polling (ver `getOrderTracking`). Sin importes, líneas, contacto ni dirección.
+      required:
+        [
+          orderId,
+          displayNumber,
+          branchId,
+          fulfillmentType,
+          status,
+          publicStatus,
+          terminal,
+          placedAt,
+          updatedAt,
+          generatedAt,
+          steps,
+          events,
+          eventsTruncated,
+          delivery,
+          pollAfterSeconds,
+        ]
+      properties:
+        orderId: { type: string, format: uuid }
+        displayNumber: { type: string, example: 'MON-001042' }
+        branchId: { type: string, format: uuid }
+        fulfillmentType: { type: string, enum: [PICKUP, DELIVERY] }
+        status: { $ref: '#/components/schemas/OrderLifecycleStatus' }
+        publicStatus: { $ref: '#/components/schemas/OrderPublicStatus' }
+        terminal:
+          type: boolean
+          description: '`true` si `status` es `delivered`, `picked_up`, `rejected` o `cancelled`: no habrá más cambios que consultar.'
+        placedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        generatedAt:
+          { type: string, format: date-time, description: Hora del servidor al responder. }
+        steps:
+          type: array
+          maxItems: 8
+          items: { $ref: '#/components/schemas/OrderTrackingStep' }
+        events:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/OrderTrackingEvent' }
+        eventsTruncated:
+          type: boolean
+          description: '`true` si el historial tiene más de 50 eventos (se devuelven los 50 más recientes, en orden cronológico; faltan los más antiguos).'
+        delivery:
+          allOf: [{ $ref: '#/components/schemas/OrderTrackingDelivery' }]
+          nullable: true
+          description: '`null` en PICKUP.'
+        pollAfterSeconds:
+          type: integer
+          minimum: 5
+          maximum: 300
+          nullable: true
+          description: 'Sugerencia de espera antes del siguiente refresco; `null` si `terminal`.'
     OrderQuoteChange:
       type: object
       required: [field]

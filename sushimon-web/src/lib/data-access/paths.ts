@@ -39,6 +39,8 @@ export const paths = {
   storeBanners: () => '/v1/store/banners',
   orders: () => '/v1/orders',
   order: (id: string) => `/v1/orders/${seg(id)}`,
+  /** F21: seguimiento ligero del pedido (`getOrderTracking`), apto para polling. */
+  orderTracking: (id: string) => `/v1/orders/${seg(id)}/tracking`,
   orderLookup: () => '/v1/orders/lookup',
   cardPayment: () => '/v1/payments/card',
   incidents: () => '/v1/incidents',

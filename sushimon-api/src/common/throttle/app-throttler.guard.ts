@@ -90,6 +90,15 @@ export const ORDER_READ_THROTTLE = {
   actor: { limit: 30, ttl: 60_000 },
 };
 
+/**
+ * Seguimiento de un pedido (F21, spec 022 §6.5): 120/min por IP y 60/min por actor (un invitado cae a su IP => 60/min
+ * efectivos). Contador propio de la ruta (el sondeo no consume la cuota de `getOrder`); los intentos con token inválido cuentan.
+ */
+export const ORDER_TRACKING_THROTTLE = {
+  default: { limit: 120, ttl: 60_000 },
+  actor: { limit: 60, ttl: 60_000 },
+};
+
 /** Throttler adicional «por actor»: solo cuenta en las rutas que declaran un límite `actor`. */
 export const ACTOR_THROTTLER = 'actor';
 

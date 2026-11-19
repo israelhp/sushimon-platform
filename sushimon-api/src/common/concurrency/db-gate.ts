@@ -3,7 +3,17 @@
  * cola acotada y espera máxima corta: si se supera, rechaza AL INSTANTE con el error que fabrique `busy` (503 con código
  * propio de cada consumidor, mensaje fijo) en vez de acumular solicitudes. Siempre libera el cupo (también si la tarea
  * falla). En serverless el contador es POR INSTANCIA (no hay memoria compartida): protege el pool de cada instancia.
+ *
+ * Admisión para LECTURAS de bajo valor (F21): `run(task, { rejectIfWaiting: n })` rechaza al instante con el mismo error de
+ * ocupado si no hay cupo libre Y ya hay >= n en cola; así las plazas `n+1..maxQueue` de la cola quedan reservadas a las
+ * escrituras (p. ej. `createOrder`) y un sondeo masivo no puede dejarlas sin sitio. Sin la opción el comportamiento es
+ * exactamente el de siempre (checkout, tienda y escrituras de pedidos no la usan).
  */
+export interface DbGateRunOptions {
+  /** Rechaza de inmediato si no hay cupo libre y la cola ya tiene al menos este número de esperas. */
+  rejectIfWaiting?: number;
+}
+
 export class DbGate {
   private active = 0;
   private readonly queue: { start: () => void; timer: NodeJS.Timeout }[] = [];
@@ -24,7 +34,7 @@ export class DbGate {
     return this.queue.length;
   }
 
-  run<T>(task: () => Promise<T>): Promise<T> {
+  run<T>(task: () => Promise<T>, options?: DbGateRunOptions): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const start = (): void => {
         this.active += 1;
@@ -45,6 +55,8 @@ export class DbGate {
       };
       if (this.active < this.max) return start();
       if (this.queue.length >= this.maxQueue) return reject(this.busy());
+      const admit = options?.rejectIfWaiting;
+      if (admit !== undefined && this.queue.length >= admit) return reject(this.busy());
       const entry = {
         start,
         timer: setTimeout(() => {

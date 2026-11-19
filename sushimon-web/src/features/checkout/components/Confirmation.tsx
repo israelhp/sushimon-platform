@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  Activity,
   Banknote,
   Check,
   Clock,
@@ -62,9 +63,12 @@ function Fact({ icon, label, children }: { icon: ReactNode; label: string; child
 export function Confirmation({
   order,
   onOrderChange,
+  trackingId = null,
 }: {
   order: DraftOrder;
   onOrderChange: (order: DraftOrder) => void;
+  /** F21 (solo mock): UUID del pedido simulado «real» para abrir `/pedidos/[id]/seguimiento` (la forma `OrderTracking`). */
+  trackingId?: string | null;
 }) {
   const t = useTranslations();
   const locale = useLocale();
@@ -299,9 +303,25 @@ export function Confirmation({
             {t('confirm.trackLater')}
           </p>
         )}
-        <Link href={`/pedidos/${order.id}`} className="btn w-full no-underline sm:w-auto">
-          <ReceiptText className="h-4 w-4" aria-hidden="true" /> {t('confirm.trackOrder')}
-        </Link>
+        {trackingId ? (
+          <>
+            <Link
+              href={`/pedidos/${trackingId}/seguimiento`}
+              className="btn btn-primary w-full no-underline sm:w-auto"
+              data-testid="view-tracking"
+            >
+              <Activity className="h-4 w-4" aria-hidden="true" />{' '}
+              {t('orders.received.viewTracking')}
+            </Link>
+            <Link href={`/pedidos/${order.id}`} className="btn w-full no-underline sm:w-auto">
+              <ReceiptText className="h-4 w-4" aria-hidden="true" /> {t('tracking.viewDetail')}
+            </Link>
+          </>
+        ) : (
+          <Link href={`/pedidos/${order.id}`} className="btn w-full no-underline sm:w-auto">
+            <ReceiptText className="h-4 w-4" aria-hidden="true" /> {t('confirm.trackOrder')}
+          </Link>
+        )}
         <Link
           href={`${STORE_ROUTES.incidents}?pedido=${order.id}`}
           className="btn w-full no-underline sm:w-auto"

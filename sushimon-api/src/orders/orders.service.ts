@@ -11,7 +11,7 @@ import type { Principal } from '../auth/auth.types.js';
 import { CLOCK, type Clock } from '../branch-schedule/clock.js';
 import { assertFulfillmentShape, assertQuoteLimits } from '../checkout/checkout-policy.js';
 import { QuoteTokenVerifier } from '../checkout/quote-token.verifier.js';
-import type { DbGate } from '../common/concurrency/db-gate.js';
+import type { DbGate, DbGateRunOptions } from '../common/concurrency/db-gate.js';
 import { centsToDecimal, decimalToCents } from '../common/money/money.js';
 import { IdentityService } from '../identity/identity.service.js';
 import { hashGuestToken, GUEST_TOKEN_PATTERN, issueGuestToken } from './order-access-token.js';
@@ -46,10 +46,13 @@ import {
   quoteChanged,
   translateOrdersDbError,
 } from './orders-errors.js';
+import { toOrderTracking } from './order-tracking.mapper.js';
+import type { OrderTrackingRecord } from './order-tracking.types.js';
 import { OrdersRepository } from './orders.repository.js';
 import type { NewOrder, StoredIdempotency } from './orders.types.js';
 import type { OrderCreateRequestDto } from './dto/order-create-request.dto.js';
 import type { OrderCreatedDto, OrderDetailDto } from './dto/order-responses.dto.js';
+import type { OrderTrackingDto } from './dto/order-tracking.dto.js';
 
 /** Tope provisional de pedidos `pending` por cliente/teléfono en 24 h (P51). No es atómico: puede excederse por 1. */
 export const MAX_PENDING_ORDERS = 3;
@@ -60,6 +63,12 @@ export interface CreateOrderResult {
   replayed: boolean;
   body: OrderCreatedDto;
 }
+
+/**
+ * Admisión de LECTURAS (F21): con el cupo lleno, una lectura se rechaza (503 `ORDERS_BUSY`) si ya hay 2 esperas en cola;
+ * las plazas 3..8 quedan reservadas a las escrituras (`create`). Spec 022 §6.6.
+ */
+const READ_ADMISSION: DbGateRunOptions = { rejectIfWaiting: 2 };
 
 /** 404 idéntico (mismo cuerpo) para pedido inexistente, ajeno, token inválido/vencido/revocado y pedido de invitado con JWT. */
 const orderNotFound = () => new NotFoundException('Pedido no encontrado');
@@ -204,24 +213,74 @@ export class OrdersService {
     id: string,
     rawToken: string | undefined,
   ): Promise<OrderDetailDto> {
-    if (rawToken !== undefined) {
-      // Un formato imposible no consulta la BD (la forma no filtra nada sobre pedidos existentes).
-      if (!GUEST_TOKEN_PATTERN.test(rawToken)) {
-        throw new BadRequestException(['X-Order-Token: formato inválido']);
-      }
-      const hash = hashGuestToken(rawToken);
-      const now = this.clock.now();
-      const byToken = await this.db(() => this.repo.findForGuestToken(id, hash, now));
-      if (byToken) return toOrderDetail(byToken);
-    }
-    if (principal) {
-      const customer = await this.db(() => this.identity.findCustomer(principal));
-      if (customer) {
-        const owned = await this.db(() => this.repo.findForCustomer(id, customer.id));
-        if (owned) return toOrderDetail(owned);
-      }
-    }
+    const hash = this.guestHashOf(rawToken);
+    // Una adquisición del gate por consulta (comportamiento de F20); admisión de lectura: no quita plazas a la escritura.
+    const found = await this.authorizedRead(principal, hash, {
+      byToken: (h, now) => this.db(() => this.repo.findForGuestToken(id, h, now), READ_ADMISSION),
+      byOwner: async (p) => {
+        const customer = await this.db(() => this.identity.findCustomer(p), READ_ADMISSION);
+        return customer
+          ? this.db(() => this.repo.findForCustomer(id, customer.id), READ_ADMISSION)
+          : null;
+      },
+    });
+    if (found) return toOrderDetail(found);
     throw orderNotFound();
+  }
+
+  /**
+   * `GET /v1/orders/{id}/tracking` (F21, spec 022): MISMA autorización que `get` (404 uniforme), solo lectura y UNA sola
+   * adquisición del gate (con admisión de lectura: si la cola ya tiene 2 esperas se rechaza al instante con 503
+   * `ORDERS_BUSY`, dejando las plazas restantes a `createOrder`). El dueño se autoriza por join en la misma consulta
+   * (`findTrackingForOwnerAuthUser`): sin `findCustomer`. Sin escrituras ni auditoría.
+   */
+  async getTracking(
+    principal: Principal | undefined,
+    id: string,
+    rawToken: string | undefined,
+  ): Promise<OrderTrackingDto> {
+    const hash = this.guestHashOf(rawToken);
+    const now = this.clock.now();
+    const found = await this.db(
+      () =>
+        this.authorizedRead<OrderTrackingRecord>(principal, hash, {
+          byToken: (h, at) => this.repo.findTrackingForGuestToken(id, h, at),
+          byOwner: (p) => this.repo.findTrackingForOwnerAuthUser(id, p.authUserId),
+        }),
+      READ_ADMISSION,
+    );
+    if (!found) throw orderNotFound();
+    this.logger.debug(`order.tracking orderId=${found.id} status=${found.status}`);
+    return toOrderTracking(found, now);
+  }
+
+  /** Hash del token de invitado, o `undefined` sin token. Un formato imposible => 400 sin tocar la BD. */
+  private guestHashOf(rawToken: string | undefined): Buffer | undefined {
+    if (rawToken === undefined) return undefined;
+    if (!GUEST_TOKEN_PATTERN.test(rawToken)) {
+      throw new BadRequestException(['X-Order-Token: formato inválido']);
+    }
+    return hashGuestToken(rawToken);
+  }
+
+  /**
+   * Autorización de lectura compartida (dueño por JWT o token de invitado): primero el token, después el dueño. Cada
+   * finder decide cómo accede a la BD (y si usa el gate por paso o ya está dentro de una sola adquisición). Devuelve `null`
+   * en TODO caso denegado: el llamador responde el mismo 404.
+   */
+  private async authorizedRead<T>(
+    principal: Principal | undefined,
+    hash: Buffer | undefined,
+    finders: {
+      byToken: (hash: Buffer, now: Date) => Promise<T | null>;
+      byOwner: (principal: Principal) => Promise<T | null>;
+    },
+  ): Promise<T | null> {
+    if (hash !== undefined) {
+      const byToken = await finders.byToken(hash, this.clock.now());
+      if (byToken) return byToken;
+    }
+    return principal ? finders.byOwner(principal) : null;
   }
 
   // ---------- repetición idempotente ----------
@@ -380,9 +439,9 @@ export class OrdersService {
   // ---------- infraestructura ----------
 
   /** Gate propio (`ORDERS_DB_GATE`) + traducción de «ocupado o sin conexión» a 503 `ORDERS_BUSY`. */
-  private async db<T>(task: () => Promise<T>): Promise<T> {
+  private async db<T>(task: () => Promise<T>, options?: DbGateRunOptions): Promise<T> {
     try {
-      return await this.gate.run(task);
+      return await this.gate.run(task, options);
     } catch (error) {
       throw translateOrdersDbError(error);
     }

@@ -31,6 +31,7 @@ feature lo fija el backlog tras la auditoría F00–F09 (`docs/AUDITORIA_F00_F09
 | `019-shopping-cart`               | F18 Carrito local y su contrato de datos          | `CONTRACT_DEFINED` (spec + ADR-0024 + esquemas `CartQuote*Input`; web `MOCK_ONLY` hasta implementar; sin API ni migración)                                                                                        |
 | `020-checkout-quote`              | F19 Cotización de checkout y reglas monetarias    | `CONTRACT_DEFINED` (spec + ADR-0025 + `POST /v1/checkout/quote` y esquemas `Checkout*`; API y web sin implementar; sin migración; PedidosYa real: `BLOCKED_EXTERNAL`)                                             |
 | `021-order-creation`              | F20 Creación de pedidos, invitados e idempotencia | `CONTRACT_DEFINED` (spec + ADR-0026 + `POST /v1/orders` y `GET /v1/orders/{id}` con esquemas `Order*`; API, migración 0018 y web sin implementar; pagos F24/F25 y PedidosYa F29 fuera de alcance)                 |
+| `022-order-tracking`              | F21 Consulta y seguimiento del pedido del cliente | `CONTRACT_DEFINED` (spec + ADR-0027 + `GET /v1/orders/{id}/tracking` y esquemas `OrderTracking*`/`OrderPublicStatus`; API y web sin implementar; sin migración; PedidosYa real: `BLOCKED_EXTERNAL`)               |
 
 Sin carpeta de spec en este índice: **F04** (perfil de cliente; ver ADR-0012) y **F05** (direcciones; el código cita `specs/009-customer-addresses`, que
-no existe en `develop`; ver ADR-0014). El número `009` quedó libre; la siguiente spec nueva usa `022`.
+no existe en `develop`; ver ADR-0014). El número `009` quedó libre; la siguiente spec nueva usa `023`.

@@ -61,7 +61,7 @@ test('pedido en efectivo de punta a punta: confirma, vacía el carrito y recuerd
   await expect(page.getByRole('heading', { name: '¡Pedido registrado!' })).toBeVisible();
   const number = (await page.getByTestId('order-number').textContent())!;
   expect(number).toMatch(/^MON-\d{6}$/);
-  await expect(page.getByRole('link', { name: 'Seguir mi pedido' })).toHaveAttribute(
+  await expect(page.getByRole('link', { name: 'Ver detalle del pedido' })).toHaveAttribute(
     'href',
     `/pedidos/${number}`,
   );
