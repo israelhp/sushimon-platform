@@ -107,7 +107,8 @@ CREATE TABLE IF NOT EXISTS "app"."payments" (
             AND "change_amount" IS NOT NULL AND "change_amount" = "tendered_amount" - "amount"
             AND "collector_type" = 'STAFF' AND "received_by_staff_id" IS NOT NULL
             AND "collection_context" IN ('BRANCH', 'OWN_DELIVERY') AND "received_at" IS NOT NULL
-            AND octet_length("confirm_key_hash") = 32 AND octet_length("confirm_request_hash") = 32)
+            AND "confirm_key_hash" IS NOT NULL AND octet_length("confirm_key_hash") = 32
+            AND "confirm_request_hash" IS NOT NULL AND octet_length("confirm_request_hash") = 32)
     )
 );
 -- Índices: PK y UNIQUE(order_id) sirven toda lectura por pedido. NO se añaden índices por sucursal/estado
@@ -597,3 +598,7 @@ Y en la tabla maestra: F24 «Pagos en efectivo», dependencias `F20, F22, F03`, 
 - **Sembrado y borrado**: todo (pedidos, pagos, eventos, personal, rol temporal de cajero, cliente, sucursales, `auth.users`) se eliminó; conteos finales = línea base (pedidos 0, pagos 0, eventos 0, sucursales 1, personal 1, asignaciones 1, `auth.users` 3, clientes 3, `audit_events` 159).
 - **NO verificado**: login real Google/Supabase + TOTP (se usó la sesión de demostración y tokens firmados); el checkout de la tienda de punta a punta contra la API real (la creación del pedido con pago pendiente se verificó por int-spec y las lecturas por HTTP); `EXPLAIN` con volumen de pedidos de los `LEFT JOIN payments`; cobro del motorista (F28), PedidosYa (F29), reembolsos (F26), tarjeta (F25).
 - `.claude/skills/checkout-payments/SKILL.md` aún menciona transferencia (fuera del alcance de este cambio).
+
+## 20. Corrección 0020 (hallada por la CI)
+
+La suite `migration-0019.int-spec.ts` solo corre en PostgreSQL plano desechable (se omite contra el Supabase compartido) y su primera ejecución real fue en CI. Reveló dos cosas: (1) un test ordenaba por el alias de texto de `amount` («185.00» < «50.00»); (2) un defecto REAL de la migración: en `payments_reception_chk` `octet_length(NULL) = 32` es NULL y un CHECK solo falla con FALSE, así que un pago `paid` sin `confirm_key_hash` o sin `confirm_request_hash` se aceptaba. La migración `0020_payments_hash_not_null` reemplaza solo esa restricción con `IS NOT NULL` explícito (sin tocar datos; falla en alto si hubiera un `paid` sin hash). El DDL de §2.2 ya muestra la definición corregida. Hay que aplicar 0020 tras 0019 en cada entorno.

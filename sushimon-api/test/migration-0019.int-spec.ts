@@ -16,8 +16,8 @@ import {
  * `bank_transfer`) y luego se aplica 0019. Mismo patrón y misma omisión explícita que migration-0016/0017/0018.int-spec.ts:
  * requiere PostgreSQL plano (`DATABASE_URL_TEST`); si `auth.users` es la de Supabase real se omite y se avisa.
  *
- * ESTADO: ESCRITA PERO NO EJECUTADA (la migración 0019 aún no está aplicada a ninguna base; el api-engineer no ejecuta SQL
- * contra bases reales). Cubre la matriz de spec 025 §13: #2, #3, #19 (a nivel de BD), #30, #35, #40, #41, #58, #62.
+ * ESTADO: se omite contra el Supabase compartido y corre solo en PostgreSQL plano desechable (la CI). Primera ejecución real
+ * en CI: destapó que el CHECK de recepción aceptaba hashes nulos (corregido en 0020). Cubre la matriz de spec 025 §13: #2, #3, #19 (a nivel de BD), #30, #35, #40, #41, #58, #62.
  */
 const url = TEST_URL;
 const SCRATCH = 'sushimon_mig0019_test';
@@ -151,6 +151,8 @@ describe.skipIf(!url)('Migración 0019: pagos en efectivo (base desechable)', ()
       });
       legacy.bank = await insertOrder(c, { payment_method_preference: 'bank_transfer' });
       await c.query(migrationSql(M0019));
+      // 0020 corrige el CHECK de recepción (octet_length(NULL) no falla un CHECK): se aplica a continuación.
+      await c.query(migrationSql('0020_payments_hash_not_null'));
       cashMethodId = (
         await c.query<{ id: string }>(`SELECT id FROM app.payment_methods WHERE code = 'cash'`)
       ).rows[0]?.id as string;
@@ -196,7 +198,7 @@ describe.skipIf(!url)('Migración 0019: pagos en efectivo (base desechable)', ()
 
     it('backfill: un pago `pending` + evento `created` por pedido cash/NULL con el total y la sucursal; el bank_transfer NO recibe pago', async () => {
       const rows = await q<{ order_id: string; status: string; amount: string; branch_id: string }>(
-        `SELECT order_id, status, amount::text, branch_id FROM app.payments WHERE order_id = ANY($1::uuid[]) ORDER BY amount`,
+        `SELECT order_id, status, amount::text, branch_id FROM app.payments WHERE order_id = ANY($1::uuid[]) ORDER BY amount::numeric`,
         [[legacy.cash, legacy.nul, legacy.bank]],
       );
       expect(rows.rows.map((r) => [r.order_id, r.status, r.amount, r.branch_id])).toEqual([
@@ -329,6 +331,7 @@ describe.skipIf(!url)('Migración 0019: pagos en efectivo (base desechable)', ()
       ['sin fecha', { received_at: null }],
       ['hash de clave de 16 bytes', { confirm_key_hash: Buffer.alloc(16) }],
       ['sin hash del cuerpo', { confirm_request_hash: null }],
+      ['sin hash de la clave', { confirm_key_hash: null }],
     ])('paid %s => 23514', async (_n, over) => {
       const { id } = await newPending();
       await expect(markPaid(id, over)).rejects.toMatchObject(CHECK);
