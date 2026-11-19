@@ -251,6 +251,22 @@ export type OrderQuoteChange = S['OrderQuoteChange'];
 export type OrderQuoteConflict = S['OrderQuoteConflict'];
 export type OrderBlocked = S['OrderBlocked'];
 /**
+ * F23 (spec 024, ADR-0029): historial del cliente (`listMyOrders`), recibo NO fiscal (`getOrderReceipt`) y vista previa de «Volver a
+ * pedir» (`previewOrderReorder`). El detalle histórico es `OrderDetail` (`getOrder`, F20).
+ */
+export type MyOrderSummary = S['MyOrderSummary'];
+export type MyOrderPage = S['MyOrderPage'];
+export type OrderReceipt = S['OrderReceipt'];
+export type OrderReorderRequest = S['OrderReorderRequest'];
+export type OrderReorderPreview = S['OrderReorderPreview'];
+export type OrderReorderLine = S['OrderReorderLine'];
+export type OrderReorderLineStatus = S['OrderReorderLineStatus'];
+export type OrderReorderIssue = S['OrderReorderIssue'];
+export type OrderReorderIssueCode = S['OrderReorderIssueCode'];
+export type OrderReorderCandidate = S['OrderReorderCandidate'];
+export type OrderReorderBranch = S['OrderReorderBranch'];
+export type OrderReorderSummary = S['OrderReorderSummary'];
+/**
  * F22 (spec 023, ADR-0028): pedidos del backoffice (tag `admin-orders`). La web nunca decide la matriz de transiciones:
  * usa `availableActions` que calcula el servidor.
  */

@@ -154,4 +154,10 @@ export const deleteAddress = (client: DataClient, id: string) =>
 export const setDefaultAddress = async (client: DataClient, id: string): Promise<Address> =>
   toAddress(await client.patch<CustomerAddressResponse>(paths.myAddressDefault(id)));
 
-export const listMyOrders = (client: DataClient) => client.get<DraftOrder[]>(paths.myOrders());
+/**
+ * 🎭 Solo mock: pedidos BORRADOR (`DraftOrder`) del cliente de demostración (`/v1/demo/me/orders`). Los usan Inicio («último
+ * pedido»), la consulta de invitado y las incidencias SIMULADAS; en `http` no existe (404). El historial REAL (F23) es
+ * `listMyOrders` de `services/orders` sobre `GET /v1/me/orders`.
+ */
+export const listMyDraftOrders = (client: DataClient) =>
+  client.get<DraftOrder[]>(paths.demoMyDraftOrders());

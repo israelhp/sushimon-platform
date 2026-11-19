@@ -75,3 +75,67 @@ describe('mensajes del carrito (F18, #37)', () => {
     }
   });
 });
+
+describe('F23 · mensajes del historial, el recibo y «Volver a pedir» (es/en)', () => {
+  const read = (locale: string) =>
+    JSON.parse(readFileSync(join(__dirname, 'messages', `${locale}.json`), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+  const flatten = (value: unknown, prefix = ''): string[] =>
+    typeof value === 'object' && value !== null
+      ? Object.entries(value).flatMap(([k, v]) => flatten(v, prefix ? `${prefix}.${k}` : k))
+      : [prefix];
+  const pick = (messages: Record<string, unknown>, path: string): unknown =>
+    path
+      .split('.')
+      .reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], messages);
+  const es = read('es');
+  const en = read('en');
+
+  it.each(['orders.history', 'receipt', 'reorder'])(
+    '%s tiene las MISMAS claves en es y en en, ninguna vacía',
+    (path) => {
+      const a = flatten(pick(es, path)).sort();
+      const b = flatten(pick(en, path)).sort();
+      expect(a.length).toBeGreaterThan(3);
+      expect(b).toEqual(a);
+      for (const key of a) {
+        expect(String(pick(es, `${path}.${key}`)).trim(), `es ${path}.${key}`).not.toBe('');
+        expect(String(pick(en, `${path}.${key}`)).trim(), `en ${path}.${key}`).not.toBe('');
+      }
+    },
+  );
+
+  it('incluye la leyenda no fiscal y los 11 códigos de diagnóstico en ambos idiomas', () => {
+    const codes = [
+      'PRODUCT_REMOVED',
+      'PRODUCT_INACTIVE',
+      'PRODUCT_OUT_OF_STOCK',
+      'BRANCH_UNAVAILABLE',
+      'OPTION_REMOVED',
+      'OPTION_INACTIVE',
+      'GROUP_RULE_CHANGED',
+      'REQUIRED_SELECTION_MISSING',
+      'PRICE_CHANGED',
+      'QUANTITY_ADJUSTED',
+      'NOTE_DROPPED',
+    ];
+    for (const m of [es, en]) {
+      for (const code of codes) expect(pick(m, `reorder.issue.${code}`), code).toBeTruthy();
+      expect(String(pick(m, 'receipt.notFiscal'))).toMatch(/factura|invoice/i);
+    }
+    expect(pick(es, 'receipt.notFiscal')).toBe(
+      'Este documento es un recibo informativo del pedido. No es una factura ni un documento fiscal.',
+    );
+  });
+
+  it('el español nuevo usa tuteo (sin voseo) en el historial, el recibo y la reorden', () => {
+    const voseo =
+      /(tenés|querés|podés|elegí|revisá|intentá|mirá|hacé|abrí|esperá|guardá|iniciá|consultá|agregá)\b/i;
+    for (const path of ['orders.history', 'receipt', 'reorder']) {
+      const text = JSON.stringify(pick(es, path));
+      expect(voseo.test(text), path).toBe(false);
+    }
+  });
+});

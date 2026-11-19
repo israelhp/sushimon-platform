@@ -5,7 +5,7 @@ import type { AuthApi } from '@/features/session/auth-provider';
 import { withShortcuts } from '@/lib/data-access/types';
 import { createSpyClient } from '@/test/spy-client';
 import { renderStore } from '@/test/store-providers';
-import { useAddresses, useMe, useMyOrders } from './hooks';
+import { useAddresses, useMe, useMyDraftOrders } from './hooks';
 
 // Auth simulada: `useAuth` y `useIdentity` se controlan por prueba (sin Supabase real).
 const auth = vi.hoisted(() => ({
@@ -34,7 +34,7 @@ const B = { email: 'invitado.nuevo@ejemplo.com', name: 'Invitado Nuevo' };
 function Probe() {
   const me = useMe();
   const addresses = useAddresses();
-  const orders = useMyOrders();
+  const orders = useMyDraftOrders();
   return (
     <p data-testid="probe">
       {[me.status, addresses.status, orders.status].join('|')}

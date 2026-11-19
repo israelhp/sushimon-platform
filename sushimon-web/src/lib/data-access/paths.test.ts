@@ -131,6 +131,20 @@ describe('paths', () => {
     expect(Object.keys(paths)).not.toContain('users');
   });
 
+  it('F23: rutas del historial, el recibo y la vista previa (id codificado) y su espejo mock', () => {
+    expect(paths.myOrders()).toBe('/v1/me/orders');
+    expect(paths.orderReceipt('a b')).toBe('/v1/orders/a%20b/receipt');
+    expect(paths.orderReorderPreview('X')).toBe('/v1/orders/X/reorder-preview');
+    expect(paths.demoMyDraftOrders()).toBe('/v1/demo/me/orders');
+    expect(Object.keys(mockRoutes)).toEqual(
+      expect.arrayContaining([
+        'GET /v1/me/orders',
+        'GET /v1/orders/:id/receipt',
+        'POST /v1/orders/:id/reorder-preview',
+      ]),
+    );
+  });
+
   it('cada ruta de paths tiene handler mock (paridad de superficie)', () => {
     const patterns = Object.keys(mockRoutes).map((k) => {
       const pattern = k.split(' ')[1] ?? '';

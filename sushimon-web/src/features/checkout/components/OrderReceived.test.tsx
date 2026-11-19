@@ -188,7 +188,7 @@ describe('OrderDetail con la API real (http): pedido recibido', () => {
     expect(title).toHaveFocus();
     expect(screen.getByTestId('save-note')).toHaveTextContent('Guarda este número');
     const copy = screen.getByRole('button', {
-      name: `Copiar el número de pedido ${created.order.displayNumber}`,
+      name: `Copiar número de pedido ${created.order.displayNumber}`,
     });
     await user.click(copy);
     expect(writeText).toHaveBeenCalledWith(created.order.displayNumber);
@@ -208,7 +208,7 @@ describe('OrderDetail con la API real (http): pedido recibido', () => {
       wrapClient: () => asHttp(backend),
     });
     await screen.findByRole('heading', { level: 1 });
-    await user.click(screen.getByRole('button', { name: /Copiar el número/ }));
+    await user.click(screen.getByRole('button', { name: /Copiar número/ }));
     expect(await screen.findByText('No pudimos copiarlo: anótalo a mano.')).toBeInTheDocument();
   });
 
@@ -228,10 +228,10 @@ describe('OrderDetail con la API real (http): pedido recibido', () => {
     expect(screen.getByTestId('unsaved-warning')).toHaveTextContent(
       /Guarda este número: no pudimos recordar tu pedido en este dispositivo/,
     );
-    expect(screen.getByRole('button', { name: /Copiar el número/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Copiar número/ })).toBeInTheDocument();
   });
 
-  it('U8: un estado distinto de pending muestra un texto neutro', async () => {
+  it('U8: un estado distinto de pending muestra el estado real (F23: detalle histórico)', async () => {
     const { created, backend } = await place();
     saveConfirmation(created);
     const other = withShortcuts('http', async <T,>(path: string, o?: RequestOptions) => {
@@ -239,7 +239,45 @@ describe('OrderDetail con la API real (http): pedido recibido', () => {
       return (path.startsWith('/v1/orders/') ? { ...(r as object), status: 'accepted' } : r) as T;
     });
     await renderStore(<OrderDetail orderId={created.order.id} />, { wrapClient: () => other });
-    expect(await screen.findByText('Estado actualizado por el restaurante')).toBeInTheDocument();
+    expect(await screen.findByText('Aceptado por la sucursal')).toBeInTheDocument();
+  });
+
+  it('F23: pedido en curso: «Ver recibo» y «Volver a pedir»; el seguimiento es la acción principal y pide confirmar «¿Pedir otro igual?»', async () => {
+    const user = userEvent.setup();
+    const { created, backend } = await place();
+    saveConfirmation(created);
+    await renderStore(<OrderDetail orderId={created.order.id} />, {
+      wrapClient: () => asHttp(backend),
+    });
+    expect(await screen.findByTestId('view-receipt')).toHaveAttribute(
+      'href',
+      `/pedidos/${created.order.id}/recibo`,
+    );
+    expect(screen.getByTestId('view-tracking')).toHaveClass('btn-primary');
+    expect(screen.getByTestId('reorder')).not.toHaveClass('btn-primary');
+    await user.click(screen.getByTestId('reorder'));
+    const dialog = await screen.findByRole('dialog', { name: 'Volver a pedir' });
+    expect(
+      within(dialog).getByText('Este pedido sigue en curso. ¿Pedir otro igual?'),
+    ).toBeVisible();
+  });
+
+  it('F23: pedido terminado es un detalle histórico (sin «recibimos tu pedido» ni aviso de guardar el número) y «Volver a pedir» es la acción principal', async () => {
+    const { created, backend } = await place();
+    saveConfirmation(created);
+    const done = withShortcuts('http', async <T,>(path: string, o?: RequestOptions) => {
+      const r = await backend.request<T>(path, o);
+      return (path.startsWith('/v1/orders/') ? { ...(r as object), status: 'picked_up' } : r) as T;
+    });
+    await renderStore(<OrderDetail orderId={created.order.id} />, { wrapClient: () => done });
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Detalle de tu pedido' }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('order-status')).toHaveTextContent('Recogido');
+    expect(screen.queryByTestId('save-note')).not.toBeInTheDocument();
+    expect(screen.queryByText('¡Recibimos tu pedido!')).not.toBeInTheDocument();
+    expect(screen.getByTestId('reorder')).toHaveClass('btn-primary');
+    expect(screen.getByTestId('view-receipt')).toBeVisible();
   });
 
   it('cargando: estado accesible con etiqueta', async () => {

@@ -13,6 +13,7 @@ import * as delivery from './delivery';
 import * as favorites from './favorites';
 import * as media from './media';
 import * as modifiers from './modifiers';
+import * as history from './order-history';
 import * as orders from './orders';
 import * as placement from './order-placement';
 import * as products from './products';
@@ -55,6 +56,9 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'POST /v1/orders/lookup': orders.lookupOrder,
   'GET /v1/orders/:id': orders.getOrder,
   'GET /v1/orders/:id/tracking': placement.getOrderTracking,
+  // F23: recibo NO fiscal y vista previa de «Volver a pedir» (misma autorización y mismo 404 que `getOrder`).
+  'GET /v1/orders/:id/receipt': history.getOrderReceipt,
+  'POST /v1/orders/:id/reorder-preview': history.previewOrderReorder,
   'POST /v1/payments/card': orders.payWithCard,
   'POST /v1/incidents': orders.createIncident,
   'POST /v1/job-applications': pub.createJobApplication,
@@ -75,7 +79,9 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'GET /v1/me/favorites': favorites.listMyFavorites,
   'PUT /v1/me/favorites/:productId': favorites.addMyFavorite,
   'DELETE /v1/me/favorites/:productId': favorites.removeMyFavorite,
-  'GET /v1/me/orders': account.listMyOrders,
+  // F23: historial REAL del cliente (forma `MyOrderPage`) y, solo mock, los borradores simulados que aún usan Inicio e incidencias.
+  'GET /v1/me/orders': history.listMyOrders,
+  'GET /v1/demo/me/orders': account.listMyDraftOrders,
 
   // Backoffice
   'GET /v1/backoffice/me': bo.getStaffMe,

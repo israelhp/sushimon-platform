@@ -41,7 +41,8 @@ describe('hub de la cuenta', () => {
     expect(await screen.findByText('cliente@ejemplo.com')).toBeInTheDocument();
     expect(await screen.findByText(/2 direcciones guardadas · Predeterminada: Casa/)).toBeVisible();
     expect(screen.getByText('2 productos')).toBeInTheDocument();
-    expect(screen.getByText(/3 pedidos/)).toBeInTheDocument();
+    // F23: el hub no consulta pedidos (la API real no entrega conteo); la tarjeta es un acceso a la sección.
+    expect(screen.getByText(/Historial, seguimiento, recibos/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
   });
 
@@ -246,47 +247,28 @@ describe('favoritos', () => {
   });
 });
 
-describe('pedidos y "Volver a pedir"', () => {
-  it('lista los pedidos con estado, enlace al detalle y pestañas', async () => {
+describe('pedidos (F23)', () => {
+  it('lista los pedidos reales con estado, enlaces al detalle, recibo y seguimiento, y pestañas', async () => {
     const user = userEvent.setup();
     const view = await renderStore(<OrdersPage />);
     await signIn(view);
-    // Sin aria-label: el nombre accesible es el contenido visible (axe label-content-name-mismatch).
-    const link = await screen.findByRole('link', { name: /MON-490217/ });
-    expect(link).toHaveAttribute('href', '/pedidos/MON-490217');
+    // El enlace nombra el pedido (sr-only) y apunta al UUID real, no al borrador simulado.
+    expect(await screen.findAllByTestId('history-row')).toHaveLength(1);
+    const detail = screen.getByRole('link', { name: /Ver detalle: MON-490217/ });
+    expect(detail).toHaveAttribute('href', '/pedidos/00000000-0000-4000-8000-000000490217');
+    expect(screen.getByRole('link', { name: /Seguimiento: MON-490217/ })).toHaveAttribute(
+      'href',
+      '/pedidos/00000000-0000-4000-8000-000000490217/seguimiento',
+    );
+    expect(screen.getByRole('link', { name: /Ver recibo: MON-490217/ })).toHaveAttribute(
+      'href',
+      '/pedidos/00000000-0000-4000-8000-000000490217/recibo',
+    );
     expect(screen.getByRole('tab', { name: /En curso/ })).toHaveAttribute('aria-selected', 'true');
     await user.click(screen.getByRole('tab', { name: /Historial/ }));
     expect(screen.getByRole('tab', { name: /Historial/ })).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() => expect(screen.getAllByTestId('history-row')).toHaveLength(2));
+    expect(screen.getByRole('link', { name: /Ver detalle: MON-482193/ })).toBeVisible();
     expect(screen.getByRole('tabpanel')).toBeInTheDocument();
-  });
-
-  it('con un producto no disponible avisa y agrega solo lo disponible al carrito', async () => {
-    const user = userEvent.setup();
-    const view = await renderStore(<OrdersPage />, {
-      scenario: 'product-unavailable',
-      branchId: 'sucursal-1',
-    });
-    await signIn(view);
-    await user.click(await screen.findByRole('tab', { name: /Historial/ }));
-    const all = await screen.findAllByRole('button', { name: /Volver a pedir: MON-/ });
-    // Se busca un pedido que incluya el producto no disponible (Calientito Roll).
-    let found = false;
-    for (const button of all) {
-      await user.click(button);
-      const dialog = await screen.findByRole('dialog', { name: 'Volver a pedir' });
-      await waitFor(() =>
-        expect(within(dialog).queryByText('Revisando precios y disponibilidad…')).toBeNull(),
-      );
-      if (within(dialog).queryByText('No disponible')) {
-        found = true;
-        expect(within(dialog).getByText(/ya (no está|no están) disponible/)).toBeVisible();
-        await user.click(within(dialog).getByRole('button', { name: /Agregar al carrito/ }));
-        break;
-      }
-      await user.keyboard('{Escape}');
-    }
-    expect(found).toBe(true);
-    expect(view.api().cart.lines.length).toBeGreaterThan(0);
-    expect(view.api().cart.lines.map((l) => l.productId)).not.toContain('calientito-roll');
   });
 });

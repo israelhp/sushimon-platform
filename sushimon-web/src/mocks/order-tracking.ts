@@ -25,7 +25,7 @@ const POLL_AFTER: Partial<Record<OrderLifecycleStatus, number>> = {
   on_the_way: 15,
 };
 
-const PUBLIC_OF: Record<OrderLifecycleStatus, OrderPublicStatus> = {
+export const PUBLIC_OF: Record<OrderLifecycleStatus, OrderPublicStatus> = {
   pending: 'received',
   accepted: 'accepted',
   preparing: 'preparing',
@@ -37,7 +37,7 @@ const PUBLIC_OF: Record<OrderLifecycleStatus, OrderPublicStatus> = {
   cancelled: 'cancelled',
 };
 
-const TERMINAL: readonly OrderLifecycleStatus[] = [
+export const TERMINAL: readonly OrderLifecycleStatus[] = [
   'delivered',
   'picked_up',
   'rejected',
@@ -50,7 +50,7 @@ const FLOW: Record<OrderTracking['fulfillmentType'], readonly OrderPublicStatus[
 };
 
 /** Estado del borrador (`received`, `delivered`…) → estado real del pedido (`pending`, `delivered|picked_up`…). */
-function lifecycleOf(
+export function lifecycleOf(
   draftStatus: string,
   fulfillment: OrderTracking['fulfillmentType'],
 ): OrderLifecycleStatus {

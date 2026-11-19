@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { formatMoney } from '@/lib/format';
 import { isOrderInProgress } from '@/lib/order-status';
-import { useMyOrders } from '@/features/account/hooks';
+import { useMyDraftOrders } from '@/features/account/hooks';
 import { OrderStatusChip } from '@/features/orders/components/order-status-chip';
 import { ReorderDialog } from '@/features/orders/components/reorder-dialog';
 import { useLastOrder } from '@/features/orders/last-order';
@@ -18,7 +18,7 @@ import { ErrorNotice } from '@/features/store-shell/components/ErrorNotice';
 export function ActiveOrderBanner() {
   const t = useTranslations('orders');
   const { customer } = useDemoSession();
-  const mine = useMyOrders();
+  const mine = useMyDraftOrders();
   if (!customer) return null;
   if (mine.isError) return <ErrorNotice onRetry={() => void mine.refetch()} />;
   const active = (mine.data ?? []).find((o) => isOrderInProgress(o));
@@ -95,7 +95,13 @@ export function LastOrderCard() {
         </button>
       </div>
       <p className="mt-2 truncate text-[14px]">{summary}</p>
-      {reordering ? <ReorderDialog order={order} onClose={() => setReordering(false)} /> : null}
+      {reordering ? (
+        <ReorderDialog
+          orderId={order.id}
+          displayNumber={order.id}
+          onClose={() => setReordering(false)}
+        />
+      ) : null}
     </section>
   );
 }

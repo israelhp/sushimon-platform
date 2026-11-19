@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useRef, useState, type FormEvent } from 'react';
 import { SimulationBadge } from '@/components/ui/SimulationBadge';
-import { useMyOrders } from '@/features/account/hooks';
+import { useMyDraftOrders } from '@/features/account/hooks';
 import { OrderCard } from '@/features/orders/components/order-card';
 import { useIsSimulation, useLookupOrder } from '@/features/orders/hooks';
 import { useDemoSession } from '@/features/session/demo-session';
@@ -81,7 +81,7 @@ function LookupFormSimulated({
   const router = useRouter();
   const { customer } = useDemoSession();
   const auth = useAuthModal();
-  const mine = useMyOrders();
+  const mine = useMyDraftOrders();
   const lookup = useLookupOrder();
 
   const [orderNumber, setOrderNumber] = useState(initialOrderNumber);

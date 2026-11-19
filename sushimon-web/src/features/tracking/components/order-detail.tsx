@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Clock,
   CreditCard,
+  FileText,
   MapPin,
   Phone,
   RotateCcw,
@@ -34,6 +35,10 @@ import { useBranches, useStoreConfig } from '@/features/store/hooks';
 import { formatOrderAddress } from '../format-address';
 import { OrderReceivedScreen } from '@/features/checkout/components/OrderReceivedScreen';
 import { TrackingProgress } from './tracking-progress';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Un pedido real se identifica por UUID; `MON-…` es el borrador del seguimiento simulado (solo mock). */
+export const isOrderUuid = (id: string): boolean => UUID.test(id);
 
 /** Cada cuántos ms se refresca el estado de un pedido en curso. */
 export const TRACKING_POLL_MS = 15_000;
@@ -113,6 +118,7 @@ function DemoAdvance({ order }: { order: DraftOrder }) {
  */
 export function OrderDetailView({ order }: { order: DraftOrder }) {
   const t = useTranslations('orders');
+  const th = useTranslations('orders.history');
   const tc = useTranslations('confirm');
   const tt = useTranslations('tracking');
   const ts = useTranslations('status');
@@ -346,6 +352,9 @@ export function OrderDetailView({ order }: { order: DraftOrder }) {
         >
           <RotateCcw className="h-4 w-4" aria-hidden="true" /> {t('again')}
         </button>
+        <Link href={`/pedidos/${order.id}/recibo`} className="btn w-full no-underline sm:w-auto">
+          <FileText className="h-4 w-4" aria-hidden="true" /> {th('receipt')}
+        </Link>
         {config.data ? (
           <a href={config.data.phoneHref} className="btn w-full no-underline sm:w-auto">
             <Phone className="h-4 w-4" aria-hidden="true" /> {t('call')}
@@ -354,7 +363,9 @@ export function OrderDetailView({ order }: { order: DraftOrder }) {
       </div>
       {reordering ? (
         <ReorderDialog
-          order={{ id: order.id, total: order.total, lines: order.lines }}
+          orderId={order.id}
+          displayNumber={order.id}
+          inProgress={inProgress}
           onClose={() => setReordering(false)}
         />
       ) : null}
@@ -387,9 +398,10 @@ function DetailSkeleton({ label }: { label: string }) {
  * (la sesión/verificación del navegador nunca autoriza nada).
  */
 export function OrderDetail({ orderId }: { orderId: string }) {
-  // F20: con la API real solo existe la confirmación mínima (el seguimiento es F21); el seguimiento SIMULADO es del mock.
+  // F20/F23: un pedido REAL (UUID) se muestra siempre con `GET /v1/orders/{id}` (http y mock por el MISMO camino: detalle histórico
+  // con «Ver recibo» y «Volver a pedir»). Solo el borrador SIMULADO (`MON-…`, mock) conserva el seguimiento simulado heredado.
   const simulation = useIsSimulation();
-  return simulation ? (
+  return simulation && !isOrderUuid(orderId) ? (
     <SimulatedOrderDetail orderId={orderId} />
   ) : (
     <OrderReceivedScreen orderId={orderId} />

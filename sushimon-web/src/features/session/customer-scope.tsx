@@ -33,12 +33,16 @@ export function useCustomerScope(): CustomerScope {
 }
 
 /**
- * ¿Es una consulta privada de OTRA identidad? Cubre `['customer', scope, …]` y, desde F21, los pedidos reales
- * `['orders', 'tracking' | 'placed', scope | 'guest', id]` (el invitado es `'guest'`: al iniciar sesión se descarta y viceversa).
+ * ¿Es una consulta privada de OTRA identidad? Cubre `['customer', scope, …]` (incluido el historial F23) y los pedidos reales
+ * `['orders', 'tracking' | 'placed' | 'receipt', scope | 'guest', id]` (F21/F23; el invitado es `'guest'`: al iniciar sesión se
+ * descarta y viceversa).
  */
 export function isOtherIdentity(key: readonly unknown[], scope: string | null): boolean {
   if (key[0] === queryKeys.customer.all[0]) return key[1] !== scope;
-  if (key[0] === 'orders' && (key[1] === 'tracking' || key[1] === 'placed')) {
+  if (
+    key[0] === 'orders' &&
+    (key[1] === 'tracking' || key[1] === 'placed' || key[1] === 'receipt')
+  ) {
     return key[2] !== (scope ?? 'guest');
   }
   return false;

@@ -4,7 +4,7 @@ import { TriangleAlert } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { isApiError } from '@/lib/data-access/errors';
-import { useOrderDetail } from '@/features/orders/hooks';
+import { useIsSimulation, useOrderDetail } from '@/features/orders/hooks';
 import { ErrorNotice } from '@/features/store-shell/components/ErrorNotice';
 import { isConfirmationPersisted, readGuestToken, readOrderNumber } from '../confirmation-store';
 import { OrderReceived } from './OrderReceived';
@@ -21,11 +21,12 @@ export function OrderReceivedScreen({ orderId }: { orderId: string }) {
   const token = readGuestToken(orderId);
   const query = useOrderDetail(orderId, token);
   const knownNumber = readOrderNumber(orderId);
+  const simulation = useIsSimulation();
 
   if (query.data) {
     // Invitado cuya credencial solo está en memoria: avisa que guarde el número.
     const unsaved = token !== null && !isConfirmationPersisted(orderId);
-    return <OrderReceived order={query.data} unsaved={unsaved} />;
+    return <OrderReceived order={query.data} unsaved={unsaved} simulated={simulation} />;
   }
   if (query.isError) {
     const denied = isApiError(query.error) && [401, 403, 404].includes(query.error.status);

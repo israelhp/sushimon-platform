@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { queryKeys } from '../query-keys';
+import { customerOrdersPredicate, queryKeys } from '../query-keys';
 import { isOtherIdentity } from './customer-scope';
 
 describe('F21 · claves privadas y guardia de caché por identidad', () => {
@@ -32,5 +32,34 @@ describe('F21 · claves privadas y guardia de caché por identidad', () => {
     expect(isOtherIdentity(queryKeys.customer.account.me('u1'), 'u1')).toBe(false);
     expect(isOtherIdentity(queryKeys.orders.detail('MON-1'), 'u1')).toBe(false);
     expect(isOtherIdentity(queryKeys.store.publicBranches, 'u1')).toBe(false);
+  });
+});
+
+describe('F23 · historial y recibo privados', () => {
+  it('queryKeys.orders.receipt = [orders, receipt, scope|guest, id]; el token nunca entra', () => {
+    expect(queryKeys.orders.receipt(null, 'o1')).toEqual(['orders', 'receipt', 'guest', 'o1']);
+    expect(queryKeys.orders.receipt('u1', 'o1')).toEqual(['orders', 'receipt', 'u1', 'o1']);
+    expect(queryKeys.orders.receipt('u1', 'o1')).not.toEqual(queryKeys.orders.receipt('u2', 'o1'));
+  });
+
+  it('isOtherIdentity descarta el recibo de OTRA identidad (y el de invitado al iniciar sesión)', () => {
+    expect(isOtherIdentity(queryKeys.orders.receipt(null, 'o'), null)).toBe(false);
+    expect(isOtherIdentity(queryKeys.orders.receipt('u1', 'o'), null)).toBe(true);
+    expect(isOtherIdentity(queryKeys.orders.receipt('u1', 'o'), 'u1')).toBe(false);
+    expect(isOtherIdentity(queryKeys.orders.receipt('u2', 'o'), 'u1')).toBe(true);
+    expect(isOtherIdentity(queryKeys.orders.receipt(null, 'o'), 'u1')).toBe(true);
+  });
+
+  it('el historial cuelga de `customer` con la identidad y los filtros: se descarta al cambiar de cuenta', () => {
+    const filters = { tab: 'active', branchId: null, from: null, to: null } as const;
+    const key = queryKeys.customer.orders.history('u1', filters);
+    expect(key).toEqual(['customer', 'u1', 'orders', 'history', filters]);
+    expect(isOtherIdentity(key, 'u1')).toBe(false);
+    expect(isOtherIdentity(key, 'u2')).toBe(true);
+    expect(isOtherIdentity(key, null)).toBe(true);
+    expect(customerOrdersPredicate({ queryKey: key })).toBe(true);
+    expect(queryKeys.customer.orders.history('u1', { ...filters, tab: 'history' })).not.toEqual(
+      key,
+    );
   });
 });

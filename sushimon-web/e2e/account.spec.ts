@@ -99,7 +99,7 @@ test.describe('cuenta (Google simulado)', () => {
       .click();
     const reorder = page.getByRole('dialog', { name: 'Volver a pedir' });
     await expect(reorder.getByText(/Basado en el pedido MON-/)).toBeVisible();
-    await reorder.getByRole('button', { name: /Agregar al carrito/ }).click();
+    await reorder.getByRole('button', { name: /Añadir al carrito/ }).click();
     await expect(page.getByRole('dialog', { name: 'Tu pedido' })).toBeVisible();
   });
 });

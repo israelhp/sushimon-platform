@@ -26,6 +26,7 @@ import { MUNICIPALITY_SEEDS } from '../fixtures/geography';
 import { readMockQuoteToken, stableStringify, type MockQuoteEvidence } from '../quote-token';
 import { sha256Hex } from '../sha256';
 import type { MockStore, PlacedOrderRecord } from '../store';
+import { materializeById, syncFromDraft, uuidFor } from '../order-history';
 import { buildOrderTracking } from '../order-tracking';
 import { quoteCheckout } from './checkout';
 import { now, requireCustomer, str, type Handler, type Req } from './shared';
@@ -64,7 +65,7 @@ type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v);
 
 /** Error con el cuerpo completo del contrato (`ErrorResponse` + extensiones) y `Retry-After` opcional. */
-function problem(
+export function problem(
   status: number,
   code: string | undefined,
   message: string,
@@ -266,7 +267,6 @@ function bumpPrice(store: MockStore, parsed: ParsedOrder, at: Date) {
 
 // ── Pedido ─────────────────────────────────────────────────────────────────────────────────
 
-const uuidFor = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const guestToken = (n: number, rev: number) =>
   `smo_${sha256Hex(`mock-guest|${n}|${rev}`).slice(0, 43)}`;
 
@@ -607,17 +607,30 @@ export const createPlacedOrder: Handler = (req): OrderCreated => {
   }
   store.orders.unshift(buildDraft(draftId, detail, contact, ownerEmail, draftPlace, at));
   store.verifiedOrderIds.push(draftId);
-  const record: PlacedOrderRecord = { detail, draftId, ownerEmail, tokens: [] };
+  const record: PlacedOrderRecord = {
+    detail,
+    draftId,
+    ownerEmail,
+    tokens: [],
+    // F23: ids de producto y de opción del snapshot (en el orden de `detail.lines`/`modifiers`), para «Volver a pedir».
+    lineRefs: fresh.lines.map((l) => ({
+      productId: l.productId,
+      modifiers: l.modifiers.map((m) => ({ modifierId: m.optionId })),
+    })),
+  };
   store.placedOrders.unshift(record);
   store.orderIdempotency[`${scope}|${key}`] = { requestHash, orderId: id };
   return createdOf(record, at, false);
 };
 
-export const findPlacedOrder = (store: MockStore, id: string): PlacedOrderRecord | undefined =>
-  store.placedOrders?.find((p) => p.detail.id === id);
+/** Pedido real simulado por UUID. Los del historial sembrado (borradores de la cuenta de demostración) se materializan al pedirlos. */
+export const findPlacedOrder = (store: MockStore, id: string): PlacedOrderRecord | undefined => {
+  const found = store.placedOrders?.find((p) => p.detail.id === id);
+  return found ? syncFromDraft(store, found) : materializeById(store, id);
+};
 
 /** Autorización del pedido real simulado: dueño (sesión) o `X-Order-Token` vigente; si no, el MISMO 404 (sin revelar nada). */
-function authorizePlaced(req: Req, record: PlacedOrderRecord): void {
+export function authorizePlaced(req: Req, record: PlacedOrderRecord): void {
   const at = now(req).getTime();
   const token = req.headers['x-order-token'];
   const byToken =

@@ -1,6 +1,17 @@
 'use client';
 
-import { Banknote, Check, ClipboardList, Copy, MapPin, Phone, Store, Truck } from 'lucide-react';
+import {
+  Banknote,
+  Check,
+  ClipboardList,
+  Copy,
+  FileText,
+  MapPin,
+  Phone,
+  RotateCcw,
+  Store,
+  Truck,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -9,6 +20,10 @@ import { moneyToCents } from '@/lib/checkout-quote';
 import type { OrderDetail } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
 import { usePublicBranches } from '@/features/branches/hooks';
+import { ReorderDialog } from '@/features/orders/components/reorder-dialog';
+import { PublicStatusChip } from '@/features/orders/components/public-status-chip';
+import { isFinalStatus } from '@/features/orders/reorder/reorder-model';
+import { publicStatusOf } from '@/features/tracking/tracking-model';
 import { STORE_ROUTES } from '@/features/store-shell/nav';
 
 function Fact({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
@@ -46,7 +61,9 @@ export function OrderReceived({
 }) {
   const t = useTranslations('orders.received');
   const tc = useTranslations('common');
+  const to = useTranslations('orders');
   const [copy, setCopy] = useState<'idle' | 'ok' | 'fail'>('idle');
+  const [reordering, setReordering] = useState(false);
   const locale = useLocale();
   const branches = usePublicBranches().data;
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -65,6 +82,9 @@ export function OrderReceived({
         ? t('payTransfer')
         : t('payNone');
   const discount = (moneyToCents(order.discountTotal) ?? 0) > 0;
+  // F23: el mismo detalle sirve a la confirmación recién hecha (`pending`) y al historial: con otro estado no es «recién recibido».
+  const fresh = order.status === 'pending';
+  const finished = isFinalStatus(order.status);
 
   return (
     <div className="wrap max-w-[760px] pb-12 pt-6 sm:pt-10" data-testid="order-received">
@@ -81,9 +101,9 @@ export function OrderReceived({
           className="disp text-[clamp(28px,6vw,42px)] outline-none"
           data-testid="order-received-title"
         >
-          {t('title')}
+          {fresh ? t('title') : t('detailTitle')}
         </h1>
-        <p className="m-0 max-w-[520px] text-muted">{t('intro')}</p>
+        <p className="m-0 max-w-[520px] text-muted">{fresh ? t('intro') : t('detailIntro')}</p>
         {simulated ? <SimulationBadge kind="simulation" /> : null}
         <p className="m-0 mt-1 text-[13px] font-bold uppercase tracking-[0.12em] text-muted">
           {t('number')}
@@ -111,19 +131,28 @@ export function OrderReceived({
         >
           {copy === 'ok' ? t('copied') : copy === 'fail' ? t('copyFailed') : ''}
         </p>
-        <p
-          className="m-0 text-[13px] font-bold"
-          data-testid={unsaved ? 'unsaved-warning' : 'save-note'}
-        >
-          {unsaved ? t('unsaved') : t('saveNote')}
-        </p>
+        {fresh ? (
+          <p
+            className="m-0 text-[13px] font-bold"
+            data-testid={unsaved ? 'unsaved-warning' : 'save-note'}
+          >
+            {unsaved ? t('unsaved') : t('saveNote')}
+          </p>
+        ) : null}
       </div>
 
       <section aria-label={t('sectionAria')} className="flex flex-col gap-4">
         <dl className="m-0 divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
           <Fact icon={<ClipboardList className="h-4 w-4" />} label={t('status')}>
-            <span data-testid="order-status">
-              {order.status === 'pending' ? t('statusPending') : t('statusOther')}
+            <span data-testid="order-status" className="flex flex-col items-start gap-1">
+              <PublicStatusChip
+                publicStatus={publicStatusOf(order.status)}
+                fulfillmentType={order.fulfillmentType}
+                terminal={finished}
+              />
+              {order.status === 'pending' ? (
+                <span className="text-[13px] font-normal text-muted">{t('statusPending')}</span>
+              ) : null}
             </span>
           </Fact>
           {branch ? (
@@ -220,21 +249,47 @@ export function OrderReceived({
           ) : null}
         </div>
 
-        {unsaved ? null : <p className="m-0 text-center text-[13px] text-muted">{t('keepTab')}</p>}
-        <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
+        {unsaved || !fresh ? null : (
+          <p className="m-0 text-center text-[13px] text-muted">{t('keepTab')}</p>
+        )}
+        <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap">
           {/* F21: el seguimiento vive en su propia ruta (el token de invitado sigue en `sessionStorage`, nunca en la URL). */}
           <Link
             href={`/pedidos/${order.id}/seguimiento`}
-            className="btn btn-primary w-full no-underline sm:w-auto"
+            className={`btn w-full no-underline sm:w-auto ${finished ? '' : 'btn-primary'}`}
             data-testid="view-tracking"
           >
             {t('viewTracking')}
           </Link>
+          {/* F23: recibo NO fiscal imprimible y «Volver a pedir» (vista previa contra el catálogo vigente; no crea pedidos). */}
+          <Link
+            href={`/pedidos/${order.id}/recibo`}
+            className="btn w-full no-underline sm:w-auto"
+            data-testid="view-receipt"
+          >
+            <FileText className="h-4 w-4" aria-hidden="true" /> {t('viewReceipt')}
+          </Link>
+          <button
+            type="button"
+            className={`btn w-full sm:w-auto ${finished ? 'btn-primary' : ''}`}
+            data-testid="reorder"
+            onClick={() => setReordering(true)}
+          >
+            <RotateCcw className="h-4 w-4" aria-hidden="true" /> {to('again')}
+          </button>
           <Link href={STORE_ROUTES.menu} className="btn w-full no-underline sm:w-auto">
             {tc('goMenu')}
           </Link>
         </div>
       </section>
+      {reordering ? (
+        <ReorderDialog
+          orderId={order.id}
+          displayNumber={order.displayNumber}
+          inProgress={!finished}
+          onClose={() => setReordering(false)}
+        />
+      ) : null}
     </div>
   );
 }

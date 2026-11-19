@@ -5,7 +5,7 @@ import { useMemo } from 'react';
 import type { DraftOrder } from '@/lib/data-access/models';
 import { useDataClient } from '@/lib/data-access/provider';
 import { getDraftOrder } from '@/services/orders';
-import { useMyOrders } from '../account/hooks';
+import { useMyDraftOrders } from '../account/hooks';
 import { useLastOrder } from '../orders/last-order';
 import { queryKeys } from '../query-keys';
 import { useDemoSession } from '../session/demo-session';
@@ -51,7 +51,7 @@ export interface IncidentOrders {
  */
 export function useIncidentOrders(): IncidentOrders {
   const { customer } = useDemoSession();
-  const mine = useMyOrders();
+  const mine = useMyDraftOrders();
   const verified = useVerifiedOrderIds();
   const last = useLastOrder();
   const guestIds = useMemo(() => {

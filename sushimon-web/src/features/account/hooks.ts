@@ -8,7 +8,7 @@ import {
   deleteAddress,
   getMe,
   listAddresses,
-  listMyOrders,
+  listMyDraftOrders,
   setDefaultAddress,
   updateAddress,
   updateMe,
@@ -98,15 +98,18 @@ export function useSetDefaultAddress() {
   return useAddressMutation((id: string) => setDefaultAddress(client, id));
 }
 
-/** Pedidos del cliente con sesión. SIMULADOS hasta F20 (la API aún no expone `/v1/me/orders`). */
-export function useMyOrders({ enabled: wanted = true }: { enabled?: boolean } = {}) {
+/**
+ * 🎭 Solo mock: pedidos BORRADOR (`DraftOrder`) del cliente de demostración (Inicio, consulta e incidencias SIMULADAS). El historial
+ * REAL es `useMyOrderHistory` (F23, `GET /v1/me/orders`); este hook se retira junto con esos flujos simulados.
+ */
+export function useMyDraftOrders({ enabled: wanted = true }: { enabled?: boolean } = {}) {
   const client = useDataClient();
   const account = useAccountScope();
   const scope = account.scope;
   const enabled = account.enabled && wanted;
   return useQuery({
     queryKey: queryKeys.customer.orders.mine(scope),
-    queryFn: () => listMyOrders(client),
+    queryFn: () => listMyDraftOrders(client),
     enabled,
   });
 }

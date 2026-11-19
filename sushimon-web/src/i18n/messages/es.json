@@ -963,15 +963,6 @@
     "signedOutTitle": "Tus pedidos en un solo lugar",
     "signedOutText": "Iniciá sesión con Google para ver tus pedidos en curso y tu historial.",
     "guestTrack": "¿Pediste como invitado? Consultá tu orden con el número y tu teléfono.",
-    "active": "En curso",
-    "history": "Historial",
-    "noActive": "No tenés pedidos en curso.",
-    "noHistory": "Todavía no tenés pedidos anteriores.",
-    "startOrder": "Hacer un pedido",
-    "orders": "{a, plural, one {# pedido} other {# pedidos}}",
-    "spent": "Total en pedidos",
-    "demoData": "Pedidos de ejemplo de la cuenta de prueba",
-    "realModulesPending": "Tus pedidos aparecerán aquí cuando ese módulo esté conectado a la API.",
     "realProfile": "Sesión iniciada con Google"
   },
   "orders": {
@@ -1031,12 +1022,61 @@
       "registeredTitle": "Tu pedido está registrado",
       "registeredBody": "No pudimos mostrarlo ahora. Reintenta en unos segundos.",
       "copy": "Copiar número",
-      "copyAria": "Copiar el número de pedido {a}",
+      "copyAria": "Copiar número de pedido {a}",
       "copied": "Número copiado",
       "copyFailed": "No pudimos copiarlo: anótalo a mano.",
       "saveNote": "Guarda este número: lo necesitarás si pides ayuda a la sucursal.",
       "unsaved": "Guarda este número: no pudimos recordar tu pedido en este dispositivo. Si recargas o cierras la pestaña no podrás volver a verlo.",
-      "viewTracking": "Ver estado de mi pedido"
+      "viewTracking": "Ver estado de mi pedido",
+      "detailTitle": "Detalle de tu pedido",
+      "detailIntro": "Así quedó registrado tu pedido. Los precios son los de ese momento.",
+      "viewReceipt": "Ver recibo"
+    },
+    "history": {
+      "intro": "Tus pedidos, del más reciente al más antiguo.",
+      "tabs": {
+        "active": "En curso",
+        "history": "Historial"
+      },
+      "filters": {
+        "legend": "Filtros",
+        "branch": "Sucursal",
+        "allBranches": "Todas las sucursales",
+        "from": "Desde",
+        "to": "Hasta",
+        "clear": "Quitar filtros",
+        "range": {
+          "invalid": "Revisa las fechas.",
+          "inverted": "La fecha inicial debe ser anterior o igual a la final.",
+          "tooLong": "El rango máximo es de 366 días."
+        }
+      },
+      "loading": "Cargando tus pedidos…",
+      "emptyActive": "No tienes pedidos en curso.",
+      "emptyHistory": "Aún no tienes pedidos anteriores.",
+      "emptyFiltered": "No hay pedidos con estos filtros.",
+      "goMenu": "Ver el menú",
+      "guestNote": "Si pediste como invitado, abre tu pedido con el enlace de confirmación de este navegador o desde Consultar pedido.",
+      "guestLookup": "Consultar pedido",
+      "loadMore": "Cargar más",
+      "loadingMore": "Cargando…",
+      "loadMoreError": "No pudimos cargar más pedidos.",
+      "end": "Ya no hay más pedidos.",
+      "error": {
+        "generic": "No pudimos cargar tus pedidos.",
+        "busy": "El servicio está ocupado. Reintenta en unos segundos.",
+        "rateLimited": "Hiciste demasiadas consultas seguidas. Espera un momento.",
+        "offline": "Sin conexión. Revisa tu internet y reintenta."
+      },
+      "total": "Total",
+      "tracking": "Seguimiento",
+      "receipt": "Ver recibo",
+      "delivery": "A domicilio",
+      "pickup": "Para recoger en sucursal",
+      "tabsLabel": "Filtrar por estado",
+      "rangeBlocked": "Corrige las fechas para ver tus pedidos.",
+      "resultCount": "{a, plural, =0 {No hay pedidos} one {# pedido} other {# pedidos}}",
+      "resultCountMore": "{a, plural, one {# pedido cargado} other {# pedidos cargados}}; hay más"
     }
   },
   "track": {
@@ -1218,7 +1258,7 @@
     "favorites": "Mis favoritos",
     "favoritesSub": "{a, plural, =0 {Guardá tus productos preferidos} one {# producto} other {# productos}}",
     "orders": "Mis pedidos",
-    "ordersSub": "{a, plural, one {# pedido} other {# pedidos}}{b, plural, =0 {} other { · # en curso}}",
+    "ordersSub": "Historial, seguimiento, recibos y volver a pedir",
     "back": "Mi cuenta",
     "loading": "Cargando tu cuenta…",
     "loadError": "No pudimos cargar tu cuenta.",
@@ -1310,24 +1350,83 @@
     "error": "No pudimos guardar tus datos. Intentá de nuevo."
   },
   "reorder": {
-    "needBranch": "Elige una sucursal para reordenar.",
     "title": "Volver a pedir",
-    "checking": "Revisando precios y disponibilidad…",
     "from": "Basado en el pedido {a}",
-    "unavailable": "No disponible",
-    "unavailableNote": "{a, plural, one {1 producto ya no está disponible y no se agregará.} other {# productos ya no están disponibles y no se agregarán.}}",
-    "priceChanged": "Precio actualizado: {a} → {b}",
-    "originalTotal": "Total pagado originalmente",
-    "currentSubtotal": "Subtotal con precios de hoy",
-    "shippingNote": "El envío se vuelve a calcular en el checkout con tu dirección.",
-    "cartHasItems": "Ya tenés productos en tu pedido actual",
-    "replace": "Reemplazar mi pedido actual",
-    "append": "Agregar a mi pedido actual",
-    "confirm": "Agregar al carrito y revisar",
-    "noneAvailable": "Ninguno de estos productos está disponible en este momento.",
-    "added": "Listo. Revisá tu pedido antes de confirmar.",
-    "error": "No pudimos revisar el menú. Intentá de nuevo.",
-    "noCharge": "No se crea ningún pedido ni se cobra nada hasta que confirmes en el checkout."
+    "checking": "Revisando precios y disponibilidad…",
+    "confirmInProgressTitle": "Este pedido sigue en curso",
+    "confirmInProgressBody": "Este pedido sigue en curso. ¿Pedir otro igual?",
+    "confirmInProgressYes": "Sí, pedir otro igual",
+    "cancel": "Cancelar",
+    "back": "Volver",
+    "retry": "Reintentar",
+    "status": {
+      "AVAILABLE": "Disponible",
+      "NEEDS_CONFIGURATION": "Necesita que lo configures",
+      "UNAVAILABLE": "No disponible"
+    },
+    "sections": {
+      "AVAILABLE": "{a, plural, one {# producto se añadirá al carrito} other {# productos se añadirán al carrito}}",
+      "NEEDS_CONFIGURATION": "{a, plural, one {# producto necesita que lo configures} other {# productos necesitan que los configures}}",
+      "UNAVAILABLE": "{a, plural, one {# producto no disponible} other {# productos no disponibles}}"
+    },
+    "issue": {
+      "PRODUCT_REMOVED": "Este producto ya no se vende.",
+      "PRODUCT_INACTIVE": "Este producto no está disponible por ahora.",
+      "PRODUCT_OUT_OF_STOCK": "Agotado en esta sucursal.",
+      "BRANCH_UNAVAILABLE": "Esta sucursal no está disponible.",
+      "OPTION_REMOVED": "La opción «{a}» ya no se ofrece con este producto.",
+      "OPTION_INACTIVE": "La opción «{a}» no está disponible por ahora.",
+      "GROUP_RULE_CHANGED": "Las reglas de «{a}» cambiaron: elige de nuevo tus opciones.",
+      "REQUIRED_SELECTION_MISSING": "Ahora este producto pide elegir «{a}».",
+      "PRICE_CHANGED": "El precio cambió.",
+      "QUANTITY_ADJUSTED": "La cantidad se ajustó de {from} a {to}.",
+      "NOTE_DROPPED": "No copiamos tu nota anterior porque ya no cumple el formato permitido.",
+      "unknown": "Revisa este producto."
+    },
+    "priceChanged": "Antes {a} → ahora {b} por unidad",
+    "configure": "Configurar",
+    "configureAria": "Configurar {a}",
+    "branch": {
+      "label": "Sucursal",
+      "differs": "Tu pedido original era de {a}; ahora lo revisamos en {b}.",
+      "unknown": "otra sucursal",
+      "inactive": "Esta sucursal no está activa. Elige otra para volver a revisar el pedido.",
+      "closedNow": "Esta sucursal no recibe pedidos ahora ({a}). Puedes añadir los productos igualmente; al pagar se confirma el horario. {b}",
+      "reason": {
+        "OPEN": "abierta",
+        "INACTIVE": "inactiva",
+        "OUTSIDE_BUSINESS_HOURS": "fuera de horario",
+        "EXCEPTIONAL_CLOSURE": "cierre excepcional",
+        "SCHEDULE_NOT_CONFIGURED": "horario sin configurar"
+      }
+    },
+    "estimated": "Subtotal estimado con precios de hoy",
+    "estimateNote": "Sin promociones, cupón ni entrega: se calculan al pagar.",
+    "cart": {
+      "legend": "¿Qué hacemos con tu carrito?",
+      "add": "Añadir a mi carrito",
+      "replace": "Reemplazar mi carrito",
+      "otherBranch": "Tu carrito es de otra sucursal y no se pueden mezclar. Puedes reemplazarlo por este pedido (sucursal {a}) o cancelar."
+    },
+    "confirmAdd": "Añadir al carrito",
+    "confirmReplace": "Reemplazar mi carrito",
+    "replaceConfirm": {
+      "title": "¿Reemplazar tu carrito?",
+      "body": "{a, plural, one {Se quitará # producto de tu carrito.} other {Se quitarán # productos de tu carrito.}}",
+      "yes": "Sí, reemplazar"
+    },
+    "added": "{a, plural, one {Añadimos # producto.} other {Añadimos # productos.}} Los precios, promociones y la entrega se calcularán al pagar.",
+    "nothing": "No hay productos para añadir.",
+    "announceResult": "Revisión lista: {a} disponibles, {b} por configurar y {c} no disponibles.",
+    "error": {
+      "denied": "No pudimos revisar este pedido. Si lo hiciste como invitado, abre el enlace de confirmación desde este navegador.",
+      "rateLimited": "Hiciste demasiadas consultas seguidas. Espera un momento y reintenta.",
+      "busy": "El servicio está ocupado. Reintenta en unos segundos. Tu carrito no cambió.",
+      "offline": "Sin conexión. Tu carrito no cambió.",
+      "unknown": "No pudimos revisar el pedido. Tu carrito no cambió."
+    },
+    "noCharge": "No se crea ningún pedido ni se cobra nada hasta que confirmes en el checkout.",
+    "nothingNow": "Ningún producto se puede añadir ahora."
   },
   "footer": {
     "tagline": "El lugar de los MONcheros. Sushi urbano en Zona 4, Ciudad de Guatemala.",
@@ -3693,6 +3792,61 @@
         }
       },
       "hasEnglish": "Con versión en inglés"
+    }
+  },
+  "receipt": {
+    "title": "Recibo",
+    "documentTitle": "Recibo {a}",
+    "brand": "Sushi Mon",
+    "back": "Volver al pedido",
+    "print": "Imprimir / guardar como PDF",
+    "printHint": "Se abrirá la impresión de tu navegador: ahí puedes elegir «Guardar como PDF».",
+    "notFiscal": "Este documento es un recibo informativo del pedido. No es una factura ni un documento fiscal.",
+    "phone": "Teléfono",
+    "timeZone": "hora de Guatemala",
+    "status": "Estado",
+    "banner": {
+      "rejected": "Este pedido fue rechazado por la sucursal.",
+      "cancelled": "Este pedido fue cancelado.",
+      "noPayment": "No hay ningún pago registrado."
+    },
+    "delivery": {
+      "title": "Entrega",
+      "pickup": "Para recoger en sucursal",
+      "delivery": "A domicilio",
+      "own": "Entrega propia",
+      "pedidosya": "PedidosYa (servicio externo)",
+      "reference": "Referencia"
+    },
+    "customer": "Cliente",
+    "lines": "Productos",
+    "extras": "Extras",
+    "note": "Nota",
+    "promotions": "Promociones",
+    "notes": "Notas del pedido",
+    "totals": "Totales",
+    "subtotal": "Subtotal",
+    "includesExtras": "Incluye extras: {a}",
+    "discount": "Descuento",
+    "fee": "Entrega",
+    "total": "Total",
+    "payment": {
+      "title": "Pago",
+      "none": "Sin pago registrado",
+      "other": "Consulta el estado del pago con la sucursal",
+      "cash": "Método elegido: efectivo",
+      "transfer": "Método elegido: transferencia"
+    },
+    "generatedAt": "Datos generados el {a} (no es una fecha de emisión fiscal).",
+    "loading": "Cargando el recibo…",
+    "lostTitle": "No pudimos mostrar este recibo",
+    "lostBody": "Por seguridad, este pedido solo se muestra con tu sesión o en la pestaña donde lo hiciste. Si necesitas ayuda, contacta a la sucursal con tu número de pedido.",
+    "error": {
+      "denied": "No pudimos mostrar este recibo.",
+      "rateLimited": "Hiciste demasiadas consultas seguidas. Espera un momento.",
+      "busy": "El servicio está ocupado. Reintenta en unos segundos.",
+      "offline": "Sin conexión. Revisa tu internet y reintenta.",
+      "unknown": "No pudimos cargar el recibo."
     }
   }
 }

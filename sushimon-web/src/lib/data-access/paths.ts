@@ -41,6 +41,10 @@ export const paths = {
   order: (id: string) => `/v1/orders/${seg(id)}`,
   /** F21: seguimiento ligero del pedido (`getOrderTracking`), apto para polling. */
   orderTracking: (id: string) => `/v1/orders/${seg(id)}/tracking`,
+  /** F23: recibo NO fiscal del pedido (`getOrderReceipt`). Misma autorización que `getOrder`. */
+  orderReceipt: (id: string) => `/v1/orders/${seg(id)}/receipt`,
+  /** F23: vista previa de solo lectura de «Volver a pedir» (`previewOrderReorder`, POST sin efectos). */
+  orderReorderPreview: (id: string) => `/v1/orders/${seg(id)}/reorder-preview`,
   orderLookup: () => '/v1/orders/lookup',
   cardPayment: () => '/v1/payments/card',
   incidents: () => '/v1/incidents',
@@ -56,7 +60,10 @@ export const paths = {
   myAddressDefault: (id: string) => `/v1/me/addresses/${seg(id)}/default`,
   myFavorites: () => '/v1/me/favorites',
   myFavorite: (productId: string) => `/v1/me/favorites/${seg(productId)}`,
+  /** F23 (contrato): historial paginado por cursor del cliente (`listMyOrders`, `MyOrderPage`). */
   myOrders: () => '/v1/me/orders',
+  /** 🎭 Solo mock: pedidos BORRADOR (`DraftOrder`) del cliente de demostración que aún usan Inicio, consulta e incidencias. Se retira con ellos. */
+  demoMyDraftOrders: () => '/v1/demo/me/orders',
 
   // Backoffice
   staffMe: () => '/v1/backoffice/me',

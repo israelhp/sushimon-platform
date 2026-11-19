@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ApiError } from '@/lib/data-access/errors';
 import * as account from '@/services/account';
 import * as favorites from '@/services/favorites';
+import * as orders from '@/services/orders';
 import { municipalityByName } from '../fixtures/geography';
 import { createHarness } from '../testing';
 
@@ -33,7 +34,7 @@ describe('cuenta del cliente (/v1/me)', () => {
   it('sin sesión → 401', async () => {
     const h = createHarness();
     expect(await status(account.getMe(h.client))).toBe(401);
-    expect(await status(account.listMyOrders(h.client))).toBe(401);
+    expect(await status(orders.listMyOrders(h.client))).toBe(401);
   });
 
   it('cuenta demo sembrada: perfil, 2 direcciones (predeterminada = demo-casa), 2 favoritos y 3 pedidos', async () => {
@@ -47,8 +48,15 @@ describe('cuenta del cliente (/v1/me)', () => {
       'platanito-roll',
       'calientito-roll',
     ]);
-    const orders = await account.listMyOrders(h.client);
-    expect(orders.map((o) => o.id)).toEqual(['MON-490217', 'MON-482193', 'MON-479850']);
+    const page = await orders.listMyOrders(h.client);
+    expect(page.items.map((o) => o.displayNumber)).toEqual([
+      'MON-490217',
+      'MON-482193',
+      'MON-479850',
+    ]);
+    // Los borradores simulados (Inicio e incidencias) siguen en su propia ruta de demostración.
+    const drafts = await account.listMyDraftOrders(h.client);
+    expect(drafts.map((o) => o.id)).toEqual(['MON-490217', 'MON-482193', 'MON-479850']);
   });
 
   it('cuenta nueva empieza vacía y la primera dirección queda predeterminada', async () => {

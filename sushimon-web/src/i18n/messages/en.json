@@ -973,15 +973,6 @@
     "signedOutTitle": "All your orders in one place",
     "signedOutText": "Sign in with Google to see your current orders and your history.",
     "guestTrack": "Ordered as a guest? Track your order with the number and your phone.",
-    "active": "Current",
-    "history": "History",
-    "noActive": "You have no current orders.",
-    "noHistory": "You have no past orders yet.",
-    "startOrder": "Place an order",
-    "orders": "{a, plural, one {# order} other {# orders}}",
-    "spent": "Total ordered",
-    "demoData": "Sample orders from the test account",
-    "realModulesPending": "Your orders will appear here once that module is connected to the API.",
     "realProfile": "Signed in with Google"
   },
   "orders": {
@@ -1041,12 +1032,61 @@
       "registeredTitle": "Your order is registered",
       "registeredBody": "We couldn't show it right now. Retry in a few seconds.",
       "copy": "Copy number",
-      "copyAria": "Copy order number {a}",
+      "copyAria": "Copy number of order {a}",
       "copied": "Number copied",
       "copyFailed": "We couldn't copy it: write it down.",
       "saveNote": "Save this number: you'll need it if you ask the branch for help.",
       "unsaved": "Save this number: we couldn't remember your order on this device. If you reload or close the tab you won't be able to see it again.",
-      "viewTracking": "View my order status"
+      "viewTracking": "View my order status",
+      "detailTitle": "Your order details",
+      "detailIntro": "This is how your order was recorded. Prices are the ones from that moment.",
+      "viewReceipt": "View receipt"
+    },
+    "history": {
+      "intro": "Your orders, newest first.",
+      "tabs": {
+        "active": "In progress",
+        "history": "History"
+      },
+      "filters": {
+        "legend": "Filters",
+        "branch": "Branch",
+        "allBranches": "All branches",
+        "from": "From",
+        "to": "To",
+        "clear": "Clear filters",
+        "range": {
+          "invalid": "Check the dates.",
+          "inverted": "The start date must be on or before the end date.",
+          "tooLong": "The maximum range is 366 days."
+        }
+      },
+      "loading": "Loading your orders…",
+      "emptyActive": "You have no orders in progress.",
+      "emptyHistory": "You have no past orders yet.",
+      "emptyFiltered": "No orders match these filters.",
+      "goMenu": "See the menu",
+      "guestNote": "If you ordered as a guest, open your order with this browser's confirmation link or from Track an order.",
+      "guestLookup": "Track an order",
+      "loadMore": "Load more",
+      "loadingMore": "Loading…",
+      "loadMoreError": "We couldn't load more orders.",
+      "end": "No more orders.",
+      "error": {
+        "generic": "We couldn't load your orders.",
+        "busy": "The service is busy. Try again in a few seconds.",
+        "rateLimited": "You made too many requests in a row. Wait a moment.",
+        "offline": "You're offline. Check your connection and try again."
+      },
+      "total": "Total",
+      "tracking": "Tracking",
+      "receipt": "View receipt",
+      "delivery": "Delivery",
+      "pickup": "Pickup at the branch",
+      "tabsLabel": "Filter by status",
+      "rangeBlocked": "Fix the dates to see your orders.",
+      "resultCount": "{a, plural, =0 {No orders} one {# order} other {# orders}}",
+      "resultCountMore": "{a, plural, one {# order loaded} other {# orders loaded}}; there are more"
     }
   },
   "track": {
@@ -1228,7 +1268,7 @@
     "favorites": "My favorites",
     "favoritesSub": "{a, plural, =0 {Save the items you love} one {# item} other {# items}}",
     "orders": "My orders",
-    "ordersSub": "{a, plural, one {# order} other {# orders}}{b, plural, =0 {} other { · # in progress}}",
+    "ordersSub": "History, tracking, receipts and order again",
     "back": "My account",
     "loading": "Loading your account…",
     "loadError": "We couldn’t load your account.",
@@ -1320,24 +1360,83 @@
     "error": "We couldn’t save your details. Please try again."
   },
   "reorder": {
-    "needBranch": "Choose a branch to reorder.",
     "title": "Order again",
-    "checking": "Checking prices and availability…",
     "from": "Based on order {a}",
-    "unavailable": "Not available",
-    "unavailableNote": "{a, plural, one {1 item is no longer available and won’t be added.} other {# items are no longer available and won’t be added.}}",
-    "priceChanged": "Price updated: {a} → {b}",
-    "originalTotal": "Originally paid",
-    "currentSubtotal": "Subtotal at today’s prices",
-    "shippingNote": "Delivery is recalculated at checkout with your address.",
-    "cartHasItems": "You already have items in your current order",
-    "replace": "Replace my current order",
-    "append": "Add to my current order",
-    "confirm": "Add to cart and review",
-    "noneAvailable": "None of these items are available right now.",
-    "added": "Done. Review your order before confirming.",
-    "error": "We couldn’t check the menu. Please try again.",
-    "noCharge": "No order is created and nothing is charged until you confirm at checkout."
+    "checking": "Checking prices and availability…",
+    "confirmInProgressTitle": "This order is still in progress",
+    "confirmInProgressBody": "This order is still in progress. Order another one just like it?",
+    "confirmInProgressYes": "Yes, order another",
+    "cancel": "Cancel",
+    "back": "Back",
+    "retry": "Try again",
+    "status": {
+      "AVAILABLE": "Available",
+      "NEEDS_CONFIGURATION": "Needs your configuration",
+      "UNAVAILABLE": "Unavailable"
+    },
+    "sections": {
+      "AVAILABLE": "{a, plural, one {# item will be added to the cart} other {# items will be added to the cart}}",
+      "NEEDS_CONFIGURATION": "{a, plural, one {# item needs you to configure it} other {# items need you to configure them}}",
+      "UNAVAILABLE": "{a, plural, one {# unavailable item} other {# unavailable items}}"
+    },
+    "issue": {
+      "PRODUCT_REMOVED": "This product is no longer sold.",
+      "PRODUCT_INACTIVE": "This product is unavailable for now.",
+      "PRODUCT_OUT_OF_STOCK": "Sold out at this branch.",
+      "BRANCH_UNAVAILABLE": "This branch is unavailable.",
+      "OPTION_REMOVED": "The option “{a}” is no longer offered with this product.",
+      "OPTION_INACTIVE": "The option “{a}” is unavailable for now.",
+      "GROUP_RULE_CHANGED": "The rules for “{a}” changed: choose your options again.",
+      "REQUIRED_SELECTION_MISSING": "This product now requires choosing “{a}”.",
+      "PRICE_CHANGED": "The price changed.",
+      "QUANTITY_ADJUSTED": "The quantity was adjusted from {from} to {to}.",
+      "NOTE_DROPPED": "We didn't copy your previous note because it no longer meets the allowed format.",
+      "unknown": "Review this product."
+    },
+    "priceChanged": "Before {a} → now {b} each",
+    "configure": "Configure",
+    "configureAria": "Configure {a}",
+    "branch": {
+      "label": "Branch",
+      "differs": "Your original order was at {a}; we're now checking it at {b}.",
+      "unknown": "another branch",
+      "inactive": "This branch is not active. Choose another one to review the order again.",
+      "closedNow": "This branch isn't taking orders right now ({a}). You can still add the items; the schedule is confirmed at checkout. {b}",
+      "reason": {
+        "OPEN": "open",
+        "INACTIVE": "inactive",
+        "OUTSIDE_BUSINESS_HOURS": "outside business hours",
+        "EXCEPTIONAL_CLOSURE": "exceptional closure",
+        "SCHEDULE_NOT_CONFIGURED": "schedule not set"
+      }
+    },
+    "estimated": "Estimated subtotal at today's prices",
+    "estimateNote": "Without promotions, coupon or delivery: they are calculated at checkout.",
+    "cart": {
+      "legend": "What should we do with your cart?",
+      "add": "Add to my cart",
+      "replace": "Replace my cart",
+      "otherBranch": "Your cart is from another branch and they can't be mixed. You can replace it with this order (branch {a}) or cancel."
+    },
+    "confirmAdd": "Add to cart",
+    "confirmReplace": "Replace my cart",
+    "replaceConfirm": {
+      "title": "Replace your cart?",
+      "body": "{a, plural, one {# item will be removed from your cart.} other {# items will be removed from your cart.}}",
+      "yes": "Yes, replace"
+    },
+    "added": "{a, plural, one {We added # item.} other {We added # items.}} Prices, promotions and delivery are calculated at checkout.",
+    "nothing": "There are no items to add.",
+    "announceResult": "Review ready: {a} available, {b} to configure and {c} unavailable.",
+    "error": {
+      "denied": "We couldn't review this order. If you placed it as a guest, open the confirmation link from this browser.",
+      "rateLimited": "You made too many requests in a row. Wait a moment and try again.",
+      "busy": "The service is busy. Try again in a few seconds. Your cart didn't change.",
+      "offline": "You're offline. Your cart didn't change.",
+      "unknown": "We couldn't review the order. Your cart didn't change."
+    },
+    "noCharge": "No order is created and nothing is charged until you confirm at checkout.",
+    "nothingNow": "None of the items can be added right now."
   },
   "footer": {
     "tagline": "Home of the MONcheros. Urban sushi in Zone 4, Guatemala City.",
@@ -3703,6 +3802,61 @@
         }
       },
       "hasEnglish": "Con versión en inglés"
+    }
+  },
+  "receipt": {
+    "title": "Receipt",
+    "documentTitle": "Receipt {a}",
+    "brand": "Sushi Mon",
+    "back": "Back to the order",
+    "print": "Print / save as PDF",
+    "printHint": "Your browser's print dialog will open: there you can choose “Save as PDF”.",
+    "notFiscal": "This document is an informational receipt for the order. It is not an invoice or a tax document.",
+    "phone": "Phone",
+    "timeZone": "Guatemala time",
+    "status": "Status",
+    "banner": {
+      "rejected": "This order was rejected by the branch.",
+      "cancelled": "This order was cancelled.",
+      "noPayment": "No payment is recorded."
+    },
+    "delivery": {
+      "title": "Fulfillment",
+      "pickup": "Pickup at the branch",
+      "delivery": "Delivery",
+      "own": "Own delivery",
+      "pedidosya": "PedidosYa (external service)",
+      "reference": "Reference"
+    },
+    "customer": "Customer",
+    "lines": "Items",
+    "extras": "Extras",
+    "note": "Note",
+    "promotions": "Promotions",
+    "notes": "Order notes",
+    "totals": "Totals",
+    "subtotal": "Subtotal",
+    "includesExtras": "Includes extras: {a}",
+    "discount": "Discount",
+    "fee": "Delivery",
+    "total": "Total",
+    "payment": {
+      "title": "Payment",
+      "none": "No payment recorded",
+      "other": "Ask the branch about the payment status",
+      "cash": "Chosen method: cash",
+      "transfer": "Chosen method: bank transfer"
+    },
+    "generatedAt": "Data generated on {a} (not a tax issue date).",
+    "loading": "Loading the receipt…",
+    "lostTitle": "We couldn't show this receipt",
+    "lostBody": "For security, this order is only shown with your session or in the tab where you placed it. If you need help, contact the branch with your order number.",
+    "error": {
+      "denied": "We couldn't show this receipt.",
+      "rateLimited": "You made too many requests in a row. Wait a moment.",
+      "busy": "The service is busy. Try again in a few seconds.",
+      "offline": "You're offline. Check your connection and try again.",
+      "unknown": "We couldn't load the receipt."
     }
   }
 }

@@ -1,4 +1,5 @@
 import type {
+  OrderLifecycleStatus,
   OrderPublicStatus,
   OrderTracking,
   OrderTrackingEvent,
@@ -20,6 +21,17 @@ export const KNOWN_PHASES = [
   'rejected',
   'cancelled',
 ] as const satisfies readonly OrderPublicStatus[];
+
+/**
+ * Mapeo `OrderLifecycleStatus` → fase pública publicado en el contrato (`OrderPublicStatus`, F21): solo para pantallas que reciben el
+ * estado real (`OrderDetail.status`) y no la fase. Las listas, el recibo y el seguimiento usan la fase que entrega el servidor.
+ */
+export const publicStatusOf = (status: OrderLifecycleStatus): OrderPublicStatus =>
+  status === 'pending'
+    ? 'received'
+    : status === 'delivered' || status === 'picked_up'
+      ? 'completed'
+      : status;
 
 export const isKnownPhase = (value: string): value is OrderPublicStatus =>
   (KNOWN_PHASES as readonly string[]).includes(value);
