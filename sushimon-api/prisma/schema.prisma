@@ -37,6 +37,7 @@ model Branch {
   promotionBranches PromotionBranch[]
   bannerBranches    BannerBranch[]
   orders            Order[]
+  payments          Payment[]
 
   @@map("branches")
   @@schema("app")
@@ -635,6 +636,8 @@ model Order {
   statusHistory           OrderStatusHistory[]
   accessTokens            OrderAccessToken[]
   idempotencyKeys         OrderIdempotencyKey[]
+  payment                 Payment?
+  paymentEvents           PaymentEvent[]
 
   @@index([branchId, status, placedAt(sort: Desc)], map: "orders_branch_status_placed_idx")
   @@map("orders")
@@ -755,5 +758,85 @@ model OrderIdempotencyKey {
   @@index([expiresAt], map: "order_idempotency_keys_expires_idx")
   @@index([orderId], map: "order_idempotency_keys_order_idx")
   @@map("order_idempotency_keys")
+  @@schema("app")
+}
+
+// ---------------------------------------------------------------------------------------------
+// F24 · Pagos en efectivo (migración 0019, specs/025-cash-payments §2, ADR-0030). payment_methods y payments vienen
+// del DBML (ampliado); payment_events es nueva. CHECK (payments_status_chk, payments_cash_only_chk,
+// payments_reception_chk, payment_events_chk, payment_methods_chk), triggers (payments_guard, payment_events_append_only,
+// orders_payment_pref_cash_only), RLS/REVOKE y el seed `cash` solo existen en SQL. El DBML no se edita.
+// ---------------------------------------------------------------------------------------------
+
+/// F24 (0019). Catálogo; seed SOLO `cash`.
+model PaymentMethod {
+  id       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code     String    @unique(map: "payment_methods_code_key")
+  name     String
+  active   Boolean   @default(true)
+  payments Payment[]
+
+  @@map("payment_methods")
+  @@schema("app")
+}
+
+/// F24 (0019). UN pago por pedido (UNIQUE order_id). status pending|paid (CHECK); paid es inmutable (trigger).
+/// amount = orders.total = ingreso; tendered/change NO son ingreso. received_by_staff_id SIN FK (criterio audit_events).
+/// provider, provider_reference e idempotency_key quedan NULL en F24 (CHECK); la clave solo se guarda como hash.
+model Payment {
+  id                 String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId            String         @unique(map: "payments_order_key") @map("order_id") @db.Uuid
+  methodId           String         @map("method_id") @db.Uuid
+  branchId           String         @map("branch_id") @db.Uuid
+  amount             Decimal        @db.Decimal(12, 2)
+  /// pending | paid (CHECK).
+  status             String         @default("pending")
+  provider           String?
+  providerReference  String?        @map("provider_reference")
+  /// RESERVADA (DBML): siempre NULL en F24.
+  idempotencyKey     String?        @unique(map: "payments_idempotency_key_key") @map("idempotency_key")
+  tenderedAmount     Decimal?       @map("tendered_amount") @db.Decimal(12, 2)
+  changeAmount       Decimal?       @map("change_amount") @db.Decimal(12, 2)
+  /// STAFF (F28 añadirá RIDER).
+  collectorType      String?        @map("collector_type")
+  receivedByStaffId  String?        @map("received_by_staff_id") @db.Uuid
+  /// BRANCH | OWN_DELIVERY.
+  collectionContext  String?        @map("collection_context")
+  receivedAt         DateTime?      @map("received_at") @db.Timestamptz(6)
+  /// sha256(Idempotency-Key), 32 bytes.
+  confirmKeyHash     Bytes?         @map("confirm_key_hash")
+  /// sha256(cuerpo canónico), 32 bytes.
+  confirmRequestHash Bytes?         @map("confirm_request_hash")
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime       @default(now()) @map("updated_at") @db.Timestamptz(6)
+  order              Order          @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  method             PaymentMethod  @relation(fields: [methodId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  branch             Branch         @relation(fields: [branchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  events             PaymentEvent[]
+
+  @@index([methodId], map: "payments_method_idx")
+  @@index([branchId], map: "payments_branch_idx")
+  @@map("payments")
+  @@schema("app")
+}
+
+/// F24 (0019). No está en el DBML. SOLO-AÑADIR (trigger). actor_staff_id = staff_users.id SIN FK.
+model PaymentEvent {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  paymentId      String   @map("payment_id") @db.Uuid
+  orderId        String   @map("order_id") @db.Uuid
+  /// created | cash_received (CHECK).
+  eventType      String   @map("event_type")
+  actorStaffId   String?  @map("actor_staff_id") @db.Uuid
+  amount         Decimal  @db.Decimal(12, 2)
+  tenderedAmount Decimal? @map("tendered_amount") @db.Decimal(12, 2)
+  changeAmount   Decimal? @map("change_amount") @db.Decimal(12, 2)
+  occurredAt     DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  payment        Payment  @relation(fields: [paymentId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([orderId, occurredAt, id], map: "payment_events_order_idx")
+  @@index([paymentId], map: "payment_events_payment_idx")
+  @@map("payment_events")
   @@schema("app")
 }
