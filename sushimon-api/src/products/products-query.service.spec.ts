@@ -331,3 +331,35 @@ describe('ProductsQueryService.findVisibleBySlug: modificadores (F12)', () => {
     expect(mods.calls).toEqual([]);
   });
 });
+
+describe('ProductsQueryService.findPresentationByIds (F23, solo lectura)', () => {
+  it('slug, nombre vigente e imagen principal en 2 consultas; los ausentes faltan; sin árbol de categorías', async () => {
+    const { service, repo, categoriesRepo } = setup();
+    const out = await service.findPresentationByIds([pid(1), pid(2), pid(99), pid(1)]);
+    expect(out.get(pid(1))).toEqual({
+      slug: 'roll-california',
+      name: 'Roll California',
+      imageUrl: 'https://cdn.x.io/1.jpg',
+    });
+    expect(out.get(pid(2))).toEqual({ slug: 'roll-vegano', name: 'Roll Vegano', imageUrl: null });
+    expect(out.has(pid(99))).toBe(false);
+    expect(repo.count('findSlugsAndNames')).toBe(1);
+    expect(repo.count('findMedia')).toBe(1);
+    expect(repo.count('findActiveByIds')).toBe(0);
+    expect(categoriesRepo.findAllNodes).not.toHaveBeenCalled();
+  });
+
+  it('lista vacía => mapa vacío sin tocar la base', async () => {
+    const { service, repo } = setup();
+    expect((await service.findPresentationByIds([])).size).toBe(0);
+    expect(repo.calls).toEqual([]);
+  });
+
+  it('regresión: findVisibleSummariesByIds conserva su comportamiento (visibilidad y consultas)', async () => {
+    const { service, repo } = setup();
+    const out = await service.findVisibleSummariesByIds([pid(1), pid(4)]);
+    expect(out.has(pid(1))).toBe(true);
+    expect(out.has(pid(4))).toBe(false);
+    expect(repo.count('findActiveByIds')).toBe(1);
+  });
+});

@@ -17,6 +17,16 @@ function orderVaryMiddleware(
   next();
 }
 
+/** `Vary` de la lista de pedidos del cliente (F23): depende solo de la sesión. */
+function authorizationVaryMiddleware(
+  _req: unknown,
+  res: { vary: (field: string) => unknown },
+  next: (error?: unknown) => void,
+): void {
+  res.vary('Authorization');
+  next();
+}
+
 export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
   const config = new DocumentBuilder()
     .setTitle('Sushi Mon API')
@@ -44,6 +54,8 @@ export function configureApp(app: NestExpressApplication, options: AppSetupOptio
   // `Vary: Authorization, X-Order-Token` también aquí (no solo en los handlers) para que lo lleven los errores (400/404/429/503):
   // el 404 de un pedido ajeno no debe poder servirse a otro solicitante desde una caché intermedia.
   app.use('/v1/orders', privateNoStoreMiddleware, orderVaryMiddleware);
+  // Historial del cliente (F23): lista privada; `Vary: Authorization` y `no-store` también en 401/400/429/503.
+  app.use('/v1/me/orders', privateNoStoreMiddleware, authorizationVaryMiddleware);
   app.useBodyParser('json');
   app.use(bodyParserErrorMiddleware);
   app.setGlobalPrefix('v1');

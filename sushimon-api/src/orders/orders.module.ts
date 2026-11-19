@@ -1,16 +1,27 @@
 import { Module, RequestMethod, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuditModule } from '../audit/audit.module.js';
+import { BranchProductsModule } from '../branch-products/branch-products.module.js';
+import { BranchScheduleModule } from '../branch-schedule/branch-schedule.module.js';
 import { CLOCK, SystemClock } from '../branch-schedule/clock.js';
 import { checkoutBodyLimitMiddleware } from '../checkout/checkout-body-limit.middleware.js';
 import { CheckoutModule } from '../checkout/checkout.module.js';
 import { DbGate, splitGateBudget } from '../common/concurrency/db-gate.js';
 import type { Env } from '../config/env.js';
+import { ModifiersModule } from '../modifiers/modifiers.module.js';
+import { ProductsModule } from '../products/products.module.js';
 import { AdminOrdersCommandsService } from './admin/admin-orders-commands.service.js';
 import { AdminOrdersQueryService } from './admin/admin-orders-query.service.js';
 import { AdminOrdersController } from './admin/admin-orders.controller.js';
 import { AdminOrdersRepository } from './admin/admin-orders.repository.js';
 import { OrderTransitionsService } from './admin/order-transitions.service.js';
+import { MyOrdersController } from './history/my-orders.controller.js';
+import { MyOrdersRepository } from './history/my-orders.repository.js';
+import { MyOrdersService } from './history/my-orders.service.js';
+import { OrderDocumentsController } from './order-documents.controller.js';
+import { OrderDocumentsService } from './order-documents.service.js';
+import { reorderBodyLimitMiddleware } from './reorder/reorder-body-limit.middleware.js';
+import { OrderSourceRepository } from './order-source.repository.js';
 import { NoDeliveryFulfillment, ORDER_FULFILLMENT_PORT } from './ports/order-fulfillment.port.js';
 import {
   ORDER_PAYMENT_READ_PORT,
@@ -34,14 +45,33 @@ import { OrdersService } from './orders.service.js';
  * ciclos). `IdentityService` y `PrismaService` vienen de módulos globales. Sin pagos, entregas ni notificaciones reales.
  */
 @Module({
-  imports: [CheckoutModule, AuditModule],
-  controllers: [OrdersController, AdminOrdersController],
+  imports: [
+    CheckoutModule,
+    AuditModule,
+    // F23 (solo lectura): lectores de catálogo para la vista previa de «Volver a pedir».
+    BranchProductsModule,
+    BranchScheduleModule,
+    ModifiersModule,
+    ProductsModule,
+  ],
+  controllers: [
+    OrdersController,
+    AdminOrdersController,
+    // F23: historial del cliente (`/v1/me/orders`), recibo y vista previa (`/v1/orders/{id}/…`).
+    MyOrdersController,
+    OrderDocumentsController,
+  ],
   exports: [OrderTransitionsService, AdminOrdersRepository],
   providers: [
     OrdersService,
     OrdersRepository,
     OrderSnapshotReader,
     OrderQuoteGuard,
+    // F23: historial, recibo y «Volver a pedir» (solo lectura sobre el MISMO `ORDERS_DB_GATE`).
+    MyOrdersService,
+    MyOrdersRepository,
+    OrderDocumentsService,
+    OrderSourceRepository,
     // F22: gestión de pedidos del backoffice. Un solo servicio de transiciones (F28 lo reutiliza con su transacción).
     AdminOrdersRepository,
     AdminOrdersQueryService,
@@ -71,5 +101,9 @@ export class OrdersModule implements NestModule {
     consumer
       .apply(checkoutBodyLimitMiddleware)
       .forRoutes({ path: 'orders', method: RequestMethod.POST });
+    // F23: tope propio (2 KB) del cuerpo de la vista previa, antes de guards y BD.
+    consumer
+      .apply(reorderBodyLimitMiddleware)
+      .forRoutes({ path: 'orders/:id/reorder-preview', method: RequestMethod.POST });
   }
 }
