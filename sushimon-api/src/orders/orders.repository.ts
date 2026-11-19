@@ -14,6 +14,8 @@ import type {
 import type { IssuedGuestToken } from './order-access-token.js';
 import { hashesEqual } from './order-idempotency.js';
 import { ordersBusy } from './orders-errors.js';
+import { TRACKING_HISTORY_READ_LIMIT } from './order-tracking.mapper.js';
+import type { OrderTrackingRecord } from './order-tracking.types.js';
 
 /**
  * Espera máxima por la fila de una clave de idempotencia retenida por otra transacción (`SET LOCAL lock_timeout`). 2 s: acota
@@ -69,6 +71,36 @@ const ORDER_SELECT = {
     select: { promotionName: true, amount: true },
   },
 } satisfies Prisma.OrderSelect;
+
+/**
+ * Seguimiento (F21, spec 022 §6.3): SOLO las columnas necesarias (sin contacto, dirección, notas ni importes) y el historial
+ * (`newStatus`, `changedAt`; sin `id`, `oldStatus`, `changedBy` ni `reason`) los 51 eventos más RECIENTES (orden
+ * `changed_at desc, id desc`; el 51.º detecta el truncamiento) que se devuelven en orden cronológico ascendente. Prisma emite 2 sentencias (pedido + historial por el índice `order_status_history_order_idx`).
+ */
+const TRACKING_SELECT = {
+  id: true,
+  orderNumber: true,
+  branchId: true,
+  fulfillmentType: true,
+  deliveryProvider: true,
+  status: true,
+  placedAt: true,
+  updatedAt: true,
+  statusHistory: {
+    orderBy: [{ changedAt: 'desc' }, { id: 'desc' }],
+    take: TRACKING_HISTORY_READ_LIMIT,
+    select: { newStatus: true, changedAt: true },
+  },
+} satisfies Prisma.OrderSelect;
+
+type TrackingRow = Prisma.OrderGetPayload<{ select: typeof TRACKING_SELECT }>;
+
+function toTrackingRecord(row: TrackingRow | null): OrderTrackingRecord | null {
+  if (!row) return null;
+  const { statusHistory, ...order } = row;
+  // La consulta trae los MÁS RECIENTES (desc) para no perder el último evento; se entregan en orden cronológico.
+  return { ...order, history: [...statusHistory].reverse() };
+}
 
 /**
  * Acceso a datos de los pedidos (F20, spec 021 §4 y §7). La transacción de creación SOLO escribe (~9 sentencias por
@@ -295,6 +327,41 @@ export class OrdersRepository {
       },
       select: ORDER_SELECT,
     });
+  }
+
+  /**
+   * Seguimiento (F21) del pedido del cliente dueño, autorizado en la MISMA consulta por el `auth_user_id` de la sesión (join
+   * a `customers`; sin leer la fila del cliente). Un pedido de invitado (`customer_id` NULL) nunca coincide. SOLO lectura.
+   */
+  async findTrackingForOwnerAuthUser(
+    id: string,
+    authUserId: string,
+  ): Promise<OrderTrackingRecord | null> {
+    return toTrackingRecord(
+      await this.prisma.order.findFirst({
+        where: { id, customer: { authUserId } },
+        select: TRACKING_SELECT,
+      }),
+    );
+  }
+
+  /** Seguimiento (F21) con un token de invitado vigente y no revocado (mismo criterio que `findForGuestToken`). */
+  async findTrackingForGuestToken(
+    id: string,
+    tokenHash: Buffer,
+    now: Date,
+  ): Promise<OrderTrackingRecord | null> {
+    return toTrackingRecord(
+      await this.prisma.order.findFirst({
+        where: {
+          id,
+          accessTokens: {
+            some: { tokenHash: new Uint8Array(tokenHash), revokedAt: null, expiresAt: { gt: now } },
+          },
+        },
+        select: TRACKING_SELECT,
+      }),
+    );
   }
 
   /**

@@ -26,6 +26,57 @@ describe('DbGate (F19: generalización de StoreDbGate)', () => {
     expect(gate.inFlight).toBe(0);
   });
 
+  describe('rejectIfWaiting (admisión de lecturas, F21)', () => {
+    it('con cupo libre admite aunque se pida un umbral de 0', async () => {
+      const gate = new DbGate(1, 8, 1_000, busy);
+      await expect(gate.run(() => Promise.resolve('ok'), { rejectIfWaiting: 0 })).resolves.toBe(
+        'ok',
+      );
+    });
+
+    it('cupo ocupado y cola con >= n esperas => la lectura se rechaza AL INSTANTE; la escritura sigue encolándose', async () => {
+      const gate = new DbGate(1, 8, 1_000, busy);
+      const hold = defer();
+      const held = gate.run(() => hold.promise);
+      const waiting = [gate.run(() => Promise.resolve(1)), gate.run(() => Promise.resolve(2))];
+      expect(gate.waiting).toBe(2);
+      await expect(
+        gate.run(() => Promise.resolve('lectura'), { rejectIfWaiting: 2 }),
+      ).rejects.toThrow('busy');
+      expect(gate.waiting).toBe(2); // el rechazo no ocupa plaza
+      const write = gate.run(() => Promise.resolve('escritura')); // sin opción: entra en cola (plaza 3)
+      expect(gate.waiting).toBe(3);
+      hold.resolve();
+      await expect(Promise.all([held, ...waiting, write])).resolves.toEqual([
+        undefined,
+        1,
+        2,
+        'escritura',
+      ]);
+    });
+
+    it('con menos de n esperas la lectura SÍ se encola', async () => {
+      const gate = new DbGate(1, 8, 1_000, busy);
+      const hold = defer();
+      const held = gate.run(() => hold.promise);
+      const one = gate.run(() => Promise.resolve(1));
+      const read = gate.run(() => Promise.resolve('lectura'), { rejectIfWaiting: 2 });
+      expect(gate.waiting).toBe(2);
+      hold.resolve();
+      await expect(Promise.all([held, one, read])).resolves.toEqual([undefined, 1, 'lectura']);
+    });
+
+    it('sin la opción el comportamiento por defecto no cambia (cola llena => ocupado; si no, espera)', async () => {
+      const gate = new DbGate(1, 1, 1_000, busy);
+      const hold = defer();
+      const held = gate.run(() => hold.promise);
+      const queued = gate.run(() => Promise.resolve('a'));
+      await expect(gate.run(() => Promise.resolve('b'))).rejects.toThrow('busy');
+      hold.resolve();
+      await expect(Promise.all([held, queued])).resolves.toEqual([undefined, 'a']);
+    });
+  });
+
   it('cola llena => rechaza al instante con el error de la fábrica', async () => {
     const gate = new DbGate(1, 0, 1_000, () => Object.assign(new Error('x'), { tag: 'fábrica' }));
     const hold = defer();

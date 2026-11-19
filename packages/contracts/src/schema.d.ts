@@ -4169,7 +4169,7 @@ export interface components {
             generatedAt: string;
             steps: components["schemas"]["OrderTrackingStep"][];
             events: components["schemas"]["OrderTrackingEvent"][];
-            /** @description `true` si el historial tiene más de 50 eventos (se devuelven los 50 más antiguos). */
+            /** @description `true` si el historial tiene más de 50 eventos (se devuelven los 50 más recientes, en orden cronológico; faltan los más antiguos). */
             eventsTruncated: boolean;
             /** @description `null` en PICKUP. */
             delivery: components["schemas"]["OrderTrackingDelivery"] | null;

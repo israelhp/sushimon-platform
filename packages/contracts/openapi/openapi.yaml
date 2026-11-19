@@ -8855,7 +8855,7 @@ components:
           items: { $ref: '#/components/schemas/OrderTrackingEvent' }
         eventsTruncated:
           type: boolean
-          description: '`true` si el historial tiene más de 50 eventos (se devuelven los 50 más antiguos).'
+          description: '`true` si el historial tiene más de 50 eventos (se devuelven los 50 más recientes, en orden cronológico; faltan los más antiguos).'
         delivery:
           allOf: [{ $ref: '#/components/schemas/OrderTrackingDelivery' }]
           nullable: true

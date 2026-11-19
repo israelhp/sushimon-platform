@@ -5,6 +5,7 @@ import {
   CHECKOUT_QUOTE_THROTTLE,
   CREATE_ORDER_THROTTLE,
   ORDER_READ_THROTTLE,
+  ORDER_TRACKING_THROTTLE,
   COUPON_ACTOR_THROTTLER,
   COUPON_THROTTLER,
   skipUnlessActorLimited,
@@ -62,6 +63,14 @@ describe('throttlers de pedidos (F20)', () => {
       default: { limit: 60, ttl: 60_000 },
       actor: { limit: 30, ttl: 60_000 },
     });
+  });
+
+  it('seguimiento (F21): 120/min por IP y 60/min por actor', () => {
+    expect(ORDER_TRACKING_THROTTLE).toEqual({
+      default: { limit: 120, ttl: 60_000 },
+      actor: { limit: 60, ttl: 60_000 },
+    });
+    expect(ORDER_TRACKING_THROTTLE).not.toBe(ORDER_READ_THROTTLE);
   });
 
   describe('429 RATE_LIMITED siempre con Retry-After', () => {

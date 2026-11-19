@@ -348,3 +348,74 @@ describe('OrdersRepository: lecturas y emisión de token', () => {
     expect((prisma.$transaction.mock.calls[0]?.[1] as { maxWait: number }).maxWait).toBe(2000);
   });
 });
+
+describe('OrdersRepository: seguimiento (F21)', () => {
+  const row = {
+    id: 'o1',
+    orderNumber: 1001n,
+    branchId: 'b1',
+    fulfillmentType: 'PICKUP',
+    deliveryProvider: null,
+    status: 'accepted',
+    placedAt: new Date('2026-11-18T10:00:00Z'),
+    updatedAt: new Date('2026-11-18T10:00:00Z'),
+    // Prisma los entrega en el orden de la consulta: los más RECIENTES primero (desc).
+    statusHistory: [
+      { newStatus: 'accepted', changedAt: new Date('2026-11-18T10:05:00Z') },
+      { newStatus: 'pending', changedAt: new Date('2026-11-18T10:00:00Z') },
+    ],
+  };
+  const make = (found: unknown) => {
+    const findFirst = vi.fn().mockResolvedValue(found);
+    const repo = new OrdersRepository(
+      { order: { findFirst } } as unknown as PrismaService,
+      {} as AuditService,
+    );
+    return { repo, findFirst };
+  };
+
+  it('findTrackingForGuestToken: UNA consulta con hash, no revocado, no vencido; select mínimo e historial de los 51 más recientes', async () => {
+    const { repo, findFirst } = make(row);
+    const now = new Date('2026-11-18T11:00:00Z');
+    const record = await repo.findTrackingForGuestToken('o1', Buffer.alloc(32, 5), now);
+    expect(findFirst).toHaveBeenCalledTimes(1);
+    const arg = findFirst.mock.calls[0]?.[0] as {
+      where: { id: string; accessTokens: { some: Record<string, unknown> } };
+      select: Record<string, unknown> & {
+        statusHistory: { orderBy: unknown; take: number; select: Record<string, boolean> };
+      };
+    };
+    expect(arg.where.id).toBe('o1');
+    expect(arg.where.accessTokens.some).toMatchObject({
+      revokedAt: null,
+      expiresAt: { gt: now },
+    });
+    expect(arg.select.statusHistory.orderBy).toEqual([{ changedAt: 'desc' }, { id: 'desc' }]);
+    expect(arg.select.statusHistory.take).toBe(51);
+    expect(Object.keys(arg.select.statusHistory.select).sort()).toEqual(['changedAt', 'newStatus']);
+    // Se devuelven en orden CRONOLÓGICO ascendente.
+    expect(record?.history.map((h) => h.newStatus)).toEqual(['pending', 'accepted']);
+    expect(record).not.toHaveProperty('statusHistory');
+  });
+
+  it('findTrackingForOwnerAuthUser: UNA consulta con join por auth_user_id (sin leer al cliente); SELECT sin contacto, dirección, notas, importes, líneas ni customerId', async () => {
+    const { repo, findFirst } = make(null);
+    expect(await repo.findTrackingForOwnerAuthUser('o1', 'auth-1')).toBeNull();
+    expect(findFirst).toHaveBeenCalledTimes(1);
+    const arg = findFirst.mock.calls[0]?.[0] as { where: unknown; select: Record<string, unknown> };
+    expect(arg.where).toEqual({ id: 'o1', customer: { authUserId: 'auth-1' } });
+    expect(Object.keys(arg.select).sort()).toEqual(
+      [
+        'branchId',
+        'deliveryProvider',
+        'fulfillmentType',
+        'id',
+        'orderNumber',
+        'placedAt',
+        'status',
+        'statusHistory',
+        'updatedAt',
+      ].sort(),
+    );
+  });
+});

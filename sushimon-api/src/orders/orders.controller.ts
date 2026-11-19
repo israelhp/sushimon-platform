@@ -28,9 +28,11 @@ import { OptionalAuth } from '../auth/optional-auth.decorator.js';
 import {
   CREATE_ORDER_THROTTLE,
   ORDER_READ_THROTTLE,
+  ORDER_TRACKING_THROTTLE,
 } from '../common/throttle/app-throttler.guard.js';
 import { OrderCreateRequestDto } from './dto/order-create-request.dto.js';
 import { OrderCreatedDto, OrderDetailDto } from './dto/order-responses.dto.js';
+import { OrderTrackingDto } from './dto/order-tracking.dto.js';
 import { OrdersService } from './orders.service.js';
 
 /**
@@ -116,5 +118,35 @@ export class OrdersController {
     res.vary('Authorization');
     res.vary('X-Order-Token');
     return this.orders.get(req.principal, id, orderToken);
+  }
+
+  @Get(':id/tracking')
+  @Throttle(ORDER_TRACKING_THROTTLE)
+  @ApiOperation({
+    operationId: 'getOrderTracking',
+    summary:
+      'Seguimiento ligero de un pedido propio (estado actual, fases públicas y línea de tiempo real)',
+  })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiHeader({
+    name: 'X-Order-Token',
+    required: false,
+    description: 'Token opaco de invitado (`smo_…`). Sin él se exige la sesión del cliente dueño.',
+  })
+  @ApiOkResponse({ type: OrderTrackingDto, description: 'Seguimiento del pedido' })
+  @ApiResponse({ status: 400, description: '`id` o `X-Order-Token` con formato inválido' })
+  @ApiResponse({ status: 401, description: 'Token JWT presente e inválido' })
+  @ApiResponse({ status: 404, description: 'Inexistente, ajeno o token inválido (idéntico)' })
+  @ApiResponse({ status: 429, description: 'RATE_LIMITED' })
+  @ApiResponse({ status: 503, description: 'ORDERS_BUSY (reintentable)' })
+  getTracking(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Headers('x-order-token') orderToken: string | undefined,
+  ): Promise<OrderTrackingDto> {
+    res.vary('Authorization');
+    res.vary('X-Order-Token');
+    return this.orders.getTracking(req.principal, id, orderToken);
   }
 }

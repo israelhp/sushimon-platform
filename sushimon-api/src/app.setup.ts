@@ -6,6 +6,17 @@ import { AllExceptionsFilter } from './common/filters/http-exception.filter.js';
 import { bodyParserErrorMiddleware } from './common/http/body-parser-error.middleware.js';
 import { privateNoStoreMiddleware } from './common/http/cache-control.js';
 
+/** `Vary` de las rutas de pedidos: la respuesta depende de la sesión y del token de invitado. */
+function orderVaryMiddleware(
+  _req: unknown,
+  res: { vary: (field: string) => unknown },
+  next: (error?: unknown) => void,
+): void {
+  res.vary('Authorization');
+  res.vary('X-Order-Token');
+  next();
+}
+
 export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
   const config = new DocumentBuilder()
     .setTitle('Sushi Mon API')
@@ -30,7 +41,9 @@ export function configureApp(app: NestExpressApplication, options: AppSetupOptio
   // errores del parser (413, JSON inválido) salgan privados. Nest registraría el parser en `init()`, después de esto.
   app.use('/v1/checkout', privateNoStoreMiddleware);
   // Pedidos (F20): datos personales y token de invitado; mismo trato (también 400/401/404/409/422/429/503).
-  app.use('/v1/orders', privateNoStoreMiddleware);
+  // `Vary: Authorization, X-Order-Token` también aquí (no solo en los handlers) para que lo lleven los errores (400/404/429/503):
+  // el 404 de un pedido ajeno no debe poder servirse a otro solicitante desde una caché intermedia.
+  app.use('/v1/orders', privateNoStoreMiddleware, orderVaryMiddleware);
   app.useBodyParser('json');
   app.use(bodyParserErrorMiddleware);
   app.setGlobalPrefix('v1');

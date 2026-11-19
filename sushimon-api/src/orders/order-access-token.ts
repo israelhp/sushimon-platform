@@ -3,7 +3,8 @@ import { createHash, randomBytes } from 'node:crypto';
 /**
  * Token de acceso de invitado a su pedido (F20, ADR-0026 D5). `smo_` + 32 bytes aleatorios (256 bits) en base64url (43
  * caracteres). En BD solo se guarda su sha256 (alta entropía: no necesita sal ni HMAC). Se muestra una vez; en una
- * repetición idempotente de invitado se emite otro y el anterior se revoca.
+ * repetición idempotente de invitado se emite un token ADICIONAL y el vigente NO se revoca (solo se revocan los activos que
+ * excedan los 5 más recientes; ADR-0026, revisión de D5).
  */
 
 export const GUEST_TOKEN_PREFIX = 'smo_';
