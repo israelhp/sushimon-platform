@@ -38,8 +38,9 @@ export class MyOrdersRepository {
     const where: Prisma.Sql[] = [Prisma.sql`o.customer_id IS NOT NULL`];
     if (filter.status) where.push(Prisma.sql`o.status = ANY(${[...filter.status]}::text[])`);
     if (filter.branchId) where.push(Prisma.sql`o.branch_id = ${filter.branchId}::uuid`);
-    if (filter.from) where.push(Prisma.sql`o.placed_at >= ${filter.from}`);
-    if (filter.to) where.push(Prisma.sql`o.placed_at < ${filter.to}`);
+    if (filter.from)
+      where.push(Prisma.sql`o.placed_at >= ${filter.from.toISOString()}::timestamptz`);
+    if (filter.to) where.push(Prisma.sql`o.placed_at < ${filter.to.toISOString()}::timestamptz`);
     if (filter.cursor) {
       where.push(
         Prisma.sql`(o.placed_at, o.id) < (${filter.cursor.placedAtKey}::timestamptz, ${filter.cursor.id}::uuid)`,

@@ -378,13 +378,25 @@ Cobertura mínima de la int-spec contra PostgreSQL real (datos `zz-` sembrados y
 
 ## 14. Estado (implementado · simulado · pendiente de proveedor · bloqueado)
 
-| Pieza                                                               | Estado                                                                                          |
-| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Contrato (`listMyOrders`, `getOrderReceipt`, `previewOrderReorder`) | `CONTRACT_DEFINED` (`pnpm contracts:check` rojo solo por estas 3 operaciones hasta implementar) |
-| API, int-spec y presupuesto de sentencias                           | Pendiente (sin implementar; nada verificado contra PostgreSQL)                                  |
-| Migración                                                           | No hay (0019 no se crea); índice opcional descrito en §2.1, NO adoptado                         |
-| Web (Mis pedidos, recibo, «Volver a pedir»)                         | `MOCK_ONLY` hoy (la pantalla actual usa borradores simulados); integración pendiente            |
-| Pago en el recibo                                                   | «Sin pago registrado» (F24); nunca «pagado»                                                     |
-| Factura fiscal, PDF, CSV                                            | No implementado por decisión (P78, P81)                                                         |
-| PedidosYa                                                           | `BLOCKED_EXTERNAL`: histórico mostrado tal cual; reordenar DELIVERY no usa proveedor externo    |
-| Vinculación de pedidos de invitado a la cuenta                      | No implementado (P77)                                                                           |
+| Pieza                                                               | Estado                                                                                       |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Contrato (`listMyOrders`, `getOrderReceipt`, `previewOrderReorder`) | `API_IMPLEMENTED` (contrato y `pnpm contracts:check` en verde)                               |
+| API, int-spec y presupuesto de sentencias                           | Implementada; `test/order-history.int-spec.ts` 9/9 contra PostgreSQL real (ver §15)          |
+| Migración                                                           | No hay (0019 no se crea); índice opcional descrito en §2.1, NO adoptado                      |
+| Web (Mis pedidos, recibo, «Volver a pedir»)                         | Integrada (mock/http); verificada con Playwright en modo mock, no contra la API real         |
+| Pago en el recibo                                                   | «Sin pago registrado» (F24); nunca «pagado»                                                  |
+| Factura fiscal, PDF, CSV                                            | No implementado por decisión (P78, P81)                                                      |
+| PedidosYa                                                           | `BLOCKED_EXTERNAL`: histórico mostrado tal cual; reordenar DELIVERY no usa proveedor externo |
+| Vinculación de pedidos de invitado a la cuenta                      | No implementado (P77)                                                                        |
+
+## 15. Verificación real (F23)
+
+- **int-spec contra PostgreSQL real** (`test/order-history.int-spec.ts`, BD de pruebas, 20 000 pedidos de ruido): 9/9 verdes. Cubre SQL del
+  listado, filtros, orden con `placed_at` idénticos, keyset, `OrderSourceRepository`, recibo, vista previa de «Volver a pedir»,
+  token de invitado vencido/revocado/ajeno (mismo 404 y mismo número de sentencias), presupuesto de sentencias y `EXPLAIN` del
+  índice parcial `orders_customer_placed_idx`. Todo lo sembrado se borró; conteos finales = línea base (pedidos 0, sucursales 1,
+  personal 1, asignaciones 1, `auth.users` 3, clientes 3, `audit_events` 159).
+- **Hallazgo real corregido**: `from`/`to` se pasan ahora como ISO con `::timestamptz` (igual que el cursor). Los instantes de
+  entrada se truncan al segundo (`parseInstant`): la ventana de la prueba usa segundos enteros.
+- **No ejecutado**: API HTTP real en un puerto propio con tokens firmados y navegador contra la API real. La capa HTTP está cubierta
+  solo por e2e con dobles y Playwright en modo mock. Login real (Google/Supabase + TOTP) tampoco se ejercitó.

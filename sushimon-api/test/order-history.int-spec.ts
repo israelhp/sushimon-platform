@@ -486,7 +486,7 @@ describe.skipIf(!url || !ready)('Historial, recibo y reorden contra PostgreSQL r
 
   it('fila 5, 6, 10, 12, 13, 14: filtros, orden con placed_at idénticos, columnas mínimas, importes en cadena, sin motivo', async (ctx) => {
     skipUnlessReady(ctx);
-    const t = new Date(Date.now() - 3 * 86_400_000);
+    const t = new Date(Math.floor((Date.now() - 3 * 86_400_000) / 1000) * 1000);
     const same = new Date(t.getTime());
     const a = await seedOrder({
       customerId: customer2,
@@ -550,7 +550,7 @@ describe.skipIf(!url || !ready)('Historial, recibo y reorden contra PostgreSQL r
     expect(byBranch.items.every((i) => i.branchId === branchB)).toBe(true);
     const window = await history.list(who(auth2), {
       from: new Date(t.getTime() - 1000).toISOString(),
-      to: new Date(t.getTime() + 500).toISOString(),
+      to: new Date(t.getTime() + 1000).toISOString(),
     });
     expect(window.items.map((i) => i.id).sort()).toEqual([a, b].sort());
   });
@@ -723,13 +723,13 @@ describe.skipIf(!url || !ready)('Historial, recibo y reorden contra PostgreSQL r
     expect(await docs.receipt(undefined, id, good)).toMatchObject({ fiscalStatus: 'NOT_FISCAL' });
     expect((await docs.previewReorder(undefined, id, good, {})).lines.length).toBe(1);
     for (const denied of [
-      docs.receipt(undefined, expired, old), // vencido
-      docs.receipt(undefined, revokedId, revoked), // revocado
-      docs.receipt(undefined, id, old), // token de OTRO pedido
-      docs.receipt(undefined, id, undefined), // sin token ni JWT
-      docs.previewReorder(undefined, expired, old, undefined),
+      () => docs.receipt(undefined, expired, old), // vencido
+      () => docs.receipt(undefined, revokedId, revoked), // revocado
+      () => docs.receipt(undefined, id, old), // token de OTRO pedido
+      () => docs.receipt(undefined, id, undefined), // sin token ni JWT
+      () => docs.previewReorder(undefined, expired, old, undefined),
     ]) {
-      const e = await err(denied);
+      const e = await err(denied());
       expect(statusOf(e)).toBe(404);
       expect((e as { getResponse: () => unknown }).getResponse()).toMatchObject({
         message: 'Pedido no encontrado',
