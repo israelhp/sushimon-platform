@@ -646,16 +646,18 @@ describe('checkout · cotización del servidor (F19)', () => {
     return user;
   }
 
-  it('F20 (http): Pago no ofrece tarjeta ni rotula «Simulación»; solo efectivo y transferencia como preferencia', async () => {
+  it('F24 (http): Pago ofrece SOLO efectivo (sin elegir), sin «Simulación», con la instrucción y sin tarjeta ni transferencia', async () => {
     seedDraft(4);
     await openCheckout(tap({ kind: 'http' }));
     await screen.findByRole('heading', { level: 1, name: 'Pago' });
     const region = screen.getByRole('region', { name: 'Pago' });
     expect(within(region).queryByText('Simulación')).not.toBeInTheDocument();
-    expect(within(region).queryByRole('radio', { name: /tarjeta/i })).not.toBeInTheDocument();
-    expect(within(region).getByRole('radio', { name: /Efectivo/ })).toBeChecked();
-    expect(within(region).getByRole('radio', { name: /Transferencia/ })).toBeInTheDocument();
-    expect(within(region).getByText(/El pago se coordina con el restaurante/)).toBeInTheDocument();
+    expect(within(region).queryAllByRole('radio')).toHaveLength(0);
+    expect(within(region).getByText('Efectivo')).toBeInTheDocument();
+    expect(
+      within(region).getByText(/Realiza el pago en efectivo cuando recojas tu pedido/),
+    ).toBeInTheDocument();
+    expect(region.textContent).not.toMatch(/tarjeta|transferencia|neonet|comprobante/i);
   });
 
   it('F20 (http): la confirmación ya no dice «próximamente» ni «Simulación»; confirma con el quoteToken, la clave y el cuerpo sin importes', async () => {
@@ -808,10 +810,13 @@ describe('checkout · cotización del servidor (F19)', () => {
     expect(t.orderCalls).toEqual([]);
   });
 
-  it('U8/U10 (http): la fila de pago dice que el pago se coordina; (mock) una sola insignia «Simulación» en la nota de la revisión', async () => {
+  it('U8/U10 (http): la fila de pago de la revisión dice «Efectivo» con la instrucción de cobro (nada se marca pagado)', async () => {
     const user = await toReviewHttp(tap({ kind: 'http' }));
     void user;
-    expect(screen.getByText('(el pago se coordina con el restaurante)')).toBeInTheDocument();
+    expect(screen.getByText('Efectivo')).toBeInTheDocument();
+    expect(
+      screen.getByText('Realiza el pago en efectivo cuando recojas tu pedido en la sucursal.'),
+    ).toBeInTheDocument();
   });
 
   it('U10 (mock): la nota de la revisión no lleva su propia insignia (la lleva el resumen)', async () => {
@@ -822,7 +827,6 @@ describe('checkout · cotización del servidor (F19)', () => {
     await next(user, /Continuar a confirmación/i);
     const note = await screen.findByText(/no se crea ningún pedido ni cobro real/);
     expect(note.querySelector('.demo-badge')).toBeNull();
-    expect(screen.queryByText('(el pago se coordina con el restaurante)')).not.toBeInTheDocument();
   });
 
   it('F20 (en): textos en inglés del pedido recibido', async () => {
@@ -855,7 +859,6 @@ describe('checkout · cotización del servidor (F19)', () => {
     const t = tap();
     await openCheckout(t);
     await toPay(user);
-    await user.click(screen.getByRole('radio', { name: /Efectivo/ }));
     await next(user, /Continuar a confirmación/i);
     await next(user, /Realizar pedido/);
     expect(await screen.findByRole('heading', { name: '¡Pedido registrado!' })).toBeInTheDocument();

@@ -27,6 +27,7 @@ import { formatDateTime } from '@/lib/format';
 import { usePublicBranches } from '@/features/branches/hooks';
 import { readGuestToken, readOrderNumber } from '@/features/checkout/confirmation-store';
 import { useIsSimulation, useOrderDetail, useOrderTracking } from '@/features/orders/hooks';
+import { PaymentStatus } from '@/features/payments/PaymentStatus';
 import { phaseTextKey } from '../tracking-model';
 import { TrackingDemoAdvance } from './tracking-demo-advance';
 import { TrackingPhases } from './tracking-phases';
@@ -411,6 +412,14 @@ export function OrderTrackingScreen({ orderId }: { orderId: string }) {
         </Card>
 
         <FulfillmentBlock tracking={data} />
+
+        <Card id="trk-payment" title={t('paymentTitle')}>
+          <PaymentStatus
+            payment={data.payment}
+            fulfillmentType={data.fulfillmentType}
+            closed={negative}
+          />
+        </Card>
 
         <Card id="trk-summary" title={t('summaryTitle')}>
           {summary.data ? (

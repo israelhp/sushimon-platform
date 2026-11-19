@@ -15,7 +15,7 @@ export const openIncidentCount = (order: Pick<DraftOrder, 'incidents'>) =>
 
 /**
  * Tarjeta de pedido (lista "Tus pedidos", "Tus pedidos en curso" de Consulta): número, total, fecha,
- * productos, estado, etiqueta NeoNet si es con tarjeta e incidencias abiertas. Todo el bloque enlaza al
+ * productos, estado e incidencias abiertas. Todo el bloque enlaza al
  * seguimiento `/pedidos/[id]`; `onReorder` agrega el pie "Volver a pedir".
  */
 export function OrderCard({ order, onReorder }: { order: DraftOrder; onReorder?: () => void }) {
@@ -58,11 +58,6 @@ export function OrderCard({ order, onReorder }: { order: DraftOrder; onReorder?:
           </span>
           <span className="mt-2 flex flex-wrap items-center gap-1.5">
             <OrderStatusChip order={order} />
-            {order.payment.method === 'card' ? (
-              <span className="rounded-full bg-subtle px-2.5 py-1 text-[12px] font-bold text-fg">
-                NeoNet
-              </span>
-            ) : null}
             {open > 0 ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-secondary-soft px-2.5 py-1 text-[12px] font-extrabold text-secondary">
                 <LifeBuoy className="h-3.5 w-3.5" aria-hidden="true" />{' '}

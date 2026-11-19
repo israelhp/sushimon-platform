@@ -2,6 +2,7 @@ import type { MockRoutes } from '@/lib/data-access/mock-client';
 import type { MockContext, MockStore } from '../store';
 import * as account from './account';
 import * as adminOrders from './admin-orders';
+import * as adminPayments from './admin-payments';
 import * as admin from './backoffice-admin';
 import * as banners from './banners';
 import * as bo from './backoffice';
@@ -52,14 +53,12 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'GET /v1/store/banners': banners.listStoreBanners,
   'POST /v1/orders': placement.createPlacedOrder,
   'POST /v1/demo/orders': orders.createDraftOrder,
-  'POST /v1/demo/orders/:id/card': placement.prepareDraftCard,
   'POST /v1/orders/lookup': orders.lookupOrder,
   'GET /v1/orders/:id': orders.getOrder,
   'GET /v1/orders/:id/tracking': placement.getOrderTracking,
   // F23: recibo NO fiscal y vista previa de «Volver a pedir» (misma autorización y mismo 404 que `getOrder`).
   'GET /v1/orders/:id/receipt': history.getOrderReceipt,
   'POST /v1/orders/:id/reorder-preview': history.previewOrderReorder,
-  'POST /v1/payments/card': orders.payWithCard,
   'POST /v1/incidents': orders.createIncident,
   'POST /v1/job-applications': pub.createJobApplication,
 
@@ -106,6 +105,10 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'POST /v1/admin/orders/:id/mark-ready': adminOrders.markReadyAdminOrder,
   'POST /v1/admin/orders/:id/complete': adminOrders.completeAdminOrder,
   'POST /v1/admin/orders/:id/cancel': adminOrders.cancelAdminOrder,
+  // F24: pago en efectivo (contrato `admin-payments`)
+  'GET /v1/admin/orders/:id/payment': adminPayments.getAdminOrderPayment,
+  'POST /v1/admin/orders/:id/payment/cash': adminPayments.registerAdminOrderCashPayment,
+  'GET /v1/admin/orders/:id/payment/history': adminPayments.listAdminOrderPaymentHistory,
   // F07: administración de sucursales (contrato)
   'GET /v1/admin/branches': branches.listAdminBranches,
   'POST /v1/admin/branches': branches.createAdminBranch,

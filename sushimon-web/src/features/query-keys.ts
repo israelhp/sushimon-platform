@@ -248,6 +248,11 @@ export const queryKeys = {
         ['backoffice', 'adminOrders', staffKey ?? 'anon', 'list', filters] as const,
       detail: (staffKey: string | null, id: string) =>
         ['backoffice', 'adminOrders', staffKey ?? 'anon', 'detail', id] as const,
+      /** F24: pago en efectivo del pedido y su historial (también por persona; cuelgan de `all`, así que un cierre de sesión los descarta). */
+      payment: (staffKey: string | null, id: string) =>
+        ['backoffice', 'adminOrders', staffKey ?? 'anon', 'payment', id] as const,
+      paymentHistory: (staffKey: string | null, id: string) =>
+        ['backoffice', 'adminOrders', staffKey ?? 'anon', 'payment-history', id] as const,
     },
     deliveries: (filters: DeliveryFilters = {}) => ['orders', 'deliveries', filters] as const,
     riders: (branchId?: string) => ['backoffice', 'riders', branchId ?? 'all'] as const,

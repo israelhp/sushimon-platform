@@ -10,6 +10,7 @@ import { formatMoney } from '@/lib/format';
 import { localDate, localTime } from '@/lib/time';
 import { useOrderDetail } from '../order-detail-context';
 import { STATUS_TONE, useAdminOrderText } from '../use-admin-order-text';
+import { PaymentBadge } from './PaymentBadge';
 import { PrimaryActionButton } from './ActionButton';
 
 /** Tabla de pedidos reales (`cols-orders`): el servidor ya los ordena y filtra; aquí no se reordena nada. */
@@ -103,6 +104,9 @@ function OrderRow({
         <StatusPill zone="bo" tone={STATUS_TONE[order.status]}>
           {text.statusLabel(order.status)}
         </StatusPill>
+        <div style={{ marginTop: 4 }}>
+          <PaymentBadge status={order.paymentStatus} />
+        </div>
       </div>
       <div role="cell" className="row-actions">
         <PrimaryActionButton order={order} short />

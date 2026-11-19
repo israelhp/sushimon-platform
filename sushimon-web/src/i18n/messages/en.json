@@ -469,7 +469,6 @@
     "when": "When",
     "sendTo": "We’ll send your receipt to {a}",
     "placeOrder": "Place order",
-    "payNow": "Pay now",
     "registering": "Placing order…",
     "orderError": "We couldn’t place your order. Please try again in a moment.",
     "summary": "Order summary",
@@ -611,7 +610,6 @@
       "blocked": "Your order has a problem that prevents confirming it: review it above.",
       "rateLimited": "Too many attempts. Wait a few seconds and retry.",
       "pendingLimit": "You already have several pending orders. Wait for the restaurant to process them.",
-      "paymentUnavailable": "That payment method isn't available yet. Choose cash or bank transfer.",
       "contactIncomplete": "Complete your name and contact phone.",
       "providerNotSelectable": "That delivery option isn't available. Choose another or pick up at the branch.",
       "address": "We couldn't use that address. Check your delivery address.",
@@ -636,8 +634,7 @@
       "liveReceived": "We received your order",
       "realNote": "Your order is really placed. Payment is arranged with the restaurant: nothing is charged yet.",
       "confirmReason": "Refreshing the quote so we can confirm your order.",
-      "blockedGeneric": "Check the products and the delivery of your order.",
-      "payCoordinated": "(payment is arranged with the restaurant)"
+      "blockedGeneric": "Check the products and the delivery of your order."
     }
   },
   "delivery": {
@@ -675,73 +672,12 @@
     "pickup": "Pick up at a branch"
   },
   "payment": {
-    "title": "Select your payment method",
-    "card": "Pay by card",
-    "cardSub": "Secure payment through NeoNet",
-    "cardLabel": "Credit or debit card — NeoNet (Demo)",
+    "title": "Payment",
     "cash": "Cash",
-    "cashSub": "Pay on delivery or at pickup",
-    "methodsAria": "Payment method",
-    "transfer": "Bank transfer",
-    "transferSub": "We'll contact you to arrange the transfer",
-    "coordinate": "Payment is arranged with the restaurant",
-    "cardUnavailable": "Card: not available for now"
-  },
-  "neonet": {
-    "title": "Payment gateway",
-    "demoBadge": "Demo / No real charge",
-    "gatewayNote": "Visual simulation of the NeoNet payment experience. Not an official integration and no charges are processed.",
-    "order": "Order",
-    "method": "Payment method",
-    "demoCard": "Demo card •••• 4242",
-    "demoCardNote": "Fictitious card used only to show the flow. Do not enter real data.",
-    "cardData": "Card details",
-    "cardNumber": "Card number",
-    "cardName": "Name on card",
-    "cardNamePh": "As shown on the card",
-    "expiry": "Expiry",
-    "expiryPh": "MM/YY",
-    "cvv": "CVV",
-    "testOnlyNote": "Demo: only the test cards below are accepted. Do not enter a real card.",
-    "testCards": "Test cards (tap to use)",
-    "testCardFor": {
-      "approved": "approved",
-      "declined": "declined",
-      "pending": "pending"
-    },
-    "errNumber": "Enter the 16-digit card number.",
-    "errTestOnly": "This demo only accepts test cards. Do not enter real card details.",
-    "errName": "Enter the name as shown on the card.",
-    "errExpiry": "Enter a valid expiry date (MM/YY).",
-    "errCvv": "Enter the 3- or 4-digit CVV.",
-    "payWith": "Card •••• {a}",
-    "checkResult": "Verification result (test)",
-    "toPay": "Amount due",
-    "simulate": "Simulate payment",
-    "processing": "Processing payment…",
-    "processingSub": "Please don’t close this window.",
-    "testMode": "Test mode (demo only)",
-    "scenario": "Result to simulate",
-    "scenarios": {
-      "approved": "Payment approved",
-      "declined": "Payment declined",
-      "pending": "Payment pending"
-    },
-    "approvedTitle": "Payment approved",
-    "paid": "Amount paid",
-    "reference": "Transaction reference (fictitious)",
-    "viewOrder": "View order",
-    "declinedTitle": "We couldn’t complete the payment",
-    "declinedMsg": "The card issuer declined the transaction (simulated). No charge was made and your order is not paid.",
-    "retry": "Retry payment",
-    "changeMethod": "Change payment method",
-    "pendingTitle": "We’re verifying your payment status",
-    "pendingMsg": "This may take a few minutes. Please don’t pay again: we’ll let you know once it’s confirmed.",
-    "checkStatus": "Check status",
-    "checking": "Checking…",
-    "cancel": "Cancel",
-    "errorTitle": "We couldn't process the payment",
-    "errorMsg": "There was a problem reaching the (simulated) gateway. You were not charged: you can try again or pay in cash."
+    "cashPickup": "Pay in cash when you pick up your order at the branch.",
+    "cashDelivery": "Pay in cash when you receive your order.",
+    "totalToPay": "Total to pay",
+    "notPaidYet": "Your order is not marked as paid: the payment is recorded when you hand over the cash."
   },
   "status": {
     "awaiting_payment": "Awaiting payment",
@@ -933,7 +869,7 @@
     "light": "Light",
     "dark": "Dark",
     "privacy": "Privacy notice (demo)",
-    "privacyText": "This site is a demo prototype. The data you enter is processed in your browser. Your order is saved locally on this device. Signing in with Google is optional; in the demo it’s simulated and doesn’t connect to Google. Card payments and shipping costs are simulations: no charges are made and no couriers are requested."
+    "privacyText": "This site is a demo prototype. The data you enter is processed in your browser. Your order is saved locally on this device. Signing in with Google is optional; in the demo it’s simulated and doesn’t connect to Google. Payment is always in cash (no card data is requested) and shipping costs are a simulation: no couriers are requested."
   },
   "auth": {
     "title": "Sign in",
@@ -1018,10 +954,6 @@
       "reference": "Reference",
       "contact": "Contact",
       "payment": "Payment",
-      "payCash": "You pay on delivery or at pickup",
-      "payTransfer": "Transfer: we'll contact you",
-      "payNone": "We'll arrange it with you",
-      "payNote": "Nothing has been charged yet.",
       "notes": "Note",
       "keepTab": "As long as you don't close this tab you can see your order again.",
       "loading": "Loading your order…",
@@ -1258,7 +1190,8 @@
     "announce": "Your order status changed: {a}.",
     "simulationNote": "Demo tracking: statuses only advance with the simulation button.",
     "incomplete": "We didn’t receive all the order phases; showing the available status and history.",
-    "recovered": "Connection restored: your order status is up to date."
+    "recovered": "Connection restored: your order status is up to date.",
+    "paymentTitle": "Payment"
   },
   "hub": {
     "personal": "My personal details",
@@ -1445,7 +1378,7 @@
     "visit": "Visit us",
     "phone": "Phone",
     "privacy": "Privacy notice (demo)",
-    "privacyText": "This site is a demo prototype. Form data is processed only in your browser and is not sent to or stored on servers. Card payments (NeoNet) and shipping estimates are simulations with no real charges. Temporary illustrations: they will be replaced with official photos.",
+    "privacyText": "This site is a demo prototype. Form data is processed only in your browser and is not sent to or stored on servers. Payment is always in cash and shipping estimates are a simulation with no real charges. Temporary illustrations: they will be replaced with official photos.",
     "rights": "All rights reserved"
   },
   "notFound": {
@@ -2957,8 +2890,7 @@
         "history": "Historial de estados",
         "callRider": "Llamar al repartidor",
         "payment": "Pago: {method}",
-        "paymentCash": "efectivo",
-        "paymentCard": "tarjeta (simulado)"
+        "paymentCash": "efectivo"
       },
       "history": {
         "received": "Pedido recibido (página web)",
@@ -3102,7 +3034,7 @@
           "unknown": "No se pudo completar la acción. Intenta de nuevo."
         },
         "pending": {
-          "payment_review": "Revisar pago pendiente: el cliente eligió transferencia. Es solo un aviso; no se ejecutó ninguna acción de pago.",
+          "payment_review": "Possible refund pending: the order already had its cash collected. This is only a notice; this screen does not issue refunds.",
           "delivery_cancellation": "Hay una entrega por cancelar. Es solo un aviso; no se ejecutó ninguna acción de entrega."
         },
         "reason": {
@@ -3130,7 +3062,7 @@
           },
           "cancel": {
             "title": "Cancelar pedido",
-            "consequences": "El pedido pasará a «Cancelado» y no podrá reactivarse. Si el cliente eligió transferencia verás un aviso de pago por revisar; no se ejecuta ninguna acción de cobro ni de entrega.",
+            "consequences": "The order will move to “Cancelled” and cannot be reactivated. If the cash was already collected you will see a possible-refund-pending notice; no refund or delivery action is executed.",
             "confirm": "Confirmar cancelación"
           }
         },
@@ -3158,14 +3090,6 @@
           "discount": "Descuento",
           "shipping": "Envío cotizado al cliente",
           "total": "TOTAL",
-          "payment": "Pago",
-          "paymentNone": "Sin pago registrado",
-          "paymentPreference": "El cliente indicó: {method}",
-          "paymentNoPreference": "Sin preferencia de pago",
-          "method": {
-            "cash": "efectivo",
-            "bank_transfer": "transferencia bancaria"
-          },
           "history": "Historial de estados",
           "by": "por {name}",
           "reasonLabel": "Motivo: {reason}",
@@ -3197,7 +3121,102 @@
           "fresh": "Recién llegado",
           "oldest": "Más antiguo sin aceptar"
         },
-        "pendingNotice": "{count, plural, one {Hay # pedido sin aceptar} other {Hay # pedidos sin aceptar}}"
+        "pendingNotice": "{count, plural, one {Hay # pedido sin aceptar} other {Hay # pedidos sin aceptar}}",
+        "payment": {
+          "title": "Payment",
+          "cash": "Cash payment",
+          "order": "Order {code}",
+          "badge": {
+            "PENDING": "Payment pending",
+            "PAID": "Paid"
+          },
+          "amountDue": "Total to collect",
+          "outstanding": "Outstanding",
+          "tendered": "Cash received",
+          "change": "Change given",
+          "paidAt": "Collected on {when}",
+          "collector": "received by {name}",
+          "context": {
+            "BRANCH": "Counter",
+            "OWN_DELIVERY": "Own delivery"
+          },
+          "refundReview": "Possible refund pending: the order was cancelled or rejected after the cash was collected. Review it with the manager; this screen does not issue refunds.",
+          "deliveredPending": "Order delivered with payment pending. You can record the payment when appropriate.",
+          "register": "Record cash payment",
+          "readOnly": "Payment recorded. Read only: it cannot be repeated or voided from here.",
+          "loading": "Loading payment…",
+          "loadError": "We could not load the payment details.",
+          "retry": "Retry",
+          "blocked": {
+            "ALREADY_PAID": "The payment is already recorded.",
+            "ORDER_CLOSED": "The order is cancelled or rejected: it is not charged.",
+            "PROVIDER_BLOCKED_EXTERNAL": "PedidosYa order: provider collection is pending integration.",
+            "AMOUNT_ZERO": "The total is zero: there is nothing to collect.",
+            "LEGACY_PAYMENT_METHOD": "Historical order without a cash payment: it cannot be collected.",
+            "NO_PERMISSION": "You do not have permission to record payments at this branch.",
+            "UNKNOWN": "The payment of this order cannot be recorded right now."
+          },
+          "history": {
+            "title": "Payment history",
+            "empty": "No movements.",
+            "error": "We could not load the history.",
+            "by": "by {name}",
+            "amounts": "received {tendered} · change {change}",
+            "event": {
+              "CREATED": "Pending payment created with the order",
+              "CASH_RECEIVED": "Cash received"
+            }
+          },
+          "toast": {
+            "done": "Payment for order {code} recorded. Change given: {change}.",
+            "replayedMine": "This payment was already recorded by you (order {code}). It was not charged again.",
+            "replayedOther": "This payment was already recorded by someone else (order {code}). It was not charged again."
+          },
+          "modal": {
+            "title": "Record cash payment",
+            "simulation": "This payment only exists in the demo data: it moves no real money.",
+            "due": "Total to collect",
+            "tendered": "Cash received",
+            "help": "Up to 2 decimals. Example: 200.00",
+            "change": "Change to give (informative)",
+            "changeNote": "Local reference. The final change is calculated and stored by the system.",
+            "confirm": "I confirm I physically received the money",
+            "submit": "Record payment",
+            "submitting": "Recording…",
+            "cancel": "Cancel",
+            "close": "Close",
+            "currentReception": "Recorded: cash {tendered}, change {change}, by {name}.",
+            "retryHint": "You can retry: the same attempt is reused and the payment will not be duplicated.",
+            "error": {
+              "format": "Type numbers only, with a decimal point (for example 200.00).",
+              "decimals": "Use at most 2 decimals.",
+              "zero": "The cash received must be greater than zero.",
+              "insufficient": "{missing} short of the total.",
+              "insufficientServer": "The cash received does not cover the order total.",
+              "tooLarge": "The cash received cannot exceed {max}.",
+              "alreadyRegistered": "Someone else already recorded this payment. We refreshed the data.",
+              "notPayable": "The order is cancelled or rejected: it is not charged.",
+              "keyReused": "This attempt was already used with a different amount. Check the amount and try again.",
+              "notCollectable": {
+                "PROVIDER_BLOCKED_EXTERNAL": "PedidosYa order: provider collection is pending integration.",
+                "LEGACY_PAYMENT_METHOD": "Historical order without a cash payment: it cannot be collected.",
+                "AMOUNT_ZERO": "The total is zero: there is nothing to collect.",
+                "default": "This order cannot be collected."
+              },
+              "invalidAmount": "The amount is not valid. Use numbers with up to 2 decimals.",
+              "confirmationRequired": "Tick the box confirming you received the money.",
+              "invalidRequest": "Check the data and try again.",
+              "auth": "Your session expired. Sign in again.",
+              "mfa": "Verify your second factor (MFA) to continue.",
+              "forbidden": "You do not have permission to record payments at this branch.",
+              "notFound": "Order not available.",
+              "rate": "Too many requests. Retry in {seconds} s.",
+              "busy": "The system is busy. Retry in {seconds} s with the same amount.",
+              "network": "No connection: we do not know whether the payment was recorded. Retry (it will not be duplicated) or refresh the order.",
+              "unknown": "The payment could not be recorded. Try again."
+            }
+          }
+        }
       }
     },
     "mfa": {
@@ -3842,10 +3861,7 @@
     "total": "Total",
     "payment": {
       "title": "Payment",
-      "none": "No payment recorded",
-      "other": "Ask the branch about the payment status",
-      "cash": "Chosen method: cash",
-      "transfer": "Chosen method: bank transfer"
+      "other": "Ask the branch about the payment status"
     },
     "generatedAt": "Data generated on {a} (not a tax issue date).",
     "loading": "Loading the receipt…",
@@ -3858,5 +3874,21 @@
       "offline": "You're offline. Check your connection and try again.",
       "unknown": "We couldn't load the receipt."
     }
+  },
+  "payments": {
+    "cash": "Cash payment",
+    "status": {
+      "PENDING": "Pending",
+      "PAID": "Paid"
+    },
+    "paidAt": "Paid on {when}",
+    "amountPaid": "Amount paid",
+    "tendered": "Cash received",
+    "change": "Change",
+    "hint": {
+      "PICKUP": "Pay in cash when you pick up your order at the branch.",
+      "DELIVERY": "Pay in cash when you receive your order."
+    },
+    "notCharged": "Not charged: the order was cancelled or rejected."
   }
 }

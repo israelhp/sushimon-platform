@@ -62,7 +62,9 @@ describe('OrderDetail (seguimiento)', () => {
     expect(
       screen.getByText(/6a avenida 10-50, Edificio Demo, apto\. 3, zona 10/),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Tarjeta de crédito o débito — NeoNet \(Demo\)/)).toBeInTheDocument();
+    // F24: solo efectivo (el borrador legado de tarjeta ya no se presenta como NeoNet).
+    expect(screen.getByText('Efectivo')).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/NeoNet|tarjeta/i);
     expect(screen.getByText('Subtotal')).toBeInTheDocument();
     const wa = await screen.findByRole('link', { name: /Reportar por WhatsApp/ });
     const href = wa.getAttribute('href') ?? '';

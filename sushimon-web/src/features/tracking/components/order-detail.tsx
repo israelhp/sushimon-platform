@@ -140,7 +140,7 @@ export function OrderDetailView({ order }: { order: DraftOrder }) {
   const inProgress = isOrderInProgress(order);
   const today = config.data ? localDate(new Date(config.data.serverTime)) : null;
   const delivery = order.fulfillment === 'delivery';
-  const paymentLabel = order.payment.method === 'card' ? tp('cardLabel') : tp('cash');
+  const paymentLabel = tp('cash');
   const showEta = inProgress && delivery && step.progress >= 4;
   const stateNote = state === 'awaiting_payment' || state === 'payment_review' ? ts(state) : null;
   const openIncidentsLabel = (incident: Incident) => ti(`types.${incident.type}`);
@@ -290,11 +290,7 @@ export function OrderDetailView({ order }: { order: DraftOrder }) {
           <DetailRow
             icon={<CreditCard className="h-4 w-4" />}
             label={tc('method')}
-            value={
-              order.payment.reference
-                ? `${paymentLabel} · ${order.payment.reference}`
-                : paymentLabel
-            }
+            value={paymentLabel}
           />
         </dl>
         <div className="border-t border-line px-4 py-3">

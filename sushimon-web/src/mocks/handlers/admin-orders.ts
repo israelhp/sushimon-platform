@@ -20,13 +20,13 @@ import {
   checkCommand,
   draftStatusOf,
   lifecycleOf,
-  paymentPreferenceOf,
   pendingActionsFor,
   ruleOrderOf,
   toAdminDetail,
   toAdminSummary,
   type ViolationCode,
 } from '../admin-orders';
+import { paymentRecord } from '../cash-payments';
 import type { MockStore, PlacedOrderRecord } from '../store';
 import {
   body,
@@ -78,7 +78,7 @@ const ACTIVE: readonly OrderLifecycleStatus[] = [
 const WITH_ZONE = /(Z|[+-]\d{2}:?\d{2})$/i;
 
 /** Error con el cuerpo completo del contrato (`ErrorResponse` + extensiones como `current`) y `Retry-After` opcional. */
-function problem(
+export function problem(
   status: number,
   code: string | undefined,
   message: string,
@@ -101,7 +101,7 @@ function problem(
   );
 }
 
-function faultGuard(req: Req): void {
+export function faultGuard(req: Req): void {
   if (req.fault === 'rate-limited') {
     problem(
       429,
@@ -116,11 +116,11 @@ function faultGuard(req: Req): void {
   }
 }
 
-const placedOf = (store: MockStore, draftId: string): PlacedOrderRecord | undefined =>
+export const placedOf = (store: MockStore, draftId: string): PlacedOrderRecord | undefined =>
   store.placedOrders?.find((p) => p.draftId === draftId);
 
 /** Evaluador de permisos del actor para la sucursal del pedido (lo que el servidor resuelve con `canAccess`). */
-const canFor =
+export const canFor =
   (actor: StaffActor, branchId: string) =>
   (permission: StaffPermission): boolean =>
     can(actor.grants, permission, branchId);
@@ -130,6 +130,7 @@ function summaryOf(req: Req, actor: StaffActor, draft: DraftOrder): AdminOrderSu
     draft,
     req.store.branches,
     canFor(actor, draft.branchId),
+    req.store,
     placedOf(req.store, draft.id),
   );
 }
@@ -321,7 +322,7 @@ export const listAdminOrders: Handler = (req): AdminOrderPage => {
 };
 
 /** Pedido legible por el actor (`orders.read` en su sucursal) o el MISMO 404 `ORDER_NOT_FOUND` (inexistente o ajeno). */
-function readableOrder(req: Req, actor: StaffActor): DraftOrder {
+export function readableOrder(req: Req, actor: StaffActor): DraftOrder {
   const draft = findDraft(req, req.params.id ?? '');
   if (!draft || !can(actor.grants, 'orders.read', draft.branchId)) {
     problem(404, 'ORDER_NOT_FOUND', 'Pedido no disponible');
@@ -338,6 +339,7 @@ export const getAdminOrder: Handler = (req): AdminOrderDetail => {
     draft,
     req.store.branches,
     canFor(actor, draft.branchId),
+    req.store,
     placedOf(req.store, draft.id),
   );
 };
@@ -390,15 +392,7 @@ function apply(
   draft.status = draftStatusOf(to);
   if (to === 'rejected' || to === 'cancelled') draft.rejectionReason = reason;
   draft.history.push(event(at, 'order', draft.status, { reason, detail: actor.name }));
-  if (
-    draft.status === 'delivered' &&
-    draft.payment.method === 'cash' &&
-    draft.payment.status === 'pending'
-  ) {
-    draft.payment.status = 'approved';
-    draft.payment.processedAt = at.toISOString();
-    draft.history.push(event(at, 'payment', 'approved', { detail: 'cash' }));
-  }
+  // F24: pedido ≠ pagado. Ninguna transición marca `PAID`: solo `registerAdminOrderCashPayment` registra el efectivo.
   touch(draft, at);
   const placed = placedOf(req.store, draft.id);
   if (placed) {
@@ -451,8 +445,7 @@ function runCommand(req: Req, command: AdminOrderCommand): AdminOrderTransitionR
   }
 
   const current = ruleOrderOf(draft).status;
-  const preference = paymentPreferenceOf(draft, placedOf(req.store, draft.id));
-  const pendingActions = pendingActionsFor(command, preference);
+  const pendingActions = pendingActionsFor(command, Boolean(paymentRecord(req.store, draft.id)));
   const result = (replayed: boolean, byMe: boolean, when: string): AdminOrderTransitionResult => ({
     order: summaryOf(req, actor, draft),
     transition: { from: expected, to: spec.to, at: when, replayed, appliedByMe: byMe },

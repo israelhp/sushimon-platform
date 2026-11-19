@@ -12,9 +12,7 @@ import {
   getDraftOrder,
   getOrder,
   getOrderTracking,
-  prepareDraftCardOrder,
   lookupOrder,
-  payWithCard,
 } from '@/services/orders';
 import { useCustomerScope } from '../session/customer-scope';
 import { customerOrdersPredicate, queryKeys } from '../query-keys';
@@ -87,8 +85,7 @@ export function useCreateOrder() {
 export function useDraftOrderLoader() {
   const client = useDataClient();
   return {
-    load: (id: string, forCard: boolean): Promise<DraftOrder> =>
-      forCard ? prepareDraftCardOrder(client, id) : getDraftOrder(client, id),
+    load: (id: string): Promise<DraftOrder> => getDraftOrder(client, id),
   };
 }
 
@@ -159,24 +156,6 @@ export function useLookupOrder() {
     (input: Parameters<typeof lookupOrder>[1]) => lookupOrder(client, input),
     seedDetail,
   );
-}
-
-/**
- * Pago con tarjeta en la pasarela NeoNet SIMULADA.
- * SEGURIDAD: NO usa `useMutation`: TanStack Query conserva las `variables` de cada mutación en su caché
- * (PAN/CVV incluidos) hasta el `gcTime`. Aquí el cuerpo solo vive en la llamada: se envía, se descarta
- * y solo se invalida lo derivado de pedidos con el resultado (sin datos de tarjeta).
- */
-export function usePayWithCard() {
-  const client = useDataClient();
-  const qc = useQueryClient();
-  return {
-    pay: async (input: Parameters<typeof payWithCard>[1]) => {
-      const result = await payWithCard(client, input);
-      invalidateOrders(qc);
-      return result;
-    },
-  };
 }
 
 /** Reporte de incidencia de un pedido. */

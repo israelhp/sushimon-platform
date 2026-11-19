@@ -7,7 +7,7 @@ import type {
 } from '@/lib/data-access/models';
 import { createHarness, markSoldOutEverywhere, type TestHarness } from '@/mocks/testing';
 import { quoteCheckout } from '@/services/checkout';
-import { createOrder, getDraftOrder, getOrder, prepareDraftCardOrder } from '@/services/orders';
+import { createOrder, getDraftOrder, getOrder } from '@/services/orders';
 
 /** F20 · mock de `POST /v1/orders` y `GET /v1/orders/{id}` (SIMULADO, paridad de forma y de errores con el contrato). */
 const key = (n: number) => `0000000${n}-aaaa-4bbb-8ccc-dddddddddddd`;
@@ -56,7 +56,7 @@ const faults = (f: Record<string, string[]>) => {
 };
 
 describe('F20 mock · crear pedido', () => {
-  it('recoger como invitado: forma real, estado pending, sin pago, teléfono enmascarado, credencial ficticia y pedido borrador enlazado', async () => {
+  it('recoger como invitado: forma real, estado pending, pago en efectivo PENDIENTE, teléfono enmascarado, credencial ficticia y pedido borrador enlazado', async () => {
     const h = createHarness();
     const created = await createOrder(h.client, await body(h), key(1));
     const { order, access } = created;
@@ -70,7 +70,7 @@ describe('F20 mock · crear pedido', () => {
       total: '106.00',
       address: null,
       contact: { fullName: 'Ana López', phoneMasked: '****1234' },
-      payment: { methodPreference: 'cash', status: 'NOT_STARTED' },
+      payment: { method: 'CASH', status: 'PENDING', paidAt: null },
     });
     expect(order.displayNumber).toMatch(/^MON-\d{6}$/);
     expect(order.lines[0]).toMatchObject({
@@ -136,7 +136,8 @@ describe('F20 mock · crear pedido', () => {
       ['teléfono inválido', { ...b, contact: { fullName: 'Ana', phone: '123' } }, '400:'],
       ['notas largas', { ...b, notes: 'x'.repeat(281) }, '400:'],
       ['dirección con recoger', { ...b, deliveryAddress: { addressLine: 'x' } }, '400:'],
-      ['tarjeta', { ...b, paymentMethodPreference: 'card' }, '422:PAYMENT_METHOD_UNAVAILABLE'],
+      ['tarjeta (solo efectivo)', { ...b, paymentMethodPreference: 'card' }, '400:'],
+      ['transferencia (retirada)', { ...b, paymentMethodPreference: 'bank_transfer' }, '400:'],
       ['token ilegible', { ...b, quoteToken: 'basura' }, '422:QUOTE_INVALID'],
     ];
     for (const [name, payload, code] of cases) {
@@ -391,12 +392,12 @@ describe('F20 mock · GET /v1/orders/{id}: dueño o credencial, 404 idéntico', 
   });
 });
 
-describe('F20 mock · pasarela NeoNet simulada sobre el pedido borrador', () => {
-  it('prepareDraftCardOrder marca el borrador para tarjeta (pendiente de pago) y un segundo pedido del mismo teléfono cancela el abandonado', async () => {
+describe('F20 mock · pedido borrador legado pendiente de pago (datos sembrados antiguos)', () => {
+  it('un borrador legado de tarjeta pendiente se cancela al crear otro pedido con el mismo teléfono (ya no hay forma de crearlo desde el checkout)', async () => {
     const h = createHarness();
     const first: OrderCreated = await createOrder(h.client, await body(h), key(60));
-    const draft = await prepareDraftCardOrder(h.client, first.order.displayNumber);
-    expect(draft.payment).toMatchObject({ method: 'card', status: 'pending' });
+    const legacy = h.store.orders.find((o) => o.id === first.order.displayNumber)!;
+    legacy.payment = { ...legacy.payment, method: 'card', status: 'pending' };
     await createOrder(h.client, await body(h), key(61));
     expect(h.store.orders.find((o) => o.id === first.order.displayNumber)?.status).toBe(
       'cancelled',

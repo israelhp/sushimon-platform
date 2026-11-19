@@ -5,7 +5,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { VIEWPORTS, capture, compareAndAttach, preparePage } from './harness';
 
 /**
- * Fidelidad del checkout (5 pasos, pasarela NeoNet y confirmación) frente a las capturas del prototipo
+ * Fidelidad del checkout (5 pasos y confirmación; F24: solo efectivo, sin pasarela NeoNet) frente a las capturas del prototipo
  * generadas por `gallery-checkout.spec.ts` (docs/ui/extracted/screens/store-checkout-*.png).
  * Reporte de diferencia de píxeles por pantalla; falla solo si la diferencia es grande (regresión).
  *   E2E_PORT=3199 pnpm --filter sushimon-web exec playwright test --project=visual store-checkout
@@ -27,8 +27,7 @@ interface Scenario {
   reference: string;
   type: 'pickup' | 'delivery';
   step: 1 | 2 | 3 | 4 | 5;
-  payment?: 'card' | 'cash';
-  /** Umbral propio cuando la diferencia con el prototipo es intencional (ver `neonet-pendiente`). */
+  /** Umbral propio cuando la diferencia con el prototipo es intencional (ver `4-pago`). */
   maxRatio?: number;
   /** Espera el título del paso y, después, acciones propias de la pantalla. */
   after?: (page: Page) => Promise<void>;
@@ -39,12 +38,6 @@ const STEP_TITLE = ['Tu pedido', 'Entrega', 'Envío', 'Pago', 'Confirmación'] a
 const press = async (page: Page, name: string | RegExp, wait = 500) => {
   await page.getByRole('button', { name }).filter({ visible: true }).first().click();
   await page.waitForTimeout(wait);
-};
-
-const openGateway = async (page: Page) => {
-  await press(page, /Pagar ahora/, 300);
-  await page.getByRole('dialog', { name: 'Pasarela de pago' }).waitFor();
-  await page.waitForTimeout(300);
 };
 
 const SCENARIOS: Record<string, Scenario> = {
@@ -60,69 +53,16 @@ const SCENARIOS: Record<string, Scenario> = {
       await p.waitForTimeout(300);
     },
   },
-  '4-pago': { reference: 'store-checkout-4-pago', type: 'pickup', step: 4 },
+  // Diferencia INTENCIONAL con el prototipo (F24): el paso Pago es solo efectivo (sin tarjeta Neonet ni transferencia).
+  '4-pago': { reference: 'store-checkout-4-pago', type: 'pickup', step: 4, maxRatio: 0.35 },
   '5-confirmacion': { reference: 'store-checkout-5-confirmacion', type: 'pickup', step: 5 },
-  'neonet-listo': {
-    reference: 'store-checkout-neonet-listo',
-    type: 'pickup',
-    step: 5,
-    after: openGateway,
-  },
-  'neonet-aprobado': {
-    reference: 'store-checkout-neonet-aprobado',
-    type: 'pickup',
-    step: 5,
-    after: async (p) => {
-      await openGateway(p);
-      await press(p, /Simular pago/, 600);
-      await p.getByText('Pago aprobado').first().waitFor();
-    },
-  },
-  'neonet-rechazado': {
-    reference: 'store-checkout-neonet-rechazado',
-    type: 'pickup',
-    step: 5,
-    after: async (p) => {
-      await openGateway(p);
-      await p.getByRole('button', { name: /4000 0000 0000 0002/ }).click();
-      await press(p, /Simular pago/, 600);
-      await p.getByText('No se pudo completar el pago').first().waitFor();
-    },
-  },
-  'neonet-pendiente': {
-    reference: 'store-checkout-neonet-pendiente',
-    type: 'pickup',
-    step: 5,
-    // Diferencia intencional: agrega "Consultar pedido" (seguir con el pago en verificación) y omite el
-    // panel "Modo de pruebas" del prototipo (con el adaptador mock no se puede forzar el resultado de la consulta).
-    maxRatio: 0.3,
-    after: async (p) => {
-      await openGateway(p);
-      await p.getByRole('button', { name: /4000 0000 0000 0077/ }).click();
-      await press(p, /Simular pago/, 600);
-      await p.getByText('Estamos verificando el estado de tu pago').first().waitFor();
-    },
-  },
   'pedido-efectivo': {
     reference: 'store-checkout-pedido-efectivo',
     type: 'pickup',
     step: 5,
-    payment: 'cash',
     after: async (p) => {
       await press(p, /Realizar pedido/, 600);
       await p.getByRole('heading', { name: '¡Pedido registrado!' }).waitFor();
-    },
-  },
-  'pedido-tarjeta': {
-    reference: 'store-checkout-pedido-tarjeta',
-    type: 'pickup',
-    step: 5,
-    after: async (p) => {
-      await openGateway(p);
-      await press(p, /Simular pago/, 600);
-      await p.getByText('Pago aprobado').first().waitFor();
-      await press(p, /Consultar pedido/, 600);
-      await p.getByRole('heading', { name: '¡Pedido pagado!' }).waitFor();
     },
   },
 };
@@ -135,7 +75,7 @@ for (const theme of ['light', 'dark'] as const) {
         test.skip(!existsSync(file), `Falta la captura del prototipo: ${file}`);
         await preparePage(page, { theme, viewport, frozenAt: FROZEN_AT }, BASE);
         await page.addInitScript(
-          ([theme, type, step, payment, address, cart]) => {
+          ([theme, type, step, address, cart]) => {
             localStorage.setItem('monsushi-theme', theme!);
             localStorage.setItem('monsushi-cart-v2', cart!);
             localStorage.setItem(
@@ -157,7 +97,6 @@ for (const theme of ['light', 'dark'] as const) {
                 notes: '',
                 pickupBranchId: null,
                 deliveryBranchId: null,
-                payment,
               }),
             );
           },
@@ -165,7 +104,6 @@ for (const theme of ['light', 'dark'] as const) {
             theme,
             sc.type,
             String(sc.step),
-            sc.payment ?? 'card',
             JSON.stringify(DEMO_ADDRESS),
             cartV2('sucursal-1', [DUMPLINGS]),
           ] as const,

@@ -37,7 +37,6 @@ const MESSAGE_KEY: Partial<Record<PlaceFailure['kind'], string>> = {
   blocked: 'blocked',
   rateLimited: 'rateLimited',
   pendingLimit: 'pendingLimit',
-  paymentUnavailable: 'paymentUnavailable',
   contactIncomplete: 'contactIncomplete',
   providerNotSelectable: 'providerNotSelectable',
   address: 'address',

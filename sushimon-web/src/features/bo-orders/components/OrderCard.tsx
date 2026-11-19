@@ -10,6 +10,7 @@ import { LATE_MINUTES, isLatePending } from '../admin-orders-model';
 import { useOrderDetail } from '../order-detail-context';
 import { useAdminOrderText } from '../use-admin-order-text';
 import { DispatchNotice, PrimaryActionButton } from './ActionButton';
+import { PaymentBadge } from './PaymentBadge';
 
 /** Tarjeta del tablero (`kcard`): abre el detalle y ofrece la acción de avance que el servidor permite a esta persona. */
 export function OrderCard({
@@ -79,6 +80,7 @@ export function OrderCard({
           <span className="sm" style={{ fontWeight: 600 }}>
             {text.itemsLabel(order.itemCount)}
           </span>
+          <PaymentBadge status={order.paymentStatus} />
           <span className="spacer" />
           <b className="num">{formatMoney(Number(order.total))}</b>
         </span>

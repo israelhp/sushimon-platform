@@ -34,6 +34,7 @@ import { useAdminOrderActions, type ActionResult } from '../use-admin-order-acti
 import { STATUS_TONE, useAdminOrderText } from '../use-admin-order-text';
 import { DispatchNotice, PrimaryActionButton } from './ActionButton';
 import { LegacyLogisticsSection } from './LegacyLogistics';
+import { PaymentPanel } from './PaymentPanel';
 import { ReasonModal, type ReasonKind } from './ReasonModal';
 
 const phoneHref = (phone: string) => `tel:${phone.replace(/[^0-9+]/g, '')}`;
@@ -427,21 +428,7 @@ function DrawerBody({
         </div>
       </section>
 
-      <section>
-        <div className="sect-t">{td('payment')}</div>
-        <div className="info-row">
-          <div className="grow">
-            <div className="strong">{td('paymentNone')}</div>
-            <div className="muted sm" style={{ fontWeight: 600 }}>
-              {order.payment.methodPreference
-                ? td('paymentPreference', {
-                    method: td(`method.${order.payment.methodPreference}`),
-                  })
-                : td('paymentNoPreference')}
-            </div>
-          </div>
-        </div>
-      </section>
+      <PaymentPanel order={order} />
 
       <section>
         <div className="sect-t">{td('history')}</div>

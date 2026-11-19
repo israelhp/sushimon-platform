@@ -230,6 +230,8 @@ describe('paths', () => {
       '/v1/backoffice/promotions',
       // F19: el documento la menciona SOLO para descartarla (la ruta vigente es `POST /v1/checkout/quote`).
       '/v1/store/checkout/quote',
+      // F24: solo efectivo; el mock de tarjeta/Neonet se RETIRÓ (el contrato conserva el borrador para F25, BLOCKED_EXTERNAL).
+      '/v1/payments/card',
     ]);
     const documented = [...doc.matchAll(/`(\/v1\/[^`?\s[]+)/g)]
       .map((m) => (m[1] ?? '').replace(/\{(\w+)\}/g, 'X'))

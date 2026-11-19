@@ -2,19 +2,11 @@ import { checkZone, requiresZone } from '@/features/order-mode/draft';
 
 /**
  * Modelo PURO del checkout (sin React): borrador, reductor y validaciones. Devuelve CLAVES de mensajes
- * (`validation.*` / `mode.*`) que la UI traduce. Aquí no vive NINGÚN dato de tarjeta: PAN, CVV y PIN
- * solo existen en el estado local del diálogo NeoNet (ver `neonet.ts`).
+ * (`validation.*` / `mode.*`) que la UI traduce. F24: el único método es EFECTIVO (no se elige ni se guarda en el borrador):
+ * aquí no vive NINGÚN dato de pago.
  */
 export const CHECKOUT_STEP_COUNT = 5;
 export type CheckoutStep = 1 | 2 | 3 | 4 | 5;
-export type PaymentChoice = 'card' | 'cash' | 'bank_transfer';
-
-/**
- * Método EFECTIVO: con la API real (`simulation=false`) la tarjeta/NeoNet no se ofrece (F25 `BLOCKED_EXTERNAL`; la API rechaza
- * `card`), así que un borrador guardado con `card` cuenta como efectivo. Con datos simulados se respeta la elección.
- */
-export const effectivePayment = (payment: PaymentChoice, simulation: boolean): PaymentChoice =>
-  !simulation && payment === 'card' ? 'cash' : payment;
 
 export interface ContactForm {
   name: string;
@@ -43,7 +35,6 @@ export interface CheckoutDraft {
   pickupBranchId: string | null;
   /** Sucursal de origen elegida a mano a domicilio (null = asignada por cobertura). */
   deliveryBranchId: string | null;
-  payment: PaymentChoice;
   /** La estimación de envío se pide solo desde el paso Envío (y se invalida al cambiar dirección/sucursal). */
   quoteWanted: boolean;
 }
@@ -81,7 +72,6 @@ export function initialDraft(demo: boolean): CheckoutDraft {
     notes: '',
     pickupBranchId: null,
     deliveryBranchId: null,
-    payment: 'card',
     quoteWanted: false,
   };
 }
@@ -96,7 +86,6 @@ export type CheckoutAction =
   | { type: 'notes'; notes: string }
   | { type: 'pickup-branch'; branchId: string | null }
   | { type: 'delivery-branch'; branchId: string | null }
-  | { type: 'payment'; payment: PaymentChoice }
   | { type: 'goto'; step: CheckoutStep; showErrors?: boolean }
   | { type: 'show-errors' }
   | { type: 'reset'; demo: boolean };
@@ -128,8 +117,6 @@ export function checkoutReducer(state: CheckoutDraft, action: CheckoutAction): C
       return { ...state, pickupBranchId: action.branchId };
     case 'delivery-branch':
       return { ...state, deliveryBranchId: action.branchId, quoteWanted: false };
-    case 'payment':
-      return { ...state, payment: action.payment };
     case 'goto':
       return {
         ...state,
@@ -253,7 +240,6 @@ export function parseDraft(raw: string | null, fallback: CheckoutDraft): Checkou
       notes: str(v.notes).slice(0, 300),
       pickupBranchId: typeof v.pickupBranchId === 'string' ? v.pickupBranchId : null,
       deliveryBranchId: typeof v.deliveryBranchId === 'string' ? v.deliveryBranchId : null,
-      payment: v.payment === 'cash' || v.payment === 'bank_transfer' ? v.payment : 'card',
       quoteWanted: step === 3,
     };
   } catch {

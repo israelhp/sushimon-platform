@@ -59,10 +59,9 @@ export async function next(page: Page, step: string) {
   await expect(page.getByRole('heading', { level: 1, name: step })).toBeVisible();
 }
 
-/** Hasta «Confirmación» con efectivo. */
+/** Hasta «Confirmación» (F24: el único método es efectivo; no hay nada que elegir). */
 export async function toReview(page: Page) {
   for (const step of ['Entrega', 'Envío', 'Pago']) await next(page, step);
-  await page.getByRole('radio', { name: /Efectivo/ }).click();
   await next(page, 'Confirmación');
 }
 

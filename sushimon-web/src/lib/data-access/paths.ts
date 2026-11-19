@@ -46,7 +46,6 @@ export const paths = {
   /** F23: vista previa de solo lectura de «Volver a pedir» (`previewOrderReorder`, POST sin efectos). */
   orderReorderPreview: (id: string) => `/v1/orders/${seg(id)}/reorder-preview`,
   orderLookup: () => '/v1/orders/lookup',
-  cardPayment: () => '/v1/payments/card',
   incidents: () => '/v1/incidents',
   jobApplications: () => '/v1/job-applications',
 
@@ -78,6 +77,10 @@ export const paths = {
   adminOrderMarkReady: (id: string) => `/v1/admin/orders/${seg(id)}/mark-ready`,
   adminOrderComplete: (id: string) => `/v1/admin/orders/${seg(id)}/complete`,
   adminOrderCancel: (id: string) => `/v1/admin/orders/${seg(id)}/cancel`,
+  /** F24 (contrato `admin-payments`): pago en efectivo del pedido (`payments.read|confirm` + aal2, alcance por sucursal del pedido). */
+  adminOrderPayment: (id: string) => `/v1/admin/orders/${seg(id)}/payment`,
+  adminOrderPaymentCash: (id: string) => `/v1/admin/orders/${seg(id)}/payment/cash`,
+  adminOrderPaymentHistory: (id: string) => `/v1/admin/orders/${seg(id)}/payment/history`,
   boOrders: () => '/v1/backoffice/orders',
   boOrderStatus: (id: string) => `/v1/backoffice/orders/${seg(id)}/status`,
   boOrderDispatch: (id: string) => `/v1/backoffice/orders/${seg(id)}/dispatch`,
@@ -178,8 +181,6 @@ export const paths = {
   demoPedidosyaCoverage: () => '/v1/demo/delivery/pedidosya-coverage',
   /** Solo mock: crea el pedido BORRADOR (`DraftOrder`) que aún usan el seguimiento y el backoffice simulados (retirar con F21/F22). */
   demoDraftOrders: () => '/v1/demo/orders',
-  /** Solo mock: marca un pedido borrador para la tarjeta NeoNet SIMULADA (la API real rechaza `card`: F25 BLOCKED_EXTERNAL). */
-  demoPrepareCardOrder: (id: string) => `/v1/demo/orders/${seg(id)}/card`,
   demoAdvanceOrder: (id: string) => `/v1/demo/orders/${seg(id)}/advance`,
   demoSimulateOrder: () => '/v1/demo/orders/simulate',
 } as const;

@@ -1,64 +1,52 @@
 'use client';
 
-import { Banknote, CreditCard, Landmark } from 'lucide-react';
-import { useTranslations } from 'next-intl';
-import { SimulationBadge } from '@/components/ui/SimulationBadge';
-import { useIsSimulation } from '@/features/orders/hooks';
-import { effectivePayment } from '../checkout-model';
-import { useCheckoutDraft } from '../checkout-context';
-import { ChoiceCard, useCheckoutSteps } from './parts';
+import { Banknote } from 'lucide-react';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatMoney } from '@/lib/format';
+import type { CheckoutData } from '../use-checkout-data';
+import { useCheckoutSteps } from './parts';
 
 /**
- * Paso 4 · Pago. Con la API real solo se declara una PREFERENCIA (efectivo o transferencia; el pago se coordina con el
- * restaurante) y la tarjeta NeoNet no se ofrece (`BLOCKED_EXTERNAL`). Con datos simulados la tarjeta es la pasarela de
- * demostración, rotulada «Simulación».
+ * Paso 4 · Pago (F24, spec 025 §12.1). SOLO efectivo: no hay nada que elegir, así que se muestra como información (no como un
+ * grupo de opciones) con la instrucción según la modalidad y el total cotizado. NADA se marca como pagado: el pedido nace con
+ * el pago en efectivo `PENDING` y el personal registra el cobro al recibir el dinero. Sin tarjeta, transferencia ni
+ * comprobantes. El cuerpo de `createOrder` declara `paymentMethodPreference: 'cash'`.
  */
-export function PaymentStep() {
+export function PaymentStep({ data }: { data: CheckoutData }) {
   const t = useTranslations();
+  const locale = useLocale();
   const steps = useCheckoutSteps();
-  const simulation = useIsSimulation();
-  const { draft, dispatch } = useCheckoutDraft();
-  const payment = effectivePayment(draft.payment, simulation);
+  const waiting = data.quote.status === 'loading' || data.quote.status === 'expired';
   return (
     <section aria-label={steps[3]}>
-      <h2 className="lbl flex flex-wrap items-center gap-2">
-        {t('payment.title')} {simulation ? <SimulationBadge kind="simulation" /> : null}
-      </h2>
+      <h2 className="lbl">{t('payment.title')}</h2>
       <div
-        className="flex flex-col gap-2.5"
-        role="radiogroup"
-        aria-label={t('payment.methodsAria')}
+        className="flex items-start gap-3 rounded-2xl border border-line bg-surface p-4 shadow-card"
+        data-testid="payment-cash"
       >
-        {simulation ? (
-          <ChoiceCard
-            on={payment === 'card'}
-            onClick={() => dispatch({ type: 'payment', payment: 'card' })}
-            icon={<CreditCard className="h-5 w-5" aria-hidden="true" />}
-            title={t('payment.card')}
-            sub={`${t('payment.cardSub')} · ${t('payment.cardLabel')}`}
-            badge={<SimulationBadge kind="simulation">{t('common.simulation')}</SimulationBadge>}
-          />
-        ) : null}
-        <ChoiceCard
-          on={payment === 'cash'}
-          onClick={() => dispatch({ type: 'payment', payment: 'cash' })}
-          icon={<Banknote className="h-5 w-5" aria-hidden="true" />}
-          title={t('payment.cash')}
-          sub={t('payment.cashSub')}
-        />
-        <ChoiceCard
-          on={payment === 'bank_transfer'}
-          onClick={() => dispatch({ type: 'payment', payment: 'bank_transfer' })}
-          icon={<Landmark className="h-5 w-5" aria-hidden="true" />}
-          title={t('payment.transfer')}
-          sub={t('payment.transferSub')}
-        />
+        <span
+          className="mt-0.5 flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-subtle text-secondary"
+          aria-hidden="true"
+        >
+          <Banknote className="h-5 w-5" />
+        </span>
+        <div className="min-w-0">
+          <p className="m-0 font-bold">{t('payment.cash')}</p>
+          <p className="m-0 mt-1 text-[14px] text-muted" data-testid="payment-instructions">
+            {t(data.type === 'delivery' ? 'payment.cashDelivery' : 'payment.cashPickup')}
+          </p>
+          <p className="m-0 mt-2 text-[15px]" data-testid="payment-total">
+            <span className="text-muted">{t('payment.totalToPay')}: </span>
+            <strong>{waiting ? '…' : formatMoney(data.total, locale)}</strong>
+            {data.totalIsEstimate && !waiting ? (
+              <span className="ml-1 text-[12px] text-muted">
+                ({t('checkout.quote.estimatedTag')})
+              </span>
+            ) : null}
+          </p>
+          <p className="m-0 mt-2 text-[13px] text-muted">{t('payment.notPaidYet')}</p>
+        </div>
       </div>
-      {simulation ? null : (
-        <p className="m-0 mt-3 text-[13px] text-muted">
-          {t('payment.coordinate')} · {t('payment.cardUnavailable')}
-        </p>
-      )}
     </section>
   );
 }

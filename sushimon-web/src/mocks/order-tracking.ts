@@ -120,6 +120,8 @@ export function buildOrderTracking(
       fulfillmentType === 'DELIVERY'
         ? { provider: detail.deliveryProvider ?? 'OWN', status: null }
         : null,
+    // F24: el pago NO forma parte de `steps`/`events` (el seguimiento es solo operativo).
+    payment: detail.payment,
     pollAfterSeconds: terminal ? null : (POLL_AFTER[status] ?? 30),
   };
 }

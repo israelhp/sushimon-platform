@@ -1,3 +1,4 @@
+import type { MockCashPayment } from './cash-payments';
 import type {
   AdminDeliveryZone,
   StoredAddress,
@@ -276,10 +277,15 @@ export interface MockStore {
   lookupFailures?: Record<string, { count: number; lastAt: number }>;
   /**
    * F20 (SIMULADO): pedidos con la FORMA REAL (`OrderDetail`) que crea el mock de `POST /v1/orders`. Cada uno lleva su pedido
-   * BORRADOR enlazado (`draftId`, en `orders`) para que el seguimiento, el backoffice y la pasarela NeoNet simulados sigan
+   * BORRADOR enlazado (`draftId`, en `orders`) para que el seguimiento y el backoffice simulados sigan
    * funcionando. Opcional: los stores persistidos antes de F20 no lo traen.
    */
   placedOrders?: PlacedOrderRecord[];
+  /**
+   * F24 (SIMULADO): efectivo recibido por pedido (clave = número del pedido borrador). Solo el registro explícito del personal crea
+   * una entrada (= `PAID`); jamás una transición de estado. Opcional: los stores persistidos antes de F24 no lo traen.
+   */
+  cashPayments?: Record<string, MockCashPayment>;
   /** F20: claves de idempotencia por ámbito (`guest` | correo) → huella del cuerpo y pedido. Opcional (ver `placedOrders`). */
   orderIdempotency?: Record<string, { requestHash: string; orderId: string }>;
   /** Diferencia costo courier − envío cobrado por pedido (para cotizar PedidosYa simulado). */

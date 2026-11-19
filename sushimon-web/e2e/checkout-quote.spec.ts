@@ -177,7 +177,6 @@ test('el paso final sigue SIMULADO: confirma un pedido de demostración sin cobr
 }) => {
   await seed(page, 'pickup');
   for (const step of ['Entrega', 'Envío', 'Pago']) await next(page, step);
-  await page.getByRole('radio', { name: /Efectivo/ }).click();
   await next(page, 'Confirmación');
   await button(page, /Realizar pedido/).click();
   await expect(page.getByRole('heading', { name: '¡Pedido registrado!' })).toBeVisible();

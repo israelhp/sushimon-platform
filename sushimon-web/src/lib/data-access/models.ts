@@ -238,6 +238,26 @@ export type OrderDetailPromotion = S['OrderDetailPromotion'];
 export type OrderDetailAddress = S['OrderDetailAddress'];
 export type OrderDetailContact = S['OrderDetailContact'];
 export type OrderDetailPayment = S['OrderDetailPayment'];
+/**
+ * F24 (spec 025, ADR-0030): pago en EFECTIVO. Público: `OrderDetailPayment` / `OrderTracking.payment` / `OrderReceiptPayment`
+ * (método `CASH`, estado `PENDING|PAID`; nunca el empleado). Backoffice (tag `admin-payments`): `getAdminOrderPayment`,
+ * `registerAdminOrderCashPayment` y `listAdminOrderPaymentHistory`.
+ */
+export type PaymentMethodCode = S['PaymentMethodCode'];
+export type OrderPaymentStatus = S['OrderPaymentStatus'];
+export type OrderReceiptPayment = S['OrderReceiptPayment'];
+export type PaymentCollectionContext = S['PaymentCollectionContext'];
+export type AdminOrderPaymentBlockedReason = S['AdminOrderPaymentBlockedReason'];
+export type AdminOrderPaymentRegistration = S['AdminOrderPaymentRegistration'];
+export type AdminOrderPaymentSummary = S['AdminOrderPaymentSummary'];
+export type PaymentReception = S['PaymentReception'];
+export type AdminOrderPayment = S['AdminOrderPayment'];
+export type AdminCashPaymentRequest = S['AdminCashPaymentRequest'];
+export type AdminCashPaymentResult = S['AdminCashPaymentResult'];
+export type AdminPaymentConflict = S['AdminPaymentConflict'];
+export type PaymentEventType = S['PaymentEventType'];
+export type AdminPaymentEvent = S['AdminPaymentEvent'];
+export type AdminPaymentHistory = S['AdminPaymentHistory'];
 export type OrderDetail = S['OrderDetail'];
 export type OrderGuestAccess = S['OrderGuestAccess'];
 /** F21 (spec 022): seguimiento ligero para polling; sin importes, líneas, contacto ni dirección. */
@@ -287,8 +307,6 @@ export type AdminOrderPendingAction = S['AdminOrderPendingAction'];
 export type AdminOrderTransitionResult = S['AdminOrderTransitionResult'];
 export type AdminOrderStateSnapshot = S['AdminOrderStateSnapshot'];
 export type OrderLookupRequest = S['OrderLookupRequest'];
-export type CardPaymentRequest = S['CardPaymentRequest'];
-export type PaymentResult = S['PaymentResult'];
 export type CourierQuote = S['CourierQuote'];
 export type DispatchRequest = S['DispatchRequest'];
 export type OrderStatusChangeRequest = S['OrderStatusChangeRequest'];

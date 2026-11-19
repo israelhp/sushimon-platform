@@ -19,8 +19,8 @@ import { saveLastOrder } from '@/features/orders/last-order';
 import { ErrorNotice } from '@/features/store-shell/components/ErrorNotice';
 import { STORE_ROUTES } from '@/features/store-shell/nav';
 import { useCartDrawer } from '@/features/store-shell/store-shell-context';
-import { CHECKOUT_STEP_COUNT, effectivePayment, type CheckoutStep } from '../checkout-model';
-import { intentFingerprint, type OrderIntent } from '../order-attempt';
+import { CHECKOUT_STEP_COUNT, type CheckoutStep } from '../checkout-model';
+import type { OrderIntent } from '../order-attempt';
 import { usePlaceOrder } from '../use-place-order';
 import { useCheckoutDraft } from '../checkout-context';
 import { clearRemembered, writeRemembered } from '../remember';
@@ -29,7 +29,6 @@ import { addressSignature, decideSaveAddress } from '../save-address';
 import { Confirmation } from './Confirmation';
 import { PlacementStatus, placementLiveKey } from './PlacementStatus';
 import { DeliveryStep, type CheckoutExtras } from './DeliveryStep';
-import { NeonetDialog, type NeonetOutcome } from './NeonetDialog';
 import { OrderStep, OrderStepSkeleton } from './OrderStep';
 import { OrderSummary, type SummaryAction } from './OrderSummary';
 import { PaymentStep } from './PaymentStep';
@@ -63,7 +62,7 @@ function focusFirstError() {
 }
 
 /**
- * Checkout de 5 pasos (Tu pedido → Entrega → Envío → Pago → Confirmación) + pasarela NeoNet simulada.
+ * Checkout de 5 pasos (Tu pedido → Entrega → Envío → Pago → Confirmación). F24: el único método es EFECTIVO.
  * El estado vive en `CheckoutProvider` (reductor): cambiar idioma o tema no pierde el progreso. El cliente
  * solo envía la intención (productos, cantidades, entrega, contacto, método): el servidor calcula precios,
  * envío y totales; los montos de pantalla son informativos.
@@ -84,7 +83,6 @@ export function CheckoutFlow() {
   const updateMe = useUpdateMe();
 
   const [confirmed, setConfirmed] = useState<DraftOrder | null>(null);
-  const [pending, setPending] = useState<{ order: DraftOrder; signature: string } | null>(null);
   /** Pedido REAL confirmado por el servidor (solo con la API real): se presenta como «pedido recibido». */
   const [placedId, setPlacedId] = useState<string | null>(null);
   /** F21 (mock): UUID del pedido simulado para enlazar el seguimiento con la forma real `OrderTracking`. */
@@ -93,8 +91,7 @@ export function CheckoutFlow() {
   useEffect(() => {
     routerRef.current = router;
   });
-  const [neonetOpen, setNeonetOpen] = useState(false);
-  /** Mock: cargando el pedido borrador enlazado tras crearlo (pasarela/confirmación simuladas). */
+  /** Mock: cargando el pedido borrador enlazado tras crearlo (confirmación simulada). */
   const [loadingDraft, setLoadingDraft] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [extras, setExtras] = useState<CheckoutExtras>({
@@ -210,7 +207,6 @@ export function CheckoutFlow() {
   };
 
   const simulation = data.isSimulation;
-  const payment = effectivePayment(draft.payment, simulation);
 
   /** Lo que el cliente confirma (sin importes ni token): las entradas ACTUALES de la cotización + contacto, dirección y preferencia. */
   const buildIntent = (): OrderIntent | null => {
@@ -231,8 +227,8 @@ export function CheckoutFlow() {
           ? { addressLine: draft.address.line, referenceNote: draft.address.references }
           : null,
       notes: draft.notes,
-      // Solo una PREFERENCIA (no es un cobro). La tarjeta (NeoNet simulada) no se declara: la API rechaza `card`.
-      preference: payment === 'cash' || payment === 'bank_transfer' ? payment : null,
+      // F24: único método = efectivo (el pago nace `PENDING`; nada se cobra aquí). Solo es la preferencia declarada.
+      preference: 'cash',
     };
   };
 
@@ -264,8 +260,6 @@ export function CheckoutFlow() {
   const finalize = (order: DraftOrder) => {
     saveLastOrder(order);
     applyPreferences();
-    setNeonetOpen(false);
-    setPending(null);
     cart.clear();
     discard();
     setConfirmed(order);
@@ -275,7 +269,7 @@ export function CheckoutFlow() {
   /**
    * El servidor (o el mock) confirmó el pedido. API real: el carrito ya lo vació `usePlaceOrder` (`clearAfterOrder`); aquí se
    * aplican las preferencias, se descarta el borrador y se va a «pedido recibido». Mock: se carga el pedido borrador enlazado para
-   * la pasarela NeoNet / confirmación simuladas.
+   * la confirmación simulada.
    */
   const handleCreated = (created: OrderCreated) => {
     if (!simulation) {
@@ -285,18 +279,11 @@ export function CheckoutFlow() {
       setPlacedId(created.order.id);
       return;
     }
-    const card = payment === 'card';
-    const intent = buildIntent();
     setMockTrackingId(created.order.id);
     setLoadingDraft(true);
     drafts
-      .load(created.order.displayNumber, card)
-      .then((order) => {
-        if (card) {
-          setPending({ order, signature: intent ? intentFingerprint(intent) : '' });
-          setNeonetOpen(true);
-        } else finalize(order);
-      })
+      .load(created.order.displayNumber)
+      .then((order) => finalize(order))
       .catch(() => setSubmitError(t('checkout.orderError')))
       .finally(() => setLoadingDraft(false));
   };
@@ -339,30 +326,9 @@ export function CheckoutFlow() {
     const token = data.serverQuote?.quote.token;
     if (!intent || !token) return;
     setSubmitError('');
-    if (
-      simulation &&
-      payment === 'card' &&
-      pending &&
-      pending.signature === intentFingerprint(intent)
-    ) {
-      setNeonetOpen(true);
-      return;
-    }
     place.reset();
     await place.place(intent, token);
   };
-
-  /** Aplica el resultado del pago (sin datos de tarjeta salvo marca/últimos 4 que ya devuelve el servidor). */
-  const withPayment = (order: DraftOrder, outcome: NeonetOutcome): DraftOrder => ({
-    ...order,
-    payment: {
-      ...order.payment,
-      status: outcome.status,
-      reference: outcome.reference,
-      cardLast4: outcome.last4,
-      processedAt: outcome.processedAt,
-    },
-  });
 
   // ── Estados de pantalla ─────────────────────────────────────────────────────────────────
   if (placedId) {
@@ -455,9 +421,7 @@ export function CheckoutFlow() {
             : 'checkout.order.sending',
         )
       : isLast
-        ? simulation && payment === 'card'
-          ? t('checkout.payNow')
-          : t('checkout.placeOrder')
+        ? t('checkout.placeOrder')
         : t('checkout.continueTo', { a: (steps[step] ?? '').toLowerCase() }),
     onClick: blocked ? onBlocked : isLast ? () => void submit() : () => goTo(step + 1),
     busy,
@@ -568,7 +532,7 @@ export function CheckoutFlow() {
               ) : step === 3 ? (
                 <ShippingStep data={data} goTo={goTo} summary={summary} />
               ) : step === 4 ? (
-                <PaymentStep />
+                <PaymentStep data={data} />
               ) : (
                 <ReviewStep
                   data={data}
@@ -668,20 +632,6 @@ export function CheckoutFlow() {
                   })
                 : `${t('checkout.stepOf', { a: step, b: CHECKOUT_STEP_COUNT })}: ${stepName}`}
       </p>
-
-      {pending && neonetOpen ? (
-        <NeonetDialog
-          order={pending.order}
-          now={data.now ?? new Date()}
-          onClose={() => setNeonetOpen(false)}
-          onApproved={(outcome) => finalize(withPayment(pending.order, outcome))}
-          onPendingContinue={(outcome) => finalize(withPayment(pending.order, outcome))}
-          onChangeMethod={() => {
-            setNeonetOpen(false);
-            goTo(4);
-          }}
-        />
-      ) : null}
     </div>
   );
 }

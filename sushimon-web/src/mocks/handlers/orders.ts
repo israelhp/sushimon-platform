@@ -1,5 +1,4 @@
 import type {
-  CardPaymentRequest,
   CreateIncidentRequest,
   DraftCreateOrderRequest,
   Incident,
@@ -7,7 +6,6 @@ import type {
   OrderLine,
   OrderLookupRequest,
   OrderSchedule,
-  PaymentResult,
 } from '@/lib/data-access/models';
 import { priceToNumber } from '@/lib/product-rules';
 import { isScheduleValid } from '@/lib/schedule';
@@ -29,7 +27,6 @@ import {
   touch,
 } from '../domain';
 import { availabilityFor, upcomingClosuresOf, weekOf } from './schedule';
-import { TEST_CARDS } from '../fixtures/orders';
 import { pick, rngFor } from '../factories/random';
 import type { MockStore } from '../store';
 import { advanceDelivery, applyOrderStatus, dispatchOrder, freeOwnRider } from './logistics';
@@ -275,65 +272,6 @@ export const lookupOrder: Handler = (req) => {
   if (!req.store.verifiedOrderIds.includes(order.id)) req.store.verifiedOrderIds.push(order.id);
   settleReviews(req, [order]);
   return order;
-};
-
-function expiryValid(expiry: string, at: Date): boolean {
-  const m = /^(\d{2})\/(\d{2})$/.exec(expiry);
-  if (!m) return false;
-  const month = Number(m[1]);
-  const year = 2000 + Number(m[2]);
-  if (month < 1 || month > 12) return false;
-  const y = at.getUTCFullYear();
-  return year > y || (year === y && month >= at.getUTCMonth() + 1);
-}
-
-/**
- * POST /v1/payments/card — pasarela NeoNet SIMULADA. Solo acepta las tarjetas de prueba.
- * El número completo y el CVV se usan para validar y se descartan: al store solo llegan marca,
- * últimos 4 dígitos y una referencia simulada.
- */
-export const payWithCard: Handler = (req): PaymentResult => {
-  const b = body<CardPaymentRequest>(req);
-  const order = visibleOrder(req, str(b.orderId));
-  if (order.payment.method !== 'card') fail(409, 'El pedido no es con tarjeta');
-  if (order.payment.status === 'approved') fail(409, 'El pedido ya está pagado');
-  if (order.payment.status === 'review') fail(409, 'El pago está en verificación');
-  if (order.status !== 'received') fail(409, 'El pedido ya no admite pagos');
-
-  const number = digits(str(b.cardNumber));
-  const at = now(req);
-  if (number.length !== 16) fail(400, 'Número de tarjeta inválido');
-  if (str(b.holderName).trim().length < 2) fail(400, 'Nombre del titular inválido');
-  if (!expiryValid(str(b.expiry), at)) fail(400, 'Fecha de vencimiento inválida');
-  if (!/^\d{3,4}$/.test(str(b.cvv))) fail(400, 'CVV inválido');
-  const card = TEST_CARDS.find((c) => c.number === number);
-  if (!card) fail(422, 'Solo se aceptan tarjetas de prueba (simulación)');
-
-  let status: PaymentResult['status'] = card.result;
-  if (req.scenario === 'payment-rejected') status = 'declined';
-  else if (req.scenario === 'order-pending' && status === 'approved') status = 'review';
-
-  const reference =
-    status === 'declined' ? null : `DEMO-${String(req.store.sequences.payment++).padStart(6, '0')}`;
-  order.payment = {
-    ...order.payment,
-    status,
-    reference,
-    cardBrand: card.brand,
-    cardLast4: number.slice(-4),
-    amount: order.total,
-    processedAt: at.toISOString(),
-  };
-  order.history.push(event(at, 'payment', status));
-  touch(order, at);
-  return {
-    orderId: order.id,
-    status,
-    reference,
-    amount: order.total,
-    processedAt: at.toISOString(),
-    simulated: true,
-  };
 };
 
 /** POST /v1/incidents */

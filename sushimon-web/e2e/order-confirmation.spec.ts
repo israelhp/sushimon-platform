@@ -138,7 +138,6 @@ test('en inglés: la confirmación y el cuadro de cambio de total se traducen', 
     await button(page, /Continue to/i).click();
     await expect(page.getByRole('heading', { level: 1, name: step })).toBeVisible();
   }
-  await page.getByRole('radio', { name: /Cash/ }).click();
   await button(page, /Continue to/i).click();
   await button(page, /Place order/).click();
   await expect(page.getByRole('alertdialog', { name: 'Your order total changed' })).toBeVisible();

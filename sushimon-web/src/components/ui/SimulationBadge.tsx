@@ -5,7 +5,7 @@ import type { Zone } from './zone';
 
 export interface SimulationBadgeProps {
   /**
-   * `simulation`: acción simulada de un proveedor pendiente (PedidosYa, Neonet) → «Simulación».
+   * `simulation`: acción simulada de un proveedor pendiente (PedidosYa) → «Simulación».
    * `demo`: datos o sesión de demostración → «Demostración».
    */
   kind?: 'simulation' | 'demo';

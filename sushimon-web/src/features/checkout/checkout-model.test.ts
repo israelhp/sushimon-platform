@@ -105,10 +105,15 @@ describe('reductor del checkout', () => {
 
 describe('persistencia no sensible', () => {
   it('serializa sin errores visibles y se restaura', () => {
-    const draft = { ...initialDraft(true), step: 4 as const, payment: 'cash' as const };
+    const draft = { ...initialDraft(true), step: 4 as const };
     const restored = parseDraft(serializeDraft(draft), initialDraft(true));
-    expect(restored).toMatchObject({ step: 4, payment: 'cash', showErrors: false });
+    expect(restored).toMatchObject({ step: 4, showErrors: false });
     expect(serializeDraft(draft)).not.toContain('showErrors');
+    // F24: solo efectivo: el borrador no guarda método de pago (un borrador antiguo con `card`/`bank_transfer` se ignora).
+    expect(serializeDraft(draft)).not.toMatch(/payment|card|bank/i);
+    expect(
+      parseDraft(JSON.stringify({ step: 4, payment: 'bank_transfer' }), initialDraft(true)),
+    ).not.toHaveProperty('payment');
   });
 
   it('descarta basura y valores fuera de rango', () => {

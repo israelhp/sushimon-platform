@@ -18,7 +18,7 @@ export { createSeedStore } from './seed';
 export { createFixedClock, createBrowserClock, DEMO_BASE_TIME } from './clock';
 export type { MockStore, MockContext } from './store';
 export { clearPersistedStore } from './store';
-export { DEMO_GOOGLE_ACCOUNTS, TEST_CARDS, DEMO_CUSTOMER } from './fixtures/orders';
+export { DEMO_GOOGLE_ACCOUNTS, DEMO_CUSTOMER } from './fixtures/orders';
 export { DEMO_STAFF_BY_ROLE, REJECTION_REASONS } from './fixtures/staff';
 
 export interface MockDataClientOptions {

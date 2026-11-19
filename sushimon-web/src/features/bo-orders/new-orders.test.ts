@@ -15,6 +15,7 @@ const item = (id: string): AdminOrderSummary => ({
   itemCount: 1,
   total: '1.00',
   paymentMethodPreference: null,
+  paymentStatus: 'PENDING',
   scheduledFor: null,
   placedAt: '2026-11-18T18:00:00.000Z',
   updatedAt: '2026-11-18T18:00:00.000Z',

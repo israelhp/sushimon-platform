@@ -189,11 +189,11 @@ describe('mapeos y pendingActions', () => {
     expect(draftStatusOf('rejected')).toBe('rejected');
   });
 
-  it('payment_review solo en reject/cancel con transferencia; efectivo → []', () => {
-    expect(pendingActionsFor('cancel', 'bank_transfer')).toEqual(['payment_review']);
-    expect(pendingActionsFor('reject', 'bank_transfer')).toEqual(['payment_review']);
-    expect(pendingActionsFor('cancel', 'cash')).toEqual([]);
-    expect(pendingActionsFor('cancel', null)).toEqual([]);
-    expect(pendingActionsFor('accept', 'bank_transfer')).toEqual([]);
+  it('payment_review solo en reject/cancel con el efectivo YA cobrado (hecho real, no preferencia)', () => {
+    expect(pendingActionsFor('cancel', true)).toEqual(['payment_review']);
+    expect(pendingActionsFor('reject', true)).toEqual(['payment_review']);
+    expect(pendingActionsFor('cancel', false)).toEqual([]);
+    expect(pendingActionsFor('reject', false)).toEqual([]);
+    expect(pendingActionsFor('accept', true)).toEqual([]);
   });
 });

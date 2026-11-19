@@ -67,21 +67,37 @@ describe('OrderDetail con la API real (http): pedido recibido', () => {
     expect(screen.getByText(/2 × /)).toBeInTheDocument();
     expect(screen.getByTestId('order-total')).toHaveTextContent('106');
     expect(screen.getByText('****1234')).toBeInTheDocument();
-    expect(screen.getByText('Pagas al recibir o al recoger')).toBeInTheDocument();
-    expect(screen.getByText('Aún no se ha cobrado nada.')).toBeInTheDocument();
+    // F24: pago en efectivo REAL y PENDIENTE (nada cobrado), con la instrucción del retiro.
+    expect(screen.getByTestId('payment-line')).toHaveTextContent('Pago en efectivo: Pendiente');
+    expect(screen.getByTestId('payment-hint')).toHaveTextContent(
+      'Realiza el pago en efectivo cuando recojas tu pedido en la sucursal.',
+    );
+    expect(screen.queryByTestId('payment-receipt')).not.toBeInTheDocument();
     const page = screen.getByTestId('order-received');
     expect(within(page).queryByText('Simulación')).not.toBeInTheDocument();
     expect(page.textContent).not.toMatch(/aceptad|pagado|Ver siguiente estado|\b5555\b/i);
     expect(screen.queryByRole('list', { name: /seguimiento/i })).not.toBeInTheDocument();
   });
 
-  it('transferencia: «Transferencia: te contactaremos» (preferencia, sin afirmar cobro)', async () => {
-    const { created, backend } = await place({ paymentMethodPreference: 'bank_transfer' });
+  it('F24: nunca ofrece ni menciona transferencia, tarjeta, Neonet ni comprobante', async () => {
+    const { created, backend } = await place();
     saveConfirmation(created);
     await renderStore(<OrderDetail orderId={created.order.id} />, {
       wrapClient: () => asHttp(backend),
     });
-    expect(await screen.findByText('Transferencia: te contactaremos')).toBeInTheDocument();
+    await screen.findByTestId('payment-status');
+    expect(screen.getByTestId('order-received').textContent).not.toMatch(
+      /transferencia|tarjeta|neonet|comprobante|empleado/i,
+    );
+  });
+
+  it('F24: el creador envía «cash» y cualquier otro método (transferencia, tarjeta) se rechaza con 400', async () => {
+    await expect(
+      place({ paymentMethodPreference: 'bank_transfer' as never }),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(place({ paymentMethodPreference: 'card' as never })).rejects.toMatchObject({
+      status: 400,
+    });
   });
 
   it('a domicilio: dirección, referencia y tarifa tal como las devuelve la API', async () => {
@@ -300,6 +316,9 @@ describe('OrderDetail con la API real (http): pedido recibido', () => {
     expect(
       await screen.findByRole('heading', { name: 'We received your order!' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('You pay on delivery or at pickup')).toBeInTheDocument();
+    expect(screen.getByTestId('payment-line')).toHaveTextContent('Cash payment: Pending');
+    expect(screen.getByTestId('payment-hint')).toHaveTextContent(
+      'Pay in cash when you pick up your order at the branch.',
+    );
   });
 });

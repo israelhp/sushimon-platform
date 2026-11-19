@@ -22,7 +22,8 @@ describe('classifyPlaceError (F20 §2.3)', () => {
     [err(409, 'QUOTE_EXPIRED', { quote, changes: [] }), 'quoteExpired'],
     [err(409, 'IDEMPOTENCY_KEY_REUSED'), 'keyReused'],
     [err(422, 'QUOTE_INVALID'), 'quoteInvalid'],
-    [err(422, 'PAYMENT_METHOD_UNAVAILABLE'), 'paymentUnavailable'],
+    // F24: `PAYMENT_METHOD_UNAVAILABLE` se retiró del contrato: un 422 desconocido es «inválido».
+    [err(422, 'PAYMENT_METHOD_UNAVAILABLE'), 'invalid'],
     [err(422, 'CONTACT_INCOMPLETE'), 'contactIncomplete'],
     [err(422, 'DELIVERY_PROVIDER_NOT_SELECTABLE'), 'providerNotSelectable'],
     [err(422, 'BRANCH_NOT_AVAILABLE'), 'invalid'],

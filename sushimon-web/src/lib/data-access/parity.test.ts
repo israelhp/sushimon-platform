@@ -166,22 +166,6 @@ const storeSteps: ((c: DataClient) => Promise<unknown>)[] = [
     }),
   (c) => orders.createDraftOrder(c, newOrder),
   (c) => orders.createDraftOrder(c, { ...newOrder, lines: [] }),
-  (c) =>
-    orders.payWithCard(c, {
-      orderId: 'MON-307059',
-      cardNumber: '4000000000000002',
-      holderName: 'CLIENTE DEMO',
-      expiry: '12/28',
-      cvv: '123',
-    }),
-  (c) =>
-    orders.payWithCard(c, {
-      orderId: 'MON-307059',
-      cardNumber: '4242424242424242',
-      holderName: 'CLIENTE DEMO',
-      expiry: '12/28',
-      cvv: '123',
-    }),
   (c) => orders.getDraftOrder(c, 'MON-307059'),
   (c) => orders.getDraftOrder(c, 'MON-490217'),
   (c) => orders.lookupOrder(c, { orderNumber: '490217', phone: '55551234' }),
@@ -1206,7 +1190,7 @@ describe('paridad mock ↔ http', () => {
           c,
           { paymentMethodPreference: 'card' as never },
           'zzzzzzzz-bbbb-4ccc-8ddd-eeeeeeeeeeee',
-        ), // 422
+        ), // 400: F24 solo admite `cash` (tarjeta/transferencia ya no existen en el contrato)
       (c) => place(c, { quoteToken: 'basura' }, 'yyyyyyyy-bbbb-4ccc-8ddd-eeeeeeeeeeee'), // 422 QUOTE_INVALID
       (c) => place(c, {}, 'corta'), // 400 IDEMPOTENCY_KEY_INVALID
       (c) => orders.getOrder(c, '00000000-0000-4000-8000-000000000001'), // 404
@@ -1215,8 +1199,85 @@ describe('paridad mock ↔ http', () => {
     const a = await run(steps, p.mock.client);
     expect(await run(steps, p.http)).toEqual(a);
     expect(a.map((x) => ('error' in x ? x.error.status : 200))).toEqual([
-      200, 200, 409, 422, 422, 400, 404, 404,
+      200, 200, 409, 400, 422, 400, 404, 404,
     ]);
+  });
+
+  it('F24: pago en efectivo (getAdminOrderPayment, registerAdminOrderCashPayment, historial) produce lo mismo con mock y con http y valida contra el contrato', async () => {
+    const p = pair();
+    p.asStaff('admin');
+    const K1 = 'aaaaaaaa-bbbb-4ccc-8ddd-000000000001';
+    const K2 = 'aaaaaaaa-bbbb-4ccc-8ddd-000000000002';
+    const ID = 'MON-307057';
+    const reg = (c: DataClient, tendered: string, key: string, confirmed = true) =>
+      c.post(
+        `/v1/admin/orders/${ID}/payment/cash`,
+        { tendered, receivedConfirmed: confirmed },
+        { headers: { 'Idempotency-Key': key } },
+      );
+    const steps: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => adminOrders.getAdminOrderPayment(c, ID), // PENDING
+      (c) => reg(c, '1.00', K1), // 422 CASH_AMOUNT_INSUFFICIENT
+      (c) => reg(c, '200.001', K1), // 400 PAYMENT_AMOUNT_INVALID
+      (c) => reg(c, '5000.01', K1), // 422 CASH_TENDERED_TOO_LARGE
+      (c) => reg(c, '500.00', K1, false), // 400 PAYMENT_CONFIRMATION_REQUIRED
+      (c) =>
+        adminOrders.registerAdminOrderCashPayment(c, {
+          id: ID,
+          tendered: '500.00',
+          idempotencyKey: K1,
+        }), // 201
+      (c) =>
+        adminOrders.registerAdminOrderCashPayment(c, {
+          id: ID,
+          tendered: '500.00',
+          idempotencyKey: K1,
+        }), // 200 replayed
+      (c) =>
+        adminOrders.registerAdminOrderCashPayment(c, {
+          id: ID,
+          tendered: '600.00',
+          idempotencyKey: K1,
+        }), // 409 IDEMPOTENCY_KEY_REUSED
+      (c) =>
+        adminOrders.registerAdminOrderCashPayment(c, {
+          id: ID,
+          tendered: '500.00',
+          idempotencyKey: K2,
+        }), // 409 PAYMENT_ALREADY_REGISTERED
+      (c) => adminOrders.getAdminOrderPayment(c, ID), // PAID
+      (c) => adminOrders.listAdminOrderPaymentHistory(c, ID),
+      (c) => adminOrders.getAdminOrderPayment(c, 'MON-999999'), // 404
+    ];
+    const a = await run(steps, p.mock.client);
+    expect(await run(steps, p.http)).toEqual(a);
+    expect(a.map((x) => ('error' in x ? x.error.status : 200))).toEqual([
+      200, 422, 400, 422, 400, 200, 200, 409, 409, 200, 200, 404,
+    ]);
+    const ok = (i: number) => (a[i] as { ok: unknown }).ok;
+    expect(validateContract('AdminOrderPayment', ok(0))).toEqual([]);
+    expect(validateContract('AdminCashPaymentResult', ok(5))).toEqual([]);
+    expect(validateContract('AdminCashPaymentResult', ok(6))).toEqual([]);
+    expect((ok(6) as { replayed: boolean }).replayed).toBe(true);
+    expect(validateContract('AdminOrderPayment', ok(9))).toEqual([]);
+    expect(validateContract('AdminPaymentHistory', ok(10))).toEqual([]);
+    // El 409 con el pago actual valida contra `AdminPaymentConflict`.
+    let conflict: unknown;
+    try {
+      await adminOrders.registerAdminOrderCashPayment(p.http, {
+        id: ID,
+        tendered: '500.00',
+        idempotencyKey: K2,
+      });
+    } catch (e) {
+      conflict = (e as ApiError).body;
+    }
+    expect(validateContract('AdminPaymentConflict', conflict)).toEqual([]);
+    // Resumen del detalle y del listado (F22) y vistas públicas (F20/F21/F23) del esquema nuevo.
+    const detail = await adminOrders.getAdminOrder(p.mock.client, ID);
+    expect(validateContract('AdminOrderDetail', detail)).toEqual([]);
+    const page = await adminOrders.listAdminOrders(p.mock.client, {});
+    expect(validateContract('AdminOrderPage', page)).toEqual([]);
   });
 
   it('F21: getOrderTracking (forma, 404 uniforme y 429/503 con Retry-After) produce lo mismo con mock y con http', async () => {

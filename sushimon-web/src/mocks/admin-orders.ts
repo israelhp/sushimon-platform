@@ -13,7 +13,8 @@ import type {
   StaffPermission,
 } from '@/lib/data-access/models';
 import type { AdminOrderCommand } from '@/services/admin-orders';
-import type { PlacedOrderRecord } from './store';
+import { adminPaymentSummary, paymentRecord } from './cash-payments';
+import type { MockStore, PlacedOrderRecord } from './store';
 
 /**
  * F22 (spec 023 §3, §4.2) — SIMULACIÓN de la matriz de transiciones, `availableActions` y las vistas `AdminOrder*` sobre el almacén
@@ -222,28 +223,32 @@ export function ruleOrderOf(draft: DraftOrder, placed?: PlacedOrderRecord): Rule
   };
 }
 
-/** Preferencia de pago informativa (NO es un pago: F24). El borrador `card` se presenta como transferencia por conciliar. */
+/** Preferencia de pago informativa (NO es un pago): solo `cash` o `null` (F24 retira `bank_transfer`). */
 export function paymentPreferenceOf(
   draft: DraftOrder,
   placed?: PlacedOrderRecord,
 ): OrderPaymentPreference | null {
-  if (placed) return placed.detail.payment.methodPreference;
-  return draft.payment.method === 'cash' ? 'cash' : 'bank_transfer';
+  if (placed) return 'cash';
+  return draft.payment.method === 'cash' ? 'cash' : null;
 }
 
-/** Regla PROVISIONAL de `pendingActions` (P74): preferencia `bank_transfer` => revisar pago. Informativa, jamás se ejecuta. */
+/**
+ * `pendingActions` de `reject`/`cancel` (F24: hecho real, ya no una heurística por preferencia): pago `PAID` y pedido cerrado =>
+ * «posible devolución pendiente» (`payment_review`). Informativa: no existe ninguna acción de reembolso (F26).
+ */
 export function pendingActionsFor(
   command: AdminOrderCommand,
-  preference: OrderPaymentPreference | null,
+  paid: boolean,
 ): AdminOrderPendingAction[] {
   if (command !== 'reject' && command !== 'cancel') return [];
-  return preference === 'bank_transfer' ? ['payment_review'] : [];
+  return paid ? ['payment_review'] : [];
 }
 
 export function toAdminSummary(
   draft: DraftOrder,
   branches: readonly Pick<Branch, 'id' | 'name'>[],
   can: (permission: StaffPermission) => boolean,
+  store: MockStore,
   placed?: PlacedOrderRecord,
 ): AdminOrderSummary {
   const rule = ruleOrderOf(draft, placed);
@@ -260,6 +265,7 @@ export function toAdminSummary(
     itemCount: draft.lines.reduce((sum, l) => sum + l.quantity, 0),
     total: money(draft.total),
     paymentMethodPreference: paymentPreferenceOf(draft, placed),
+    paymentStatus: paymentRecord(store, draft.id) ? 'PAID' : 'PENDING',
     scheduledFor: null,
     placedAt: draft.createdAt,
     updatedAt: draft.updatedAt,
@@ -273,9 +279,10 @@ export function toAdminDetail(
   draft: DraftOrder,
   branches: readonly Pick<Branch, 'id' | 'name'>[],
   can: (permission: StaffPermission) => boolean,
+  store: MockStore,
   placed?: PlacedOrderRecord,
 ): AdminOrderDetail {
-  const summary = toAdminSummary(draft, branches, can, placed);
+  const summary = toAdminSummary(draft, branches, can, store, placed);
   const lines: OrderDetailLine[] =
     placed?.detail.lines ??
     draft.lines.map((l) => ({
@@ -321,7 +328,7 @@ export function toAdminDetail(
     extrasTotal: placed?.detail.extrasTotal ?? '0.00',
     discountTotal: money(draft.discount),
     deliveryFee: money(draft.deliveryFee),
-    payment: { methodPreference: summary.paymentMethodPreference, status: 'NOT_STARTED' },
+    payment: adminPaymentSummary(store, draft, ruleOrderOf(draft, placed), can('payments.confirm')),
     history: all.slice(-MAX_HISTORY),
     historyTruncated: all.length > MAX_HISTORY,
   };
