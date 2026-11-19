@@ -335,7 +335,7 @@ Adaptaciones respecto del encargo y del backlog (sin duplicar rutas):
 2  UPDATE app.payments p SET status='paid', tendered_amount=$t, change_amount=$t - p.amount, collector_type='STAFF',
           received_by_staff_id=$staff, collection_context=$ctx, received_at=now(), confirm_key_hash=$k,
           confirm_request_hash=$r, updated_at=now()
-     FROM app.orders o
+     FROM (SELECT id, status FROM app.orders WHERE id=$order FOR SHARE) o
     WHERE p.id=$pay AND p.order_id=o.id AND p.status='pending' AND o.status NOT IN ('rejected','cancelled')
    RETURNING p.received_at, p.change_amount
    0 filas => carrera perdida: relectura (sentencia 3) y mismo árbol de decisión que arriba (replay | 409)
@@ -343,7 +343,7 @@ Adaptaciones respecto del encargo y del backlog (sin duplicar rutas):
 4  AuditService.record(tx, payment.cash_received …)
 ```
 
-**Doble clic / concurrencia**: el UPDATE condicional (`status='pending'`) toma el bloqueo de fila de `payments`; el segundo UPDATE espera, re-evalúa la condición (READ COMMITTED) y obtiene 0 filas; la relectura distingue «misma clave y cuerpo» (200 replay, no escribe) de «otra clave» (409). `UNIQUE(order_id)` impide un segundo pago aunque dos creaciones compitieran. Carrera con `cancel`/`reject`: ambos órdenes son consistentes (pagar-antes-de-cancelar ⇒ `PAID` + cancelado = «posible devolución»; cancelar-antes-de-pagar ⇒ 409 `ORDER_NOT_PAYABLE`); el UPDATE incluye la condición del estado del pedido leída en la misma sentencia.
+**Doble clic / concurrencia**: el UPDATE condicional (`status='pending'`) toma el bloqueo de fila de `payments`; el segundo UPDATE espera, re-evalúa la condición (READ COMMITTED) y obtiene 0 filas; la relectura distingue «misma clave y cuerpo» (200 replay, no escribe) de «otra clave» (409). `UNIQUE(order_id)` impide un segundo pago aunque dos creaciones compitieran. Carrera con `cancel`/`reject`: ambos órdenes son consistentes (pagar-antes-de-cancelar ⇒ `PAID` + cancelado = «posible devolución»; cancelar-antes-de-pagar ⇒ 409 `ORDER_NOT_PAYABLE`); el UPDATE lee el pedido con `FOR SHARE` (choca con el `FOR NO KEY UPDATE` del `UPDATE orders` de F22, no con `FOR KEY SHARE`), de modo que cobro y cancelación se serializan y la condición de estado se evalúa sobre la fila vigente; el cobro bloquea `orders` (compartido) y luego `payments`, y la transición solo bloquea `orders`: no hay ciclo.
 
 **Respuesta perdida**: el cliente reintenta con la MISMA clave y obtiene 200 `Idempotent-Replayed: true` con la recepción original (`appliedByMe` indica si fue la misma persona). Un 503 `ORDERS_BUSY`/timeout deja el estado desconocido: la web reintenta con la misma clave (nunca declara éxito sin respuesta persistida). Una clave NUEVA tras un 409 `PAYMENT_ALREADY_REGISTERED` NO cobra otra vez.
 
@@ -548,16 +548,16 @@ Decisiones abiertas con valor seguro adoptado (detalle en `docs/business-rules/d
 
 ## 16. Estado (implementado · simulado · pendiente de proveedor · bloqueado)
 
-| Pieza                                                                 | Estado                                                                                              |
-| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Contrato (3 operaciones, esquemas de pago, retiro de `bank_transfer`) | `CONTRACT_DEFINED` (`contracts:check` rojo solo por las 3 operaciones nuevas hasta implementar)     |
-| Migración 0019 (DDL de §2.2)                                          | Propuesta, SIN SQL en el repo ni aplicada; requiere aprobación humana                               |
-| API, int-spec y presupuesto                                           | Pendiente                                                                                           |
-| Web (checkout efectivo, panel y modal, tracking/recibo con pago real) | `MOCK_ONLY`/pendiente hasta integrar; el mock de F20–F23 sigue con la forma anterior hasta el slice |
-| Transferencia, tarjeta/Neonet, reembolsos                             | Fuera de alcance por requerimiento (F25 `BLOCKED_EXTERNAL`; F26)                                    |
-| Cobro del motorista (F28)                                             | Contrato y modelo preparados; sin implementar                                                       |
-| PedidosYa                                                             | `BLOCKED_EXTERNAL`: sin cobro asumido; registro bloqueado                                           |
-| Anulación de pagos, parciales, rendición de caja                      | No implementado por decisión (P82, P87; F28/F34)                                                    |
+| Pieza                                                                 | Estado                                                                                          |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Contrato (3 operaciones, esquemas de pago, retiro de `bank_transfer`) | `API_IMPLEMENTED` (`contracts:check` en verde)                                                  |
+| Migración 0019 (DDL de §2.2)                                          | SQL en el repo, NO aplicada ni ejecutada contra ninguna BD; la aplica el usuario con aprobación |
+| API (3 rutas, F20–F23 con pago real) e int-specs                      | Implementada y verde con dobles; int-specs escritas y NO ejecutadas (requieren 0019 aplicada)   |
+| Web (checkout efectivo, panel y modal, tracking/recibo con pago real) | Integrada (mock/http); verificada con Vitest y Playwright en modo mock; no contra la API real   |
+| Transferencia, tarjeta/Neonet, reembolsos                             | Fuera de alcance por requerimiento (F25 `BLOCKED_EXTERNAL`; F26)                                |
+| Cobro del motorista (F28)                                             | Contrato y modelo preparados; sin implementar                                                   |
+| PedidosYa                                                             | `BLOCKED_EXTERNAL`: sin cobro asumido; registro bloqueado                                       |
+| Anulación de pagos, parciales, rendición de caja                      | No implementado por decisión (P82, P87; F28/F34)                                                |
 
 ## 17. Cambio propuesto al backlog maestro (F24)
 
@@ -583,3 +583,11 @@ Y en la tabla maestra: F24 «Pagos en efectivo», dependencias `F20, F22, F03`, 
 - Confirmar que Prisma 7 permite el UPDATE condicional con `FROM` vía `$queryRaw` dentro de la transacción de la API, y la CTE de `createOrder` vía `$queryRaw`.
 - Confirmar el nombre y la ruta reales del modal/panel en `features/bo-orders` y la lista exacta de archivos web con `bank_transfer` (hoy: `checkout-model.ts`, `PaymentStep.tsx`, `ReviewStep.tsx`, `CheckoutFlow.tsx`, `OrderReceived.tsx`, `receipt-screen.tsx`, `mocks/admin-orders.ts`, `mocks/handlers/order-placement.ts`, `i18n/messages/{es,en}.json` y sus pruebas; API: `orders.types.ts`, `orders.service.ts`, `order-create-request.dto.ts`, `order-responses.dto.ts`, `order-mapper.ts`, `admin/*`, `history/*`, `ports/order-payment-read.port.ts`, `prisma/schema.prisma`).
 - Actualizar `.claude/skills/checkout-payments/SKILL.md` (menciona transferencia) cuando se implemente.
+
+## 19. Verificación realizada hasta ahora (sin BD real)
+
+- API con dobles: lint, typecheck, 2477 unitarias, 1020 e2e (`--maxWorkers=2`), build y `contracts:check` en verde.
+- Web: typecheck, lint (0 errores), 2580 Vitest, `next build` y Playwright (cash-payments escritorio/móvil, checkout, tracking, historial, backoffice) en worktree; 2 fallos de arranque en frío de `backoffice-orders-live` pasan al repetir.
+- NO verificado: migración 0019 (nunca ejecutada), todo el SQL real (CTE de `createOrder`, `UPDATE … FOR SHARE`, `LEFT JOIN payments`, forma de `Decimal`/`bytea`), presupuestos de sentencias, concurrencia real (cobro doble, cobro vs cancelación), API HTTP real y navegador contra la API real, login real Google/Supabase + TOTP.
+- Pendiente de otras features: cobro del motorista (F28), PedidosYa (F29), reembolsos (F26), tarjeta (F25).
+- `.claude/skills/checkout-payments/SKILL.md` aún menciona transferencia (fuera del alcance de este cambio; actualizar aparte).
