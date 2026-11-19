@@ -33,6 +33,18 @@ export function useCustomerScope(): CustomerScope {
 }
 
 /**
+ * ¿Es una consulta privada de OTRA identidad? Cubre `['customer', scope, …]` y, desde F21, los pedidos reales
+ * `['orders', 'tracking' | 'placed', scope | 'guest', id]` (el invitado es `'guest'`: al iniciar sesión se descarta y viceversa).
+ */
+export function isOtherIdentity(key: readonly unknown[], scope: string | null): boolean {
+  if (key[0] === queryKeys.customer.all[0]) return key[1] !== scope;
+  if (key[0] === 'orders' && (key[1] === 'tracking' || key[1] === 'placed')) {
+    return key[2] !== (scope ?? 'guest');
+  }
+  return false;
+}
+
+/**
  * Descarta de la caché todo dato de cliente de OTRA identidad (cierre de sesión o cambio de cuenta). Aun sin este
  * efecto otra cuenta no leería la caché ajena (la clave lleva el `scope`); esto además libera la memoria y evita
  * que reaparezcan datos del anterior al volver a entrar. Se monta una sola vez, dentro de los proveedores.
@@ -42,10 +54,7 @@ export function useCustomerCacheGuard(): void {
   const identity = useCustomerScope();
   const scope = identity.state === 'ready' ? identity.scope : null;
   useEffect(() => {
-    queryClient.removeQueries({
-      predicate: (query) =>
-        query.queryKey[0] === queryKeys.customer.all[0] && query.queryKey[1] !== scope,
-    });
+    queryClient.removeQueries({ predicate: (query) => isOtherIdentity(query.queryKey, scope) });
   }, [queryClient, scope]);
 }
 

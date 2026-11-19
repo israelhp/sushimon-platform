@@ -221,8 +221,16 @@ export function OrderReceived({
         </div>
 
         {unsaved ? null : <p className="m-0 text-center text-[13px] text-muted">{t('keepTab')}</p>}
-        <div className="flex justify-center">
-          <Link href={STORE_ROUTES.menu} className="btn btn-primary">
+        <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
+          {/* F21: el seguimiento vive en su propia ruta (el token de invitado sigue en `sessionStorage`, nunca en la URL). */}
+          <Link
+            href={`/pedidos/${order.id}/seguimiento`}
+            className="btn btn-primary w-full no-underline sm:w-auto"
+            data-testid="view-tracking"
+          >
+            {t('viewTracking')}
+          </Link>
+          <Link href={STORE_ROUTES.menu} className="btn w-full no-underline sm:w-auto">
             {tc('goMenu')}
           </Link>
         </div>

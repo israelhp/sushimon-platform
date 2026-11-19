@@ -8,6 +8,7 @@ import type {
   OrderDetailLine,
   OrderDetailPromotion,
   OrderQuoteChange,
+  OrderTracking,
 } from '@/lib/data-access/models';
 import { centsToPrice, priceToCents } from '@/lib/product-rules';
 import { moneyToCents } from '@/lib/checkout-quote';
@@ -25,6 +26,7 @@ import { MUNICIPALITY_SEEDS } from '../fixtures/geography';
 import { readMockQuoteToken, stableStringify, type MockQuoteEvidence } from '../quote-token';
 import { sha256Hex } from '../sha256';
 import type { MockStore, PlacedOrderRecord } from '../store';
+import { buildOrderTracking } from '../order-tracking';
 import { quoteCheckout } from './checkout';
 import { now, requireCustomer, str, type Handler, type Req } from './shared';
 
@@ -614,8 +616,8 @@ export const createPlacedOrder: Handler = (req): OrderCreated => {
 export const findPlacedOrder = (store: MockStore, id: string): PlacedOrderRecord | undefined =>
   store.placedOrders?.find((p) => p.detail.id === id);
 
-/** GET /v1/orders/{id} de un pedido real simulado: dueño (sesión) o `X-Order-Token` vigente; si no, el MISMO 404. */
-export function readPlacedOrder(req: Req, record: PlacedOrderRecord): OrderDetail {
+/** Autorización del pedido real simulado: dueño (sesión) o `X-Order-Token` vigente; si no, el MISMO 404 (sin revelar nada). */
+function authorizePlaced(req: Req, record: PlacedOrderRecord): void {
   const at = now(req).getTime();
   const token = req.headers['x-order-token'];
   const byToken =
@@ -624,8 +626,39 @@ export function readPlacedOrder(req: Req, record: PlacedOrderRecord): OrderDetai
   const owner = req.context.session.customer?.email.trim().toLowerCase() ?? null;
   const byOwner = owner !== null && record.ownerEmail === owner;
   if (!byToken && !byOwner) fail(404, 'Pedido no encontrado');
+}
+
+/** GET /v1/orders/{id} de un pedido real simulado: dueño (sesión) o `X-Order-Token` vigente; si no, el MISMO 404. */
+export function readPlacedOrder(req: Req, record: PlacedOrderRecord): OrderDetail {
+  authorizePlaced(req, record);
   return record.detail;
 }
+
+/**
+ * GET /v1/orders/{id}/tracking (F21, `getOrderTracking`) — SIMULADO. Misma autorización y MISMO 404 que `getOrder` (inexistente,
+ * ajeno, sin token, revocado o vencido). Forma real `OrderTracking` construida desde el historial del borrador enlazado
+ * (`mocks/order-tracking.ts`). Fallos de prueba: `rate-limited` (429 con `Retry-After`) y `busy` (503 `ORDERS_BUSY`); `offline` y
+ * `lost-response` los resuelve el cliente. Solo lectura: no emite tokens ni cambia el pedido.
+ */
+export const getOrderTracking: Handler = (req): OrderTracking => {
+  if (req.fault === 'rate-limited') {
+    problem(
+      429,
+      'RATE_LIMITED',
+      'Demasiadas solicitudes; espera unos segundos',
+      {},
+      RATE_LIMIT_RETRY_SEC,
+    );
+  }
+  if (req.fault === 'busy')
+    problem(503, 'ORDERS_BUSY', 'Hay mucha demanda; reintenta en unos segundos', {}, 2);
+  const record = findPlacedOrder(req.store, req.params.id ?? '');
+  if (!record) fail(404, 'Pedido no encontrado');
+  authorizePlaced(req, record);
+  const draft = req.store.orders.find((o) => o.id === record.draftId);
+  if (!draft) fail(404, 'Pedido no encontrado');
+  return buildOrderTracking(record.detail, draft, now(req));
+};
 
 /** POST /v1/demo/orders/:id/card — SIMULADO: prepara el pedido borrador para la pasarela NeoNet de demostración. */
 export const prepareDraftCard: Handler = (req) => {

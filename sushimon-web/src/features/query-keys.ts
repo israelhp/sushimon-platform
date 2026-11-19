@@ -168,6 +168,12 @@ export const queryKeys = {
     /** F20: pedido REAL (`OrderDetail`), aislado por cuenta o invitado. La credencial de invitado NUNCA entra en la clave. */
     placed: (scope: string | null, id: string) =>
       ['orders', 'placed', scope ?? 'guest', id] as const,
+    /**
+     * F21: seguimiento REAL (`OrderTracking`), aislado por cuenta o invitado y por pedido. NUNCA lleva la credencial de invitado
+     * ni se persiste; `useCustomerCacheGuard` lo descarta al cambiar de cuenta.
+     */
+    tracking: (scope: string | null, id: string) =>
+      ['orders', 'tracking', scope ?? 'guest', id] as const,
   },
   /**
    * F06 (spec 010 D15): datos del CLIENTE con la IDENTIDAD en la raíz (`scope` = id de Supabase Auth, o `demo:<correo>` en el

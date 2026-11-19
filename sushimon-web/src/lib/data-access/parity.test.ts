@@ -1217,6 +1217,109 @@ describe('paridad mock ↔ http', () => {
     ]);
   });
 
+  it('F21: getOrderTracking (forma, 404 uniforme y 429/503 con Retry-After) produce lo mismo con mock y con http', async () => {
+    const p = pair();
+    const cart = {
+      branchId: 'sucursal-1',
+      lines: [{ productId: 'dumplings', quantity: 1, selections: [] }],
+    };
+    const fulfillment = { type: 'PICKUP' as const };
+    const place = async (c: DataClient) => {
+      const q = await checkout.quoteCheckout(c, { cart, fulfillment });
+      return orders.createOrder(
+        c,
+        {
+          cart,
+          fulfillment,
+          quoteToken: q.quote.token as string,
+          contact: { fullName: 'Ana Prueba', phone: '5555-0000' },
+          paymentMethodPreference: 'cash',
+        },
+        'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      );
+    };
+    const steps: ((c: DataClient) => Promise<unknown>)[] = [
+      async (c) => {
+        const created = await place(c);
+        const tracking = await orders.getOrderTracking(c, created.order.id, {
+          guestToken: created.access?.guestToken,
+        });
+        // Sin credencial y con una ajena: el mismo 404 (el pedido existe, no se revela).
+        const lost: unknown[] = [];
+        for (const guestToken of [undefined, 'smo_x']) {
+          try {
+            await orders.getOrderTracking(c, created.order.id, { guestToken });
+          } catch (e) {
+            lost.push(e instanceof ApiError ? [e.status, e.code, e.message] : 'otro error');
+          }
+        }
+        return { tracking, lost };
+      },
+      (c) => orders.getOrderTracking(c, '00000000-0000-4000-8000-000000000001'), // 404
+    ];
+    const a = await run(steps, p.mock.client);
+    expect(await run(steps, p.http)).toEqual(a);
+    expect(a.map((x) => ('error' in x ? x.error.status : 200))).toEqual([200, 404]);
+    const ok = (
+      a[0] as { ok: { tracking: { events: unknown[]; steps: unknown[] }; lost: unknown } }
+    ).ok;
+    expect(ok.tracking.events).toHaveLength(1);
+    expect(ok.lost).toEqual([
+      [404, 'not_found', 'Pedido no encontrado'],
+      [404, 'not_found', 'Pedido no encontrado'],
+    ]);
+  });
+
+  it('F21: los fallos 429/503 del seguimiento llegan igual por http (Retry-After incluido)', async () => {
+    const p = pair();
+    const cart = {
+      branchId: 'sucursal-1',
+      lines: [{ productId: 'dumplings', quantity: 1, selections: [] }],
+    };
+    const q = await checkout.quoteCheckout(p.mock.client, {
+      cart,
+      fulfillment: { type: 'PICKUP' },
+    });
+    const created = await orders.createOrder(
+      p.mock.client,
+      {
+        cart,
+        fulfillment: { type: 'PICKUP' },
+        quoteToken: q.quote.token as string,
+        contact: { fullName: 'Ana Prueba', phone: '5555-0000' },
+        paymentMethodPreference: 'cash',
+      },
+      'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    );
+    const route = `GET /v1/orders/${created.order.id}/tracking`;
+    (globalThis as { window?: unknown }).window = {
+      __sushimonMockFaults: { [route]: ['rate-limited', 'busy', 'rate-limited', 'busy'] },
+    };
+    try {
+      const read = (c: DataClient) =>
+        orders.getOrderTracking(c, created.order.id, { guestToken: created.access?.guestToken });
+      const outcome = async (c: DataClient) => {
+        try {
+          await read(c);
+          return 'ok';
+        } catch (e) {
+          if (!(e instanceof ApiError)) throw e;
+          return [e.status, e.businessCode, e.retryAfterSec];
+        }
+      };
+      const mock = [await outcome(p.mock.client), await outcome(p.mock.client)];
+      // La cola de fallos es por ruta y se consume por solicitud; el handler atiende el fallo antes de buscar el pedido.
+      const viaHttp = [await outcome(p.http), await outcome(p.http)];
+      expect(mock).toEqual([
+        [429, 'RATE_LIMITED', 2],
+        [503, 'ORDERS_BUSY', 2],
+      ]);
+      expect(viaHttp).toEqual(mock);
+    } finally {
+      delete (globalThis as { window?: unknown }).window;
+    }
+  });
+
   it('F20: el cuerpo de QUOTE_CHANGED (cambios y cotización nueva) y el Retry-After del 429 llegan igual por http', async () => {
     const p = pair();
     const cart = {

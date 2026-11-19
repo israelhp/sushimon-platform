@@ -464,10 +464,17 @@ describe('checkout · pedido en efectivo', () => {
     expect(
       screen.getAllByText('Recibido — Pendiente de aceptación del restaurante').length,
     ).toBeGreaterThan(0);
-    expect(screen.getByRole('link', { name: 'Seguir mi pedido' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Ver detalle del pedido' })).toHaveAttribute(
       'href',
       `/pedidos/${number}`,
     );
+    // F21 (M5): el seguimiento es la acción primaria y lleva al UUID del pedido simulado.
+    const tracking = screen.getByRole('link', { name: 'Ver estado de mi pedido' });
+    expect(tracking).toHaveAttribute(
+      'href',
+      expect.stringMatching(/^\/pedidos\/[0-9a-f-]{36}\/seguimiento$/),
+    );
+    expect(tracking.className).toContain('btn-primary');
     expect(screen.getByRole('link', { name: /Reportalo/ })).toHaveAttribute(
       'href',
       `/incidencias?pedido=${number}`,

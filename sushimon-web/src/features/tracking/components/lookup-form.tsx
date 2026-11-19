@@ -8,7 +8,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { SimulationBadge } from '@/components/ui/SimulationBadge';
 import { useMyOrders } from '@/features/account/hooks';
 import { OrderCard } from '@/features/orders/components/order-card';
-import { useLookupOrder } from '@/features/orders/hooks';
+import { useIsSimulation, useLookupOrder } from '@/features/orders/hooks';
 import { useDemoSession } from '@/features/session/demo-session';
 import { GoogleLogo } from '@/features/store-shell/components/GoogleLogo';
 import { useAuthModal } from '@/features/store-shell/store-shell-context';
@@ -65,7 +65,7 @@ function Field({
  * inválido; si el pedido no existe o el teléfono no coincide, el aviso es el mismo (no revela si existe).
  * La verificación solo se recuerda en esta pestaña (conveniencia): ver el pedido lo decide el servidor.
  */
-export function LookupForm({
+function LookupFormSimulated({
   initialOrderNumber = '',
   next = null,
   notFound = false,
@@ -264,6 +264,32 @@ export function LookupForm({
           <ArrowRight className="h-5 w-5 flex-none text-muted" aria-hidden="true" />
         </button>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * F21 (spec 022 §2.3, P62): con la API real NO existe la consulta por número + teléfono (enumerable y expone datos personales;
+ * se diferió hasta poder verificar el teléfono). `/consultar` solo informa con honestidad: sin formulario ni solicitud alguna.
+ * En `mock` se conserva el formulario simulado.
+ */
+export function LookupForm(props: Parameters<typeof LookupFormSimulated>[0]) {
+  const simulation = useIsSimulation();
+  const t = useTranslations('track');
+  const tc = useTranslations('common');
+  if (simulation) return <LookupFormSimulated {...props} />;
+  return (
+    <div className="wrap max-w-[720px] pb-10 pt-5 sm:pt-8" data-testid="lookup-deferred">
+      <h1 className="disp mb-3 text-[clamp(30px,6vw,48px)]">{t('httpTitle')}</h1>
+      <div className="notice notice-info">
+        <PackageSearch className="mt-0.5 h-[18px] w-[18px] flex-none" aria-hidden="true" />
+        <p className="m-0 min-w-0 flex-1">{t('httpBody')}</p>
+      </div>
+      <div className="mt-5">
+        <Link href="/" className="btn btn-primary no-underline">
+          {tc('backHome')}
+        </Link>
+      </div>
     </div>
   );
 }

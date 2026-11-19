@@ -47,7 +47,7 @@ test('entrega propia: confirma con la dirección y la tarifa del servidor', asyn
   await button(page, /Realizar pedido/).click();
   await expect(placedHeading(page)).toBeVisible();
   expect(await placedOrders(page)).toBe(1);
-  await page.getByRole('link', { name: 'Seguir mi pedido' }).click();
+  await page.getByRole('link', { name: 'Ver detalle del pedido' }).click();
   await expect(page.getByText(/Q121\.00/).first()).toBeVisible();
 });
 
@@ -114,7 +114,7 @@ test('recarga de /pedidos/[id]: el seguimiento simulado sigue disponible', async
   await button(page, /Realizar pedido/).click();
   await expect(placedHeading(page)).toBeVisible();
   const number = (await page.getByTestId('order-number').textContent())!;
-  await page.getByRole('link', { name: 'Seguir mi pedido' }).click();
+  await page.getByRole('link', { name: 'Ver detalle del pedido' }).click();
   await page.waitForURL(`**/pedidos/${number}`);
   await expect(page.getByRole('heading', { level: 1 })).toContainText(number);
   await page.reload();

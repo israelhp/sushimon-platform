@@ -240,6 +240,12 @@ export type OrderDetailContact = S['OrderDetailContact'];
 export type OrderDetailPayment = S['OrderDetailPayment'];
 export type OrderDetail = S['OrderDetail'];
 export type OrderGuestAccess = S['OrderGuestAccess'];
+/** F21 (spec 022): seguimiento ligero para polling; sin importes, líneas, contacto ni dirección. */
+export type OrderPublicStatus = S['OrderPublicStatus'];
+export type OrderTrackingStep = S['OrderTrackingStep'];
+export type OrderTrackingEvent = S['OrderTrackingEvent'];
+export type OrderTrackingDelivery = S['OrderTrackingDelivery'];
+export type OrderTracking = S['OrderTracking'];
 export type OrderCreated = S['OrderCreated'];
 export type OrderQuoteChange = S['OrderQuoteChange'];
 export type OrderQuoteConflict = S['OrderQuoteConflict'];
