@@ -38,6 +38,7 @@ model Branch {
   bannerBranches    BannerBranch[]
   orders            Order[]
   payments          Payment[]
+  riders            Rider[]
 
   @@map("branches")
   @@schema("app")
@@ -838,5 +839,32 @@ model PaymentEvent {
   @@index([orderId, occurredAt, id], map: "payment_events_order_idx")
   @@index([paymentId], map: "payment_events_payment_idx")
   @@map("payment_events")
+  @@schema("app")
+}
+
+/// F27 (0021). Motorista propio (DBML ampliado). UNIQUE(phone); baja = active=false (sin DELETE, trigger). BUSY no se guarda (F28).
+/// Sin @updatedAt: el SQL de la API fija updated_at y version (el trigger exige version = OLD.version + 1).
+model Rider {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  branchId     String   @map("branch_id") @db.Uuid
+  fullName     String   @map("full_name")
+  /// Nombre sin acentos, minúsculas, espacios colapsados (la API la calcula).
+  nameKey      String   @map("name_key")
+  phone        String   @unique(map: "riders_phone_key")
+  /// MOTORCYCLE | BICYCLE | CAR | ON_FOOT (CHECK).
+  vehicleType  String?  @map("vehicle_type")
+  licensePlate String?  @map("license_plate")
+  active       Boolean  @default(true)
+  /// AVAILABLE | UNAVAILABLE (CHECK); inactivo => UNAVAILABLE.
+  availability String   @default("UNAVAILABLE")
+  version      Int      @default(1)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  branch       Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([branchId, nameKey, id], map: "riders_branch_name_idx")
+  @@index([nameKey, id], map: "riders_name_idx")
+  // riders_branch_assignable_idx es PARCIAL (WHERE active AND availability = 'AVAILABLE'): solo en SQL (0021).
+  @@map("riders")
   @@schema("app")
 }
