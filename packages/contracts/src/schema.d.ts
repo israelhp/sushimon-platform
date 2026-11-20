@@ -1570,6 +1570,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/riders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Motoristas propios (backoffice, paginado)
+         * @description F27 (spec 028, ADR-0031). Exige JWT -> personal activo con `riders.read` -> `aal2`. Solo devuelve motoristas de sucursales dentro del alcance de `riders.read` (SQL con el alcance). Incluye inactivos salvo
+         *     filtro `active`. Paginación por `page`/`pageSize` con `total` (patrón F03/F09). El listado NO carga entregas: `busy` se obtiene del puerto `RiderActiveDeliveriesPort` (con el adaptador por defecto,
+         *     `busyKnown=false` y `busy=false`, hasta F28). El teléfono se entrega ENMASCARADO (`phoneMasked`); el teléfono completo y la placa solo en el detalle. Nunca documentos, fotos ni ubicación. ≤ 3 sentencias SQL.
+         *     `Cache-Control: private, no-store`.
+         */
+        get: operations["listAdminRiders"];
+        put?: never;
+        /**
+         * Da de alta a un motorista propio
+         * @description F27. Exige `riders.create` con alcance sobre `branchId` (si no, 403 `RIDER_ACTION_FORBIDDEN`, también si la sucursal no existe para un empleado con alcance acotado) y `aal2`. Crea la fila ACTIVA y `UNAVAILABLE`
+         *     (no es asignable hasta que alguien la marque disponible, P92). Teléfono `^\+502[0-9]{8}$` ÚNICO en toda la plataforma (una persona = un registro; un traslado es un cambio de sucursal, no otra alta): si existe,
+         *     409 `RIDER_PHONE_TAKEN` (también si el registro está inactivo o en otra sucursal; no se revela quién). Sin `Idempotency-Key`: la unicidad del teléfono ya hace seguro el reintento (P102). Sucursal inexistente o
+         *     inactiva => 422 `BRANCH_NOT_AVAILABLE`. No crea cuentas de Google/Auth ni vincula `staff_users`. Audita `rider.created` (sin PII) en la misma transacción. ≤ 3 sentencias SQL.
+         */
+        post: operations["createAdminRider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/riders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detalle de un motorista
+         * @description F27. Exige `riders.read` y `aal2`. Inexistente o de una sucursal fuera del alcance => el MISMO 404 `RIDER_NOT_FOUND` (anti-IDOR). Devuelve teléfono completo y placa (PII: solo a quien tiene `riders.read`; nunca en
+         *     logs; la lectura no se audita, P98). Incluye `version` (concurrencia optimista) y el estado derivado. No incluye historial de entregas (F28). ≤ 2 sentencias SQL. `Cache-Control: private, no-store`.
+         */
+        get: operations["getAdminRider"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edita datos de un motorista o lo traslada de sucursal
+         * @description F27. Exige `riders.update` en la sucursal ACTUAL y, si cambia `branchId`, también en la DESTINO (ambas dentro del alcance; si no, 403 `RIDER_ACTION_FORBIDDEN`) y `aal2`. `expectedVersion` es OBLIGATORIO y debe
+         *     coincidir con `version`; si no, 409 `RIDER_VERSION_CONFLICT` sin guardar (`current` = versión vigente). Parcial: los campos omitidos no se tocan; `vehicleType`/`licensePlate` aceptan `null` para borrarlos. NO acepta `active`
+         *     ni `availability` (rutas dedicadas). Cambiar `branchId` MUEVE el mismo registro (id, teléfono y vínculos históricos intactos; nunca se duplica) y lo deja `UNAVAILABLE` hasta que alguien lo marque disponible en la
+         *     nueva sucursal; con entrega activa (F28) responde 409 `RIDER_HAS_ACTIVE_DELIVERY` (bloqueo de fila; sin reasignación masiva). Sucursal destino inexistente/inactiva => 422 `BRANCH_NOT_AVAILABLE`. Sin cambios
+         *     reales => 200 sin escribir ni auditar. Audita `rider.updated` (solo nombres de campo) y/o `rider.branch_changed` (sucursal anterior y nueva). ≤ 5 sentencias SQL.
+         */
+        patch: operations["updateAdminRider"];
+        trace?: never;
+    };
+    "/v1/admin/riders/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Activa o desactiva a un motorista (no hay borrado físico)
+         * @description F27. Exige `riders.update` en su sucursal y `aal2`. Establece `active` con valor explícito: idempotente (si ya tiene ese valor => 200 sin escribir ni auditar; sin `expectedVersion`, el último gana). Desactivar
+         *     fuerza `availability = UNAVAILABLE` en la misma sentencia (un inactivo nunca es asignable) y, con entrega activa (F28), responde 409 `RIDER_HAS_ACTIVE_DELIVERY` sin cambiar nada. Reactivar NO lo marca
+         *     disponible. Desactivar conserva el teléfono (para reactivar en vez de duplicar) y el historial. `reason` opcional (máx. 200; sin PII). Un cambio real sube `version` y audita `rider.activated`/`rider.deactivated`.
+         *     ≤ 4 sentencias SQL.
+         */
+        patch: operations["updateAdminRiderStatus"];
+        trace?: never;
+    };
+    "/v1/admin/riders/{id}/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Marca a un motorista disponible o no disponible (disponibilidad manual)
+         * @description F27. Exige `riders.update` en su sucursal y `aal2`. Establece la disponibilidad MANUAL persistida (`AVAILABLE|UNAVAILABLE`); `BUSY` NO se puede enviar (es derivado de una entrega activa real de F28 y nunca se
+         *     guarda). Idempotente (valor explícito, el último gana, sin `expectedVersion`; sin cambio => 200 sin escribir ni auditar). `AVAILABLE` exige motorista activo (409 `RIDER_INACTIVE`). `UNAVAILABLE` con entrega activa
+         *     (F28) => 409 `RIDER_HAS_ACTIVE_DELIVERY`. NO reserva ni asigna nada. Un cambio real sube `version` y audita `rider.availability_changed`. ≤ 4 sentencias SQL.
+         */
+        patch: operations["updateAdminRiderAvailability"];
+        trace?: never;
+    };
     "/v1/admin/categories": {
         parameters: {
             query?: never;
@@ -2992,7 +3096,7 @@ export interface components {
             details?: string[];
             /**
              * @description Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16: `BANNER_NOT_FOUND`, `BANNER_CODE_TAKEN`, `BANNER_VERSION_CONFLICT`, `BANNER_IMAGE_INVALID`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_LIMIT_REACHED`, `BANNER_SCOPE_FORBIDDEN` (403), `BANNERS_BUSY` (503 reintentable); F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); F20: `IDEMPOTENCY_KEY_INVALID` (400), `QUOTE_CHANGED` (409), `QUOTE_EXPIRED` (409), `IDEMPOTENCY_KEY_REUSED` (409), `IDEMPOTENCY_IN_PROGRESS` (409), `QUOTE_INVALID` (422), `CHECKOUT_BLOCKED` (422), `DELIVERY_PROVIDER_NOT_SELECTABLE` (422), `CONTACT_INCOMPLETE` (422), `PENDING_ORDERS_LIMIT` (429), `ORDERS_BUSY` (503 reintentable), `ORDERS_UNAVAILABLE` (503); 404 de dirección ajena sin código; F22: `ORDER_NOT_FOUND` (404), `ORDER_REASON_REQUIRED` (400), `ORDER_CURSOR_INVALID` (400), `ORDER_ACTION_FORBIDDEN` (403), `ORDER_STATE_CONFLICT` (409), `ORDER_TRANSITION_INVALID` (422; `violations[].code`: `ORDER_TERMINAL`, `ORDER_FULFILLMENT_MISMATCH`, `ORDER_SOURCE_INVALID`, `ORDER_DISPATCH_NOT_AVAILABLE`, `ORDER_PROVIDER_BLOCKED_EXTERNAL`, `ORDER_CANCEL_NOT_ALLOWED`); 503 reintentable: `ORDERS_BUSY`; F24 (pagos en efectivo; `PAYMENT_METHOD_UNAVAILABLE` de F20 queda RETIRADO: ahora cualquier método distinto de `cash` es 400): `PAYMENT_AMOUNT_INVALID` (400), `PAYMENT_CONFIRMATION_REQUIRED` (400), `PAYMENT_ACTION_FORBIDDEN` (403), `PAYMENT_ALREADY_REGISTERED` (409), `ORDER_NOT_PAYABLE` (409), `CASH_AMOUNT_INSUFFICIENT` (422), `CASH_TENDERED_TOO_LARGE` (422), `PAYMENT_NOT_COLLECTABLE` (422; `violations[].code`: `PROVIDER_BLOCKED_EXTERNAL`, `LEGACY_PAYMENT_METHOD`, `AMOUNT_ZERO`); reutiliza `ORDER_NOT_FOUND`, `IDEMPOTENCY_KEY_INVALID`, `IDEMPOTENCY_KEY_REUSED`, `ORDERS_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
+             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16: `BANNER_NOT_FOUND`, `BANNER_CODE_TAKEN`, `BANNER_VERSION_CONFLICT`, `BANNER_IMAGE_INVALID`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_LIMIT_REACHED`, `BANNER_SCOPE_FORBIDDEN` (403), `BANNERS_BUSY` (503 reintentable); F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); F20: `IDEMPOTENCY_KEY_INVALID` (400), `QUOTE_CHANGED` (409), `QUOTE_EXPIRED` (409), `IDEMPOTENCY_KEY_REUSED` (409), `IDEMPOTENCY_IN_PROGRESS` (409), `QUOTE_INVALID` (422), `CHECKOUT_BLOCKED` (422), `DELIVERY_PROVIDER_NOT_SELECTABLE` (422), `CONTACT_INCOMPLETE` (422), `PENDING_ORDERS_LIMIT` (429), `ORDERS_BUSY` (503 reintentable), `ORDERS_UNAVAILABLE` (503); 404 de dirección ajena sin código; F22: `ORDER_NOT_FOUND` (404), `ORDER_REASON_REQUIRED` (400), `ORDER_CURSOR_INVALID` (400), `ORDER_ACTION_FORBIDDEN` (403), `ORDER_STATE_CONFLICT` (409), `ORDER_TRANSITION_INVALID` (422; `violations[].code`: `ORDER_TERMINAL`, `ORDER_FULFILLMENT_MISMATCH`, `ORDER_SOURCE_INVALID`, `ORDER_DISPATCH_NOT_AVAILABLE`, `ORDER_PROVIDER_BLOCKED_EXTERNAL`, `ORDER_CANCEL_NOT_ALLOWED`); 503 reintentable: `ORDERS_BUSY`; F24 (pagos en efectivo; `PAYMENT_METHOD_UNAVAILABLE` de F20 queda RETIRADO: ahora cualquier método distinto de `cash` es 400): `PAYMENT_AMOUNT_INVALID` (400), `PAYMENT_CONFIRMATION_REQUIRED` (400), `PAYMENT_ACTION_FORBIDDEN` (403), `PAYMENT_ALREADY_REGISTERED` (409), `ORDER_NOT_PAYABLE` (409), `CASH_AMOUNT_INSUFFICIENT` (422), `CASH_TENDERED_TOO_LARGE` (422), `PAYMENT_NOT_COLLECTABLE` (422; `violations[].code`: `PROVIDER_BLOCKED_EXTERNAL`, `LEGACY_PAYMENT_METHOD`, `AMOUNT_ZERO`); reutiliza `ORDER_NOT_FOUND`, `IDEMPOTENCY_KEY_INVALID`, `IDEMPOTENCY_KEY_REUSED`, `ORDERS_BUSY`); F27 (motoristas propios): `RIDER_NOT_FOUND` (404), `RIDER_ACTION_FORBIDDEN` (403), `RIDER_PHONE_TAKEN` (409), `RIDER_VERSION_CONFLICT` (409; `current` = versión vigente), `RIDER_HAS_ACTIVE_DELIVERY` (409), `RIDER_INACTIVE` (409), `BRANCH_NOT_AVAILABLE` (422, reutilizado), `RIDERS_BUSY` (503 reintentable). Los clientes deben ramificar por `code`, nunca por `message`.
              */
             code?: string;
             /** @description Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09). */
@@ -3778,6 +3882,97 @@ export interface components {
             active: boolean;
             /** @description Texto libre de operador; se guarda en auditoría. NO debe contener datos personales. */
             reason?: string;
+        };
+        /**
+         * @description Conjunto cerrado de vehículos (F27). Opcional en el motorista.
+         * @enum {string}
+         */
+        RiderVehicleType: "MOTORCYCLE" | "BICYCLE" | "CAR" | "ON_FOOT";
+        /**
+         * @description Disponibilidad MANUAL persistida. `BUSY` no existe aquí: es derivado (F28) y nunca se guarda.
+         * @enum {string}
+         */
+        RiderAvailability: "AVAILABLE" | "UNAVAILABLE";
+        /**
+         * @description Filtro del listado sobre el estado operativo derivado.
+         * @enum {string}
+         */
+        RiderAvailabilityFilter: "AVAILABLE" | "UNAVAILABLE" | "BUSY";
+        /**
+         * @description Derivado por el servidor, en este orden: `INACTIVE` (active=false), `UNAVAILABLE` (marcado no disponible), `BUSY` (entrega activa real; solo con `busyKnown=true`), `AVAILABLE`.
+         *     Mientras no exista F28 `busyKnown=false`, nunca hay `BUSY` y `AVAILABLE` no garantiza que esté libre.
+         * @enum {string}
+         */
+        RiderOperationalState: "INACTIVE" | "UNAVAILABLE" | "BUSY" | "AVAILABLE";
+        /** @description Fila del listado. Sin teléfono completo ni placa (PII mínima). */
+        AdminRiderSummary: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            branchId: string;
+            branchName: string;
+            fullName: string;
+            /** @example +502****5678 */
+            phoneMasked: string;
+            vehicleType: components["schemas"]["RiderVehicleType"] | null;
+            active: boolean;
+            availability: components["schemas"]["RiderAvailability"];
+            /** @description Tiene una entrega activa. `false` si `busyKnown=false`. */
+            busy: boolean;
+            /** @description `false` mientras no exista F28 (adaptador "sin entregas"): `busy` no es una afirmación real. */
+            busyKnown: boolean;
+            operationalState: components["schemas"]["RiderOperationalState"];
+            /** @description Se reenvía como `expectedVersion` en PATCH /riders/{id}. */
+            version: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        /** @description Detalle completo (PII: teléfono y placa solo con `riders.read`). */
+        AdminRider: components["schemas"]["AdminRiderSummary"] & {
+            /** @example +50255501122 */
+            phone: string;
+            /** @description Normalizada: mayúsculas, sin espacios ni guiones (`^[A-Z0-9]{4,10}$`). */
+            licensePlate: string | null;
+        };
+        AdminRiderPage: {
+            items: components["schemas"]["AdminRiderSummary"][];
+            page: number;
+            pageSize: number;
+            /** @description Total de motoristas que cumplen filtros y alcance. */
+            total: number;
+        };
+        CreateRiderRequest: {
+            /** Format: uuid */
+            branchId: string;
+            /** @description Normalizado (NFC, recortado, espacios colapsados); sin caracteres de control. */
+            fullName: string;
+            phone: string;
+            vehicleType?: components["schemas"]["RiderVehicleType"] | null;
+            /** @description Se normaliza (mayúsculas, sin espacios ni guiones) y debe cumplir `^[A-Z0-9]{4,10}$`. */
+            licensePlate?: string | null;
+        };
+        /** @description Además de `expectedVersion` debe venir al menos un campo editable (si no, 400). `active` y `availability` NO se aceptan aquí. */
+        UpdateRiderRequest: {
+            expectedVersion: number;
+            fullName?: string;
+            phone?: string;
+            vehicleType?: components["schemas"]["RiderVehicleType"] | null;
+            licensePlate?: string | null;
+            /**
+             * Format: uuid
+             * @description Traslado: mueve el MISMO registro a otra sucursal activa (exige `riders.update` en origen y destino).
+             */
+            branchId?: string;
+        };
+        UpdateRiderStatusRequest: {
+            active: boolean;
+            /** @description Texto libre de operador; se guarda en auditoría. NO debe contener datos personales. */
+            reason?: string;
+        };
+        UpdateRiderAvailabilityRequest: {
+            availability: components["schemas"]["RiderAvailability"];
         };
         /** @enum {string} */
         CourierProvider: "PEDIDOSYA" | "OWN";
@@ -6134,6 +6329,8 @@ export interface components {
         ClosureId: string;
         /** @description UUID de la zona de entrega (`delivery_zones.id`). */
         DeliveryZoneId: string;
+        /** @description UUID del motorista (`riders.id`). */
+        RiderId: string;
         /** @description UUID del producto (`products.id`, catálogo F11). */
         FavoriteProductId: string;
         /** @description UUID de la categoría (`categories.id`). */
@@ -10778,6 +10975,567 @@ export interface operations {
                 };
             };
             /** @description `ORDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAdminRiders: {
+        parameters: {
+            query?: {
+                /** @description Busca por nombre (contiene; sin distinguir mayúsculas ni acentos). Máx. 80 caracteres. NO busca por teléfono ni placa. */
+                q?: string;
+                /** @description Sucursal exacta. Fuera de alcance o inexistente => página vacía (no se distingue). */
+                branchId?: string;
+                /** @description Estado administrativo. Sin valor = todos. */
+                active?: boolean;
+                /** @description Estado operativo derivado. `AVAILABLE` = activo + disponible + sin entrega activa; `UNAVAILABLE` = marcado no disponible; `BUSY` = activo con entrega activa real (F28; mientras `busyKnown=false` no hay ocupados). Sin valor = todos. */
+                availability?: components["schemas"]["RiderAvailabilityFilter"];
+                /** @description Campo de orden (desempate por `id`). */
+                sort?: "fullName" | "createdAt" | "updatedAt";
+                /** @description Sentido. */
+                order?: "asc" | "desc";
+                /** @description Página. */
+                page?: number;
+                /** @description Tamaño de página. */
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de motoristas */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRiderPage"];
+                };
+            };
+            /** @description Forma o parámetros inválidos (`details` por campo) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `riders.read` o la sesión no es aal2 (`MFA_REQUIRED`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RIDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAdminRider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRiderRequest"];
+            };
+        };
+        responses: {
+            /** @description Motorista creado */
+            201: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRider"];
+                };
+            };
+            /** @description Forma o parámetros inválidos (`details` por campo) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `riders.create` en esa sucursal (`RIDER_ACTION_FORBIDDEN`), no es personal activo o la sesión no es aal2 (`MFA_REQUIRED`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RIDER_PHONE_TAKEN`: ya existe un motorista (activo o no) con ese teléfono */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `BRANCH_NOT_AVAILABLE`: la sucursal no existe o está inactiva */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RIDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAdminRider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del motorista (`riders.id`). */
+                id: components["parameters"]["RiderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Motorista */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRider"];
+                };
+            };
+            /** @description El identificador no es un UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `riders.read` o la sesión no es aal2 (`MFA_REQUIRED`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RIDER_NOT_FOUND`: no existe o está fuera del alcance de `riders.read` (misma respuesta; anti-IDOR) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RIDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAdminRider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del motorista (`riders.id`). */
+                id: components["parameters"]["RiderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRiderRequest"];
+            };
+        };
+        responses: {
+            /** @description Motorista actualizado */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRider"];
+                };
+            };
+            /** @description Forma inválida, `expectedVersion` ausente, cuerpo sin campos o campos no permitidos (`active`, `availability`, desconocidos) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `riders.update` (en origen o destino: `RIDER_ACTION_FORBIDDEN`), no es personal activo o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RIDER_NOT_FOUND`: no existe o está fuera del alcance de `riders.read` (misma respuesta; anti-IDOR) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RIDER_VERSION_CONFLICT`, `RIDER_PHONE_TAKEN` o `RIDER_HAS_ACTIVE_DELIVERY` (traslado con entrega activa) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `BRANCH_NOT_AVAILABLE`: la sucursal destino no existe o está inactiva */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RIDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAdminRiderStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del motorista (`riders.id`). */
+                id: components["parameters"]["RiderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRiderStatusRequest"];
+            };
+        };
+        responses: {
+            /** @description Motorista con su estado actual */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRider"];
+                };
+            };
+            /** @description Forma o parámetros inválidos (`details` por campo) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `riders.update` (`RIDER_ACTION_FORBIDDEN`), no es personal activo o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RIDER_NOT_FOUND`: no existe o está fuera del alcance de `riders.read` (misma respuesta; anti-IDOR) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RIDER_HAS_ACTIVE_DELIVERY`: tiene una entrega activa (F28) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RIDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAdminRiderAvailability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del motorista (`riders.id`). */
+                id: components["parameters"]["RiderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRiderAvailabilityRequest"];
+            };
+        };
+        responses: {
+            /** @description Motorista con su disponibilidad actual */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRider"];
+                };
+            };
+            /** @description Forma inválida (p. ej. `BUSY` o valor desconocido) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `riders.update` (`RIDER_ACTION_FORBIDDEN`), no es personal activo o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RIDER_NOT_FOUND`: no existe o está fuera del alcance de `riders.read` (misma respuesta; anti-IDOR) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RIDER_INACTIVE` (marcar disponible a un inactivo) o `RIDER_HAS_ACTIVE_DELIVERY` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RIDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`) */
             503: {
                 headers: {
                     /** @description Segundos sugeridos de espera. */

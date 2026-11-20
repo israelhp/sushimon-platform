@@ -1,6 +1,6 @@
 # Contrato HTTP canónico de Sushi Mon (Contract First).
 # Se diseña ANTES de implementar cada slice y se verifica contra NestJS con `pnpm contracts:check`.
-# Estado: F17 (agregados públicos y búsqueda: /v1/store/bootstrap, /v1/store/search; ampliaciones ADITIVAS de /v1/store/menu y /v1/store/products/{slug}; CONTRACT_DEFINED, API pendiente) + F16 (banners: /v1/store/banners, /v1/admin/banners) + F15 (promociones: /v1/store/promotions, /v1/admin/promotions) + F14 (medios en Cloudflare R2: /v1/admin/media, /v1/admin/media/upload-intents|complete, /v1/admin/products/{id}/media[/order|/{mediaId}]) + F13 (precio y disponibilidad por sucursal: /v1/store/menu, /v1/admin/branches/{id}/products[/{productId}/pricing], /v1/admin/products/{id}/branches|availability) + F12 (modificadores de producto: /v1/admin/modifier-groups, /v1/admin/modifiers, /v1/admin/products/{id}/modifiers|modifier-groups; modifierGroups en la ficha pública) + F11 (productos y fichas de catálogo: /v1/store/products, /v1/admin/products) + F10 (categorías y jerarquía del menú: /v1/store/categories, /v1/admin/categories, /v1/admin/categories/reorder) + F09 (geografía, cobertura y zonas propias: /v1/locations/*, /v1/admin/delivery-zones, /v1/admin/branches/{id}/delivery-settings, /v1/delivery-coverage/check) + F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
+# Estado: F27 (motoristas propios: /v1/admin/riders[/{id}[/status|/availability]]; CONTRACT_DEFINED, API pendiente) + F17 (agregados públicos y búsqueda: /v1/store/bootstrap, /v1/store/search; ampliaciones ADITIVAS de /v1/store/menu y /v1/store/products/{slug}; CONTRACT_DEFINED, API pendiente) + F16 (banners: /v1/store/banners, /v1/admin/banners) + F15 (promociones: /v1/store/promotions, /v1/admin/promotions) + F14 (medios en Cloudflare R2: /v1/admin/media, /v1/admin/media/upload-intents|complete, /v1/admin/products/{id}/media[/order|/{mediaId}]) + F13 (precio y disponibilidad por sucursal: /v1/store/menu, /v1/admin/branches/{id}/products[/{productId}/pricing], /v1/admin/products/{id}/branches|availability) + F12 (modificadores de producto: /v1/admin/modifier-groups, /v1/admin/modifiers, /v1/admin/products/{id}/modifiers|modifier-groups; modifierGroups en la ficha pública) + F11 (productos y fichas de catálogo: /v1/store/products, /v1/admin/products) + F10 (categorías y jerarquía del menú: /v1/store/categories, /v1/admin/categories, /v1/admin/categories/reorder) + F09 (geografía, cobertura y zonas propias: /v1/locations/*, /v1/admin/delivery-zones, /v1/admin/branches/{id}/delivery-settings, /v1/delivery-coverage/check) + F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
 # Seguridad por defecto: Bearer JWT de Supabase Auth en todo salvo operaciones con `security: []` (health).
 # Transversal a TODAS las respuestas: cabecera `X-Request-Id`; errores con `ErrorResponse`; 429 cuando
 # se excede el rate limit global (no se repite por operación).
@@ -4042,6 +4042,493 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/riders:
+    get:
+      operationId: listAdminRiders
+      summary: Motoristas propios (backoffice, paginado)
+      description: |
+        F27 (spec 028, ADR-0031). Exige JWT -> personal activo con `riders.read` -> `aal2`. Solo devuelve motoristas de sucursales dentro del alcance de `riders.read` (SQL con el alcance). Incluye inactivos salvo
+        filtro `active`. Paginación por `page`/`pageSize` con `total` (patrón F03/F09). El listado NO carga entregas: `busy` se obtiene del puerto `RiderActiveDeliveriesPort` (con el adaptador por defecto,
+        `busyKnown=false` y `busy=false`, hasta F28). El teléfono se entrega ENMASCARADO (`phoneMasked`); el teléfono completo y la placa solo en el detalle. Nunca documentos, fotos ni ubicación. ≤ 3 sentencias SQL.
+        `Cache-Control: private, no-store`.
+      tags: [admin-riders]
+      security:
+        - bearer: []
+      parameters:
+        - name: q
+          in: query
+          description: Busca por nombre (contiene; sin distinguir mayúsculas ni acentos). Máx. 80 caracteres. NO busca por teléfono ni placa.
+          schema: { type: string, maxLength: 80 }
+        - name: branchId
+          in: query
+          description: Sucursal exacta. Fuera de alcance o inexistente => página vacía (no se distingue).
+          schema: { type: string, format: uuid }
+        - name: active
+          in: query
+          description: Estado administrativo. Sin valor = todos.
+          schema: { type: boolean }
+        - name: availability
+          in: query
+          description: Estado operativo derivado. `AVAILABLE` = activo + disponible + sin entrega activa; `UNAVAILABLE` = marcado no disponible; `BUSY` = activo con entrega activa real (F28; mientras `busyKnown=false` no hay ocupados). Sin valor = todos.
+          schema: { $ref: '#/components/schemas/RiderAvailabilityFilter' }
+        - name: sort
+          in: query
+          description: Campo de orden (desempate por `id`).
+          schema: { type: string, enum: [fullName, createdAt, updatedAt], default: fullName }
+        - name: order
+          in: query
+          description: Sentido.
+          schema: { type: string, enum: [asc, desc], default: asc }
+        - name: page
+          in: query
+          description: Página.
+          schema: { type: integer, minimum: 1, maximum: 10000, default: 1 }
+        - name: pageSize
+          in: query
+          description: Tamaño de página.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Página de motoristas
+          headers:
+            Cache-Control:
+              description: private, no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRiderPage'
+        '400':
+          description: 'Forma o parámetros inválidos (`details` por campo)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 'Token ausente, inválido o expirado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `riders.read` o la sesión no es aal2 (`MFA_REQUIRED`)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: '`RATE_LIMITED`'
+          headers:
+            Retry-After:
+              description: Segundos sugeridos de espera.
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`RIDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`)'
+          headers:
+            Retry-After:
+              description: Segundos sugeridos de espera.
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      operationId: createAdminRider
+      summary: Da de alta a un motorista propio
+      description: |
+        F27. Exige `riders.create` con alcance sobre `branchId` (si no, 403 `RIDER_ACTION_FORBIDDEN`, también si la sucursal no existe para un empleado con alcance acotado) y `aal2`. Crea la fila ACTIVA y `UNAVAILABLE`
+        (no es asignable hasta que alguien la marque disponible, P92). Teléfono `^\+502[0-9]{8}$` ÚNICO en toda la plataforma (una persona = un registro; un traslado es un cambio de sucursal, no otra alta): si existe,
+        409 `RIDER_PHONE_TAKEN` (también si el registro está inactivo o en otra sucursal; no se revela quién). Sin `Idempotency-Key`: la unicidad del teléfono ya hace seguro el reintento (P102). Sucursal inexistente o
+        inactiva => 422 `BRANCH_NOT_AVAILABLE`. No crea cuentas de Google/Auth ni vincula `staff_users`. Audita `rider.created` (sin PII) en la misma transacción. ≤ 3 sentencias SQL.
+      tags: [admin-riders]
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRiderRequest'
+      responses:
+        '201':
+          description: Motorista creado
+          headers:
+            Cache-Control:
+              description: private, no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRider'
+        '400':
+          description: 'Forma o parámetros inválidos (`details` por campo)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 'Token ausente, inválido o expirado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'Falta `riders.create` en esa sucursal (`RIDER_ACTION_FORBIDDEN`), no es personal activo o la sesión no es aal2 (`MFA_REQUIRED`)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`RIDER_PHONE_TAKEN`: ya existe un motorista (activo o no) con ese teléfono'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`BRANCH_NOT_AVAILABLE`: la sucursal no existe o está inactiva'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: '`RATE_LIMITED`'
+          headers:
+            Retry-After:
+              description: Segundos sugeridos de espera.
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`RIDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`)'
+          headers:
+            Retry-After:
+              description: Segundos sugeridos de espera.
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/riders/{id}:
+    get:
+      operationId: getAdminRider
+      summary: Detalle de un motorista
+      description: |
+        F27. Exige `riders.read` y `aal2`. Inexistente o de una sucursal fuera del alcance => el MISMO 404 `RIDER_NOT_FOUND` (anti-IDOR). Devuelve teléfono completo y placa (PII: solo a quien tiene `riders.read`; nunca en
+        logs; la lectura no se audita, P98). Incluye `version` (concurrencia optimista) y el estado derivado. No incluye historial de entregas (F28). ≤ 2 sentencias SQL. `Cache-Control: private, no-store`.
+      tags: [admin-riders]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/RiderId'
+      responses:
+        '200':
+          description: Motorista
+          headers:
+            Cache-Control:
+              description: private, no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRider'
+        '400':
+          description: 'El identificador no es un UUID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 'Token ausente, inválido o expirado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'No es personal activo, falta `riders.read` o la sesión no es aal2 (`MFA_REQUIRED`)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`RIDER_NOT_FOUND`: no existe o está fuera del alcance de `riders.read` (misma respuesta; anti-IDOR)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: '`RATE_LIMITED`'
+          headers:
+            Retry-After:
+              description: Segundos sugeridos de espera.
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`RIDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`)'
+          headers:
+            Retry-After:
+              description: Segundos sugeridos de espera.
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      operationId: updateAdminRider
+      summary: Edita datos de un motorista o lo traslada de sucursal
+      description: |
+        F27. Exige `riders.update` en la sucursal ACTUAL y, si cambia `branchId`, también en la DESTINO (ambas dentro del alcance; si no, 403 `RIDER_ACTION_FORBIDDEN`) y `aal2`. `expectedVersion` es OBLIGATORIO y debe
+        coincidir con `version`; si no, 409 `RIDER_VERSION_CONFLICT` sin guardar (`current` = versión vigente). Parcial: los campos omitidos no se tocan; `vehicleType`/`licensePlate` aceptan `null` para borrarlos. NO acepta `active`
+        ni `availability` (rutas dedicadas). Cambiar `branchId` MUEVE el mismo registro (id, teléfono y vínculos históricos intactos; nunca se duplica) y lo deja `UNAVAILABLE` hasta que alguien lo marque disponible en la
+        nueva sucursal; con entrega activa (F28) responde 409 `RIDER_HAS_ACTIVE_DELIVERY` (bloqueo de fila; sin reasignación masiva). Sucursal destino inexistente/inactiva => 422 `BRANCH_NOT_AVAILABLE`. Sin cambios
+        reales => 200 sin escribir ni auditar. Audita `rider.updated` (solo nombres de campo) y/o `rider.branch_changed` (sucursal anterior y nueva). ≤ 5 sentencias SQL.
+      tags: [admin-riders]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/RiderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRiderRequest'
+      responses:
+        '200':
+          description: Motorista actualizado
+          headers:
+            Cache-Control:
+              description: private, no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRider'
+        '400':
+          description: 'Forma inválida, `expectedVersion` ausente, cuerpo sin campos o campos no permitidos (`active`, `availability`, desconocidos)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 'Token ausente, inválido o expirado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'Falta `riders.update` (en origen o destino: `RIDER_ACTION_FORBIDDEN`), no es personal activo o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`RIDER_NOT_FOUND`: no existe o está fuera del alcance de `riders.read` (misma respuesta; anti-IDOR)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`RIDER_VERSION_CONFLICT`, `RIDER_PHONE_TAKEN` o `RIDER_HAS_ACTIVE_DELIVERY` (traslado con entrega activa)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`BRANCH_NOT_AVAILABLE`: la sucursal destino no existe o está inactiva'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: '`RATE_LIMITED`'
+          headers:
+            Retry-After:
+              description: Segundos sugeridos de espera.
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`RIDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`)'
+          headers:
+            Retry-After:
+              description: Segundos sugeridos de espera.
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/riders/{id}/status:
+    patch:
+      operationId: updateAdminRiderStatus
+      summary: Activa o desactiva a un motorista (no hay borrado físico)
+      description: |
+        F27. Exige `riders.update` en su sucursal y `aal2`. Establece `active` con valor explícito: idempotente (si ya tiene ese valor => 200 sin escribir ni auditar; sin `expectedVersion`, el último gana). Desactivar
+        fuerza `availability = UNAVAILABLE` en la misma sentencia (un inactivo nunca es asignable) y, con entrega activa (F28), responde 409 `RIDER_HAS_ACTIVE_DELIVERY` sin cambiar nada. Reactivar NO lo marca
+        disponible. Desactivar conserva el teléfono (para reactivar en vez de duplicar) y el historial. `reason` opcional (máx. 200; sin PII). Un cambio real sube `version` y audita `rider.activated`/`rider.deactivated`.
+        ≤ 4 sentencias SQL.
+      tags: [admin-riders]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/RiderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRiderStatusRequest'
+      responses:
+        '200':
+          description: Motorista con su estado actual
+          headers:
+            Cache-Control:
+              description: private, no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRider'
+        '400':
+          description: 'Forma o parámetros inválidos (`details` por campo)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 'Token ausente, inválido o expirado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'Falta `riders.update` (`RIDER_ACTION_FORBIDDEN`), no es personal activo o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`RIDER_NOT_FOUND`: no existe o está fuera del alcance de `riders.read` (misma respuesta; anti-IDOR)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`RIDER_HAS_ACTIVE_DELIVERY`: tiene una entrega activa (F28)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: '`RATE_LIMITED`'
+          headers:
+            Retry-After:
+              description: Segundos sugeridos de espera.
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`RIDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`)'
+          headers:
+            Retry-After:
+              description: Segundos sugeridos de espera.
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/admin/riders/{id}/availability:
+    patch:
+      operationId: updateAdminRiderAvailability
+      summary: Marca a un motorista disponible o no disponible (disponibilidad manual)
+      description: |
+        F27. Exige `riders.update` en su sucursal y `aal2`. Establece la disponibilidad MANUAL persistida (`AVAILABLE|UNAVAILABLE`); `BUSY` NO se puede enviar (es derivado de una entrega activa real de F28 y nunca se
+        guarda). Idempotente (valor explícito, el último gana, sin `expectedVersion`; sin cambio => 200 sin escribir ni auditar). `AVAILABLE` exige motorista activo (409 `RIDER_INACTIVE`). `UNAVAILABLE` con entrega activa
+        (F28) => 409 `RIDER_HAS_ACTIVE_DELIVERY`. NO reserva ni asigna nada. Un cambio real sube `version` y audita `rider.availability_changed`. ≤ 4 sentencias SQL.
+      tags: [admin-riders]
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/RiderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRiderAvailabilityRequest'
+      responses:
+        '200':
+          description: Motorista con su disponibilidad actual
+          headers:
+            Cache-Control:
+              description: private, no-store
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRider'
+        '400':
+          description: 'Forma inválida (p. ej. `BUSY` o valor desconocido)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 'Token ausente, inválido o expirado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'Falta `riders.update` (`RIDER_ACTION_FORBIDDEN`), no es personal activo o la sesión no es aal2'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`RIDER_NOT_FOUND`: no existe o está fuera del alcance de `riders.read` (misma respuesta; anti-IDOR)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`RIDER_INACTIVE` (marcar disponible a un inactivo) o `RIDER_HAS_ACTIVE_DELIVERY`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: '`RATE_LIMITED`'
+          headers:
+            Retry-After:
+              description: Segundos sugeridos de espera.
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`RIDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`)'
+          headers:
+            Retry-After:
+              description: Segundos sugeridos de espera.
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /v1/admin/categories:
     get:
       operationId: listAdminCategories
@@ -7173,6 +7660,12 @@ components:
       required: true
       description: UUID de la zona de entrega (`delivery_zones.id`).
       schema: { type: string, format: uuid }
+    RiderId:
+      name: id
+      in: path
+      required: true
+      description: UUID del motorista (`riders.id`).
+      schema: { type: string, format: uuid }
     FavoriteProductId:
       name: productId
       in: path
@@ -7793,7 +8286,7 @@ components:
           type: string
           description: |
             Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16: `BANNER_NOT_FOUND`, `BANNER_CODE_TAKEN`, `BANNER_VERSION_CONFLICT`, `BANNER_IMAGE_INVALID`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_LIMIT_REACHED`, `BANNER_SCOPE_FORBIDDEN` (403), `BANNERS_BUSY` (503 reintentable); F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); F20: `IDEMPOTENCY_KEY_INVALID` (400), `QUOTE_CHANGED` (409), `QUOTE_EXPIRED` (409), `IDEMPOTENCY_KEY_REUSED` (409), `IDEMPOTENCY_IN_PROGRESS` (409), `QUOTE_INVALID` (422), `CHECKOUT_BLOCKED` (422), `DELIVERY_PROVIDER_NOT_SELECTABLE` (422), `CONTACT_INCOMPLETE` (422), `PENDING_ORDERS_LIMIT` (429), `ORDERS_BUSY` (503 reintentable), `ORDERS_UNAVAILABLE` (503); 404 de dirección ajena sin código; F22: `ORDER_NOT_FOUND` (404), `ORDER_REASON_REQUIRED` (400), `ORDER_CURSOR_INVALID` (400), `ORDER_ACTION_FORBIDDEN` (403), `ORDER_STATE_CONFLICT` (409), `ORDER_TRANSITION_INVALID` (422; `violations[].code`: `ORDER_TERMINAL`, `ORDER_FULFILLMENT_MISMATCH`, `ORDER_SOURCE_INVALID`, `ORDER_DISPATCH_NOT_AVAILABLE`, `ORDER_PROVIDER_BLOCKED_EXTERNAL`, `ORDER_CANCEL_NOT_ALLOWED`); 503 reintentable: `ORDERS_BUSY`; F24 (pagos en efectivo; `PAYMENT_METHOD_UNAVAILABLE` de F20 queda RETIRADO: ahora cualquier método distinto de `cash` es 400): `PAYMENT_AMOUNT_INVALID` (400), `PAYMENT_CONFIRMATION_REQUIRED` (400), `PAYMENT_ACTION_FORBIDDEN` (403), `PAYMENT_ALREADY_REGISTERED` (409), `ORDER_NOT_PAYABLE` (409), `CASH_AMOUNT_INSUFFICIENT` (422), `CASH_TENDERED_TOO_LARGE` (422), `PAYMENT_NOT_COLLECTABLE` (422; `violations[].code`: `PROVIDER_BLOCKED_EXTERNAL`, `LEGACY_PAYMENT_METHOD`, `AMOUNT_ZERO`); reutiliza `ORDER_NOT_FOUND`, `IDEMPOTENCY_KEY_INVALID`, `IDEMPOTENCY_KEY_REUSED`, `ORDERS_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
+            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16: `BANNER_NOT_FOUND`, `BANNER_CODE_TAKEN`, `BANNER_VERSION_CONFLICT`, `BANNER_IMAGE_INVALID`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_LIMIT_REACHED`, `BANNER_SCOPE_FORBIDDEN` (403), `BANNERS_BUSY` (503 reintentable); F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); F20: `IDEMPOTENCY_KEY_INVALID` (400), `QUOTE_CHANGED` (409), `QUOTE_EXPIRED` (409), `IDEMPOTENCY_KEY_REUSED` (409), `IDEMPOTENCY_IN_PROGRESS` (409), `QUOTE_INVALID` (422), `CHECKOUT_BLOCKED` (422), `DELIVERY_PROVIDER_NOT_SELECTABLE` (422), `CONTACT_INCOMPLETE` (422), `PENDING_ORDERS_LIMIT` (429), `ORDERS_BUSY` (503 reintentable), `ORDERS_UNAVAILABLE` (503); 404 de dirección ajena sin código; F22: `ORDER_NOT_FOUND` (404), `ORDER_REASON_REQUIRED` (400), `ORDER_CURSOR_INVALID` (400), `ORDER_ACTION_FORBIDDEN` (403), `ORDER_STATE_CONFLICT` (409), `ORDER_TRANSITION_INVALID` (422; `violations[].code`: `ORDER_TERMINAL`, `ORDER_FULFILLMENT_MISMATCH`, `ORDER_SOURCE_INVALID`, `ORDER_DISPATCH_NOT_AVAILABLE`, `ORDER_PROVIDER_BLOCKED_EXTERNAL`, `ORDER_CANCEL_NOT_ALLOWED`); 503 reintentable: `ORDERS_BUSY`; F24 (pagos en efectivo; `PAYMENT_METHOD_UNAVAILABLE` de F20 queda RETIRADO: ahora cualquier método distinto de `cash` es 400): `PAYMENT_AMOUNT_INVALID` (400), `PAYMENT_CONFIRMATION_REQUIRED` (400), `PAYMENT_ACTION_FORBIDDEN` (403), `PAYMENT_ALREADY_REGISTERED` (409), `ORDER_NOT_PAYABLE` (409), `CASH_AMOUNT_INSUFFICIENT` (422), `CASH_TENDERED_TOO_LARGE` (422), `PAYMENT_NOT_COLLECTABLE` (422; `violations[].code`: `PROVIDER_BLOCKED_EXTERNAL`, `LEGACY_PAYMENT_METHOD`, `AMOUNT_ZERO`); reutiliza `ORDER_NOT_FOUND`, `IDEMPOTENCY_KEY_INVALID`, `IDEMPOTENCY_KEY_REUSED`, `ORDERS_BUSY`); F27 (motoristas propios): `RIDER_NOT_FOUND` (404), `RIDER_ACTION_FORBIDDEN` (403), `RIDER_PHONE_TAKEN` (409), `RIDER_VERSION_CONFLICT` (409; `current` = versión vigente), `RIDER_HAS_ACTIVE_DELIVERY` (409), `RIDER_INACTIVE` (409), `BRANCH_NOT_AVAILABLE` (422, reutilizado), `RIDERS_BUSY` (503 reintentable). Los clientes deben ramificar por `code`, nunca por `message`.
         violations:
           type: array
           description: Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09).
@@ -8971,6 +9464,148 @@ components:
           type: string
           maxLength: 200
           description: Texto libre de operador; se guarda en auditoría. NO debe contener datos personales.
+    RiderVehicleType:
+      type: string
+      enum: [MOTORCYCLE, BICYCLE, CAR, ON_FOOT]
+      description: 'Conjunto cerrado de vehículos (F27). Opcional en el motorista.'
+    RiderAvailability:
+      type: string
+      enum: [AVAILABLE, UNAVAILABLE]
+      description: 'Disponibilidad MANUAL persistida. `BUSY` no existe aquí: es derivado (F28) y nunca se guarda.'
+    RiderAvailabilityFilter:
+      type: string
+      enum: [AVAILABLE, UNAVAILABLE, BUSY]
+      description: 'Filtro del listado sobre el estado operativo derivado.'
+    RiderOperationalState:
+      type: string
+      enum: [INACTIVE, UNAVAILABLE, BUSY, AVAILABLE]
+      description: |
+        Derivado por el servidor, en este orden: `INACTIVE` (active=false), `UNAVAILABLE` (marcado no disponible), `BUSY` (entrega activa real; solo con `busyKnown=true`), `AVAILABLE`.
+        Mientras no exista F28 `busyKnown=false`, nunca hay `BUSY` y `AVAILABLE` no garantiza que esté libre.
+    AdminRiderSummary:
+      type: object
+      description: 'Fila del listado. Sin teléfono completo ni placa (PII mínima).'
+      required:
+        [
+          id,
+          branchId,
+          branchName,
+          fullName,
+          phoneMasked,
+          vehicleType,
+          active,
+          availability,
+          busy,
+          busyKnown,
+          operationalState,
+          version,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        branchId: { type: string, format: uuid }
+        branchName: { type: string }
+        fullName: { type: string }
+        phoneMasked: { type: string, example: '+502****5678' }
+        vehicleType: { allOf: [{ $ref: '#/components/schemas/RiderVehicleType' }], nullable: true }
+        active: { type: boolean }
+        availability: { $ref: '#/components/schemas/RiderAvailability' }
+        busy:
+          { type: boolean, description: 'Tiene una entrega activa. `false` si `busyKnown=false`.' }
+        busyKnown:
+          {
+            type: boolean,
+            description: '`false` mientras no exista F28 (adaptador "sin entregas"): `busy` no es una afirmación real.',
+          }
+        operationalState: { $ref: '#/components/schemas/RiderOperationalState' }
+        version:
+          {
+            type: integer,
+            minimum: 1,
+            description: 'Se reenvía como `expectedVersion` en PATCH /riders/{id}.',
+          }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AdminRider:
+      description: 'Detalle completo (PII: teléfono y placa solo con `riders.read`).'
+      allOf:
+        - $ref: '#/components/schemas/AdminRiderSummary'
+        - type: object
+          required: [phone, licensePlate]
+          properties:
+            phone: { type: string, pattern: '^\+502[0-9]{8}$', example: '+50255501122' }
+            licensePlate:
+              {
+                type: string,
+                nullable: true,
+                description: 'Normalizada: mayúsculas, sin espacios ni guiones (`^[A-Z0-9]{4,10}$`).',
+              }
+    AdminRiderPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AdminRiderSummary' } }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer, description: 'Total de motoristas que cumplen filtros y alcance.' }
+    CreateRiderRequest:
+      type: object
+      required: [branchId, fullName, phone]
+      additionalProperties: false
+      properties:
+        branchId: { type: string, format: uuid }
+        fullName:
+          {
+            type: string,
+            minLength: 2,
+            maxLength: 80,
+            description: 'Normalizado (NFC, recortado, espacios colapsados); sin caracteres de control.',
+          }
+        phone: { type: string, pattern: '^\+502[0-9]{8}$' }
+        vehicleType: { allOf: [{ $ref: '#/components/schemas/RiderVehicleType' }], nullable: true }
+        licensePlate:
+          {
+            type: string,
+            nullable: true,
+            maxLength: 12,
+            description: 'Se normaliza (mayúsculas, sin espacios ni guiones) y debe cumplir `^[A-Z0-9]{4,10}$`.',
+          }
+    UpdateRiderRequest:
+      type: object
+      required: [expectedVersion]
+      additionalProperties: false
+      description: 'Además de `expectedVersion` debe venir al menos un campo editable (si no, 400). `active` y `availability` NO se aceptan aquí.'
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        fullName: { type: string, minLength: 2, maxLength: 80 }
+        phone: { type: string, pattern: '^\+502[0-9]{8}$' }
+        vehicleType: { allOf: [{ $ref: '#/components/schemas/RiderVehicleType' }], nullable: true }
+        licensePlate: { type: string, nullable: true, maxLength: 12 }
+        branchId:
+          {
+            type: string,
+            format: uuid,
+            description: 'Traslado: mueve el MISMO registro a otra sucursal activa (exige `riders.update` en origen y destino).',
+          }
+    UpdateRiderStatusRequest:
+      type: object
+      required: [active]
+      additionalProperties: false
+      properties:
+        active: { type: boolean }
+        reason:
+          {
+            type: string,
+            maxLength: 200,
+            description: 'Texto libre de operador; se guarda en auditoría. NO debe contener datos personales.',
+          }
+    UpdateRiderAvailabilityRequest:
+      type: object
+      required: [availability]
+      additionalProperties: false
+      properties:
+        availability: { $ref: '#/components/schemas/RiderAvailability' }
     CourierProvider:
       type: string
       enum: [PEDIDOSYA, OWN]
