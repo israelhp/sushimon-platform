@@ -3,6 +3,7 @@ import type { MockContext, MockStore } from '../store';
 import * as account from './account';
 import * as adminOrders from './admin-orders';
 import * as adminPayments from './admin-payments';
+import * as adminRiders from './admin-riders';
 import * as admin from './backoffice-admin';
 import * as banners from './banners';
 import * as bo from './backoffice';
@@ -109,6 +110,13 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'GET /v1/admin/orders/:id/payment': adminPayments.getAdminOrderPayment,
   'POST /v1/admin/orders/:id/payment/cash': adminPayments.registerAdminOrderCashPayment,
   'GET /v1/admin/orders/:id/payment/history': adminPayments.listAdminOrderPaymentHistory,
+  // F27: motoristas propios (contrato `admin-riders`); distintos del despacho simulado `/v1/backoffice/riders`
+  'GET /v1/admin/riders': adminRiders.listAdminRiders,
+  'POST /v1/admin/riders': adminRiders.createAdminRider,
+  'GET /v1/admin/riders/:id': adminRiders.getAdminRider,
+  'PATCH /v1/admin/riders/:id': adminRiders.updateAdminRider,
+  'PATCH /v1/admin/riders/:id/status': adminRiders.updateAdminRiderStatus,
+  'PATCH /v1/admin/riders/:id/availability': adminRiders.updateAdminRiderAvailability,
   // F07: administración de sucursales (contrato)
   'GET /v1/admin/branches': branches.listAdminBranches,
   'POST /v1/admin/branches': branches.createAdminBranch,

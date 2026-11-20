@@ -34,6 +34,7 @@ export const NAV: readonly NavSectionDef[] = [
       { screen: 'panel', icon: 'home' },
       { screen: 'pedidos', icon: 'bag' },
       { screen: 'entregas', icon: 'bike' },
+      { screen: 'motoristas', icon: 'rider' },
     ],
   },
   {

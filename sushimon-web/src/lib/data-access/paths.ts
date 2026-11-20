@@ -81,6 +81,11 @@ export const paths = {
   adminOrderPayment: (id: string) => `/v1/admin/orders/${seg(id)}/payment`,
   adminOrderPaymentCash: (id: string) => `/v1/admin/orders/${seg(id)}/payment/cash`,
   adminOrderPaymentHistory: (id: string) => `/v1/admin/orders/${seg(id)}/payment/history`,
+  /** F27 (contrato `admin-riders`): motoristas propios (`riders.read|create|update` + aal2, alcance por sucursal). Sin DELETE. */
+  adminRiders: () => '/v1/admin/riders',
+  adminRider: (id: string) => `/v1/admin/riders/${seg(id)}`,
+  adminRiderStatus: (id: string) => `/v1/admin/riders/${seg(id)}/status`,
+  adminRiderAvailability: (id: string) => `/v1/admin/riders/${seg(id)}/availability`,
   boOrders: () => '/v1/backoffice/orders',
   boOrderStatus: (id: string) => `/v1/backoffice/orders/${seg(id)}/status`,
   boOrderDispatch: (id: string) => `/v1/backoffice/orders/${seg(id)}/dispatch`,

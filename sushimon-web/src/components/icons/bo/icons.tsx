@@ -378,11 +378,22 @@ export const IconUserPlus = make(
   </>,
 );
 
+/** Motorista (casco): sección «Motoristas» del backoffice (F27). */
+export const IconRider = make(
+  'Rider',
+  <>
+    <path d="M4 14a8 8 0 0 1 16 0v1H4z" />
+    <path d="M4 15v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1" />
+    <path d="M12 6v4h8" />
+  </>,
+);
+
 /** Mapa de íconos de navegación del sidebar (claves del prototipo: it.ic.*). */
 export const BO_NAV_ICONS = {
   home: IconHome,
   bag: IconBag,
   bike: IconBike,
+  rider: IconRider,
   fork: IconFork,
   grid: IconGrid,
   tag: IconTag,

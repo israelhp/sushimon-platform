@@ -17,6 +17,7 @@ export type BackofficeScreen =
   | 'panel'
   | 'pedidos'
   | 'entregas'
+  | 'motoristas'
   | 'productos'
   | 'categorias'
   | 'modificadores'
@@ -32,6 +33,7 @@ export const SCREEN_PERMISSION: Readonly<Record<BackofficeScreen, StaffPermissio
   panel: 'dashboard.read',
   pedidos: 'orders.read',
   entregas: 'deliveries.read',
+  motoristas: 'riders.read',
   productos: 'catalog.read',
   categorias: 'catalog.read',
   modificadores: 'catalog.read',
@@ -48,6 +50,7 @@ const HOME_ORDER: readonly BackofficeScreen[] = [
   'panel',
   'pedidos',
   'entregas',
+  'motoristas',
   'productos',
   'promociones',
   'banners',
