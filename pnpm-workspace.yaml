@@ -28,3 +28,8 @@ peerDependencyRules:
 auditConfig:
   ignoreGhsas:
     - GHSA-fc5q-39xc-vjpf
+
+# GHSA-7589-6fvf-x4pw (ReDoS en `effect` <= 3.22.0, transitiva de prisma > @prisma/config): se fuerza la versión corregida.
+# Retirar cuando Prisma publique una versión que ya dependa de effect >= 3.22.1.
+overrides:
+  'effect@<3.22.1': '^3.22.1'
