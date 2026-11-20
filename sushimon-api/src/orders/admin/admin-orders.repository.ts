@@ -38,6 +38,8 @@ interface SummaryDbRow {
   customer_name: string;
   total: string;
   payment_method_preference: string | null;
+  payment_status: string | null;
+  payment_received_at: Date | null;
   scheduled_for: Date | null;
   placed_at: Date;
   updated_at: Date;
@@ -48,6 +50,7 @@ interface SummaryDbRow {
 /** Columnas mínimas (sin teléfono, correo, notas ni desglose) con unidades agregadas en la MISMA sentencia (sin N+1). */
 const SUMMARY_COLUMNS = Prisma.sql`o.id, o.order_number, o.status, o.branch_id, b.name AS branch_name,
   o.fulfillment_type, o.delivery_provider, o.customer_name, o.total::text AS total, o.payment_method_preference,
+  p.status AS payment_status, p.received_at AS payment_received_at,
   o.scheduled_for, o.placed_at, o.updated_at,
   (SELECT COALESCE(sum(i.quantity), 0)::int FROM app.order_items i WHERE i.order_id = o.id) AS item_count`;
 
@@ -69,6 +72,8 @@ const toRow = (r: SummaryDbRow): AdminOrderRow => ({
   itemCount: Number(r.item_count),
   total: r.total,
   paymentMethodPreference: r.payment_method_preference,
+  paymentStatus: r.payment_status,
+  paymentPaidAt: r.payment_received_at,
   scheduledFor: r.scheduled_for,
   placedAt: r.placed_at,
   updatedAt: r.updated_at,
@@ -129,6 +134,7 @@ export class AdminOrdersRepository {
     const rows = await this.prisma.$queryRaw<SummaryDbRow[]>(Prisma.sql`
       SELECT ${SUMMARY_COLUMNS}, ${PLACED_AT_KEY}
         FROM app.orders o JOIN app.branches b ON b.id = o.branch_id
+        LEFT JOIN app.payments p ON p.order_id = o.id
        WHERE ${Prisma.join(where, ' AND ')}
        ORDER BY o.placed_at DESC, o.id DESC
        LIMIT ${filter.limit + 1}`);
@@ -181,7 +187,8 @@ export class AdminOrdersRepository {
               WHERE o.status = s.status AND ${scope} AND o.placed_at >= ${terminalSince}
               ORDER BY o.placed_at DESC, o.id DESC LIMIT ${TERMINAL_CARD_LIMIT}) x
         ) o
-        JOIN app.branches b ON b.id = o.branch_id`);
+        JOIN app.branches b ON b.id = o.branch_id
+        LEFT JOIN app.payments p ON p.order_id = o.id`);
     return rows.map(toRow);
   }
 
@@ -210,6 +217,7 @@ export class AdminOrdersRepository {
              o.extras_total::text AS extras_total, o.discount_total::text AS discount_total,
              o.delivery_fee::text AS delivery_fee
         FROM app.orders o JOIN app.branches b ON b.id = o.branch_id
+        LEFT JOIN app.payments p ON p.order_id = o.id
        WHERE o.id = ${orderId}::uuid AND ${scopeSql(branchIds)}`);
     const h = head[0];
     if (!h) return null;
@@ -340,6 +348,7 @@ export class AdminOrdersRepository {
         const rows = await client.$queryRaw<SummaryDbRow[]>(Prisma.sql`
           SELECT ${SUMMARY_COLUMNS}
             FROM app.orders o JOIN app.branches b ON b.id = o.branch_id
+            LEFT JOIN app.payments p ON p.order_id = o.id
            WHERE o.id = ${orderId}::uuid`);
         return rows[0] ? toRow(rows[0]) : null;
       },

@@ -19,7 +19,6 @@ export type PlaceFailure =
   | { kind: 'blocked'; blockers: CheckoutBlocker[] }
   | { kind: 'rateLimited'; retryAfterSec: number | undefined }
   | { kind: 'pendingLimit' }
-  | { kind: 'paymentUnavailable' }
   | { kind: 'contactIncomplete' }
   | { kind: 'providerNotSelectable' }
   /** 401 / 404: dirección guardada ajena o inexistente, o sesión caducada. */
@@ -71,8 +70,6 @@ export function classifyPlaceError(error: unknown): PlaceFailure {
             : [];
         return { kind: 'blocked', blockers };
       }
-      case 'PAYMENT_METHOD_UNAVAILABLE':
-        return { kind: 'paymentUnavailable' };
       case 'CONTACT_INCOMPLETE':
         return { kind: 'contactIncomplete' };
       case 'DELIVERY_PROVIDER_NOT_SELECTABLE':

@@ -46,7 +46,13 @@ import type { OrderCreateRequestDto } from '../src/orders/dto/order-create-reque
 import { PromotionCandidatesService } from '../src/promotions/promotion-candidates.service.js';
 import { PromotionEvaluator } from '../src/promotions/promotion-evaluator.js';
 import { PromotionsRepository } from '../src/promotions/promotions.repository.js';
-import { cleanupTestData, ensureAuthStub, TEST_URL, withClient } from './support/db.js';
+import {
+  cleanupTestData,
+  ensureAuthStub,
+  TEST_URL,
+  withClient,
+  deletePaymentsOf,
+} from './support/db.js';
 import { globalStaff } from './support/staff-context.js';
 
 const url = TEST_URL;
@@ -337,6 +343,7 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
             [ids],
           );
           await c.query('DELETE FROM app.order_items WHERE order_id = ANY($1::uuid[])', [ids]);
+          await deletePaymentsOf(c, ids); // F24 (0019): FK RESTRICT hacia orders
           await c.query('DELETE FROM app.orders WHERE id = ANY($1::uuid[])', [ids]);
           await c.query(
             "DELETE FROM app.audit_events WHERE entity_type = 'order' AND entity_id = ANY($1::uuid[])",
@@ -932,10 +939,10 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
     expect(one.total).toBeLessThanOrEqual(45);
   });
 
-  it('fila 33: F20 no escribe pagos, entregas ni notificaciones (si esas tablas existen, no cambian)', async (ctx) => {
+  it('fila 33: F20 deja el pago PENDING (1 pago + 1 evento) y no escribe entregas ni notificaciones (si esas tablas existen, no cambian)', async (ctx) => {
     skipUnlessReady(ctx);
     const present = await q<{ t: string }>(
-      `SELECT t FROM unnest(ARRAY['app.payments','app.deliveries','app.notifications']) t WHERE to_regclass(t) IS NOT NULL`,
+      `SELECT t FROM unnest(ARRAY['app.deliveries','app.notifications']) t WHERE to_regclass(t) IS NOT NULL`,
     );
     const counts = async () =>
       Promise.all(
@@ -946,7 +953,22 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
     const before = await counts();
     const branch = await newBranch();
     const product = await newProduct((await newCategory()).id, '10.00');
-    await orders.create(undefined, key(), await orderBody(pickup(branch, [line(product.id)])));
+    const created = await orders.create(
+      undefined,
+      key(),
+      await orderBody(pickup(branch, [line(product.id)])),
+    );
     expect(await counts()).toEqual(before);
+    // F24: nace UN pago `pending` por el total (sin efectivo recibido) y UN evento `created`; nada de caja.
+    const orderId = created.body.order.id;
+    const pay = await q<{ status: string; amount: string; tendered_amount: string | null }>(
+      `SELECT status, amount::text, tendered_amount::text FROM app.payments WHERE order_id = $1`,
+      [orderId],
+    );
+    expect(pay).toHaveLength(1);
+    expect(pay[0]).toMatchObject({ status: 'pending', tendered_amount: null });
+    expect(
+      await q(`SELECT event_type FROM app.payment_events WHERE order_id = $1`, [orderId]),
+    ).toEqual([{ event_type: 'created' }]);
   });
 });

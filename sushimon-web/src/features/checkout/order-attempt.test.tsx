@@ -51,7 +51,7 @@ describe('order-attempt · clave de idempotencia estable por intento lógico (F2
     const variants: Partial<OrderIntent>[] = [
       { contact: { fullName: 'Ana López', phone: '5555-9999', email: '' } },
       { notes: 'sin picante' },
-      { preference: 'bank_transfer' },
+      { preference: null },
       { scope: 'cuenta-1' },
       {
         quote: {
@@ -142,7 +142,7 @@ describe('buildOrderRequest · sin importes', () => {
         },
         deliveryAddress: { addressLine: ' 6a avenida 10-50 ', referenceNote: '' },
         notes: ' sin wasabi ',
-        preference: 'bank_transfer',
+        preference: 'cash',
         contact: { fullName: ' Ana ', phone: ' 5555-1234 ', email: ' a@b.com ' },
       }),
       'mockq.token',
@@ -155,7 +155,7 @@ describe('buildOrderRequest · sin importes', () => {
       contact: { fullName: 'Ana', phone: '5555-1234', email: 'a@b.com' },
       deliveryAddress: { addressLine: '6a avenida 10-50' },
       notes: 'sin wasabi',
-      paymentMethodPreference: 'bank_transfer',
+      paymentMethodPreference: 'cash',
     });
     expect(JSON.stringify(body)).not.toMatch(/total|price|fee|status|paid/i);
   });

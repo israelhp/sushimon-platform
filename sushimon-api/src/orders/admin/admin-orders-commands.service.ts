@@ -111,10 +111,7 @@ export class AdminOrdersCommandsService {
   ): Promise<('payment_review' | 'delivery_cancellation')[]> {
     const out: ('payment_review' | 'delivery_cancellation')[] = [];
     try {
-      const pay = await this.payments.inspect(
-        order.id,
-        order.paymentMethodPreference as 'cash' | 'bank_transfer' | null,
-      );
+      const pay = await this.payments.inspect(order.id);
       out.push(...pay.pendingActions);
     } catch {
       this.logger.warn(`OrderPaymentReadPort falló orderId=${order.id}`);

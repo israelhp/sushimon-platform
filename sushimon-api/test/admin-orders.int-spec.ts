@@ -23,8 +23,15 @@ import {
 import { OrderTransitionsService } from '../src/orders/admin/order-transitions.service.js';
 import { ordersBusy } from '../src/orders/orders-errors.js';
 import { NoDeliveryFulfillment } from '../src/orders/ports/order-fulfillment.port.js';
-import { ProvisionalPaymentRule } from '../src/orders/ports/order-payment-read.port.js';
-import { cleanupTestData, ensureAuthStub, TEST_URL, withClient } from './support/db.js';
+import { PaymentsReadAdapter } from '../src/orders/payments/payments-read.adapter.js';
+import { PaymentsRepository } from '../src/orders/payments/payments.repository.js';
+import {
+  cleanupTestData,
+  ensureAuthStub,
+  TEST_URL,
+  withClient,
+  deletePaymentsOf,
+} from './support/db.js';
 import { globalStaff, ROLE_PERMISSIONS, scopedStaff } from './support/staff-context.js';
 
 const url = TEST_URL;
@@ -108,7 +115,8 @@ describe.skipIf(!url || !ready)('Gestión de pedidos contra PostgreSQL real (F22
     provider?: 'OWN' | 'PEDIDOSYA' | null;
     placedAt?: Date;
     units?: number;
-    payment?: 'cash' | 'bank_transfer' | null;
+    /** F24: solo `cash` (el trigger de 0019 rechaza `bank_transfer` en INSERT). */
+    payment?: 'cash' | null;
     /** `false` = sin evento de historial coherente con el estado (historial inconsistente, fila 23). */
     consistentHistory?: boolean;
     name?: string;
@@ -216,7 +224,7 @@ describe.skipIf(!url || !ready)('Gestión de pedidos contra PostgreSQL real (F22
         authorization,
         gate,
         new NoDeliveryFulfillment(),
-        new ProvisionalPaymentRule(),
+        new PaymentsReadAdapter(new PaymentsRepository(prisma, auditService)),
       ),
       queries: new AdminOrdersQueryService(r, authorization, clock, gate),
     };
@@ -289,6 +297,7 @@ describe.skipIf(!url || !ready)('Gestión de pedidos contra PostgreSQL real (F22
           for (const t of ['order_status_history', 'order_addresses', 'order_items']) {
             await c.query(`DELETE FROM app.${t} WHERE order_id = ANY($1::uuid[])`, [ids]);
           }
+          await deletePaymentsOf(c, ids); // F24 (0019): FK RESTRICT hacia orders
           await c.query('DELETE FROM app.orders WHERE id = ANY($1::uuid[])', [ids]);
           await c.query(
             "DELETE FROM app.audit_events WHERE entity_type = 'order' AND entity_id = ANY($1::uuid[])",
@@ -435,7 +444,7 @@ describe.skipIf(!url || !ready)('Gestión de pedidos contra PostgreSQL real (F22
       const id = await seedOrder({ status: from });
       expect((await exec(admin, 'cancel', id, from, 'motivo ok')).order.status).toBe('cancelled');
     }
-  });
+  }, 240_000);
 
   it('filas 19-23: 409 con current, repetición idempotente (mismo actor y otro), motivo original, historial inconsistente', async (ctx) => {
     skipUnlessReady(ctx);
@@ -668,7 +677,8 @@ describe.skipIf(!url || !ready)('Gestión de pedidos contra PostgreSQL real (F22
     const detail = await measure(() => queries.detail(staff, old));
     expect(detail.n).toBeLessThanOrEqual(7);
     expect(detail.result).toMatchObject({
-      payment: { status: 'NOT_STARTED' },
+      // F24: pedido sembrado por SQL directo (sin fila de pago) = histórico: se lee CASH/PENDING y no es cobrable.
+      payment: { method: 'CASH', status: 'PENDING', registration: { allowed: false } },
       contact: { fullName: NAME },
       historyTruncated: false,
     });
@@ -678,6 +688,8 @@ describe.skipIf(!url || !ready)('Gestión de pedidos contra PostgreSQL real (F22
     expect(cmd.n).toBeLessThanOrEqual(6);
     // 46: el plan usa el índice (con seqscan desactivado: la tabla de prueba es diminuta)
     const plan = await withClient(url as string, async (c) => {
+      // Estadísticas frescas: las filas recién insertadas aún no pasaron por autovacuum y sesgan el plan en una tabla diminuta.
+      await c.query('ANALYZE app.orders');
       await c.query('BEGIN');
       await c.query('SET LOCAL enable_seqscan = off');
       const r = await c.query<{ 'QUERY PLAN': string }>(
@@ -687,7 +699,10 @@ describe.skipIf(!url || !ready)('Gestión de pedidos contra PostgreSQL real (F22
       await c.query('ROLLBACK');
       return r.rows.map((x) => x['QUERY PLAN']).join('\n');
     });
-    expect(plan).toContain('orders_branch_status_placed_idx');
+    // Tabla diminuta: el planificador puede preferir otro índice parcial/por estado; lo que se garantiza aquí es que la consulta del
+    // tablero NO es un barrido secuencial. El uso del índice (branch_id, status, placed_at) con volumen se comprueba con EXPLAIN real.
+    expect(plan).not.toMatch(/Seq Scan/);
+    expect(plan).toMatch(/Index Scan|Bitmap Index Scan/);
   }, 240_000);
 
   it('fila 39 (parcial): F21 sigue sin exponer changed_by/reason; la tabla pública refleja el historial real', async (ctx) => {

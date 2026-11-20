@@ -314,9 +314,10 @@ describe('AdminOrdersCommandsService (S)', () => {
   });
 
   describe('fila 24 y 25: pendingActions y puertos', () => {
-    it('payment_review con transferencia; [] con efectivo; delivery_cancellation solo si el puerto lo informa', async () => {
+    it('payment_review SOLO con un pago PAID real (F24); [] con pago pendiente; delivery_cancellation solo si el puerto lo informa', async () => {
       const h = adminOrdersHarness();
-      const bank = h.repo.seed({ branchId: BRANCH_A, paymentMethodPreference: 'bank_transfer' });
+      const bank = h.repo.seed({ branchId: BRANCH_A });
+      h.paymentsRepo.seedPaid(bank);
       const cash = h.repo.seed({ branchId: BRANCH_A, paymentMethodPreference: 'cash' });
       const r1 = await h.commands.execute(admin(), 'reject', bank, {
         expectedStatus: 'pending',
@@ -331,10 +332,10 @@ describe('AdminOrdersCommandsService (S)', () => {
       h.fulfillment.result = { activeDelivery: true, pendingActions: ['delivery_cancellation'] };
       const own = h.repo.seed({
         branchId: BRANCH_A,
-        paymentMethodPreference: 'bank_transfer',
         fulfillmentType: 'DELIVERY',
         status: 'ready',
       });
+      h.paymentsRepo.seedPaid(own);
       const r3 = await h.commands.execute(admin(), 'cancel', own, {
         expectedStatus: 'ready',
         reason: 'Sin repartidor',
@@ -344,7 +345,8 @@ describe('AdminOrdersCommandsService (S)', () => {
 
     it('la repetición idempotente de cancel también informa pendingActions', async () => {
       const h = adminOrdersHarness();
-      const id = h.repo.seed({ branchId: BRANCH_A, paymentMethodPreference: 'bank_transfer' });
+      const id = h.repo.seed({ branchId: BRANCH_A });
+      h.paymentsRepo.seedPaid(id);
       await h.commands.execute(admin(), 'cancel', id, {
         expectedStatus: 'pending',
         reason: 'Sin stock',
@@ -359,7 +361,8 @@ describe('AdminOrdersCommandsService (S)', () => {
 
     it('el puerto se invoca DESPUÉS del commit y su fallo no tumba el comando; accept/start no lo invocan', async () => {
       const h = adminOrdersHarness();
-      const id = h.repo.seed({ branchId: BRANCH_A, paymentMethodPreference: 'bank_transfer' });
+      const id = h.repo.seed({ branchId: BRANCH_A });
+      h.paymentsRepo.seedPaid(id);
       h.fulfillment.fail = true;
       let statusAtInspect: string | undefined;
       h.fulfillment.inspect = (order: unknown) => {

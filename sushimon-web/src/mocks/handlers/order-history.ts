@@ -5,6 +5,7 @@ import type {
   OrderReceipt,
   OrderReorderPreview,
 } from '@/lib/data-access/models';
+import { receiptPayment } from '../cash-payments';
 import { moneyToCents } from '@/lib/checkout-quote';
 import { priceToCents } from '@/lib/product-rules';
 import {
@@ -122,7 +123,7 @@ function summaryOf(store: MockStore, record: PlacedOrderRecord): MyOrderSummary 
     itemCount: d.lines.reduce((n, l) => n + l.quantity, 0),
     total: d.total,
     currency: 'GTQ',
-    paymentMethodPreference: d.payment.methodPreference,
+    paymentMethodPreference: 'cash',
     placedAt: d.placedAt,
     updatedAt: d.updatedAt,
   };
@@ -230,7 +231,8 @@ function authorizedRecord(req: Req): PlacedOrderRecord {
 /** GET /v1/orders/{id}/receipt — recibo NO fiscal desde los snapshots (jamás recalcula desde el catálogo; sin ids, tokens ni motivos). */
 export const getOrderReceipt: Handler = (req): OrderReceipt => {
   faults(req);
-  const d = authorizedRecord(req).detail;
+  const record = authorizedRecord(req);
+  const d = record.detail;
   const branch = req.store.branches.find((b) => b.id === d.branchId);
   return {
     fiscalStatus: 'NOT_FISCAL',
@@ -257,7 +259,7 @@ export const getOrderReceipt: Handler = (req): OrderReceipt => {
     discountTotal: d.discountTotal,
     deliveryFee: d.deliveryFee,
     total: d.total,
-    payment: d.payment,
+    payment: receiptPayment(req.store, record.draftId),
   };
 };
 

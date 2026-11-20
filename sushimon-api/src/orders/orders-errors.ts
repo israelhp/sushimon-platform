@@ -121,20 +121,6 @@ export const contactIncomplete = (violations: ErrorViolation[]) =>
     violations,
   );
 
-export const paymentMethodUnavailable = () =>
-  codedException(
-    HttpStatus.UNPROCESSABLE_ENTITY,
-    'PAYMENT_METHOD_UNAVAILABLE',
-    'El método de pago elegido no está disponible',
-    [
-      {
-        path: 'paymentMethodPreference',
-        code: 'PAYMENT_METHOD_UNAVAILABLE',
-        message: 'Método de pago no disponible',
-      },
-    ],
-  );
-
 export const pendingOrdersLimit = () =>
   codedException(
     HttpStatus.TOO_MANY_REQUESTS,

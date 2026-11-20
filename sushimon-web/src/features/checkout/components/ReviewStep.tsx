@@ -1,23 +1,13 @@
 'use client';
 
-import {
-  Banknote,
-  Clock,
-  CreditCard,
-  Landmark,
-  Phone,
-  ShoppingBag,
-  Store,
-  TriangleAlert,
-  Truck,
-} from 'lucide-react';
+import { Banknote, Clock, Phone, ShoppingBag, Store, TriangleAlert, Truck } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
 import { moneyToCents } from '@/lib/checkout-quote';
 import { formatMoney } from '@/lib/format';
 import { formatWhen } from '@/features/order-mode/when';
 import { localDate } from '@/lib/time';
-import { effectivePayment, formatAddress, type CheckoutStep } from '../checkout-model';
+import { formatAddress, type CheckoutStep } from '../checkout-model';
 import { useCheckoutDraft } from '../checkout-context';
 import type { CheckoutData } from '../use-checkout-data';
 import { ReviewRow, useCheckoutSteps } from './parts';
@@ -52,9 +42,6 @@ export function ReviewStep({
     today: t('when.today'),
     tomorrow: t('when.tomorrow'),
   });
-  const payment = effectivePayment(draft.payment, data.isSimulation);
-  const PayIcon =
-    payment === 'card' ? CreditCard : payment === 'bank_transfer' ? Landmark : Banknote;
   const row = (
     title: string,
     step: CheckoutStep,
@@ -139,18 +126,12 @@ export function ReviewStep({
         {row(
           t('checkout.pay'),
           4,
-          <PayIcon className="h-5 w-5" />,
+          <Banknote className="h-5 w-5" />,
           <>
-            {payment === 'card'
-              ? t('payment.cardLabel')
-              : payment === 'bank_transfer'
-                ? t('payment.transfer')
-                : t('payment.cash')}
-            {!data.isSimulation ? (
-              <span className="block text-[13px] font-normal text-muted">
-                {t('checkout.order.payCoordinated')}
-              </span>
-            ) : null}
+            {t('payment.cash')}
+            <span className="block text-[13px] font-normal text-muted">
+              {t(delivery ? 'payment.cashDelivery' : 'payment.cashPickup')}
+            </span>
           </>,
           'pay',
         )}

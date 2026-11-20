@@ -1,6 +1,5 @@
 import type { DataClient } from '@/lib/data-access/types';
 import type {
-  CardPaymentRequest,
   CreateIncidentRequest,
   DraftCreateOrderRequest,
   DraftOrder,
@@ -15,7 +14,6 @@ import type {
   OrderReorderPreview,
   OrderReorderRequest,
   OrderTracking,
-  PaymentResult,
 } from '@/lib/data-access/models';
 import { paths } from '@/lib/data-access/paths';
 
@@ -83,19 +81,8 @@ export const createDraftOrder = (client: DataClient, input: DraftCreateOrderRequ
 export const getDraftOrder = (client: DataClient, id: string) =>
   client.get<DraftOrder>(paths.order(id));
 
-/** 🎭 Solo mock: prepara el pedido borrador para la pasarela NeoNet SIMULADA. */
-export const prepareDraftCardOrder = (client: DataClient, id: string) =>
-  client.post<DraftOrder>(paths.demoPrepareCardOrder(id));
-
 export const lookupOrder = (client: DataClient, input: OrderLookupRequest) =>
   client.post<DraftOrder>(paths.orderLookup(), input);
-
-/**
- * Pago con tarjeta — pasarela NeoNet SIMULADA (solo tarjetas de prueba). La integración real
- * tokenizará la tarjeta en el navegador (pendiente de documentación y credenciales).
- */
-export const payWithCard = (client: DataClient, input: CardPaymentRequest) =>
-  client.post<PaymentResult>(paths.cardPayment(), input);
 
 export const createIncident = (client: DataClient, input: CreateIncidentRequest) =>
   client.post<Incident>(paths.incidents(), input);

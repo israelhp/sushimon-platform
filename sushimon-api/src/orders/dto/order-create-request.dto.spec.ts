@@ -72,7 +72,17 @@ describe('OrderCreateRequestDto (lista blanca; contrato OrderCreateRequest)', ()
     expect(await check({ ...valid(), ...over })).toBe(400);
   });
 
-  it('`card` se acepta en la forma (el servicio responde 422 PAYMENT_METHOD_UNAVAILABLE)', async () => {
-    expect(await check({ ...valid(), paymentMethodPreference: 'card' })).toBeNull();
+  it.each(['card', 'bank_transfer', 'Cash', ''])(
+    'F24: preferencia `%s` => 400 (solo efectivo; sin transferencia ni tarjeta)',
+    async (value) => {
+      expect(await check({ ...valid(), paymentMethodPreference: value })).toBe(400);
+    },
+  );
+
+  it('F24: `cash` o ausente se aceptan', async () => {
+    expect(await check({ ...valid(), paymentMethodPreference: 'cash' })).toBeNull();
+    const { paymentMethodPreference: _omit, ...rest } = valid();
+    void _omit;
+    expect(await check(rest)).toBeNull();
   });
 });

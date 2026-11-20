@@ -5,7 +5,6 @@ import {
   Banknote,
   Check,
   Clock,
-  CreditCard,
   Flag,
   ListOrdered,
   MapPin,
@@ -105,8 +104,9 @@ export function Confirmation({
       tomorrow: t('when.tomorrow'),
     },
   );
-  const methodLabel = order.payment.method === 'card' ? t('payment.cardLabel') : t('payment.cash');
-  const MethodIcon = order.payment.method === 'card' ? CreditCard : Banknote;
+  // F24: solo efectivo (el borrador enlazado nunca es de tarjeta).
+  const methodLabel = t('payment.cash');
+  const MethodIcon = Banknote;
   const canAdvance = simulation && !step.halted && step.progress < step.total;
 
   return (
@@ -140,13 +140,6 @@ export function Confirmation({
           <strong className="break-all">{order.customer.email}</strong>
         </p>
       </div>
-
-      {state === 'payment_review' ? (
-        <div className="notice notice-warn mt-6" role="status">
-          <TriangleAlert className="mt-0.5 h-[18px] w-[18px] flex-none" aria-hidden="true" />
-          <div>{t('neonet.pendingMsg')}</div>
-        </div>
-      ) : null}
 
       <section
         className="mt-7 rounded-2xl border border-line bg-surface p-5 shadow-card"

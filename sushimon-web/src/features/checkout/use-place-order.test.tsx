@@ -241,7 +241,7 @@ describe('usePlaceOrder (F20)', () => {
       http(422, 'CHECKOUT_BLOCKED', { blockers: [{ code: 'BRANCH_CLOSED', scope: 'BRANCH' }] }),
       { kind: 'blocked', blockers: [{ code: 'BRANCH_CLOSED', scope: 'BRANCH' }] },
     ],
-    [http(422, 'PAYMENT_METHOD_UNAVAILABLE'), { kind: 'paymentUnavailable' }],
+    [http(422, 'CONTACT_INCOMPLETE'), { kind: 'contactIncomplete' }],
   ])(
     '%#: sin reintento automático, carrito intacto, la clave se conserva',
     async (error, failure) => {

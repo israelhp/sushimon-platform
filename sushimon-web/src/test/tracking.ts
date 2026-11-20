@@ -38,6 +38,7 @@ export function makeTracking(over: Partial<OrderTracking> = {}): OrderTracking {
     events: [{ seq: 1, status: 'pending', publicStatus: 'received', occurredAt: at(18, 0) }],
     eventsTruncated: false,
     delivery: null,
+    payment: { method: 'CASH', status: 'PENDING', paidAt: null },
     pollAfterSeconds: 15,
     ...over,
   };

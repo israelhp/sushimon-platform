@@ -84,7 +84,7 @@ describe('GET /v1/admin/orders/board', () => {
 });
 
 describe('GET /v1/admin/orders/:id', () => {
-  it('detalle con líneas, contacto, pago NOT_STARTED, historial con actor', async () => {
+  it('detalle con líneas, contacto, pago en efectivo PENDING (resumen de F24), historial con actor', async () => {
     const h = as('manager');
     const d = await get<AdminOrderDetail>(h, '/v1/admin/orders/MON-307051');
     expect(d).toMatchObject({
@@ -93,7 +93,17 @@ describe('GET /v1/admin/orders/:id', () => {
       fulfillmentType: 'DELIVERY',
       deliveryProvider: 'OWN',
       currency: 'GTQ',
-      payment: { methodPreference: 'cash', status: 'NOT_STARTED' },
+      paymentMethodPreference: 'cash',
+      paymentStatus: 'PENDING',
+      payment: {
+        method: 'CASH',
+        status: 'PENDING',
+        outstanding: expect.stringMatching(/^\d+\.\d{2}$/),
+        paidAt: null,
+        possibleRefundReview: false,
+        // Encargado: puede ver el pedido pero no tiene `payments.confirm` (solo `admin` hasta que F03 los asigne).
+        registration: { allowed: false, blockedReason: 'NO_PERMISSION' },
+      },
     });
     expect(d.contact.phone).toMatch(/^\+502/);
     expect(d.address?.addressLine).toContain('Reforma');
@@ -267,18 +277,23 @@ describe('comandos: permisos, validación y matriz', () => {
     expect(d.history.filter((e) => e.status === 'accepted')).toHaveLength(1);
   });
 
-  it('pendingActions: payment_review con transferencia, [] con efectivo', async () => {
+  it('pendingActions: payment_review solo si el efectivo YA estaba cobrado (hecho real); sin cobro → []', async () => {
     const h = as('admin');
-    const card = await post(h, 'MON-307058', 'cancel', {
+    await h.client.post(
+      '/v1/admin/orders/MON-307058/payment/cash',
+      { tendered: '5000.00', receivedConfirmed: true },
+      { headers: { 'Idempotency-Key': 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' } },
+    );
+    const paid = await post(h, 'MON-307058', 'cancel', {
       expectedStatus: 'pending',
       reason: 'Prueba',
     });
-    expect(card.pendingActions).toEqual(['payment_review']);
-    const cash = await post(h, 'MON-307057', 'cancel', {
+    expect(paid.pendingActions).toEqual(['payment_review']);
+    const unpaid = await post(h, 'MON-307057', 'cancel', {
       expectedStatus: 'pending',
       reason: 'Prueba',
     });
-    expect(cash.pendingActions).toEqual([]);
+    expect(unpaid.pendingActions).toEqual([]);
   });
 
   it('los detalles de otra sucursal no se pueden modificar ni con permiso global de otra', async () => {

@@ -90,7 +90,11 @@ export class AdminOrdersQueryService {
     const branchIds = scope.allBranches ? null : scope.branchIds;
     const found = await this.db(() => this.repo.findDetail(id, branchIds), READ_ADMISSION);
     if (!found) throw adminOrderNotFound();
-    return toDetail(found, actionsForStaff(this.authorization, staff, found.row));
+    return toDetail(
+      found,
+      actionsForStaff(this.authorization, staff, found.row),
+      this.authorization.canAccess(staff, 'payments.confirm', found.row.branchId),
+    );
   }
 
   /** `null` = todas las sucursales; lista = SOLO esas. `branchId` ajeno o inexistente => 404 `BRANCH_NOT_FOUND`. */

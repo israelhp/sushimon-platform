@@ -47,7 +47,14 @@ const receipt = (over: Partial<OrderReceipt> = {}): OrderReceipt => ({
   discountTotal: '0.00',
   deliveryFee: '0.00',
   total: '86.00',
-  payment: { methodPreference: 'cash', status: 'NOT_STARTED' },
+  payment: {
+    method: 'CASH',
+    status: 'PENDING',
+    paidAt: null,
+    amountPaid: null,
+    tendered: null,
+    change: null,
+  },
   ...over,
 });
 
@@ -91,8 +98,10 @@ describe('Recibo (F23) · contenido', () => {
     expect(page).toHaveTextContent('Salsa extra (+Q3.00)');
     expect(page).toHaveTextContent('Nota: Sin ajonjolí');
     expect(screen.getByTestId('receipt-total')).toHaveTextContent('Q86.00');
-    expect(screen.getByTestId('receipt-payment')).toHaveTextContent('Sin pago registrado');
-    expect(page).toHaveTextContent('Método elegido: efectivo');
+    // F24: pago en efectivo PENDIENTE: sin textos de dinero recibido.
+    expect(screen.getByTestId('receipt-payment')).toHaveTextContent('Pago en efectivo: Pendiente');
+    expect(screen.queryByTestId('payment-receipt')).not.toBeInTheDocument();
+    expect(page.textContent).not.toMatch(/efectivo recibido|cambio|transferencia/i);
     expect(screen.getByTestId('receipt-legend')).toHaveTextContent(
       'Este documento es un recibo informativo del pedido. No es una factura ni un documento fiscal.',
     );
@@ -153,17 +162,27 @@ describe('Recibo (F23) · contenido', () => {
     });
     await signIn(view);
     expect(await screen.findByTestId('receipt-negative')).toHaveTextContent(text);
-    expect(screen.getByTestId('receipt-payment')).toHaveTextContent('Sin pago registrado');
+    expect(screen.getByTestId('receipt-payment')).toHaveTextContent('Pago en efectivo: Pendiente');
+    // F24: cancelado/rechazado con pago pendiente: NO se pide pagar.
+    expect(screen.getByTestId('payment-closed')).toHaveTextContent('No se cobra');
+    expect(screen.getByTestId('receipt-payment').textContent).not.toMatch(/Realiza el pago/);
     expect(screen.getByTestId('receipt').textContent).not.toMatch(/motivo/i);
   });
 
-  it('rechazado con un estado de pago distinto de NOT_STARTED: texto neutro, nunca «ningún pago registrado»', async () => {
+  it('rechazado con el pago ya PAGADO: texto neutro, nunca «ningún pago registrado»', async () => {
     const view = await renderStore(<ReceiptScreen orderId={HISTORY} />, {
       wrapClient: receiptClient(() =>
         receipt({
           status: 'rejected',
           publicStatus: 'rejected',
-          payment: { methodPreference: null, status: 'PAID' as unknown as 'NOT_STARTED' },
+          payment: {
+            method: 'CASH',
+            status: 'PAID',
+            paidAt: '2026-11-18T19:05:12.000Z',
+            amountPaid: '86.00',
+            tendered: '100.00',
+            change: '14.00',
+          },
         }),
       ),
     });
@@ -172,7 +191,33 @@ describe('Recibo (F23) · contenido', () => {
     expect(banner).toHaveTextContent('Este pedido fue rechazado por la sucursal.');
     expect(banner).toHaveTextContent('Consulta el estado del pago con la sucursal');
     expect(banner.textContent).not.toMatch(/ningún pago/i);
-    expect(screen.getByTestId('receipt-payment')).not.toHaveTextContent('Sin pago registrado');
+    expect(screen.getByTestId('receipt-payment')).toHaveTextContent('Pago en efectivo: Pagado');
+  });
+
+  it('F24: pagado muestra fecha, importe pagado, efectivo recibido y cambio; nunca al empleado', async () => {
+    const view = await renderStore(<ReceiptScreen orderId={HISTORY} />, {
+      wrapClient: receiptClient(() =>
+        receipt({
+          payment: {
+            method: 'CASH',
+            status: 'PAID',
+            paidAt: '2026-11-18T19:05:12.000Z',
+            amountPaid: '86.00',
+            tendered: '100.00',
+            change: '14.00',
+          },
+        }),
+      ),
+    });
+    await signIn(view);
+    const payment = await screen.findByTestId('receipt-payment');
+    expect(payment).toHaveTextContent('Pago en efectivo: Pagado');
+    expect(screen.getByTestId('payment-paid-at')).toHaveTextContent('Pagado el');
+    const rows = screen.getByTestId('payment-receipt');
+    expect(rows).toHaveTextContent(/Importe pagado.*86/);
+    expect(rows).toHaveTextContent(/Efectivo recibido.*100/);
+    expect(rows).toHaveTextContent(/Cambio.*14/);
+    expect(screen.getByTestId('receipt').textContent).not.toMatch(/recibido por|empleado/i);
   });
 
   it('el DOM no contiene tokens, ids internos, correo ni teléfono completo; el teléfono llega enmascarado', async () => {
@@ -198,7 +243,7 @@ describe('Recibo (F23) · contenido', () => {
     expect(await screen.findByTestId('receipt-legend')).toHaveTextContent(
       'This document is an informational receipt for the order. It is not an invoice or a tax document.',
     );
-    expect(screen.getByTestId('receipt-payment')).toHaveTextContent('No payment recorded');
+    expect(screen.getByTestId('receipt-payment')).toHaveTextContent('Cash payment: Pending');
     expect(screen.getByTestId('print-receipt')).toHaveTextContent('Print / save as PDF');
     expect(document.title).toBe('Receipt MON-001042');
   });

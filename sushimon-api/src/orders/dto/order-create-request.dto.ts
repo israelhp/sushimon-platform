@@ -22,8 +22,11 @@ import {
  */
 const OptionalNotNull = (): PropertyDecorator => ValidateIf((_o, v) => v !== undefined);
 
-/** `card` se ACEPTA en la forma para responder 422 `PAYMENT_METHOD_UNAVAILABLE` (F25 `BLOCKED_EXTERNAL`), no un 400. */
-export const PAYMENT_PREFERENCES = ['cash', 'bank_transfer', 'card'] as const;
+/**
+ * F24 (spec 025, ADR-0030): SOLO efectivo. `bank_transfer`, `card` y cualquier otro valor => 400 de validación (el 422
+ * `PAYMENT_METHOD_UNAVAILABLE` de F20 queda retirado). Ausente => se guarda `NULL` (el pago es efectivo igualmente).
+ */
+export const PAYMENT_PREFERENCES = ['cash'] as const;
 
 export class OrderContactInputDto {
   @ApiPropertyOptional({ type: String, minLength: 2, maxLength: 120 })
@@ -103,7 +106,7 @@ export class OrderCreateRequestDto {
   @MaxLength(280, { message: 'notes: máximo 280 caracteres' })
   notes?: string;
 
-  @ApiPropertyOptional({ type: String, enum: ['cash', 'bank_transfer'] })
+  @ApiPropertyOptional({ type: String, enum: PAYMENT_PREFERENCES })
   @OptionalNotNull()
   @IsIn(PAYMENT_PREFERENCES, { message: 'paymentMethodPreference: valor no válido' })
   paymentMethodPreference?: (typeof PAYMENT_PREFERENCES)[number];

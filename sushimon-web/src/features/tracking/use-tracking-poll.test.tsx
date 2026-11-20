@@ -28,6 +28,7 @@ const tracking = (over: Partial<OrderTracking> = {}): OrderTracking => ({
   events: [],
   eventsTruncated: false,
   delivery: null,
+  payment: { method: 'CASH', status: 'PENDING', paidAt: null },
   pollAfterSeconds: 15,
   ...over,
 });

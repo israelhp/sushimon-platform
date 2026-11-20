@@ -11,6 +11,7 @@ import { moneyToCents } from '@/lib/checkout-quote';
 import type { OrderReceipt } from '@/lib/data-access/models';
 import { formatDateTime, formatMoney } from '@/lib/format';
 import { readGuestToken } from '@/features/checkout/confirmation-store';
+import { PaymentStatus } from '@/features/payments/PaymentStatus';
 import { ErrorNotice } from '@/features/store-shell/components/ErrorNotice';
 import { PublicStatusChip } from '../components/public-status-chip';
 import { useIsSimulation } from '../hooks';
@@ -153,12 +154,6 @@ export function ReceiptScreen({ orderId }: { orderId: string }) {
   const discount = (moneyToCents(data.discountTotal) ?? 0) > 0;
   const extras = (moneyToCents(data.extrasTotal) ?? 0) > 0;
   const negative = NEGATIVE.includes(data.status);
-  const method =
-    data.payment.methodPreference === 'cash'
-      ? t('payment.cash')
-      : data.payment.methodPreference === 'bank_transfer'
-        ? t('payment.transfer')
-        : null;
 
   return (
     <div className="wrap receipt-page max-w-[820px] pb-12 pt-5 sm:pt-8" data-testid="receipt-page">
@@ -231,7 +226,7 @@ export function ReceiptScreen({ orderId }: { orderId: string }) {
             data-testid="receipt-negative"
           >
             {t(data.status === 'rejected' ? 'banner.rejected' : 'banner.cancelled')}{' '}
-            {data.payment.status === 'NOT_STARTED' ? t('banner.noPayment') : t('payment.other')}
+            {data.payment.status === 'PAID' ? t('payment.other') : t('banner.noPayment')}
           </p>
         ) : null}
 
@@ -331,10 +326,14 @@ export function ReceiptScreen({ orderId }: { orderId: string }) {
         </Section>
 
         <Section title={t('payment.title')}>
-          <p className="m-0 font-bold" data-testid="receipt-payment">
-            {data.payment.status === 'NOT_STARTED' ? t('payment.none') : t('payment.other')}
-          </p>
-          {method ? <p className="m-0 text-[13px] text-muted">{method}</p> : null}
+          <div data-testid="receipt-payment">
+            <PaymentStatus
+              payment={data.payment}
+              receipt={data.payment}
+              closed={negative}
+              fulfillmentType={data.fulfillment.type}
+            />
+          </div>
         </Section>
 
         <p

@@ -132,7 +132,8 @@ test.describe('Detalle y recibo', () => {
     await expect(page.getByTestId('receipt-legend')).toHaveText(
       'Este documento es un recibo informativo del pedido. No es una factura ni un documento fiscal.',
     );
-    await expect(page.getByTestId('receipt-payment')).toHaveText('Sin pago registrado');
+    // F24: el pago en efectivo REAL (pendiente: sin textos de dinero recibido).
+    await expect(page.getByTestId('receipt-payment')).toContainText('Pago en efectivo: Pendiente');
     await expect(receipt).not.toContainText(/pagado|NIT|FEL/);
     expect(await page.evaluate(() => (window as unknown as { __printed: number }).__printed)).toBe(
       0,
@@ -338,5 +339,5 @@ test('en inglés: lista, recibo y diálogo se traducen (leyenda no fiscal inclui
     'This document is an informational receipt for the order. It is not an invoice or a tax document.',
     { timeout: 90_000 },
   );
-  await expect(page.getByTestId('receipt-payment')).toHaveText('No payment recorded');
+  await expect(page.getByTestId('receipt-payment')).toContainText('Cash payment: Pending');
 });

@@ -12,8 +12,6 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), back: vi.fn() }),
 }));
 
-const PAN = '4242424242424242';
-
 beforeEach(() => {
   window.sessionStorage.clear();
   window.localStorage.clear();
@@ -59,12 +57,6 @@ async function toStep(user: UserEvent, target: 'Entrega' | 'Envío' | 'Pago' | '
     await screen.findByRole('heading', { level: 1, name });
     if (name === target) return;
   }
-}
-
-async function payByCard(user: UserEvent) {
-  await toStep(user, 'Confirmación');
-  await next(user, /Pagar ahora/);
-  return screen.findByRole('dialog', { name: 'Pasarela de pago' });
 }
 
 describe('checkout · estados de pantalla', () => {
@@ -448,7 +440,6 @@ describe('checkout · pedido en efectivo', () => {
     const user = userEvent.setup();
     const view = await openCheckout({ lines: [['dumplings', 2]] });
     await toStep(user, 'Pago');
-    await user.click(screen.getByRole('radio', { name: /Efectivo/ }));
     await next(user, /Continuar a confirmación/i);
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Confirmación' }),
@@ -495,170 +486,66 @@ describe('checkout · pedido en efectivo', () => {
   });
 });
 
-describe('checkout · pago con tarjeta NeoNet (simulado)', () => {
-  it('abre la pasarela rotulada como simulación y aprueba con la tarjeta 4242', async () => {
+describe('checkout · pago SOLO en efectivo (F24)', () => {
+  const FORBIDDEN = /transferencia|tarjeta|neonet|comprobante|cuenta bancaria|pagar ahora/i;
+
+  it('el paso Pago ofrece únicamente «Efectivo» (sin elegir), con la instrucción del retiro y el total cotizado', async () => {
     const user = userEvent.setup();
-    const view = await openCheckout();
-    const dialog = await payByCard(user);
-    expect(within(dialog).getByText('Demo / Sin cobro real')).toBeInTheDocument();
-    expect(within(dialog).getByText(/No es una integración oficial/)).toBeInTheDocument();
-    expect(within(dialog).getByText('•••• •••• •••• 4242')).toBeInTheDocument();
-    expect(view.api().cart.count).toBe(1);
-
-    await user.click(within(dialog).getByRole('button', { name: /Simular pago/ }));
-    expect(await within(dialog).findByText('Pago aprobado')).toBeInTheDocument();
-    expect(within(dialog).getByText('Tarjeta •••• 4242')).toBeInTheDocument();
-    expect(within(dialog).getByText(/^DEMO-\d{6}$/)).toBeInTheDocument();
-    // Ya no hay campos ni datos de la tarjeta en pantalla.
-    expect(document.body.textContent).not.toContain('4242 4242 4242 4242');
-    expect(document.body.textContent).not.toContain(PAN);
-    expect(within(dialog).queryByLabelText('CVV')).not.toBeInTheDocument();
-
-    await user.click(within(dialog).getByRole('button', { name: 'Consultar pedido' }));
-    expect(await screen.findByRole('heading', { name: '¡Pedido pagado!' })).toBeInTheDocument();
-    expect(
-      screen.getAllByText('Pagado — Pendiente de aceptación del restaurante').length,
-    ).toBeGreaterThan(0);
-    expect(
-      screen.getByText(/Tarjeta de crédito o débito — NeoNet \(Demo\) · DEMO-/),
-    ).toBeInTheDocument();
-    expect(view.api().cart.count).toBe(0);
+    await openCheckout({ lines: [['dumplings', 2]] });
+    await toStep(user, 'Pago');
+    const cash = await screen.findByTestId('payment-cash');
+    expect(within(cash).getByText('Efectivo')).toBeInTheDocument();
+    expect(screen.getByTestId('payment-instructions')).toHaveTextContent(
+      'Realiza el pago en efectivo cuando recojas tu pedido en la sucursal.',
+    );
+    await waitFor(() => expect(screen.getByTestId('payment-total')).toHaveTextContent('Q106.00'));
+    // No hay nada que elegir: sin radios, sin tarjeta, transferencia, Neonet ni comprobantes.
+    expect(screen.queryAllByRole('radio')).toHaveLength(0);
+    expect(screen.queryByRole('radiogroup')).toBeNull();
+    expect(document.body.textContent).not.toMatch(FORBIDDEN);
+    // Nada se marca como pagado.
+    expect(screen.getByText(/no se marca como pagado/)).toBeInTheDocument();
   });
 
-  it('valida los datos de la tarjeta con errores asociados y foco al primer campo', async () => {
+  it('a domicilio (entrega propia) la instrucción es «cuando recibas tu pedido» y el total incluye el envío cotizado', async () => {
+    const user = userEvent.setup();
+    await openCheckout({ type: 'delivery' });
+    await toStep(user, 'Pago');
+    expect(await screen.findByTestId('payment-instructions')).toHaveTextContent(
+      'Realiza el pago en efectivo cuando recibas tu pedido.',
+    );
+    // Q53 + Q15 de envío (valores del SERVIDOR).
+    await waitFor(() => expect(screen.getByTestId('payment-total')).toHaveTextContent('Q68.00'));
+  });
+
+  it('la revisión final muestra «Efectivo» con la instrucción y el botón es «Realizar pedido» (nunca «Pagar ahora»)', async () => {
     const user = userEvent.setup();
     await openCheckout();
-    const dialog = await payByCard(user);
-    const number = within(dialog).getByLabelText('Número de tarjeta');
-    await user.clear(number);
-    await user.type(number, '4111111111111111');
-    await user.clear(within(dialog).getByLabelText('CVV'));
-    await user.click(within(dialog).getByRole('button', { name: /Simular pago/ }));
-    expect(number).toHaveAttribute('aria-invalid', 'true');
-    expect(number).toHaveAttribute('aria-describedby', 'nn-number-error');
-    expect(within(dialog).getByText(/solo acepta tarjetas de prueba/)).toBeInTheDocument();
-    expect(within(dialog).getByText('Ingresá el CVV de 3 o 4 dígitos.')).toBeInTheDocument();
-    await waitFor(() => expect(number).toHaveFocus());
+    await toStep(user, 'Confirmación');
+    expect(screen.getAllByRole('button', { name: /Realizar pedido/ }).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Realiza el pago en efectivo cuando recojas/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(FORBIDDEN);
   });
 
-  it('el CVV es un campo de contraseña y ningún campo autocompleta', async () => {
+  it('el borrador del checkout (sessionStorage) no guarda ningún dato de pago ni de tarjeta', async () => {
     const user = userEvent.setup();
     await openCheckout();
-    const dialog = await payByCard(user);
-    expect(within(dialog).getByLabelText('CVV')).toHaveAttribute('type', 'password');
-    for (const label of ['Número de tarjeta', 'Nombre en la tarjeta', 'Vencimiento', 'CVV']) {
-      expect(within(dialog).getByLabelText(label)).toHaveAttribute('autocomplete', 'off');
-    }
-  });
-
-  it('tarjeta rechazada (4000…0002): reintento y cambio a efectivo sin perder el carrito', async () => {
-    const user = userEvent.setup();
-    const view = await openCheckout();
-    const dialog = await payByCard(user);
-    await user.click(within(dialog).getByRole('button', { name: /4000 0000 0000 0002/ }));
-    await user.click(within(dialog).getByRole('button', { name: /Simular pago/ }));
-    expect(await within(dialog).findByText('No se pudo completar el pago')).toBeInTheDocument();
-    expect(within(dialog).queryByLabelText('Número de tarjeta')).not.toBeInTheDocument();
-    expect(document.body.textContent).not.toContain('4000 0000 0000 0002 Visa');
-
-    await user.click(within(dialog).getByRole('button', { name: 'Reintentar pago' }));
-    expect(await within(dialog).findByLabelText('Número de tarjeta')).toBeInTheDocument();
-    await user.click(within(dialog).getByRole('button', { name: /4000 0000 0000 0002/ }));
-    await user.click(within(dialog).getByRole('button', { name: /Simular pago/ }));
-    await within(dialog).findByText('No se pudo completar el pago');
-
-    await user.click(within(dialog).getByRole('button', { name: 'Cambiar método de pago' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'Pago' })).toBeInTheDocument();
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(view.api().cart.count).toBe(1);
-
-    await user.click(screen.getByRole('radio', { name: /Efectivo/ }));
-    await next(user, /Continuar a confirmación/i);
-    await next(user, /Realizar pedido/);
-    expect(await screen.findByRole('heading', { name: '¡Pedido registrado!' })).toBeInTheDocument();
-    expect(view.api().cart.count).toBe(0);
-  });
-
-  it('el escenario payment-rejected fuerza el rechazo incluso con una tarjeta aprobada', async () => {
-    const user = userEvent.setup();
-    await openCheckout({ scenario: 'payment-rejected' });
-    const dialog = await payByCard(user);
-    await user.click(within(dialog).getByRole('button', { name: /Simular pago/ }));
-    expect(await within(dialog).findByText('No se pudo completar el pago')).toBeInTheDocument();
-  });
-
-  it('tarjeta pendiente (4000…0077): pago en verificación y confirmación con ese estado', async () => {
-    const user = userEvent.setup();
-    const view = await openCheckout();
-    const dialog = await payByCard(user);
-    await user.click(within(dialog).getByRole('button', { name: /4000 0000 0000 0077/ }));
-    await user.click(within(dialog).getByRole('button', { name: /Simular pago/ }));
-    expect(
-      await within(dialog).findByText('Estamos verificando el estado de tu pago'),
-    ).toBeInTheDocument();
-
-    await user.click(within(dialog).getByRole('button', { name: 'Consultar estado' }));
-    expect(
-      await within(dialog).findByText('Estamos verificando el estado de tu pago'),
-    ).toBeInTheDocument();
-
-    await user.click(within(dialog).getByRole('button', { name: 'Consultar pedido' }));
-    expect(await screen.findByRole('heading', { name: '¡Pedido registrado!' })).toBeInTheDocument();
-    expect(screen.getAllByText('Pago en verificación').length).toBeGreaterThan(0);
-    expect(view.api().cart.count).toBe(0);
-  });
-
-  it('cancelar la pasarela vuelve al checkout con el carrito intacto', async () => {
-    const user = userEvent.setup();
-    const view = await openCheckout();
-    const dialog = await payByCard(user);
-    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(heading()).toHaveTextContent('Confirmación');
-    expect(view.api().cart.count).toBe(1);
-  });
-});
-
-describe('checkout · seguridad de los datos de tarjeta', () => {
-  it('nunca guarda PAN, CVV ni PIN en localStorage ni sessionStorage', async () => {
-    const user = userEvent.setup();
-    await openCheckout();
-    const dialog = await payByCard(user);
-    await user.click(within(dialog).getByRole('button', { name: /Simular pago/ }));
-    await within(dialog).findByText('Pago aprobado');
-
-    const dump = JSON.stringify({
-      local: { ...window.localStorage },
-      session: { ...window.sessionStorage },
-    });
-    expect(dump).not.toContain(PAN);
-    expect(dump).not.toContain('4242 4242');
-    expect(dump).not.toMatch(/cvv|cardnumber|pin"/i);
-  });
-
-  it('el borrador del checkout (sessionStorage) no contiene datos de tarjeta aunque se escriban', async () => {
-    const user = userEvent.setup();
-    await openCheckout();
-    const dialog = await payByCard(user);
-    const cvv = within(dialog).getByLabelText('CVV');
-    await user.clear(cvv);
-    await user.type(cvv, '987');
+    await toStep(user, 'Pago');
     const draft = window.sessionStorage.getItem('monsushi-checkout-v1') ?? '';
-    expect(draft).not.toContain('987');
-    expect(draft).not.toContain(PAN);
+    expect(draft).not.toMatch(/card|bank|transfer|cvv|pan|pin|payment/i);
+    const dump = JSON.stringify({ ...window.localStorage, ...window.sessionStorage });
+    expect(dump).not.toMatch(/cvv|cardnumber|4242/i);
   });
 });
 
 describe('checkout · persistencia del progreso', () => {
-  it('restaura el paso y el método de pago tras recargar (sin perder lo no sensible)', async () => {
+  it('restaura el paso tras recargar (sin perder lo no sensible; el método ya no se guarda: solo hay efectivo)', async () => {
     const user = userEvent.setup();
     const first = await openCheckout();
     await toStep(user, 'Pago');
-    await user.click(screen.getByRole('radio', { name: /Efectivo/ }));
     await waitFor(() =>
       expect(JSON.parse(window.sessionStorage.getItem('monsushi-checkout-v1')!)).toMatchObject({
         step: 4,
-        payment: 'cash',
       }),
     );
     first.unmount();
@@ -675,7 +562,7 @@ describe('checkout · persistencia del progreso', () => {
       });
     });
     expect(await screen.findByRole('heading', { level: 1, name: 'Pago' })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: /Efectivo/ })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('payment-cash')).toBeInTheDocument();
   });
 });
 

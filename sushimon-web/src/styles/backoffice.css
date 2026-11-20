@@ -3518,3 +3518,16 @@
     }
   }
 }
+
+@layer components {
+  /* F24: objetivos táctiles ≥ 44 px en móvil para los botones del backoffice (panel y modal de pago incluidos). */
+  @media (max-width: 640px) {
+    [data-zone='bo'] .btn {
+      min-height: 44px;
+    }
+    [data-zone='bo'] .modal-h .icon-btn {
+      min-width: 44px;
+      min-height: 44px;
+    }
+  }
+}

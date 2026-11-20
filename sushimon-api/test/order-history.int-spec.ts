@@ -28,7 +28,13 @@ import { MyOrdersRepository } from '../src/orders/history/my-orders.repository.j
 import { MyOrdersService } from '../src/orders/history/my-orders.service.js';
 import { ProductsQueryService } from '../src/products/products-query.service.js';
 import { ProductsRepository } from '../src/products/products.repository.js';
-import { cleanupTestData, ensureAuthStub, TEST_URL, withClient } from './support/db.js';
+import {
+  cleanupTestData,
+  ensureAuthStub,
+  TEST_URL,
+  withClient,
+  deletePaymentsOf,
+} from './support/db.js';
 
 const url = TEST_URL;
 const TZ = 'America/Guatemala';
@@ -420,6 +426,7 @@ describe.skipIf(!url || !ready)('Historial, recibo y reorden contra PostgreSQL r
           ]) {
             await c.query(`DELETE FROM app.${t} WHERE order_id = ANY($1::uuid[])`, [ids]);
           }
+          await deletePaymentsOf(c, ids); // F24 (0019): FK RESTRICT hacia orders
           await c.query('DELETE FROM app.orders WHERE id = ANY($1::uuid[])', [ids]);
           await c.query(
             "DELETE FROM app.audit_events WHERE entity_type = 'order' AND entity_id = ANY($1::uuid[])",
@@ -652,7 +659,8 @@ describe.skipIf(!url || !ready)('Historial, recibo y reorden contra PostgreSQL r
       fiscalStatus: 'NOT_FISCAL',
       timeZone: 'America/Guatemala',
       status: 'rejected',
-      payment: { status: 'NOT_STARTED', methodPreference: 'cash' },
+      // F24: pedido sembrado por SQL (sin fila de pago) = histórico: se lee CASH/PENDING con importes null.
+      payment: { method: 'CASH', status: 'PENDING', amountPaid: null },
       total: '54.00', // 2 x (20.00 + 1.50) - 4.00 + 15.00 (entrega)
     });
     expect(before.address).toMatchObject({ addressLine: 'zz-DIRECCION' });
@@ -687,7 +695,7 @@ describe.skipIf(!url || !ready)('Historial, recibo y reorden contra PostgreSQL r
       const sid = await seedOrder({ customerId: customer1, branch: branchA, status });
       expect(await docs.receipt(who(auth1), sid, undefined)).toMatchObject({
         status,
-        payment: { status: 'NOT_STARTED' },
+        payment: { status: 'PENDING' },
       });
     }
     // #25: PICKUP sin dirección ni proveedor

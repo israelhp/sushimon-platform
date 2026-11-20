@@ -459,7 +459,6 @@
     "when": "Cuándo",
     "sendTo": "Te enviamos la compra a {a}",
     "placeOrder": "Realizar pedido",
-    "payNow": "Pagar ahora",
     "registering": "Registrando pedido…",
     "orderError": "No pudimos registrar tu pedido. Intentá de nuevo en un momento.",
     "summary": "Resumen de compra",
@@ -601,7 +600,6 @@
       "blocked": "Tu pedido tiene un problema que impide confirmarlo: revísalo arriba.",
       "rateLimited": "Demasiados intentos. Espera unos segundos y reintenta.",
       "pendingLimit": "Ya tienes varios pedidos pendientes. Espera a que el restaurante los procese.",
-      "paymentUnavailable": "Ese método de pago aún no está disponible. Elige efectivo o transferencia.",
       "contactIncomplete": "Completa tu nombre y tu teléfono de contacto.",
       "providerNotSelectable": "Esa opción de entrega no está disponible. Elige otra o recoge en sucursal.",
       "address": "No pudimos usar esa dirección. Revisa tu dirección de entrega.",
@@ -626,8 +624,7 @@
       "liveReceived": "Recibimos tu pedido",
       "realNote": "Tu pedido se registra de verdad. El pago se coordina con el restaurante: aún no se cobra nada.",
       "confirmReason": "Actualizando la cotización para poder confirmar tu pedido.",
-      "blockedGeneric": "Revisa los productos y la entrega de tu pedido.",
-      "payCoordinated": "(el pago se coordina con el restaurante)"
+      "blockedGeneric": "Revisa los productos y la entrega de tu pedido."
     }
   },
   "delivery": {
@@ -665,73 +662,12 @@
     "pickup": "Recoger en sucursal"
   },
   "payment": {
-    "title": "Seleccioná tu método de pago",
-    "card": "Pagar con tarjeta",
-    "cardSub": "Pago seguro a través de NeoNet",
-    "cardLabel": "Tarjeta de crédito o débito — NeoNet (Demo)",
+    "title": "Pago",
     "cash": "Efectivo",
-    "cashSub": "Pagás al recibir o al recoger",
-    "methodsAria": "Método de pago",
-    "transfer": "Transferencia bancaria",
-    "transferSub": "Te contactaremos para coordinar la transferencia",
-    "coordinate": "El pago se coordina con el restaurante",
-    "cardUnavailable": "Tarjeta: no disponible por ahora"
-  },
-  "neonet": {
-    "title": "Pasarela de pago",
-    "demoBadge": "Demo / Sin cobro real",
-    "gatewayNote": "Simulación visual de la experiencia de pago con NeoNet. No es una integración oficial ni procesa cobros.",
-    "order": "Pedido",
-    "method": "Método de pago",
-    "demoCard": "Tarjeta de demostración •••• 4242",
-    "demoCardNote": "Tarjeta ficticia solo para mostrar el flujo. No ingreses datos reales.",
-    "cardData": "Datos de la tarjeta",
-    "cardNumber": "Número de tarjeta",
-    "cardName": "Nombre en la tarjeta",
-    "cardNamePh": "Como aparece en la tarjeta",
-    "expiry": "Vencimiento",
-    "expiryPh": "MM/AA",
-    "cvv": "CVV",
-    "testOnlyNote": "Demo: solo se aceptan las tarjetas de prueba de abajo. No ingreses una tarjeta real.",
-    "testCards": "Tarjetas de prueba (tocá para usar)",
-    "testCardFor": {
-      "approved": "aprobado",
-      "declined": "rechazado",
-      "pending": "pendiente"
-    },
-    "errNumber": "Ingresá los 16 dígitos de la tarjeta.",
-    "errTestOnly": "Esta demostración solo acepta tarjetas de prueba. No ingreses los datos de una tarjeta real.",
-    "errName": "Escribí el nombre como aparece en la tarjeta.",
-    "errExpiry": "Ingresá una fecha de vencimiento válida (MM/AA).",
-    "errCvv": "Ingresá el CVV de 3 o 4 dígitos.",
-    "payWith": "Tarjeta •••• {a}",
-    "checkResult": "Resultado de la verificación (prueba)",
-    "toPay": "Total a pagar",
-    "simulate": "Simular pago",
-    "processing": "Procesando pago…",
-    "processingSub": "No cierres esta ventana.",
-    "testMode": "Modo de pruebas (solo demo)",
-    "scenario": "Resultado a simular",
-    "scenarios": {
-      "approved": "Pago aprobado",
-      "declined": "Pago rechazado",
-      "pending": "Pago pendiente"
-    },
-    "approvedTitle": "Pago aprobado",
-    "paid": "Monto pagado",
-    "reference": "Referencia de transacción (ficticia)",
-    "viewOrder": "Consultar pedido",
-    "declinedTitle": "No se pudo completar el pago",
-    "declinedMsg": "El emisor de la tarjeta rechazó la operación (simulado). No se realizó ningún cobro y tu pedido no está pagado.",
-    "retry": "Reintentar pago",
-    "changeMethod": "Cambiar método de pago",
-    "pendingTitle": "Estamos verificando el estado de tu pago",
-    "pendingMsg": "Esto puede tardar unos minutos. No vuelvas a pagar: te avisaremos cuando se confirme.",
-    "checkStatus": "Consultar estado",
-    "checking": "Consultando…",
-    "cancel": "Cancelar",
-    "errorTitle": "No pudimos procesar el pago",
-    "errorMsg": "Ocurrió un problema al contactar la pasarela (simulada). No se realizó ningún cobro: podés reintentar o pagar en efectivo."
+    "cashPickup": "Realiza el pago en efectivo cuando recojas tu pedido en la sucursal.",
+    "cashDelivery": "Realiza el pago en efectivo cuando recibas tu pedido.",
+    "totalToPay": "Total a pagar",
+    "notPaidYet": "Tu pedido no se marca como pagado: el pago se registra cuando entregas el efectivo."
   },
   "status": {
     "awaiting_payment": "Pendiente de pago",
@@ -923,7 +859,7 @@
     "light": "Claro",
     "dark": "Oscuro",
     "privacy": "Aviso de privacidad (demo)",
-    "privacyText": "Este sitio es un prototipo de demostración. Los datos ingresados se procesan en tu navegador. Tu pedido se guarda localmente en este dispositivo. Iniciar sesión con Google es opcional; en la demo es simulado y no se conecta con Google. Los pagos con tarjeta y el costo de envío son simulaciones: no se realizan cobros ni se solicitan repartidores."
+    "privacyText": "Este sitio es un prototipo de demostración. Los datos ingresados se procesan en tu navegador. Tu pedido se guarda localmente en este dispositivo. Iniciar sesión con Google es opcional; en la demo es simulado y no se conecta con Google. El pago siempre es en efectivo (no se solicita ningún dato de tarjeta) y el costo de envío es una simulación: no se solicitan repartidores."
   },
   "auth": {
     "title": "Iniciar sesión",
@@ -1008,10 +944,6 @@
       "reference": "Referencia",
       "contact": "Contacto",
       "payment": "Pago",
-      "payCash": "Pagas al recibir o al recoger",
-      "payTransfer": "Transferencia: te contactaremos",
-      "payNone": "Lo coordinamos contigo",
-      "payNote": "Aún no se ha cobrado nada.",
       "notes": "Nota",
       "keepTab": "Mientras no cierres esta pestaña podrás volver a ver tu pedido.",
       "loading": "Cargando tu pedido…",
@@ -1248,7 +1180,8 @@
     "announce": "El estado de tu pedido cambió: {a}.",
     "simulationNote": "Seguimiento de demostración: los estados avanzan solo con el botón de simulación.",
     "incomplete": "No recibimos todas las fases del recorrido; mostramos el estado y el historial disponibles.",
-    "recovered": "Se restableció la conexión: el estado de tu pedido está al día."
+    "recovered": "Se restableció la conexión: el estado de tu pedido está al día.",
+    "paymentTitle": "Pago"
   },
   "hub": {
     "personal": "Mis datos personales",
@@ -1435,7 +1368,7 @@
     "visit": "Visitanos",
     "phone": "Tel.",
     "privacy": "Aviso de privacidad (demo)",
-    "privacyText": "Este sitio es un prototipo de demostración. Los datos ingresados en formularios se procesan solo en tu navegador y no se envían ni almacenan en servidores. Los pagos con tarjeta (NeoNet) y la estimación de envío son simulaciones sin cobros reales. Ilustraciones temporales: se reemplazarán por fotografías oficiales.",
+    "privacyText": "Este sitio es un prototipo de demostración. Los datos ingresados en formularios se procesan solo en tu navegador y no se envían ni almacenan en servidores. El pago siempre es en efectivo y la estimación de envío es una simulación sin cobros reales. Ilustraciones temporales: se reemplazarán por fotografías oficiales.",
     "rights": "Todos los derechos reservados"
   },
   "notFound": {
@@ -2947,8 +2880,7 @@
         "history": "Historial de estados",
         "callRider": "Llamar al repartidor",
         "payment": "Pago: {method}",
-        "paymentCash": "efectivo",
-        "paymentCard": "tarjeta (simulado)"
+        "paymentCash": "efectivo"
       },
       "history": {
         "received": "Pedido recibido (página web)",
@@ -3092,7 +3024,7 @@
           "unknown": "No se pudo completar la acción. Intenta de nuevo."
         },
         "pending": {
-          "payment_review": "Revisar pago pendiente: el cliente eligió transferencia. Es solo un aviso; no se ejecutó ninguna acción de pago.",
+          "payment_review": "Posible devolución pendiente: el pedido ya tenía el efectivo cobrado. Es solo un aviso; esta pantalla no hace reembolsos.",
           "delivery_cancellation": "Hay una entrega por cancelar. Es solo un aviso; no se ejecutó ninguna acción de entrega."
         },
         "reason": {
@@ -3120,7 +3052,7 @@
           },
           "cancel": {
             "title": "Cancelar pedido",
-            "consequences": "El pedido pasará a «Cancelado» y no podrá reactivarse. Si el cliente eligió transferencia verás un aviso de pago por revisar; no se ejecuta ninguna acción de cobro ni de entrega.",
+            "consequences": "El pedido pasará a «Cancelado» y no podrá reactivarse. Si ya se había cobrado el efectivo verás un aviso de posible devolución pendiente; no se ejecuta ninguna acción de reembolso ni de entrega.",
             "confirm": "Confirmar cancelación"
           }
         },
@@ -3148,14 +3080,6 @@
           "discount": "Descuento",
           "shipping": "Envío cotizado al cliente",
           "total": "TOTAL",
-          "payment": "Pago",
-          "paymentNone": "Sin pago registrado",
-          "paymentPreference": "El cliente indicó: {method}",
-          "paymentNoPreference": "Sin preferencia de pago",
-          "method": {
-            "cash": "efectivo",
-            "bank_transfer": "transferencia bancaria"
-          },
           "history": "Historial de estados",
           "by": "por {name}",
           "reasonLabel": "Motivo: {reason}",
@@ -3187,7 +3111,102 @@
           "fresh": "Recién llegado",
           "oldest": "Más antiguo sin aceptar"
         },
-        "pendingNotice": "{count, plural, one {Hay # pedido sin aceptar} other {Hay # pedidos sin aceptar}}"
+        "pendingNotice": "{count, plural, one {Hay # pedido sin aceptar} other {Hay # pedidos sin aceptar}}",
+        "payment": {
+          "title": "Pago",
+          "cash": "Pago en efectivo",
+          "order": "Pedido {code}",
+          "badge": {
+            "PENDING": "Pago pendiente",
+            "PAID": "Pagado"
+          },
+          "amountDue": "Total a cobrar",
+          "outstanding": "Pendiente de cobro",
+          "tendered": "Efectivo recibido",
+          "change": "Cambio entregado",
+          "paidAt": "Cobrado el {when}",
+          "collector": "recibido por {name}",
+          "context": {
+            "BRANCH": "Mostrador",
+            "OWN_DELIVERY": "Entrega propia"
+          },
+          "refundReview": "Posible devolución pendiente: el pedido se canceló o rechazó con el efectivo ya cobrado. Revísalo con el encargado; esta pantalla no hace reembolsos.",
+          "deliveredPending": "Pedido entregado con pago pendiente. Puedes registrar el cobro cuando corresponda.",
+          "register": "Registrar pago en efectivo",
+          "readOnly": "Pago registrado. Solo lectura: no se puede repetir ni anular desde aquí.",
+          "loading": "Cargando el pago…",
+          "loadError": "No pudimos cargar el detalle del pago.",
+          "retry": "Reintentar",
+          "blocked": {
+            "ALREADY_PAID": "El pago ya está registrado.",
+            "ORDER_CLOSED": "El pedido está cancelado o rechazado: no se cobra.",
+            "PROVIDER_BLOCKED_EXTERNAL": "Pedido de PedidosYa: el cobro del proveedor está pendiente de integración.",
+            "AMOUNT_ZERO": "El total es cero: no hay nada que cobrar.",
+            "LEGACY_PAYMENT_METHOD": "Pedido histórico sin pago en efectivo: no se puede cobrar.",
+            "NO_PERMISSION": "No tienes permiso para registrar pagos en esta sucursal.",
+            "UNKNOWN": "Ahora no se puede registrar el pago de este pedido."
+          },
+          "history": {
+            "title": "Historial del pago",
+            "empty": "Sin movimientos.",
+            "error": "No pudimos cargar el historial.",
+            "by": "por {name}",
+            "amounts": "recibido {tendered} · cambio {change}",
+            "event": {
+              "CREATED": "Pago pendiente creado con el pedido",
+              "CASH_RECEIVED": "Efectivo recibido"
+            }
+          },
+          "toast": {
+            "done": "Pago del pedido {code} registrado. Cambio entregado: {change}.",
+            "replayedMine": "Este cobro ya estaba registrado por ti (pedido {code}). No se cobró otra vez.",
+            "replayedOther": "Este cobro ya estaba registrado por otra persona (pedido {code}). No se cobró otra vez."
+          },
+          "modal": {
+            "title": "Registrar pago en efectivo",
+            "simulation": "Este cobro solo existe en los datos de demostración: no mueve dinero real.",
+            "due": "Total a cobrar",
+            "tendered": "Efectivo recibido",
+            "help": "Hasta 2 decimales. Ejemplo: 200.00",
+            "change": "Cambio a entregar (informativo)",
+            "changeNote": "Referencia local. El cambio definitivo lo calcula y guarda el sistema.",
+            "confirm": "Confirmo que recibí físicamente el dinero",
+            "submit": "Registrar pago",
+            "submitting": "Registrando…",
+            "cancel": "Cancelar",
+            "close": "Cerrar",
+            "currentReception": "Registrado: efectivo {tendered}, cambio {change}, por {name}.",
+            "retryHint": "Puedes reintentar: se usa el mismo intento y no se duplicará el cobro.",
+            "error": {
+              "format": "Escribe solo números, con punto decimal (por ejemplo 200.00).",
+              "decimals": "Usa como máximo 2 decimales.",
+              "zero": "El efectivo recibido debe ser mayor que cero.",
+              "insufficient": "Faltan {missing} para cubrir el total.",
+              "insufficientServer": "El efectivo recibido no cubre el total del pedido.",
+              "tooLarge": "El efectivo recibido no puede superar {max}.",
+              "alreadyRegistered": "Otra persona ya registró este pago. Actualizamos los datos.",
+              "notPayable": "El pedido está cancelado o rechazado: no se cobra.",
+              "keyReused": "Este intento ya se usó con otro importe. Revisa el importe e inténtalo de nuevo.",
+              "notCollectable": {
+                "PROVIDER_BLOCKED_EXTERNAL": "Pedido de PedidosYa: el cobro del proveedor está pendiente de integración.",
+                "LEGACY_PAYMENT_METHOD": "Pedido histórico sin pago en efectivo: no se puede cobrar.",
+                "AMOUNT_ZERO": "El total es cero: no hay nada que cobrar.",
+                "default": "Este pedido no se puede cobrar."
+              },
+              "invalidAmount": "El importe no es válido. Usa números con hasta 2 decimales.",
+              "confirmationRequired": "Marca la casilla que confirma que recibiste el dinero.",
+              "invalidRequest": "Revisa los datos e inténtalo de nuevo.",
+              "auth": "Tu sesión expiró. Vuelve a iniciar sesión.",
+              "mfa": "Verifica tu segundo factor (MFA) para continuar.",
+              "forbidden": "No tienes permiso para registrar pagos en esta sucursal.",
+              "notFound": "Pedido no disponible.",
+              "rate": "Demasiadas solicitudes. Reintenta en {seconds} s.",
+              "busy": "El sistema está ocupado. Reintenta en {seconds} s con el mismo importe.",
+              "network": "Sin conexión: no sabemos si el cobro se registró. Reintenta (no se duplicará) o actualiza el pedido.",
+              "unknown": "No se pudo registrar el pago. Intenta de nuevo."
+            }
+          }
+        }
       }
     },
     "mfa": {
@@ -3832,10 +3851,7 @@
     "total": "Total",
     "payment": {
       "title": "Pago",
-      "none": "Sin pago registrado",
-      "other": "Consulta el estado del pago con la sucursal",
-      "cash": "Método elegido: efectivo",
-      "transfer": "Método elegido: transferencia"
+      "other": "Consulta el estado del pago con la sucursal"
     },
     "generatedAt": "Datos generados el {a} (no es una fecha de emisión fiscal).",
     "loading": "Cargando el recibo…",
@@ -3848,5 +3864,21 @@
       "offline": "Sin conexión. Revisa tu internet y reintenta.",
       "unknown": "No pudimos cargar el recibo."
     }
+  },
+  "payments": {
+    "cash": "Pago en efectivo",
+    "status": {
+      "PENDING": "Pendiente",
+      "PAID": "Pagado"
+    },
+    "paidAt": "Pagado el {when}",
+    "amountPaid": "Importe pagado",
+    "tendered": "Efectivo recibido",
+    "change": "Cambio",
+    "hint": {
+      "PICKUP": "Realiza el pago en efectivo cuando recojas tu pedido en la sucursal.",
+      "DELIVERY": "Realiza el pago en efectivo cuando recibas tu pedido."
+    },
+    "notCharged": "No se cobra: el pedido fue cancelado o rechazado."
   }
 }

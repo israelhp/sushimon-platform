@@ -36,8 +36,8 @@ export type PlaceState =
 
 export interface PlaceOrderOptions {
   /**
-   * `true` (API real): tras el éxito confirmado por el servidor se vacía el carrito con `clearAfterOrder`. `false` (mock con la
-   * pasarela NeoNet simulada): el flujo simulado vacía el carrito por su cuenta con `clear()` cuando termina el pago.
+   * `true` (API real): tras el éxito confirmado por el servidor se vacía el carrito con `clearAfterOrder`. `false` (mock): el flujo
+   * simulado vacía el carrito por su cuenta con `clear()` al confirmar el pedido de demostración.
    */
   clearCart: boolean;
   retryDelaysMs?: readonly number[];

@@ -210,6 +210,7 @@ describe('GET /v1/orders/{id}/tracking (e2e, F21)', () => {
         'fulfillmentType',
         'generatedAt',
         'orderId',
+        'payment',
         'placedAt',
         'pollAfterSeconds',
         'publicStatus',

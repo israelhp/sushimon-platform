@@ -28,6 +28,7 @@ import { sha256Hex } from '../sha256';
 import type { MockStore, PlacedOrderRecord } from '../store';
 import { materializeById, syncFromDraft, uuidFor } from '../order-history';
 import { buildOrderTracking } from '../order-tracking';
+import { publicPayment } from '../cash-payments';
 import { quoteCheckout } from './checkout';
 import { now, requireCustomer, str, type Handler, type Req } from './shared';
 
@@ -35,12 +36,12 @@ import { now, requireCustomer, str, type Handler, type Req } from './shared';
  * F20 — `POST /v1/orders` (`createOrder`) y lectura `GET /v1/orders/{id}` de pedidos «persistidos» SIMULADOS (spec 021, ADR-0026).
  * El mock EMULA al servidor con la MISMA forma del contrato (`OrderCreated` / `OrderDetail`) y los mismos errores: 400
  * `IDEMPOTENCY_KEY_INVALID`/forma, 409 `QUOTE_CHANGED`/`QUOTE_EXPIRED`/`IDEMPOTENCY_KEY_REUSED`, 422 `QUOTE_INVALID`/
- * `CHECKOUT_BLOCKED`/`CONTACT_INCOMPLETE`/`PAYMENT_METHOD_UNAVAILABLE`/`DELIVERY_PROVIDER_NOT_SELECTABLE`, 429 `RATE_LIMITED`/
+ * `CHECKOUT_BLOCKED`/`CONTACT_INCOMPLETE`/`DELIVERY_PROVIDER_NOT_SELECTABLE`, 429 `RATE_LIMITED`/
  * `PENDING_ORDERS_LIMIT`, 503 `ORDERS_BUSY`/`ORDERS_UNAVAILABLE`. NO es seguridad: el token de cotización es un doble sin firma
  * (`quote-token.ts`) y la credencial de invitado es ficticia. Idempotencia en memoria del store por (ámbito, clave).
  *
- * Cada pedido crea además su BORRADOR enlazado (`store.orders`, id `MON-3xxxxx` = `displayNumber`) para que el seguimiento, el
- * backoffice y la pasarela NeoNet simulados sigan funcionando (F21/F22 retirarán el borrador). Nada se cobra ni se notifica.
+ * Cada pedido crea además su BORRADOR enlazado (`store.orders`, id `MON-3xxxxx` = `displayNumber`) para que el seguimiento y el
+ * backoffice simulados sigan funcionando (F21/F22 retirarán el borrador). Nada se cobra ni se notifica.
  *
  * Fallos de prueba (`req.fault`, ver `window.__sushimonMockFaults`): `busy`, `unavailable`, `rate-limited`, `expired` y
  * `price-change` (sube el precio del primer producto en la sucursal: reproduce `QUOTE_CHANGED` de forma natural).
@@ -102,7 +103,7 @@ interface ParsedOrder {
   contact: Partial<Contact>;
   deliveryAddress: { addressLine: string; referenceNote: string } | null;
   notes: string;
-  preference: 'cash' | 'bank_transfer' | null;
+  preference: 'cash' | null;
 }
 
 const hasControl = (text: string) =>
@@ -172,8 +173,9 @@ function parseBody(req: Req): ParsedOrder {
     issues.push('notes: texto plano de hasta 280 caracteres');
   }
   const pref = raw.paymentMethodPreference;
-  if (pref !== undefined && pref !== 'cash' && pref !== 'bank_transfer' && pref !== 'card') {
-    issues.push('paymentMethodPreference: valor no permitido');
+  // F24: SOLO efectivo (`bank_transfer`, `card` y cualquier otro valor => 400; `PAYMENT_METHOD_UNAVAILABLE` se retiró).
+  if (pref !== undefined && pref !== 'cash') {
+    issues.push('paymentMethodPreference: solo se admite cash');
   }
   if (issues.length) problem(400, undefined, 'Datos inválidos', { details: issues });
   // La validación de FORMA de `cart` y `fulfillment` (topes, selecciones, importes) la hace el cotizador al recotizar (400).
@@ -185,7 +187,7 @@ function parseBody(req: Req): ParsedOrder {
     contact,
     deliveryAddress,
     notes,
-    preference: pref === 'cash' || pref === 'bank_transfer' ? pref : null,
+    preference: pref === 'cash' ? 'cash' : null,
   };
 }
 
@@ -282,11 +284,16 @@ function issueToken(
   return { guestToken: token, expiresAt };
 }
 
-function createdOf(record: PlacedOrderRecord, at: Date, replay: boolean): OrderCreated {
+function createdOf(
+  store: MockStore,
+  record: PlacedOrderRecord,
+  at: Date,
+  replay: boolean,
+): OrderCreated {
   // Repetición de invitado: el servidor revoca los tokens activos y emite uno nuevo; el autenticado no recibe credencial.
   const access = record.ownerEmail === null ? issueToken(record, at) : null;
   void replay;
-  return { order: record.detail, access };
+  return { order: liveDetail(store, record), access };
 }
 
 function buildDetail(
@@ -361,13 +368,14 @@ function buildDetail(
     discountTotal: quote.discountTotal ?? '0.00',
     deliveryFee: quote.deliveryFee ?? '0.00',
     total: quote.total ?? '0.00',
-    payment: { methodPreference: parsed.preference, status: 'NOT_STARTED' },
+    // F24: el pago en efectivo nace PENDING con el pedido (la fuente viva es `store.cashPayments`).
+    payment: { method: 'CASH', status: 'PENDING', paidAt: null },
     placedAt: at.toISOString(),
     updatedAt: at.toISOString(),
   };
 }
 
-/** Pedido BORRADOR enlazado (seguimiento/backoffice simulados). `bank_transfer` solo existe en el pedido real: aquí cuenta como efectivo. */
+/** Pedido BORRADOR enlazado (seguimiento/backoffice simulados). Siempre efectivo (F24). */
 function buildDraft(
   id: string,
   detail: OrderDetail,
@@ -467,13 +475,10 @@ export const createPlacedOrder: Handler = (req): OrderCreated => {
       problem(409, 'IDEMPOTENCY_KEY_REUSED', 'Esa clave de idempotencia ya se usó con otro pedido');
     }
     const record = store.placedOrders.find((p) => p.detail.id === previous.orderId);
-    if (record) return createdOf(record, at, true);
+    if (record) return createdOf(store, record, at, true);
   }
 
-  // Preferencia de pago (la tarjeta es F25 BLOCKED_EXTERNAL) y dirección de entrega.
-  if ((req.body as Obj).paymentMethodPreference === 'card') {
-    problem(422, 'PAYMENT_METHOD_UNAVAILABLE', 'El pago con tarjeta aún no está disponible');
-  }
+  // Dirección de entrega.
   const f = parsed.fulfillment;
   const isDelivery = f.type === 'DELIVERY';
   const saved = isDelivery && typeof f.customerAddressId === 'string';
@@ -620,8 +625,14 @@ export const createPlacedOrder: Handler = (req): OrderCreated => {
   };
   store.placedOrders.unshift(record);
   store.orderIdempotency[`${scope}|${key}`] = { requestHash, orderId: id };
-  return createdOf(record, at, false);
+  return createdOf(store, record, at, false);
 };
+
+/** Detalle con el pago VIVO (`PENDING|PAID` según `store.cashPayments`); el resto del detalle es el snapshot del pedido. */
+export const liveDetail = (store: MockStore, record: PlacedOrderRecord): OrderDetail => ({
+  ...record.detail,
+  payment: publicPayment(store, record.draftId),
+});
 
 /** Pedido real simulado por UUID. Los del historial sembrado (borradores de la cuenta de demostración) se materializan al pedirlos. */
 export const findPlacedOrder = (store: MockStore, id: string): PlacedOrderRecord | undefined => {
@@ -644,7 +655,7 @@ export function authorizePlaced(req: Req, record: PlacedOrderRecord): void {
 /** GET /v1/orders/{id} de un pedido real simulado: dueño (sesión) o `X-Order-Token` vigente; si no, el MISMO 404. */
 export function readPlacedOrder(req: Req, record: PlacedOrderRecord): OrderDetail {
   authorizePlaced(req, record);
-  return record.detail;
+  return liveDetail(req.store, record);
 }
 
 /**
@@ -670,14 +681,5 @@ export const getOrderTracking: Handler = (req): OrderTracking => {
   authorizePlaced(req, record);
   const draft = req.store.orders.find((o) => o.id === record.draftId);
   if (!draft) fail(404, 'Pedido no encontrado');
-  return buildOrderTracking(record.detail, draft, now(req));
-};
-
-/** POST /v1/demo/orders/:id/card — SIMULADO: prepara el pedido borrador para la pasarela NeoNet de demostración. */
-export const prepareDraftCard: Handler = (req) => {
-  const order = req.store.orders.find((o) => o.id === str(req.params.id));
-  if (!order || !req.store.verifiedOrderIds.includes(order.id)) fail(404, 'Pedido no encontrado');
-  if (order.payment.status !== 'pending') fail(409, 'El pedido ya no admite pagos');
-  order.payment = { ...order.payment, method: 'card' };
-  return order;
+  return buildOrderTracking(liveDetail(req.store, record), draft, now(req));
 };

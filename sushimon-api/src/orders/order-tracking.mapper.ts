@@ -1,4 +1,4 @@
-import { displayNumberOf } from './order-mapper.js';
+import { displayNumberOf, toPublicPayment } from './order-mapper.js';
 import type { OrderTrackingRecord } from './order-tracking.types.js';
 import type {
   OrderPublicStatusCode,
@@ -112,7 +112,7 @@ export function buildSteps(
 /**
  * `OrderTrackingRecord` -> `OrderTracking` (contrato). Función pura: `now` se inyecta. `orders.status` manda sobre el estado
  * actual; el historial se entrega tal cual (duplicados, saltos o desorden incluidos), con orden estable `changed_at` (el
- * repositorio ya desempata por `id`). Nunca expone contacto, dirección, notas, importes, `changed_by`, `reason` ni ids.
+ * repositorio ya desempata por `id`). Nunca expone contacto, dirección, notas, importes, `changed_by`, `reason` ni ids (salvo el `orderId` propio).
  * `status`/`events[].status` solo toman valores de `OrderLifecycleStatus`: un evento desconocido se omite y un
  * `orders.status` desconocido se presenta como `pending` (fase `received`, no terminal).
  */
@@ -157,6 +157,8 @@ export function toOrderTracking(record: OrderTrackingRecord, now: Date): OrderTr
     eventsTruncated: truncated,
     // Sin tabla `deliveries` (F28/F29): solo el proveedor del pedido; `status` reservado, siempre null.
     delivery: isDelivery && provider ? { provider, status: null } : null,
+    // F24: estado de pago real, FUERA de `steps`/`events` (el timeline es solo operativo).
+    payment: toPublicPayment(record.payment),
     pollAfterSeconds: pollAfterSeconds(status),
   };
 }

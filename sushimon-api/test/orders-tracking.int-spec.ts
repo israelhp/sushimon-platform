@@ -14,7 +14,13 @@ import { issueGuestToken } from '../src/orders/order-access-token.js';
 import { ordersBusy } from '../src/orders/orders-errors.js';
 import { OrdersRepository } from '../src/orders/orders.repository.js';
 import { OrdersService } from '../src/orders/orders.service.js';
-import { cleanupTestData, ensureAuthStub, TEST_URL, withClient } from './support/db.js';
+import {
+  cleanupTestData,
+  ensureAuthStub,
+  TEST_URL,
+  withClient,
+  deletePaymentsOf,
+} from './support/db.js';
 
 const url = TEST_URL;
 
@@ -250,6 +256,7 @@ describe.skipIf(!url || !ready)('Seguimiento de pedidos contra PostgreSQL real (
           for (const t of ['order_access_tokens', 'order_status_history', 'order_addresses']) {
             await c.query(`DELETE FROM app.${t} WHERE order_id = ANY($1::uuid[])`, [ids]);
           }
+          await deletePaymentsOf(c, ids); // F24 (0019): FK RESTRICT hacia orders
           await c.query('DELETE FROM app.orders WHERE id = ANY($1::uuid[])', [ids]);
           await c.query(
             "DELETE FROM app.audit_events WHERE entity_type = 'order' AND entity_id = ANY($1::uuid[])",
@@ -496,7 +503,7 @@ describe.skipIf(!url || !ready)('Seguimiento de pedidos contra PostgreSQL real (
     for (const d of denied) expect(statusOf(await err(d()))).toBe(404);
   });
 
-  it('fila 14: presupuesto de consultas (invitado <= 2, dueño <= 2, token fallido + JWT <= 4) y SIN N+1 con 50 eventos', async (ctx) => {
+  it('fila 14: presupuesto de consultas (invitado <= 3, dueño <= 3, token fallido + JWT <= 6; F24 añade la búsqueda del pago) y SIN N+1 con 50 eventos', async (ctx) => {
     skipUnlessReady(ctx);
     const owner = await newPrincipal();
     const small = await seedOrder({});
@@ -513,11 +520,17 @@ describe.skipIf(!url || !ready)('Seguimiento de pedidos contra PostgreSQL real (
     const guestSmall = await count(() => orders.getTracking(undefined, small.id, small.token));
     const guestBig = await count(() => orders.getTracking(undefined, big.id, big.token));
     const ownerCount = await count(() => orders.getTracking(owner, mine.id, undefined));
-    expect(guestSmall).toBeLessThanOrEqual(2);
+    // F24 (spec 025 §11): pedido + historial + pago (búsqueda por la única `payments_order_key`): 3, sin N+1.
+    expect(guestSmall).toBeLessThanOrEqual(3);
     expect(guestBig).toBe(guestSmall);
-    expect(ownerCount).toBeLessThanOrEqual(2);
+    expect(ownerCount).toBeLessThanOrEqual(3);
+    // El fallo ejecuta las MISMAS sentencias que el éxito (404 uniforme): sube a 3 con la búsqueda del pago.
+    const failedAlone = await count(() =>
+      orders.getTracking(undefined, mine.id, big.token).catch(() => null),
+    );
+    expect(failedAlone).toBe(guestSmall);
     const tokenThenOwner = await count(() => orders.getTracking(owner, mine.id, big.token));
-    expect(tokenThenOwner).toBeLessThanOrEqual(4); // token fallido (2, medido) + dueño (2)
+    expect(tokenThenOwner).toBeLessThanOrEqual(6); // token fallido (3, medido) + dueño (3)
   });
 
   it('fila 16: solo lectura (no cambia orders, historial, tokens ni auditoría)', async (ctx) => {

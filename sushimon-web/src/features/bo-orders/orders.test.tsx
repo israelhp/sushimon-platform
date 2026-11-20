@@ -104,7 +104,14 @@ describe('tablero de pedidos (datos reales por /v1/admin/orders, simulados)', ()
     expect(within(drawer).getByText('TOTAL')).toBeVisible();
     expect(within(drawer).getByText('Envío cotizado al cliente')).toBeVisible();
     expect(within(drawer).getByText('Historial de estados')).toBeVisible();
-    expect(within(drawer).getByText('Sin pago registrado')).toBeVisible();
+    // F24: el panel de pago muestra el efectivo PENDIENTE (con el rol de encargado no hay `payments.confirm`: sin botón).
+    const panel = within(drawer).getByTestId('payment-panel');
+    expect(within(panel).getByText('Pago en efectivo')).toBeVisible();
+    expect(within(panel).getByText('Pago pendiente')).toBeVisible();
+    expect(within(panel).queryByRole('button', { name: 'Registrar pago en efectivo' })).toBeNull();
+    expect(
+      within(panel).getByText('No tienes permiso para registrar pagos en esta sucursal.'),
+    ).toBeVisible();
     expect(within(drawer).getByText('+502 3398-4471')).toBeVisible();
     expect(within(drawer).getByText(/Avenida Reforma 8-60/)).toBeVisible();
   });
@@ -219,9 +226,17 @@ describe('rechazar y cancelar con motivo', () => {
     ).toBeVisible();
   });
 
-  it('cancelar muestra las consecuencias y deja un aviso informativo de pago (sin ejecutarlo)', async () => {
-    await renderOrders('admin');
+  it('cancelar con el efectivo YA cobrado deja un aviso informativo de posible devolución (sin reembolsar)', async () => {
+    const view = await renderOrders('admin');
     await screen.findByText('#MON-307056');
+    // Otra persona ya registró el cobro (F24): `payment_review` es un HECHO, no una heurística por preferencia.
+    await view
+      .api()
+      .client.post(
+        '/v1/admin/orders/MON-307056/payment/cash',
+        { tendered: '5000.00', receivedConfirmed: true },
+        { headers: { 'Idempotency-Key': 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' } },
+      );
     await userEvent.click(screen.getByText('#MON-307056'));
     const drawer = await screen.findByRole('dialog', { name: /MON-307056/ });
     await userEvent.click(await within(drawer).findByRole('button', { name: 'Cancelar pedido' }));
@@ -234,9 +249,9 @@ describe('rechazar y cancelar con motivo', () => {
     await userEvent.click(within(modal).getByRole('button', { name: 'Confirmar cancelación' }));
     expect(await screen.findByText(/Pedido #MON-307056: Cancelado\./)).toBeVisible();
     // pendingActions: solo informativas.
-    expect((await within(drawer).findAllByText(/Revisar pago pendiente/)).length).toBeGreaterThan(
-      0,
-    );
+    expect(
+      (await within(drawer).findAllByText(/Posible devolución pendiente/)).length,
+    ).toBeGreaterThan(0);
     expect(
       await within(drawer).findByText('Pedido cancelado. Motivo: Cliente no contesta'),
     ).toBeVisible();

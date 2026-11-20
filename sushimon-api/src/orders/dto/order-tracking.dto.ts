@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { OrderDetailPaymentDto } from './order-responses.dto.js';
 
 /** Esquemas de respuesta de `GET /v1/orders/{id}/tracking` (contrato: `OrderTracking*`, `OrderPublicStatus`; F21, spec 022). */
 
@@ -98,6 +99,13 @@ export class OrderTrackingDto {
 
   @ApiProperty({ type: OrderTrackingDeliveryDto, nullable: true })
   delivery!: OrderTrackingDeliveryDto | null;
+
+  @ApiProperty({
+    type: OrderDetailPaymentDto,
+    description:
+      'F24: método y estado de pago reales (efectivo `PENDING|PAID`); independiente del estado del pedido y fuera del timeline.',
+  })
+  payment!: OrderDetailPaymentDto;
 
   @ApiProperty({ type: Number, minimum: 5, maximum: 300, nullable: true })
   pollAfterSeconds!: number | null;

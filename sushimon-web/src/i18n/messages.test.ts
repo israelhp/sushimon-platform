@@ -139,3 +139,68 @@ describe('F23 · mensajes del historial, el recibo y «Volver a pedir» (es/en)'
     }
   });
 });
+
+describe('F24 · mensajes del pago en efectivo (es/en)', () => {
+  const read = (locale: string) =>
+    JSON.parse(readFileSync(join(__dirname, 'messages', `${locale}.json`), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+  const flatten = (value: unknown, prefix = ''): string[] =>
+    typeof value === 'object' && value !== null
+      ? Object.entries(value).flatMap(([k, v]) => flatten(v, prefix ? `${prefix}.${k}` : k))
+      : [prefix];
+  const pick = (messages: Record<string, unknown>, path: string): unknown =>
+    path
+      .split('.')
+      .reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], messages);
+  const es = read('es');
+  const en = read('en');
+  const NAMESPACES = ['payments', 'payment', 'backoffice.orders.live.payment'];
+
+  it.each(NAMESPACES)('%s tiene las MISMAS claves en es y en, ninguna vacía', (path) => {
+    const a = flatten(pick(es, path)).sort();
+    expect(a.length).toBeGreaterThan(3);
+    expect(flatten(pick(en, path)).sort()).toEqual(a);
+    for (const key of a) {
+      expect(String(pick(es, `${path}.${key}`)).trim(), `es ${path}.${key}`).not.toBe('');
+      expect(String(pick(en, `${path}.${key}`)).trim(), `en ${path}.${key}`).not.toBe('');
+    }
+  });
+
+  it('el español nuevo usa tuteo (sin voseo)', () => {
+    const voseo =
+      /(tenés|querés|podés|elegí|revisá|intentá|mirá|hacé|abrí|esperá|guardá|iniciá|consultá|agregá|marcá|escribí|usá|pagás|seleccioná)\b/i;
+    for (const path of NAMESPACES) {
+      expect(voseo.test(JSON.stringify(pick(es, path))), path).toBe(false);
+    }
+  });
+
+  it('los mensajes fijos del checkout dicen exactamente lo acordado', () => {
+    expect(pick(es, 'payment.cashPickup')).toBe(
+      'Realiza el pago en efectivo cuando recojas tu pedido en la sucursal.',
+    );
+    expect(pick(es, 'payment.cashDelivery')).toBe(
+      'Realiza el pago en efectivo cuando recibas tu pedido.',
+    );
+    expect(pick(en, 'payment.cashPickup')).toBe(
+      'Pay in cash when you pick up your order at the branch.',
+    );
+    expect(pick(en, 'payment.cashDelivery')).toBe('Pay in cash when you receive your order.');
+  });
+
+  it('no quedan restos de transferencia, tarjeta ni Neonet en los textos de pago (checkout, cliente y backoffice)', () => {
+    const FORBIDDEN = /transferencia|transfer\b|bank transfer|tarjeta|card\b|neonet|comprobante/i;
+    for (const m of [es, en]) {
+      for (const path of [
+        'payments',
+        'payment',
+        'backoffice.orders.live.payment',
+        'receipt.payment',
+      ]) {
+        expect(FORBIDDEN.test(JSON.stringify(pick(m, path))), path).toBe(false);
+      }
+      expect(pick(m, 'neonet')).toBeUndefined();
+    }
+  });
+});

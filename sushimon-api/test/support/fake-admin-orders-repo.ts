@@ -35,6 +35,9 @@ export interface SeedOrder {
   fulfillmentType?: 'PICKUP' | 'DELIVERY';
   deliveryProvider?: 'OWN' | 'PEDIDOSYA' | null;
   paymentMethodPreference?: 'cash' | 'bank_transfer' | null;
+  /** F24: estado del pago (`null` = pedido histórico sin fila de pago). Por defecto `pending`. */
+  paymentStatus?: 'pending' | 'paid' | null;
+  paymentPaidAt?: Date | null;
   customerName?: string;
   customerPhone?: string;
   notes?: string | null;
@@ -86,11 +89,18 @@ export class FakeAdminOrdersRepo {
       branchId: o.branchId,
       branchName: o.branchName ?? `Sucursal ${o.branchId.slice(0, 4)}`,
       fulfillmentType: o.fulfillmentType ?? 'PICKUP',
-      deliveryProvider: o.fulfillmentType === 'DELIVERY' ? (o.deliveryProvider ?? 'OWN') : null,
+      deliveryProvider:
+        o.fulfillmentType === 'DELIVERY'
+          ? o.deliveryProvider === undefined
+            ? 'OWN'
+            : o.deliveryProvider
+          : null,
       customerName: o.customerName ?? 'Ana Pérez',
       itemCount: o.itemCount ?? 3,
       total: o.total ?? '185.00',
       paymentMethodPreference: o.paymentMethodPreference ?? null,
+      paymentStatus: o.paymentStatus === undefined ? 'pending' : o.paymentStatus,
+      paymentPaidAt: o.paymentPaidAt ?? null,
       scheduledFor: null,
       placedAt,
       updatedAt: placedAt,

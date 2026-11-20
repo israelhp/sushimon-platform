@@ -216,7 +216,7 @@ describe('F23 mock · getOrderReceipt', () => {
       displayNumber: 'MON-479850',
       status: 'delivered',
       publicStatus: 'completed',
-      payment: { status: 'NOT_STARTED' },
+      payment: { method: 'CASH', status: 'PENDING', paidAt: null, tendered: null },
     });
     expect(Object.keys(r).sort()).toEqual(
       [
@@ -335,7 +335,7 @@ describe('F23 mock · getOrderReceipt', () => {
     expect(r).toMatchObject({
       status: 'rejected',
       publicStatus: 'rejected',
-      payment: { status: 'NOT_STARTED' },
+      payment: { status: 'PENDING', amountPaid: null },
     });
     expect(JSON.stringify(r)).not.toContain('secreto');
   });

@@ -106,6 +106,58 @@ describe('OrderTrackingScreen (hook real, forma http)', () => {
     expect(s.seen.some((x) => /\/v1\/orders\/MON-/.test(x.path))).toBe(false);
   });
 
+  it('F24: muestra el pago en efectivo REAL (pendiente → pagado) fuera de las fases y del historial; nunca al empleado', async () => {
+    const { created, backend } = await place();
+    saveConfirmation(created);
+    const s = server(backend, created, [makeTracking()]);
+    await renderStore(<OrderTrackingScreen orderId={created.order.id} />, {
+      wrapClient: () => s.client,
+    });
+    const pending = await screen.findByTestId('payment-status');
+    expect(pending).toHaveAttribute('data-payment-status', 'PENDING');
+    expect(screen.getByTestId('payment-line')).toHaveTextContent('Pago en efectivo: Pendiente');
+    expect(screen.getByTestId('payment-hint')).toHaveTextContent(
+      'Realiza el pago en efectivo cuando recojas tu pedido en la sucursal.',
+    );
+    expect(screen.queryByTestId('payment-paid-at')).not.toBeInTheDocument();
+    // El pago NO se mezcla con el seguimiento operativo.
+    const phases = document.getElementById('trk-phases')!;
+    expect(phases.textContent).not.toMatch(/pago|efectivo|pagado/i);
+
+    s.set(
+      makeTracking({
+        payment: { method: 'CASH', status: 'PAID', paidAt: '2026-11-18T19:05:12.000Z' },
+      }),
+    );
+    await online();
+    await waitFor(() =>
+      expect(screen.getByTestId('payment-status')).toHaveAttribute('data-payment-status', 'PAID'),
+    );
+    expect(screen.getByTestId('payment-line')).toHaveTextContent('Pago en efectivo: Pagado');
+    expect(screen.getByTestId('payment-paid-at')).toHaveTextContent('Pagado el');
+    expect(screen.queryByTestId('payment-hint')).not.toBeInTheDocument();
+    // El pago pagado NO cambia el estado operativo mostrado.
+    expect(screen.getByTestId('status-label')).toHaveTextContent('Pedido recibido');
+    expect(phases.textContent).not.toMatch(/pagado/i);
+    expect(screen.getByTestId('order-tracking').textContent).not.toMatch(
+      /empleado|recibido por|transferencia|tarjeta/i,
+    );
+  });
+
+  it('F24: pedido cancelado con pago pendiente NO pide pagar («No se cobra»)', async () => {
+    const { created, backend } = await place();
+    saveConfirmation(created);
+    const s = server(backend, created, [
+      makeTracking({ status: 'cancelled', publicStatus: 'cancelled', terminal: true }),
+    ]);
+    await renderStore(<OrderTrackingScreen orderId={created.order.id} />, {
+      wrapClient: () => s.client,
+    });
+    expect(await screen.findByTestId('payment-closed')).toHaveTextContent('No se cobra');
+    expect(screen.queryByTestId('payment-hint')).not.toBeInTheDocument();
+    expect(screen.getByTestId('order-tracking').textContent).not.toMatch(/Realiza el pago/);
+  });
+
   it('invitado SIN credencial ni sesión: acceso perdido y NO se hace la solicitud', async () => {
     const { created, backend } = await place();
     const s = server(backend, created, [makeTracking()]);

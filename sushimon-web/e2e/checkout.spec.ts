@@ -3,9 +3,8 @@ import { DUMPLINGS, cartV2, pickupMode } from './support/cart';
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * Checkout de punta a punta (datos simulados, sin red externa): efectivo y tarjeta NeoNet SIMULADA.
- * El escenario del servidor de pruebas es `default` (no se puede cambiar por prueba), así que el rechazo se
- * provoca con la tarjeta de prueba 4000 0000 0000 0002.
+ * Checkout de punta a punta (datos simulados, sin red externa). F24: el ÚNICO método es EFECTIVO (sin elegir, sin tarjeta,
+ * Neonet ni transferencia): el pedido nace con el pago en efectivo PENDIENTE y nada se marca como pagado.
  *   E2E_PORT=3202 pnpm --filter sushimon-web exec playwright test --project=e2e checkout
  */
 
@@ -52,8 +51,16 @@ test('pedido en efectivo de punta a punta: confirma, vacía el carrito y recuerd
   await toCheckout(page);
   await expect(page.getByText('Paso 1 de 5', { exact: true })).toBeVisible();
   await toPayment(page);
-
-  await page.getByRole('radio', { name: /Efectivo/ }).click();
+  // F24: solo efectivo, sin nada que elegir, con la instrucción del retiro y el total cotizado.
+  await expect(page.getByTestId('payment-cash')).toBeVisible();
+  await expect(page.getByRole('radio')).toHaveCount(0);
+  await expect(page.getByTestId('payment-instructions')).toHaveText(
+    'Realiza el pago en efectivo cuando recojas tu pedido en la sucursal.',
+  );
+  await expect(page.getByTestId('payment-total')).toContainText('Q53.00');
+  await expect(page.locator('body')).not.toContainText(
+    /transferencia|tarjeta|neonet|comprobante|pagar ahora/i,
+  );
   await next(page, /Continuar a confirmación/i);
   await expect(page.getByRole('heading', { level: 1, name: 'Confirmación' })).toBeVisible();
   await next(page, /Realizar pedido/);
@@ -80,62 +87,6 @@ test('pedido en efectivo de punta a punta: confirma, vacía el carrito y recuerd
   await expect(page.getByText('Tu último pedido')).toBeVisible();
 });
 
-test('tarjeta rechazada: reintento y cambio a efectivo sin perder el carrito', async ({ page }) => {
-  await toCheckout(page);
-  await toPayment(page);
-  await next(page, /Continuar a confirmación/i);
-  await next(page, /Pagar ahora/);
-
-  const dialog = page.getByRole('dialog', { name: 'Pasarela de pago' });
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByText('Demo / Sin cobro real')).toBeVisible();
-
-  await dialog.getByRole('button', { name: /4000 0000 0000 0002/ }).click();
-  await dialog.getByRole('button', { name: /Simular pago/ }).click();
-  await expect(dialog.getByText('No se pudo completar el pago')).toBeVisible();
-  // Ni el número ni el CVV quedan en pantalla ni en el almacenamiento del navegador.
-  await expect(dialog.getByLabel('Número de tarjeta')).toHaveCount(0);
-  const storage = await page.evaluate(() =>
-    JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }),
-  );
-  expect(storage).not.toContain('4000000000000002');
-  expect(storage).not.toContain('4000 0000 0000 0002');
-  expect(storage.toLowerCase()).not.toContain('cvv');
-
-  await dialog.getByRole('button', { name: 'Reintentar pago' }).click();
-  await expect(dialog.getByLabel('Número de tarjeta')).toBeVisible();
-  await dialog.getByRole('button', { name: /4000 0000 0000 0002/ }).click();
-  await dialog.getByRole('button', { name: /Simular pago/ }).click();
-  await dialog.getByRole('button', { name: 'Cambiar método de pago' }).click();
-  await expect(dialog).toBeHidden();
-  await expect(page.getByRole('heading', { level: 1, name: 'Pago' })).toBeVisible();
-  const cart = await page.evaluate(() => localStorage.getItem('monsushi-cart-v2'));
-  expect(JSON.parse(cart!).lines).toHaveLength(1);
-
-  await page.getByRole('radio', { name: /Efectivo/ }).click();
-  await next(page, /Continuar a confirmación/i);
-  await next(page, /Realizar pedido/);
-  await expect(page.getByRole('heading', { name: '¡Pedido registrado!' })).toBeVisible();
-});
-
-test('tarjeta aprobada: el pedido queda pagado y la pasarela cierra con foco accesible', async ({
-  page,
-}) => {
-  await toCheckout(page);
-  await toPayment(page);
-  await next(page, /Continuar a confirmación/i);
-  await next(page, /Pagar ahora/);
-
-  const dialog = page.getByRole('dialog', { name: 'Pasarela de pago' });
-  await dialog.getByRole('button', { name: /Simular pago/ }).click();
-  await expect(dialog.getByText('Pago aprobado')).toBeVisible();
-  await dialog.getByRole('button', { name: 'Consultar pedido' }).click();
-  await expect(page.getByRole('heading', { name: '¡Pedido pagado!' })).toBeVisible();
-  await expect(
-    page.getByText('Pagado — Pendiente de aceptación del restaurante').first(),
-  ).toBeVisible();
-});
-
 test('la barra de progreso y el estado sobreviven al cambio de idioma y de tema', async ({
   page,
 }) => {
@@ -151,35 +102,20 @@ test('la barra de progreso y el estado sobreviven al cambio de idioma y de tema'
 });
 
 for (const theme of ['light', 'dark'] as const) {
-  test(`la pasarela NeoNet es un diálogo accesible (listo y rechazado) · ${theme}`, async ({
+  test(`el paso Pago (solo efectivo) no tiene violaciones de accesibilidad graves · ${theme}`, async ({
     page,
   }) => {
     await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
     await page.addInitScript((value) => localStorage.setItem('monsushi-theme', value), theme);
     await toCheckout(page);
     await toPayment(page);
-    await next(page, /Continuar a confirmación/i);
-    await next(page, /Pagar ahora/);
-    const dialog = page.getByRole('dialog', { name: 'Pasarela de pago' });
-    await expect(dialog).toBeVisible();
-    await expect(dialog).toBeFocused();
-
-    const audit = async () =>
-      (
-        await new AxeBuilder({ page })
-          .include('[role="dialog"]')
-          .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-          .analyze()
-      ).violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
-    expect(await audit()).toEqual([]);
-
-    await dialog.getByRole('button', { name: /4000 0000 0000 0002/ }).click();
-    await dialog.getByRole('button', { name: /Simular pago/ }).click();
-    await expect(dialog.getByText('No se pudo completar el pago')).toBeVisible();
-    expect(await audit()).toEqual([]);
-
-    // Esc cierra y devuelve el foco a la página.
-    await page.keyboard.press('Escape');
-    await expect(dialog).toBeHidden();
+    await expect(page.getByTestId('payment-cash')).toBeVisible();
+    const violations = (
+      await new AxeBuilder({ page })
+        .include('#paso-actual')
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+        .analyze()
+    ).violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
+    expect(violations).toEqual([]);
   });
 }

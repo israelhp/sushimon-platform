@@ -30,7 +30,7 @@ const CHECKOUT_LOCAL = {
   [CART_KEY]: cartV2('sucursal-1', [DUMPLINGS]),
   'monsushi-order-mode-v1': pickupMode('sucursal-1'),
 };
-const checkoutStep = (step: number, payment: 'card' | 'cash' = 'card') => ({
+const checkoutStep = (step: number) => ({
   'monsushi-checkout-v1': JSON.stringify({
     step,
     contact: { name: 'Cliente Demo', phone: '5555-1234', email: 'cliente@ejemplo.com' },
@@ -45,7 +45,6 @@ const checkoutStep = (step: number, payment: 'card' | 'cash' = 'card') => ({
     notes: '',
     pickupBranchId: null,
     deliveryBranchId: null,
-    payment,
   }),
 });
 

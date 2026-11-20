@@ -98,8 +98,12 @@ test('cancelar con consecuencias y pendingActions informativas (sin ejecutar nad
   await expect(modal.getByText(/No escribas datos personales/)).toBeVisible();
   await modal.getByRole('textbox', { name: /Motivo/ }).fill('Cliente no contesta');
   await modal.getByRole('button', { name: 'Confirmar cancelación' }).click();
-  await expect(drawer.getByText(/Revisar pago pendiente/).first()).toBeVisible();
   await expect(drawer.getByText('Pedido cancelado. Motivo: Cliente no contesta')).toBeVisible();
+  // F24: sin efectivo cobrado no hay «posible devolución» (ni reembolso inventado); el pago sigue PENDIENTE.
+  await expect(drawer.getByText(/Posible devolución pendiente/)).toHaveCount(0);
+  await expect(
+    drawer.getByTestId('payment-panel').locator('[data-payment-status="PENDING"]'),
+  ).toHaveText('Pago pendiente');
 });
 
 test('pedido nuevo: contador, resaltado y un solo aviso; el sonido está apagado por defecto', async ({

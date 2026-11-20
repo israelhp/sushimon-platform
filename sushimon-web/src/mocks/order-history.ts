@@ -64,10 +64,7 @@ export function deriveRecord(draft: DraftOrder): PlacedOrderRecord {
     discountTotal: money(draft.discount),
     deliveryFee: money(draft.deliveryFee),
     total: money(draft.total),
-    payment: {
-      methodPreference: draft.payment.method === 'cash' ? 'cash' : null,
-      status: 'NOT_STARTED',
-    },
+    payment: { method: 'CASH', status: 'PENDING', paidAt: null },
     placedAt: draft.createdAt,
     updatedAt: draft.updatedAt,
   };

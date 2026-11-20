@@ -229,7 +229,7 @@ describe('AdminOrdersQueryService (S)', () => {
     });
   });
 
-  it('fila 30: detalle — snapshots, teléfono completo, sin correo, payment NOT_STARTED, historial con actor y truncamiento', async () => {
+  it('fila 30: detalle — snapshots, teléfono completo, sin correo, payment F24 (CASH/PENDING), historial con actor y truncamiento', async () => {
     const { repo, queries } = adminOrdersHarness();
     const id = repo.seed({
       branchId: BRANCH_A,
@@ -250,7 +250,16 @@ describe('AdminOrdersQueryService (S)', () => {
     });
     const d = await queries.detail(globalStaff(MANAGER), id);
     expect(d.contact).toEqual({ fullName: 'Ana Pérez', phone: '+50255551234' });
-    expect(d.payment).toEqual({ methodPreference: 'cash', status: 'NOT_STARTED' });
+    expect(d.payment).toEqual({
+      method: 'CASH',
+      status: 'PENDING',
+      amountDue: '185.00',
+      outstanding: '185.00',
+      paidAt: null,
+      possibleRefundReview: false,
+      // el gerente (MANAGER) no tiene `payments.confirm` en el catálogo sembrado (P91)
+      registration: { allowed: false, blockedReason: 'NO_PERMISSION' },
+    });
     expect(d.address).toMatchObject({ municipalityName: 'Guatemala' });
     expect(d.lines[0]).toMatchObject({
       productName: 'Roll Mon',

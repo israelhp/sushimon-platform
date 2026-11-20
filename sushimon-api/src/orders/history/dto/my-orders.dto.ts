@@ -119,8 +119,8 @@ export class MyOrderSummaryDto {
   @ApiProperty({ type: String, enum: ['GTQ'] })
   currency!: 'GTQ';
 
-  @ApiProperty({ type: String, enum: ['cash', 'bank_transfer'], nullable: true })
-  paymentMethodPreference!: 'cash' | 'bank_transfer' | null;
+  @ApiProperty({ type: String, enum: ['cash'], nullable: true })
+  paymentMethodPreference!: 'cash' | null;
 
   @ApiProperty({ type: String, format: 'date-time' })
   placedAt!: string;

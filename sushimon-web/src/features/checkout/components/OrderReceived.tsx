@@ -20,6 +20,7 @@ import { moneyToCents } from '@/lib/checkout-quote';
 import type { OrderDetail } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
 import { usePublicBranches } from '@/features/branches/hooks';
+import { PaymentStatus } from '@/features/payments/PaymentStatus';
 import { ReorderDialog } from '@/features/orders/components/reorder-dialog';
 import { PublicStatusChip } from '@/features/orders/components/public-status-chip';
 import { isFinalStatus } from '@/features/orders/reorder/reorder-model';
@@ -75,12 +76,6 @@ export function OrderReceived({
   const money = (value: string) => formatMoney((moneyToCents(value) ?? 0) / 100, locale);
   const branch = branches?.find((b) => b.id === order.branchId)?.name;
   const delivery = order.fulfillmentType === 'DELIVERY';
-  const payment =
-    order.payment.methodPreference === 'cash'
-      ? t('payCash')
-      : order.payment.methodPreference === 'bank_transfer'
-        ? t('payTransfer')
-        : t('payNone');
   const discount = (moneyToCents(order.discountTotal) ?? 0) > 0;
   // F23: el mismo detalle sirve a la confirmación recién hecha (`pending`) y al historial: con otro estado no es «recién recibido».
   const fresh = order.status === 'pending';
@@ -185,8 +180,12 @@ export function OrderReceived({
             </span>
           </Fact>
           <Fact icon={<Banknote className="h-4 w-4" />} label={t('payment')}>
-            {payment}
-            <span className="block text-[13px] font-normal text-muted">{t('payNote')}</span>
+            <PaymentStatus
+              payment={order.payment}
+              fulfillmentType={order.fulfillmentType}
+              closed={order.status === 'rejected' || order.status === 'cancelled'}
+              className="font-normal"
+            />
           </Fact>
         </dl>
 

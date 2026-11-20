@@ -45,7 +45,14 @@ describe('toOrderReceipt (spec 024 §4.2)', () => {
       branch: { name: 'Sushi Mon Zona 10', address: '5a Av. 10-20 Zona 10', phone: '2222-3333' },
       fulfillment: { type: 'DELIVERY', provider: 'OWN' },
       contact: { fullName: 'Ana Pérez', phoneMasked: '****1234' },
-      payment: { methodPreference: 'cash', status: 'NOT_STARTED' },
+      payment: {
+        method: 'CASH',
+        status: 'PENDING',
+        paidAt: null,
+        amountPaid: null,
+        tendered: null,
+        change: null,
+      },
     });
   });
 
@@ -109,11 +116,11 @@ describe('toOrderReceipt (spec 024 §4.2)', () => {
   });
 
   it.each(['pending', 'accepted', 'ready', 'picked_up', 'delivered', 'rejected', 'cancelled'])(
-    'disponible en %s, con pago NOT_STARTED y sin motivo',
+    'disponible en %s, con pago PENDING y sin motivo',
     (status) => {
       const r = toOrderReceipt(source({ status }), NOW);
       expect(r.status).toBe(status);
-      expect(r.payment.status).toBe('NOT_STARTED');
+      expect(r.payment.status).toBe('PENDING');
       expect(JSON.stringify(r)).not.toMatch(/reason|motivo/i);
     },
   );

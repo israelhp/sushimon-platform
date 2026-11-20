@@ -39,6 +39,7 @@ const order = (
   itemCount: 1,
   total: '10.00',
   paymentMethodPreference: 'cash',
+  paymentStatus: 'PENDING',
   scheduledFor: null,
   placedAt: '2026-11-18T18:00:00.000Z',
   updatedAt: '2026-11-18T18:00:00.000Z',

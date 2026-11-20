@@ -41,7 +41,6 @@ import {
   ORDERS_DB_GATE,
   ordersBusy,
   ordersUnavailable,
-  paymentMethodUnavailable,
   pendingOrdersLimit,
   quoteChanged,
   translateOrdersDbError,
@@ -107,7 +106,6 @@ export class OrdersService {
     const address = this.addressTextOf(body);
     const notes = normalizeNotes(body.notes);
     const preference = body.paymentMethodPreference ?? null;
-    if (preference === 'card') throw paymentMethodUnavailable();
     const keyHash = keyHashOf(key);
     const now = this.clock.now();
 
@@ -341,7 +339,7 @@ export class OrdersService {
     contact: { fullName: string; phone: string; email: string | null };
     address: AddressText | null;
     notes: string | null;
-    preference: 'cash' | 'bank_transfer' | null;
+    preference: 'cash' | null;
     guestToken: { hash: Buffer; expiresAt: Date } | null;
   }): NewOrder {
     const { guarded, names, body } = input;

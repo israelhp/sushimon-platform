@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service.js';
 import { Prisma } from '../generated/prisma/client.js';
-import type { DecimalLike, OrderRecord } from './orders.types.js';
+import type { DecimalLike, OrderPaymentRecord, OrderRecord } from './orders.types.js';
 
 export interface OrderSourceModifier {
   modifierId: string | null;
@@ -45,6 +45,14 @@ export interface OrderSource {
   deliveryFee: string;
   total: string;
   paymentMethodPreference: string | null;
+  /** F24: pago real (LEFT JOIN `payments`, `UNIQUE(order_id)`); `null` = pedido histórico sin fila de pago. */
+  payment: {
+    status: string;
+    amount: string;
+    tendered: string | null;
+    change: string | null;
+    receivedAt: Date | null;
+  } | null;
   placedAt: Date;
   updatedAt: Date;
   address: {
@@ -76,6 +84,11 @@ interface SourceDbRow {
   delivery_fee: string;
   total: string;
   payment_method_preference: string | null;
+  payment_status: string | null;
+  payment_amount: string | null;
+  payment_tendered: string | null;
+  payment_change: string | null;
+  payment_received_at: Date | null;
   placed_at: Date;
   updated_at: Date;
   address: unknown;
@@ -108,6 +121,16 @@ const toSource = (r: SourceDbRow): OrderSource => ({
   deliveryFee: r.delivery_fee,
   total: r.total,
   paymentMethodPreference: r.payment_method_preference,
+  payment:
+    r.payment_status !== null && r.payment_amount !== null
+      ? {
+          status: r.payment_status,
+          amount: r.payment_amount,
+          tendered: r.payment_tendered,
+          change: r.payment_change,
+          receivedAt: r.payment_received_at,
+        }
+      : null,
   placedAt: r.placed_at,
   updatedAt: r.updated_at,
   address: r.address === null ? null : asJson<NonNullable<OrderSource['address']>>(r.address),
@@ -119,6 +142,17 @@ const toSource = (r: SourceDbRow): OrderSource => ({
  * `OrderSource` -> `OrderRecord` (F20) para reutilizar `toOrderDetail` y que el recibo tenga EXACTAMENTE las mismas cifras que
  * `getOrder` (spec 024 §11 #23). Los importes ya vienen como cadena exacta de `numeric(12,2)`.
  */
+const sourcePayment = (source: OrderSource): OrderPaymentRecord | null =>
+  source.payment
+    ? {
+        status: source.payment.status,
+        amount: dec(source.payment.amount),
+        tendered: source.payment.tendered === null ? null : dec(source.payment.tendered),
+        change: source.payment.change === null ? null : dec(source.payment.change),
+        receivedAt: source.payment.receivedAt,
+      }
+    : null;
+
 export function sourceToOrderRecord(source: OrderSource): OrderRecord {
   return {
     id: source.id,
@@ -137,6 +171,7 @@ export function sourceToOrderRecord(source: OrderSource): OrderRecord {
     deliveryFee: dec(source.deliveryFee),
     total: dec(source.total),
     paymentMethodPreference: source.paymentMethodPreference,
+    payment: sourcePayment(source),
     placedAt: source.placedAt,
     updatedAt: source.updatedAt,
     address: source.address,
@@ -167,6 +202,8 @@ const SOURCE_COLUMNS = Prisma.sql`
   o.subtotal::text AS subtotal, o.extras_total::text AS extras_total, o.discount_total::text AS discount_total,
   o.delivery_fee::text AS delivery_fee, o.total::text AS total,
   o.payment_method_preference, o.placed_at, o.updated_at,
+  p.status AS payment_status, p.amount::text AS payment_amount, p.tendered_amount::text AS payment_tendered,
+  p.change_amount::text AS payment_change, p.received_at AS payment_received_at,
   CASE WHEN a.order_id IS NULL THEN NULL ELSE json_build_object(
     'municipalityName', a.municipality_name, 'zone', a.zone,
     'addressLine', a.address_line, 'referenceNote', a.reference_note) END AS address,
@@ -186,7 +223,8 @@ const SOURCE_COLUMNS = Prisma.sql`
 const FROM_SQL = Prisma.sql`
   FROM app.orders o
   JOIN app.branches b ON b.id = o.branch_id
-  LEFT JOIN app.order_addresses a ON a.order_id = o.id`;
+  LEFT JOIN app.order_addresses a ON a.order_id = o.id
+  LEFT JOIN app.payments p ON p.order_id = o.id`;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

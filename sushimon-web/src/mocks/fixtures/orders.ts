@@ -467,11 +467,3 @@ export const DEMO_GOOGLE_ACCOUNTS = [
   { email: DEMO_CUSTOMER.email, name: DEMO_CUSTOMER.name },
   { email: 'invitado.nuevo@ejemplo.com', name: 'Invitado Nuevo' },
 ];
-
-/** Tarjetas de prueba de la pasarela NeoNet SIMULADA. */
-export const TEST_CARDS = [
-  { number: '4242424242424242', brand: 'Visa', result: 'approved' },
-  { number: '5555555555554444', brand: 'Mastercard', result: 'approved' },
-  { number: '4000000000000002', brand: 'Visa', result: 'declined' },
-  { number: '4000000000000077', brand: 'Visa', result: 'review' },
-] as const;

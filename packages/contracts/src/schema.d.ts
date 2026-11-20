@@ -1078,7 +1078,8 @@ export interface paths {
         /**
          * Crea un pedido (invitado o autenticado) con recotización del servidor e idempotencia
          * @description F20 (spec 021, ADR-0026). Crea UN pedido en estado `pending` con snapshots inmutables (productos, extras, descuentos,
-         *     promociones, dirección). NO cobra, NO registra pagos, NO solicita reparto ni envía notificaciones (F24/F25/F28/F29/F31).
+         *     promociones, dirección). NO cobra ni registra efectivo recibido (eso es `registerAdminOrderCashPayment`, F24), NO solicita reparto ni envía notificaciones (F28/F29/F31). SÍ crea, en la MISMA transacción,
+         *     el pago `CASH` en `PENDING` por el total del pedido (+ evento `created`); un reintento idempotente NO lo duplica. Solo se admite efectivo (`paymentMethodPreference` ausente o `cash`).
          *     `pending` = «recibido, a la espera de que el restaurante lo procese»; NO significa pagado ni aceptado.
          *     **Acceso**: invitado o autenticado (`security` opcional; token presente e inválido => 401, nunca se degrada a invitado).
          *     `customer_id` sale SIEMPRE de la sesión, jamás del cuerpo. `fulfillment.customerAddressId` exige sesión y propiedad
@@ -1152,6 +1153,7 @@ export interface paths {
          * @description F21 (spec 022, ADR-0027). Respuesta pequeña pensada para POLLING moderado: SIN líneas, importes, contacto ni dirección
          *     (eso lo entrega `getOrder` una sola vez). Solo CONSULTA y PRESENTA lo que ya está registrado: no cambia estados (F22), no
          *     consulta a ningún proveedor externo y no inventa datos (sin GPS, ETA, repartidor ni tracking de PedidosYa, `BLOCKED_EXTERNAL`).
+         *     **Pago (F24)**: añade `payment{method: CASH, status: PENDING|PAID, paidAt}` (no son importes: el monto sigue en `getOrder`/recibo). El pago NO entra en `steps` ni `events` (el timeline es solo operativo).
          *     **Autorización**: IDÉNTICA a `getOrder` (JWT del cliente dueño o cabecera `X-Order-Token`; el token NUNCA va en la URL).
          *     Pedido inexistente, ajeno, token ausente/inválido/vencido/revocado o pedido de invitado consultado con JWT => el MISMO 404
          *     que `getOrder`. `Cache-Control: private, no-store`, `Vary: Authorization, X-Order-Token`, sin `ETag` (no hay `304`).
@@ -1186,7 +1188,7 @@ export interface paths {
          *     genera PDF. NO es una factura ni un documento tributario: `fiscalStatus` es siempre `NOT_FISCAL` (sin FEL, SAT ni NIT; P78).
          *     **Autorización**: IDÉNTICA a `getOrder` (JWT del cliente dueño o cabecera `X-Order-Token`; el token NUNCA va en la URL). Inexistente, ajeno, token ausente/inválido/vencido/
          *     revocado o pedido de invitado consultado con JWT => el MISMO 404. Disponible en TODOS los estados (también `rejected` y `cancelled`, P76): el recibo lleva el estado y NO afirma pago.
-         *     **Pago honesto**: `payment.status` es `NOT_STARTED` hasta F24 (la web muestra «Sin pago registrado» y la preferencia como «método elegido», nunca «pagado»).
+         *     **Pago real (F24, spec 025)**: `payment{method: CASH, status: PENDING|PAID, paidAt, amountPaid, tendered, change}` sale de `payments`. `PENDING` = «Pago en efectivo pendiente»; `PAID` = pagado en efectivo con fecha, importe aplicado, efectivo entregado y cambio. Sin identidad del empleado, historial ni auditoría; un `rejected`/`cancelled` con cobro sigue mostrando `PAID` (la devolución es de F26). Sin transferencia, tarjeta ni comprobantes.
          *     **Qué NO contiene**: id de pedido o de líneas, ids de cliente/sucursal, tokens, correo, teléfono completo (solo enmascarado), coordenadas, motivo de rechazo/cancelación,
          *     historial, actor ni notas administrativas. Las fechas son instantes UTC; `timeZone` indica la zona de presentación (`America/Guatemala`). `Cache-Control: private, no-store`,
          *     `Vary: Authorization, X-Order-Token`, sin `ETag`.
@@ -1317,7 +1319,7 @@ export interface paths {
         /**
          * Detalle completo de un pedido para el personal (líneas, dirección, totales e historial)
          * @description F22 (spec 023, ADR-0028). Exige `orders.read` y `aal2`. Snapshots inmutables de F20 (líneas con modificadores, promociones, dirección, totales) + `contact` (nombre y TELÉFONO completos: el
-         *     personal los necesita para atender; el correo NO se expone, P70) + `payment` (solo la preferencia declarada; `status` honesto `NOT_STARTED` = «sin pago registrado» hasta F24; NO se inventan
+         *     personal los necesita para atender; el correo NO se expone, P70) + `payment` (`AdminOrderPaymentSummary`: efectivo `PENDING|PAID`, deuda, `possibleRefundReview` y si ESTE personal puede registrar el cobro; el detalle completo con la recepción es `getAdminOrderPayment`; NO se inventan
          *     estados de pago) + `history` (hasta 50 eventos MÁS RECIENTES en orden cronológico `changed_at, id`, con el nombre mínimo de quien actuó; `historyTruncated`) + `availableActions` (lo que ESTE
          *     personal puede hacer AHORA, calculado en el servidor con la matriz de transiciones, la modalidad y sus permisos por sucursal; la web no duplica la regla). Pedido inexistente o de una sucursal
          *     fuera del alcance de `orders.read` => el MISMO 404 `ORDER_NOT_FOUND` (anti-IDOR). El historial va dentro del detalle (no hay `/history` aparte: una sola ida y vuelta al abrir la ficha).
@@ -1488,6 +1490,80 @@ export interface paths {
          *     Desde `pending`, `accepted`, `preparing` o `ready`; NUNCA desde `on_the_way` ni desde un estado terminal (422). `reason` obligatorio (3..280; falta => 400 `ORDER_REASON_REQUIRED`), interno. NO reembolsa ni cancela entregas: informa `pendingActions` (`payment_review`, `delivery_cancellation`).
          */
         post: operations["cancelAdminOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/orders/{id}/payment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pago en efectivo de un pedido (deuda, estado y recepción) para el personal
+         * @description F24 (spec 025, ADR-0030). Exige `payments.read` y `aal2`, con alcance por sucursal DEL PEDIDO. Devuelve el pedido (`displayNumber`, estado), el total debido (`amountDue`, GTQ), el método `CASH`, el estado (`PENDING|PAID`),
+         *     lo pendiente, el contexto de cobro derivado (`BRANCH` | `OWN_DELIVERY` | `null` para PedidosYa), si ESTE personal puede registrar el cobro (`registration`) y, con `PAID`, la recepción
+         *     (empleado, fecha del servidor, efectivo entregado y cambio). `possibleRefundReview` = `PAID` + pedido `rejected`/`cancelled` (aviso derivado; no hay reembolsos en F24). Pedido inexistente o de una sucursal
+         *     fuera del alcance de `payments.read` => el MISMO 404 `ORDER_NOT_FOUND` (anti-IDOR). ≤ 2 sentencias SQL. `Cache-Control: private, no-store`.
+         */
+        get: operations["getAdminOrderPayment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/orders/{id}/payment/cash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Registra la recepción del efectivo de un pedido (`PENDING` → `PAID`)
+         * @description F24 (spec 025, ADR-0030). Exige `payments.confirm` y `aal2`; el permiso debe cubrir la sucursal DEL PEDIDO (si no => 403 `PAYMENT_ACTION_FORBIDDEN`) y el personal debe poder VER el pedido (`orders.read`
+         *     en esa sucursal; si no => el mismo 404 `ORDER_NOT_FOUND`). Sirve igual para PICKUP (mostrador) y DELIVERY `OWN` (quien tenga `payments.confirm`); el contexto lo DERIVA el servidor del pedido. NO cambia el estado del pedido y
+         *     ningún cambio de estado marca `PAID`. El actor sale del JWT, la sucursal es la del pedido, la fecha es el reloj del servidor y la moneda es GTQ.
+         *     **Cambio**: `change = tendered − total`, calculado SOLO en el servidor; el ingreso aplicado es el total del pedido (`amountApplied`), nunca `tendered`; el total del pedido no cambia.
+         *     **Reglas**: pedido `rejected`/`cancelled` => 409 `ORDER_NOT_PAYABLE` (no se cobra); ya `PAID` => 409 `PAYMENT_ALREADY_REGISTERED` (con el pago actual) SALVO repetición con la MISMA clave y el MISMO cuerpo canónico => 200 con
+         *     `Idempotent-Replayed: true`; misma clave con otro cuerpo => 409 `IDEMPOTENCY_KEY_REUSED`. PedidosYa, total 0 o pedido histórico sin pago `CASH` => 422 `PAYMENT_NOT_COLLECTABLE`. `tendered` insuficiente => 422 `CASH_AMOUNT_INSUFFICIENT`;
+         *     sobre el tope => 422 `CASH_TENDERED_TOO_LARGE`.
+         *     **Atomicidad**: `UPDATE payments SET status='paid' … WHERE order_id AND status='pending'` + evento `payment_events` + auditoría `payment.cash_received` en UNA transacción corta; el índice único por pedido y el UPDATE condicional
+         *     impiden el doble cobro por doble clic o concurrencia. **Idempotencia** persistente en BD: solo se guarda el hash (sha256) de la clave y del cuerpo canónico, con alcance por pedido; sobrevive a una respuesta perdida.
+         *     La web declara éxito SOLO tras esta respuesta persistida. ≤ 6 sentencias SQL. `Cache-Control: private, no-store`.
+         */
+        post: operations["registerAdminOrderCashPayment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/orders/{id}/payment/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Historial solo-añadir del pago de un pedido (eventos autorizados)
+         * @description F24 (spec 025, ADR-0030). Exige `payments.read` y `aal2`, con alcance por sucursal DEL PEDIDO. Eventos de `payment_events` en orden cronológico (`at, id`): `CREATED` (con el pedido) y `CASH_RECEIVED` (con el nombre mínimo del
+         *     empleado, el efectivo entregado y el cambio). Sin paginación (a lo sumo unos pocos eventos). Sin identificadores de empleado ni claves de idempotencia. Pedido inexistente o fuera del alcance => el MISMO 404
+         *     `ORDER_NOT_FOUND`. ≤ 2 sentencias SQL. `Cache-Control: private, no-store`.
+         */
+        get: operations["listAdminOrderPaymentHistory"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2916,7 +2992,7 @@ export interface components {
             details?: string[];
             /**
              * @description Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16: `BANNER_NOT_FOUND`, `BANNER_CODE_TAKEN`, `BANNER_VERSION_CONFLICT`, `BANNER_IMAGE_INVALID`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_LIMIT_REACHED`, `BANNER_SCOPE_FORBIDDEN` (403), `BANNERS_BUSY` (503 reintentable); F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); F20: `IDEMPOTENCY_KEY_INVALID` (400), `QUOTE_CHANGED` (409), `QUOTE_EXPIRED` (409), `IDEMPOTENCY_KEY_REUSED` (409), `IDEMPOTENCY_IN_PROGRESS` (409), `QUOTE_INVALID` (422), `CHECKOUT_BLOCKED` (422), `DELIVERY_PROVIDER_NOT_SELECTABLE` (422), `CONTACT_INCOMPLETE` (422), `PAYMENT_METHOD_UNAVAILABLE` (422), `PENDING_ORDERS_LIMIT` (429), `ORDERS_BUSY` (503 reintentable), `ORDERS_UNAVAILABLE` (503); 404 de dirección ajena sin código; F22: `ORDER_NOT_FOUND` (404), `ORDER_REASON_REQUIRED` (400), `ORDER_CURSOR_INVALID` (400), `ORDER_ACTION_FORBIDDEN` (403), `ORDER_STATE_CONFLICT` (409), `ORDER_TRANSITION_INVALID` (422; `violations[].code`: `ORDER_TERMINAL`, `ORDER_FULFILLMENT_MISMATCH`, `ORDER_SOURCE_INVALID`, `ORDER_DISPATCH_NOT_AVAILABLE`, `ORDER_PROVIDER_BLOCKED_EXTERNAL`, `ORDER_CANCEL_NOT_ALLOWED`); 503 reintentable: `ORDERS_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
+             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16: `BANNER_NOT_FOUND`, `BANNER_CODE_TAKEN`, `BANNER_VERSION_CONFLICT`, `BANNER_IMAGE_INVALID`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_LIMIT_REACHED`, `BANNER_SCOPE_FORBIDDEN` (403), `BANNERS_BUSY` (503 reintentable); F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); F20: `IDEMPOTENCY_KEY_INVALID` (400), `QUOTE_CHANGED` (409), `QUOTE_EXPIRED` (409), `IDEMPOTENCY_KEY_REUSED` (409), `IDEMPOTENCY_IN_PROGRESS` (409), `QUOTE_INVALID` (422), `CHECKOUT_BLOCKED` (422), `DELIVERY_PROVIDER_NOT_SELECTABLE` (422), `CONTACT_INCOMPLETE` (422), `PENDING_ORDERS_LIMIT` (429), `ORDERS_BUSY` (503 reintentable), `ORDERS_UNAVAILABLE` (503); 404 de dirección ajena sin código; F22: `ORDER_NOT_FOUND` (404), `ORDER_REASON_REQUIRED` (400), `ORDER_CURSOR_INVALID` (400), `ORDER_ACTION_FORBIDDEN` (403), `ORDER_STATE_CONFLICT` (409), `ORDER_TRANSITION_INVALID` (422; `violations[].code`: `ORDER_TERMINAL`, `ORDER_FULFILLMENT_MISMATCH`, `ORDER_SOURCE_INVALID`, `ORDER_DISPATCH_NOT_AVAILABLE`, `ORDER_PROVIDER_BLOCKED_EXTERNAL`, `ORDER_CANCEL_NOT_ALLOWED`); 503 reintentable: `ORDERS_BUSY`; F24 (pagos en efectivo; `PAYMENT_METHOD_UNAVAILABLE` de F20 queda RETIRADO: ahora cualquier método distinto de `cash` es 400): `PAYMENT_AMOUNT_INVALID` (400), `PAYMENT_CONFIRMATION_REQUIRED` (400), `PAYMENT_ACTION_FORBIDDEN` (403), `PAYMENT_ALREADY_REGISTERED` (409), `ORDER_NOT_PAYABLE` (409), `CASH_AMOUNT_INSUFFICIENT` (422), `CASH_TENDERED_TOO_LARGE` (422), `PAYMENT_NOT_COLLECTABLE` (422; `violations[].code`: `PROVIDER_BLOCKED_EXTERNAL`, `LEGACY_PAYMENT_METHOD`, `AMOUNT_ZERO`); reutiliza `ORDER_NOT_FOUND`, `IDEMPOTENCY_KEY_INVALID`, `IDEMPOTENCY_KEY_REUSED`, `ORDERS_BUSY`). Los clientes deben ramificar por `code`, nunca por `message`.
              */
             code?: string;
             /** @description Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09). */
@@ -4285,11 +4361,12 @@ export interface components {
          */
         OrderLifecycleStatus: "pending" | "accepted" | "preparing" | "ready" | "on_the_way" | "delivered" | "picked_up" | "rejected" | "cancelled";
         /**
-         * @description SOLO una preferencia declarada por el cliente (no es un pago). F20 admite `cash` y `bank_transfer`; `card` (F25,
-         *     `BLOCKED_EXTERNAL`) => 422 `PAYMENT_METHOD_UNAVAILABLE`.
+         * @description Preferencia declarada por el cliente al crear el pedido (no es un pago). F24 (spec 025, ADR-0030): SOLO `cash` (efectivo). Cualquier otro valor
+         *     (`bank_transfer`, `card`, …) => 400 de validación. Las filas históricas de F20 con `bank_transfer` se leen como `null` (la API no devuelve valores retirados).
+         *     El pago real vive en `payments` y se expone como `payment{method: CASH, status: PENDING|PAID}`.
          * @enum {string}
          */
-        OrderPaymentPreference: "cash" | "bank_transfer";
+        OrderPaymentPreference: "cash";
         /**
          * @description Datos de contacto. Invitado: `fullName` y `phone` obligatorios. Autenticado: opcional (se completa con el perfil; si
          *     falta el teléfono en ambos => 422 `CONTACT_INCOMPLETE`). Teléfono de Guatemala (8 dígitos, `+502` opcional); se
@@ -4361,16 +4438,54 @@ export interface components {
             phoneMasked: string;
         };
         /**
-         * @description Estado de cobro. En F20 SIEMPRE `NOT_STARTED` (no hay cobro ni registro de pago); F24/F25 amplían el enum y
-         *     el significado. `methodPreference` es solo lo que el cliente declaró.
+         * @description Método de pago real. F24: SOLO `CASH` (efectivo). Los clientes deben tolerar valores futuros.
+         * @enum {string}
+         */
+        PaymentMethodCode: "CASH";
+        /**
+         * @description Estado de pago (F24, spec 025). INDEPENDIENTE del estado del pedido: pedido ≠ pagado ≠ aceptado ≠ entregado. `PENDING` = pago en efectivo aún no recibido (se crea con el pedido);
+         *     `PAID` = el personal registró la recepción del efectivo (inmutable). NO existen `VOIDED`, `REFUNDED` ni parciales (anulaciones P82+, reembolsos F26). Los clientes deben tolerar valores futuros.
+         * @enum {string}
+         */
+        OrderPaymentStatus: "PENDING" | "PAID";
+        /**
+         * @description Pago del pedido con vocabulario PÚBLICO seguro (F24). Siempre efectivo (`CASH`). `paidAt` solo con `PAID`. NUNCA identifica al empleado que cobró ni trae historial ni auditoría. Un pedido PICKUP se
+         *     paga en mostrador al recoger; un DELIVERY `OWN`, al recibirlo. Reemplaza al `{methodPreference, status: NOT_STARTED}` de F20 (F20 aún no está en producción: cambio incompatible aceptado, sin `/v2`).
+         * @example {
+         *       "method": "CASH",
+         *       "status": "PENDING",
+         *       "paidAt": null
+         *     }
          */
         OrderDetailPayment: {
-            methodPreference: components["schemas"]["OrderPaymentPreference"] | null;
+            method: components["schemas"]["PaymentMethodCode"];
+            status: components["schemas"]["OrderPaymentStatus"];
             /**
-             * @description Los clientes deben tolerar valores futuros (F24).
-             * @enum {string}
+             * Format: date-time
+             * @description Instante del servidor en que se registró la recepción del efectivo; `null` si `PENDING`.
              */
-            status: "NOT_STARTED";
+            paidAt: string | null;
+        };
+        /**
+         * @description Pago en el RECIBO NO fiscal (F24). Mismos campos que `OrderDetailPayment` más, solo con `PAID`, el importe aplicado a la deuda (`amountPaid` = total del pedido), el efectivo entregado
+         *     (`tendered`) y el cambio devuelto (`change`). El cambio NO es un ingreso. Sin identidad del empleado. `PENDING` => `amountPaid`, `tendered` y `change` son `null`.
+         * @example {
+         *       "method": "CASH",
+         *       "status": "PAID",
+         *       "paidAt": "2026-11-19T19:05:12.000Z",
+         *       "amountPaid": "185.00",
+         *       "tendered": "200.00",
+         *       "change": "15.00"
+         *     }
+         */
+        OrderReceiptPayment: {
+            method: components["schemas"]["PaymentMethodCode"];
+            status: components["schemas"]["OrderPaymentStatus"];
+            /** Format: date-time */
+            paidAt: string | null;
+            amountPaid: components["schemas"]["CheckoutMoney"] | null;
+            tendered: components["schemas"]["CheckoutMoney"] | null;
+            change: components["schemas"]["CheckoutMoney"] | null;
         };
         /**
          * @description Pedido persistido (reemplaza al `Order` borrador para `http`). NO lleva línea de tiempo ni entrega: eso es
@@ -4451,7 +4566,7 @@ export interface components {
             total: components["schemas"]["CheckoutMoney"];
             /** @enum {string} */
             currency: "GTQ";
-            /** @description Solo la preferencia declarada; NO es un pago (F24). */
+            /** @description Solo la preferencia declarada (`cash` o `null`); NO es un pago. */
             paymentMethodPreference: components["schemas"]["OrderPaymentPreference"] | null;
             /** Format: date-time */
             placedAt: string;
@@ -4514,7 +4629,7 @@ export interface components {
             discountTotal: components["schemas"]["CheckoutMoney"];
             deliveryFee: components["schemas"]["CheckoutMoney"];
             total: components["schemas"]["CheckoutMoney"];
-            payment: components["schemas"]["OrderDetailPayment"];
+            payment: components["schemas"]["OrderReceiptPayment"];
         };
         /** @description Cuerpo opcional (`{}` o ausente = sucursal del pedido original). Cualquier otra propiedad (precios, líneas, cantidades, `customerId`) => 400. */
         OrderReorderRequest: {
@@ -4739,6 +4854,8 @@ export interface components {
             eventsTruncated: boolean;
             /** @description `null` en PICKUP. */
             delivery: components["schemas"]["OrderTrackingDelivery"] | null;
+            /** @description F24: método y estado de pago reales (efectivo `PENDING|PAID`); independiente del estado del pedido y fuera del timeline. */
+            payment: components["schemas"]["OrderDetailPayment"];
             /** @description Sugerencia de espera antes del siguiente refresco; `null` si `terminal`. */
             pollAfterSeconds: number | null;
         };
@@ -5638,8 +5755,10 @@ export interface components {
             customerName: string;
             itemCount: number;
             total: components["schemas"]["CheckoutMoney"];
-            /** @description Solo la preferencia declarada; NO es un pago (F24). */
+            /** @description Solo la preferencia declarada (`cash` o `null`); NO es un pago. */
             paymentMethodPreference: components["schemas"]["OrderPaymentPreference"] | null;
+            /** @description F24: estado de pago real (efectivo). El tablero lo muestra como insignia; es independiente del estado del pedido. */
+            paymentStatus: components["schemas"]["OrderPaymentStatus"];
             /**
              * Format: date-time
              * @description Pedido programado (P42: hoy siempre `null`; la programación es `MOCK_ONLY`).
@@ -5724,7 +5843,7 @@ export interface components {
             extrasTotal: components["schemas"]["CheckoutMoney"];
             discountTotal: components["schemas"]["CheckoutMoney"];
             deliveryFee: components["schemas"]["CheckoutMoney"];
-            payment: components["schemas"]["OrderDetailPayment"];
+            payment: components["schemas"]["AdminOrderPaymentSummary"];
             history: components["schemas"]["AdminOrderHistoryEntry"][];
             /** @description `true` si hay más de 50 eventos (se devuelven los 50 más recientes; faltan los más antiguos). */
             historyTruncated: boolean;
@@ -5763,8 +5882,8 @@ export interface components {
             appliedByMe: boolean;
         };
         /**
-         * @description Revisión que queda PENDIENTE para otra feature tras cancelar/rechazar; informativa, jamás se ejecuta aquí. `payment_review`: la preferencia es transferencia bancaria y puede haber un pago por
-         *     conciliar o devolver (F24/F26; hoy es una regla provisional por la preferencia, no un hecho de pago). `delivery_cancellation`: existe una entrega activa por cancelar (solo la reporta el puerto
+         * @description Revisión que queda PENDIENTE para otra feature tras cancelar/rechazar; informativa, jamás se ejecuta aquí. `payment_review`: el pedido tiene un pago `PAID` (efectivo ya recibido) y se rechaza/cancela => posible devolución pendiente
+         *     (derivado de `payments`, hecho real; la devolución es de F26 y aquí NO se crea ningún reembolso). Con pago `PENDING` o sin cobro: no aparece. `delivery_cancellation`: existe una entrega activa por cancelar (solo la reporta el puerto
          *     `OrderFulfillmentPort` de F28/F29; en F22 nunca aparece). Los clientes deben tolerar valores futuros.
          * @enum {string}
          */
@@ -5783,7 +5902,8 @@ export interface components {
          *         "customerName": "Ana López",
          *         "itemCount": 3,
          *         "total": "185.00",
-         *         "paymentMethodPreference": "bank_transfer",
+         *         "paymentMethodPreference": "cash",
+         *         "paymentStatus": "PAID",
          *         "scheduledFor": null,
          *         "placedAt": "2026-11-18T18:02:11.000Z",
          *         "updatedAt": "2026-11-18T18:20:41.512Z",
@@ -5828,6 +5948,174 @@ export interface components {
          */
         AdminOrderStateError: components["schemas"]["ErrorResponse"] & {
             current: components["schemas"]["AdminOrderStateSnapshot"];
+        };
+        /**
+         * @description Quién recibió el efectivo. F24: SOLO `STAFF` (personal en sucursal). F28 añadirá `RIDER` (motorista propio) de forma aditiva; los clientes deben tolerar valores futuros.
+         * @enum {string}
+         */
+        PaymentCollectorType: "STAFF";
+        /**
+         * @description Dónde se cobra, DERIVADO por el servidor del pedido (nunca de la entrada): `BRANCH` = PICKUP, en mostrador de la sucursal; `OWN_DELIVERY` = DELIVERY con reparto propio (`OWN`), efectivo al recibir.
+         *     Un pedido con `delivery_provider = PEDIDOSYA` no tiene contexto de cobro (`null`): no se asume que el proveedor cobre efectivo (F29, `BLOCKED_EXTERNAL`).
+         * @enum {string}
+         */
+        PaymentCollectionContext: "BRANCH" | "OWN_DELIVERY";
+        /**
+         * @description Por qué ESTE personal no puede registrar el cobro AHORA (calculado en el servidor). `ALREADY_PAID` ya está pagado; `ORDER_CLOSED` pedido `rejected`/`cancelled` (no se cobra);
+         *     `PROVIDER_BLOCKED_EXTERNAL` pedido PedidosYa (no se asume cobro del proveedor); `AMOUNT_ZERO` total 0 (nada que cobrar); `LEGACY_PAYMENT_METHOD` pedido histórico de F20 sin pago `CASH`
+         *     (preferencia retirada); `NO_PERMISSION` falta `payments.confirm` en la sucursal del pedido. Los clientes deben tolerar valores futuros.
+         * @enum {string}
+         */
+        AdminOrderPaymentBlockedReason: "ALREADY_PAID" | "ORDER_CLOSED" | "PROVIDER_BLOCKED_EXTERNAL" | "AMOUNT_ZERO" | "LEGACY_PAYMENT_METHOD" | "NO_PERMISSION";
+        AdminOrderPaymentRegistration: {
+            allowed: boolean;
+            /** @description `null` si `allowed = true`. */
+            blockedReason: components["schemas"]["AdminOrderPaymentBlockedReason"] | null;
+        };
+        /**
+         * @description Resumen del pago para el detalle F22 (sin consulta adicional). `amountDue` = `orders.total` (el pedido nunca cambia de total). `outstanding` = `amountDue` si `PENDING`, `0.00` si `PAID`.
+         *     `possibleRefundReview` = DERIVADO: `PAID` y pedido `rejected`/`cancelled` => «posible devolución pendiente» (informativo; NO crea reembolso: F26). El pago `PAID` jamás vuelve a `PENDING`.
+         */
+        AdminOrderPaymentSummary: {
+            method: components["schemas"]["PaymentMethodCode"];
+            status: components["schemas"]["OrderPaymentStatus"];
+            amountDue: components["schemas"]["CheckoutMoney"];
+            outstanding: components["schemas"]["CheckoutMoney"];
+            /** Format: date-time */
+            paidAt: string | null;
+            possibleRefundReview: boolean;
+            registration: components["schemas"]["AdminOrderPaymentRegistration"];
+        };
+        /**
+         * @description Recepción del efectivo (solo con `PAID`). `amountApplied` = importe aplicado a la deuda = `amountDue` (NUNCA el efectivo entregado: es el ingreso). `tendered` = efectivo entregado; `change` = `tendered − amountApplied`,
+         *     calculado SOLO en el servidor y NO es ingreso. `collectorName` = nombre mínimo del empleado (`null` si ya no existe); nunca id ni correo. Solo lo ve el personal con `payments.read`.
+         */
+        PaymentReception: {
+            amountApplied: components["schemas"]["CheckoutMoney"];
+            tendered: components["schemas"]["CheckoutMoney"];
+            change: components["schemas"]["CheckoutMoney"];
+            /**
+             * Format: date-time
+             * @description Reloj del SERVIDOR; el cliente nunca envía la fecha.
+             */
+            receivedAt: string;
+            collectorType: components["schemas"]["PaymentCollectorType"];
+            collectorName: string | null;
+            /**
+             * Format: uuid
+             * @description La sucursal del PEDIDO (no la elige el cliente).
+             */
+            branchId: string;
+            context: components["schemas"]["PaymentCollectionContext"];
+        };
+        /**
+         * @description Detalle del pago de UN pedido para el personal (F24). Resumen + datos del pedido + recepción (si `PAID`). Cada pedido tiene a lo sumo UN pago completo en efectivo (sin parciales ni divididos).
+         * @example {
+         *       "method": "CASH",
+         *       "status": "PAID",
+         *       "amountDue": "185.00",
+         *       "outstanding": "0.00",
+         *       "paidAt": "2026-11-19T19:05:12.000Z",
+         *       "possibleRefundReview": false,
+         *       "registration": {
+         *         "allowed": false,
+         *         "blockedReason": "ALREADY_PAID"
+         *       },
+         *       "orderId": "7b7c3d52-6a0f-4a8e-9a53-0f3a1e0b9c11",
+         *       "displayNumber": "MON-001042",
+         *       "orderStatus": "picked_up",
+         *       "branchId": "0b6f6a52-1c55-4c0e-8f3a-3a5d6a3c2b10",
+         *       "fulfillmentType": "PICKUP",
+         *       "deliveryProvider": null,
+         *       "currency": "GTQ",
+         *       "collectionContext": "BRANCH",
+         *       "reception": {
+         *         "amountApplied": "185.00",
+         *         "tendered": "200.00",
+         *         "change": "15.00",
+         *         "receivedAt": "2026-11-19T19:05:12.000Z",
+         *         "collectorType": "STAFF",
+         *         "collectorName": "María Pérez",
+         *         "branchId": "0b6f6a52-1c55-4c0e-8f3a-3a5d6a3c2b10",
+         *         "context": "BRANCH"
+         *       },
+         *       "generatedAt": "2026-11-19T19:05:13.000Z"
+         *     }
+         */
+        AdminOrderPayment: components["schemas"]["AdminOrderPaymentSummary"] & {
+            /** Format: uuid */
+            orderId: string;
+            /** @example MON-001042 */
+            displayNumber: string;
+            orderStatus: components["schemas"]["OrderLifecycleStatus"];
+            /** Format: uuid */
+            branchId: string;
+            /** @enum {string} */
+            fulfillmentType: "PICKUP" | "DELIVERY";
+            deliveryProvider: components["schemas"]["CourierProvider"] | null;
+            /** @enum {string} */
+            currency: "GTQ";
+            /** @description `null` para PedidosYa (no se asume cobro del proveedor). */
+            collectionContext: components["schemas"]["PaymentCollectionContext"] | null;
+            /** @description `null` mientras `PENDING`. */
+            reception: components["schemas"]["PaymentReception"] | null;
+            /** Format: date-time */
+            generatedAt: string;
+        };
+        /**
+         * @description Registro del efectivo recibido. SOLO dos campos: el cliente nunca envía total, estado, empleado, sucursal, cambio, fecha ni moneda (GTQ fija); cualquier otro campo => 400. `tendered` = efectivo
+         *     entregado por el cliente: cadena decimal de HASTA 2 decimales (más => 400 `PAYMENT_AMOUNT_INVALID`, sin redondeo silencioso), `> 0`, `≥` total del pedido (si no, 422 `CASH_AMOUNT_INSUFFICIENT`) y `≤` el tope
+         *     de seguridad `Q 5,000.00` (si no, 422 `CASH_TENDERED_TOO_LARGE`; P83). `receivedConfirmed` debe ser `true` (casilla «recibí físicamente el dinero»); `false` o ausente => 400 `PAYMENT_CONFIRMATION_REQUIRED`.
+         * @example {
+         *       "tendered": "200.00",
+         *       "receivedConfirmed": true
+         *     }
+         */
+        AdminCashPaymentRequest: {
+            /** @example 200.00 */
+            tendered: string;
+            /** @enum {boolean} */
+            receivedConfirmed: true;
+        };
+        AdminCashPaymentResult: {
+            payment: components["schemas"]["AdminOrderPayment"];
+            /** @description `true` = repetición idempotente (misma clave y mismo cuerpo): no se escribió nada nuevo; `payment.reception` es la original. */
+            replayed: boolean;
+            /** @description La recepción fue registrada por la misma persona que llama (útil para distinguir un doble clic de otra persona). */
+            appliedByMe: boolean;
+        };
+        /**
+         * @description 409 de F24. `PAYMENT_ALREADY_REGISTERED` (ya `PAID` con OTRA clave o cuerpo) y `ORDER_NOT_PAYABLE` (pedido `rejected`/`cancelled`: no se cobra). Hereda `ErrorResponse` y añade el pago ACTUAL
+         *     para que la web refresque sin otra consulta. `IDEMPOTENCY_KEY_REUSED` (misma clave con otro cuerpo) usa `ErrorResponse` simple.
+         */
+        AdminPaymentConflict: components["schemas"]["ErrorResponse"] & {
+            current: components["schemas"]["AdminOrderPayment"];
+        };
+        /**
+         * @description `CREATED` = pago `PENDING` creado con el pedido (sin actor); `CASH_RECEIVED` = efectivo registrado por personal. Los clientes deben tolerar valores futuros (F26/F28).
+         * @enum {string}
+         */
+        PaymentEventType: "CREATED" | "CASH_RECEIVED";
+        /** @description Evento SOLO-AÑADIR del pago. `actorName` = nombre mínimo del empleado (`null` en `CREATED` o si ya no existe); nunca id ni correo. */
+        AdminPaymentEvent: {
+            seq: number;
+            type: components["schemas"]["PaymentEventType"];
+            /** Format: date-time */
+            at: string;
+            actorName: string | null;
+            amountDue: components["schemas"]["CheckoutMoney"];
+            tendered: components["schemas"]["CheckoutMoney"] | null;
+            change: components["schemas"]["CheckoutMoney"] | null;
+        };
+        AdminPaymentHistory: {
+            /** Format: uuid */
+            orderId: string;
+            /** @example MON-001042 */
+            displayNumber: string;
+            /** @description Orden cronológico `at, id`. Con un pago completo único hay a lo sumo 2 eventos; el tope de 20 deja margen a F26/F28. */
+            items: components["schemas"]["AdminPaymentEvent"][];
+            /** Format: date-time */
+            generatedAt: string;
         };
     };
     responses: never;
@@ -9002,7 +9290,7 @@ export interface operations {
             };
             /**
              * @description `QUOTE_INVALID`, `CHECKOUT_BLOCKED` (cuerpo `OrderBlocked` con `blockers`), `DELIVERY_PROVIDER_NOT_SELECTABLE`, `CONTACT_INCOMPLETE`
-             *     (autenticado sin teléfono en el perfil y sin `contact`), `PAYMENT_METHOD_UNAVAILABLE`, `BRANCH_NOT_AVAILABLE`, `MUNICIPALITY_NOT_FOUND`.
+             *     (autenticado sin teléfono en el perfil y sin `contact`), `BRANCH_NOT_AVAILABLE`, `MUNICIPALITY_NOT_FOUND`.
              */
             422: {
                 headers: {
@@ -10193,6 +10481,289 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminOrderStateError"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAdminOrderPayment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del pedido (`orders.id`). */
+                id: components["parameters"]["AdminOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pago del pedido */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderPayment"];
+                };
+            };
+            /** @description El identificador no es un UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `payments.read` o la sesión no es aal2 (`MFA_REQUIRED`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDER_NOT_FOUND`: no existe o está fuera del alcance (misma respuesta) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDERS_BUSY`: base de datos saturada; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    registerAdminOrderCashPayment: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Clave de idempotencia del intento (UUID v4 recomendado). Se reutiliza ante reintentos del MISMO envío (modal abierto con el mismo importe); un intento nuevo usa otra. Solo se guarda su hash. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description UUID del pedido (`orders.id`). */
+                id: components["parameters"]["AdminOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminCashPaymentRequest"];
+            };
+        };
+        responses: {
+            /** @description Repetición idempotente (misma clave y mismo cuerpo): la recepción original. Cabecera `Idempotent-Replayed`. */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    /** @description true */
+                    "Idempotent-Replayed"?: "true";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCashPaymentResult"];
+                };
+            };
+            /** @description Recepción registrada y persistida; el pago pasó a `PAID` */
+            201: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCashPaymentResult"];
+                };
+            };
+            /** @description Identificador o cuerpo inválido, campos desconocidos, `Idempotency-Key` ausente o malformada (`IDEMPOTENCY_KEY_INVALID`), `PAYMENT_AMOUNT_INVALID` (formato, > 2 decimales, cero o negativo) o `PAYMENT_CONFIRMATION_REQUIRED` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `payments.confirm` o la sesión no es aal2 (`MFA_REQUIRED`); `PAYMENT_ACTION_FORBIDDEN` si ve el pedido pero no tiene el permiso en su sucursal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDER_NOT_FOUND`: el pedido no existe o está fuera del alcance (misma respuesta) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `PAYMENT_ALREADY_REGISTERED` y `ORDER_NOT_PAYABLE` (cuerpo `AdminPaymentConflict` con `current`) o `IDEMPOTENCY_KEY_REUSED` (misma clave, cuerpo distinto; `ErrorResponse`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPaymentConflict"] | components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `CASH_AMOUNT_INSUFFICIENT` (efectivo menor al total), `CASH_TENDERED_TOO_LARGE` o `PAYMENT_NOT_COLLECTABLE` (`violations[].code`: `PROVIDER_BLOCKED_EXTERNAL`, `LEGACY_PAYMENT_METHOD`, `AMOUNT_ZERO`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDERS_BUSY`: base de datos saturada; reintentable con la MISMA clave (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAdminOrderPaymentHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID del pedido (`orders.id`). */
+                id: components["parameters"]["AdminOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Historial del pago */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPaymentHistory"];
+                };
+            };
+            /** @description El identificador no es un UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `payments.read` o la sesión no es aal2 (`MFA_REQUIRED`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDER_NOT_FOUND`: no existe o está fuera del alcance (misma respuesta) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description `RATE_LIMITED` */

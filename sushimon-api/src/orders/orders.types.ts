@@ -5,6 +5,20 @@ export interface DecimalLike {
   toFixed(decimalPlaces: number): string;
 }
 
+/**
+ * Pago del pedido tal como se LEE (F24): solo lo que alimenta el vocabulario PÚBLICO (estado, fecha y, en el recibo, importe
+ * aplicado, efectivo entregado y cambio). Nunca el empleado, hashes ni historial. `payment` ausente o `null` = pedido histórico
+ * sin fila de pago: se lee como efectivo `PENDING`.
+ */
+export interface OrderPaymentRecord {
+  /** `pending` | `paid`. */
+  status: string;
+  amount: DecimalLike;
+  tendered: DecimalLike | null;
+  change: DecimalLike | null;
+  receivedAt: Date | null;
+}
+
 /** Pedido tal como se LEE para responder (sin correo ni coordenadas: minimización de PII). */
 export interface OrderRecord {
   id: string;
@@ -23,6 +37,8 @@ export interface OrderRecord {
   deliveryFee: DecimalLike;
   total: DecimalLike;
   paymentMethodPreference: string | null;
+  /** F24: pago real del pedido (opcional en dobles de prueba; `null`/ausente = sin fila de pago). */
+  payment?: OrderPaymentRecord | null;
   placedAt: Date;
   updatedAt: Date;
   address: {
@@ -86,7 +102,7 @@ export interface NewOrder {
   discountTotal: string;
   deliveryFee: string;
   total: string;
-  paymentMethodPreference: 'cash' | 'bank_transfer' | null;
+  paymentMethodPreference: 'cash' | null;
   address: NewOrderAddress | null;
   lines: NewOrderLine[];
   promotions: { promotionId: string; promotionName: string; amount: string }[];

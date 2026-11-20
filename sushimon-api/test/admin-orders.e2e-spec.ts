@@ -7,6 +7,7 @@ import { DbGate } from '../src/common/concurrency/db-gate.js';
 import { ordersBusy } from '../src/orders/orders-errors.js';
 import { BRANCH_A, BRANCH_B, FakeFulfillment, NOW } from './support/admin-orders-harness.js';
 import { FakeAdminOrdersRepo } from './support/fake-admin-orders-repo.js';
+import { FakePaymentsRepo } from './support/fake-payments-repo.js';
 import { ROLE_PERMISSIONS } from './support/staff-context.js';
 import { createTestKeys, type TestKeys } from './support/tokens.js';
 
@@ -54,6 +55,7 @@ describe('Gestión de pedidos del backoffice (e2e, F22)', () => {
   let keys: TestKeys;
   let app: NestExpressApplication;
   let repo: FakeAdminOrdersRepo;
+  let paymentsRepo: FakePaymentsRepo;
   let fulfillment: FakeFulfillment;
   let staffRows: Map<string, ReturnType<typeof staffRow>>;
   let logged: string[];
@@ -73,6 +75,7 @@ describe('Gestión de pedidos del backoffice (e2e, F22)', () => {
     const { JWKS_RESOLVER } = await import('../src/auth/jwt-verifier.service.js');
     const { AdminOrdersRepository } =
       await import('../src/orders/admin/admin-orders.repository.js');
+    const { PaymentsRepository } = await import('../src/orders/payments/payments.repository.js');
     const { CLOCK } = await import('../src/branch-schedule/clock.js');
     const { ORDERS_DB_GATE } = await import('../src/orders/orders-errors.js');
     const { ORDER_FULFILLMENT_PORT } =
@@ -99,6 +102,8 @@ describe('Gestión de pedidos del backoffice (e2e, F22)', () => {
       .useValue(keys.jwks)
       .overrideProvider(AdminOrdersRepository)
       .useValue(repo)
+      .overrideProvider(PaymentsRepository)
+      .useValue(paymentsRepo)
       .overrideProvider(CLOCK)
       .useValue({ now: () => new Date(NOW.getTime()) })
       .overrideProvider(ORDER_FULFILLMENT_PORT)
@@ -139,6 +144,7 @@ describe('Gestión de pedidos del backoffice (e2e, F22)', () => {
     }
     staffRows = new Map();
     repo = new FakeAdminOrdersRepo();
+    paymentsRepo = new FakePaymentsRepo(repo);
     fulfillment = new FakeFulfillment();
     app = await createApp();
   });
@@ -234,6 +240,7 @@ describe('Gestión de pedidos del backoffice (e2e, F22)', () => {
           'itemCount',
           'orderNumber',
           'paymentMethodPreference',
+          'paymentStatus',
           'placedAt',
           'scheduledFor',
           'status',
@@ -328,7 +335,12 @@ describe('Gestión de pedidos del backoffice (e2e, F22)', () => {
       const res = await get(`/v1/admin/orders/${mine}`, auth);
       expect(res.status).toBe(200);
       expect(json(res)['contact']).toEqual({ fullName: PII_NAME, phone: PII_PHONE });
-      expect(json(res)['payment']).toEqual({ methodPreference: null, status: 'NOT_STARTED' });
+      expect(json(res)['payment']).toMatchObject({
+        method: 'CASH',
+        status: 'PENDING',
+        amountDue: '185.00',
+        registration: { allowed: false, blockedReason: 'NO_PERMISSION' }, // el gerente no tiene payments.confirm (P91)
+      });
       expect(JSON.stringify(res.body)).not.toMatch(/email|changedBy/i);
       expect((await get('/v1/admin/orders/no-es-uuid', auth)).status).toBe(400);
       const a = await get(`/v1/admin/orders/${foreign}`, auth);
@@ -576,9 +588,10 @@ describe('Gestión de pedidos del backoffice (e2e, F22)', () => {
       expect(repo.audits).toHaveLength(1);
     });
 
-    it('rechazo con transferencia: pendingActions payment_review; con delivery activa del puerto: delivery_cancellation', async () => {
+    it('rechazo con pago PAID real: pendingActions payment_review; con delivery activa del puerto: delivery_cancellation', async () => {
       const auth = await manager();
-      const bank = seed({ paymentMethodPreference: 'bank_transfer' });
+      const bank = seed();
+      paymentsRepo.seedPaid(bank);
       const res = await post(`/v1/admin/orders/${bank}/reject`, auth, {
         expectedStatus: 'pending',
         reason: 'Sin existencias',
