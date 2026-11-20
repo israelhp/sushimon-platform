@@ -443,6 +443,15 @@ describe('Motoristas propios del backoffice (e2e, F27)', () => {
       expect(items(await get('/v1/admin/riders?page=5', await admin()))).toEqual([]);
     });
 
+    it('q con %, _ y \\ es texto literal (no comodín): no encuentra nada', async () => {
+      const auth = await admin();
+      for (const q of ['%', '_', '\\', 'a%', '_lvaro', '%25%25']) {
+        const res = await get(`/v1/admin/riders?q=${encodeURIComponent(q)}`, auth);
+        expect(res.status).toBe(200);
+        expect(items(res)).toEqual([]);
+      }
+    });
+
     it('filtros q (con acentos), branchId, active, availability y orden', async () => {
       const auth = await admin();
       expect(items(await get('/v1/admin/riders?q=ALVARO', auth))).toEqual(['Álvaro Gómez']);
@@ -665,6 +674,21 @@ describe('Motoristas propios del backoffice (e2e, F27)', () => {
   });
 
   describe('R20 R21 R22 R23 estado y disponibilidad', () => {
+    it('reason con un teléfono: se acepta pero NO aparece en la respuesta ni en la auditoría', async () => {
+      const r = seedRider({ availability: 'AVAILABLE' });
+      const leak = '+50255509876';
+      const res = await send('patch', `/v1/admin/riders/${r.id}/status`, await admin(), {
+        active: false,
+        reason: `llamar al ${leak}`,
+      });
+      expect(res.status).toBe(200);
+      expect(JSON.stringify(res.body)).not.toContain(leak);
+      expect(repo.audits).toHaveLength(1);
+      expect(JSON.stringify(repo.audits)).not.toContain(leak);
+      expect(JSON.stringify(repo.audits)).not.toContain('llamar');
+      expect(repo.audits[0]?.newValues).toMatchObject({ hasReason: true });
+    });
+
     it('desactivar fuerza UNAVAILABLE; reactivar no lo deja disponible; repetir => 200 sin auditar', async () => {
       const r = seedRider({ availability: 'AVAILABLE' });
       const auth = await admin();
@@ -678,8 +702,9 @@ describe('Motoristas propios del backoffice (e2e, F27)', () => {
       });
       expect(repo.audits[0]).toMatchObject({
         action: 'rider.deactivated',
-        reason: 'baja voluntaria',
+        newValues: { active: false, hasReason: true, reasonLength: 'baja voluntaria'.length },
       });
+      expect(repo.audits[0]?.reason ?? null).toBeNull(); // el texto libre NO se persiste
       const again = await send('patch', path, auth, { active: false });
       expect(again.status).toBe(200);
       expect(repo.audits).toHaveLength(1);

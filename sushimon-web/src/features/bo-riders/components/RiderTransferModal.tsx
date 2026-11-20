@@ -71,7 +71,7 @@ export function RiderTransferModal({
       title={t('title')}
       description={rider.fullName}
       icon={<IconRider />}
-      iconTone="blue"
+      iconTone="coral"
       onClose={onClose}
       footer={
         <>
@@ -81,7 +81,7 @@ export function RiderTransferModal({
           <button
             type="submit"
             form={formId}
-            className="btn btn-primary"
+            className="btn danger"
             disabled={mutation.isPending || targets.length === 0}
           >
             {mutation.isPending ? t('saving') : t('confirm')}
@@ -93,6 +93,9 @@ export function RiderTransferModal({
         <p className="span-2 sm" style={{ margin: 0 }}>
           {t('text', { name: rider.fullName })}
         </p>
+        <Banner zone="bo" tone="warning" role="note" className="span-2">
+          {t('warning')}
+        </Banner>
         <p className="span-2 sm muted" style={{ margin: 0, fontWeight: 600 }}>
           {t('current', { branch: rider.branchName })}
         </p>

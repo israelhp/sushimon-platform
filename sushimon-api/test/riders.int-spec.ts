@@ -454,6 +454,31 @@ describe.skipIf(!url || !ready)('Motoristas propios contra PostgreSQL real (F27)
     expect(actions.length).toBe(2 + ok); // created + availability_changed + (deactivated | branch_changed)
   });
 
+  it('carrera traslado vs PATCH de teléfono con dos sesiones: resultado consistente, sin fila a medias', async (ctx) => {
+    skipUnlessReady(ctx);
+    const r = await make();
+    const newPhone = phone();
+    const results = await Promise.all([
+      err(commands.update(admin, r.id, { expectedVersion: 1, branchId: branchB })),
+      err(commands.update(admin, r.id, { expectedVersion: 1, phone: newPhone })),
+    ]);
+    // ambos parten de la versión 1: exactamente uno gana y el otro recibe 409 (o 404 si el alcance ya no lo ve)
+    expect(results.filter((e) => e === null)).toHaveLength(1);
+    for (const e of results) {
+      if (e !== null) expect(['RIDER_VERSION_CONFLICT', 'RIDER_NOT_FOUND']).toContain(codeOf(e));
+    }
+    const row = await rowOf(r.id);
+    expect(row?.version).toBe(2);
+    const moved = results[0] === null;
+    expect(row).toMatchObject(
+      moved
+        ? { branch_id: branchB, phone: r.phone, availability: 'UNAVAILABLE' }
+        : { branch_id: branchA, phone: newPhone },
+    );
+    expect(await q('SELECT 1 FROM app.riders WHERE id = $1', [r.id])).toHaveLength(1);
+    expect(await auditOf(r.id)).toHaveLength(2); // created + un solo evento del ganador
+  });
+
   it('R20 estado: desactivar fuerza UNAVAILABLE, reactivar no lo deja disponible, repetir no audita; ≤4 sentencias (R32)', async (ctx) => {
     skipUnlessReady(ctx);
     const r = await make();
@@ -479,7 +504,8 @@ describe.skipIf(!url || !ready)('Motoristas propios contra PostgreSQL real (F27)
     const audits = await auditOf(r.id);
     expect(audits.map((a) => a.action).slice(-2)).toEqual(['rider.deactivated', 'rider.activated']);
     expect(audits.find((a) => a.action === 'rider.deactivated')).toMatchObject({
-      reason: 'baja',
+      reason: null, // el texto libre no se persiste (PII)
+      new_values: { hasReason: true, reasonLength: 4 },
       actor_id: staffRowId,
     });
   });

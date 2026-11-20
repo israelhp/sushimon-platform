@@ -127,19 +127,11 @@ export function RidersScreen() {
         ) : null}
       </div>
 
-      <div
-        className="row gap10"
-        role="group"
-        aria-label={t('filtersLabel')}
-        style={{ flexWrap: 'wrap', marginBottom: 14 }}
-      >
-        <label className="row gap8">
-          <span className="sm muted" style={{ fontWeight: 700 }}>
-            {t('filterBranch')}
-          </span>
+      <div className="toolbar toolbar-mb" role="group" aria-label={t('filtersLabel')}>
+        <label className="toolbar-field">
+          <span className="toolbar-label">{t('filterBranch')}</span>
           <select
             className="inp"
-            style={{ width: 'auto' }}
             value={list.branchId}
             onChange={(e) => setFilter({ branchId: e.target.value })}
           >
@@ -151,13 +143,10 @@ export function RidersScreen() {
             ))}
           </select>
         </label>
-        <label className="row gap8">
-          <span className="sm muted" style={{ fontWeight: 700 }}>
-            {t('filterStatus')}
-          </span>
+        <label className="toolbar-field">
+          <span className="toolbar-label">{t('filterStatus')}</span>
           <select
             className="inp"
-            style={{ width: 'auto' }}
             value={list.status}
             onChange={(e) => setFilter({ status: e.target.value as RiderStatusFilter })}
           >
@@ -166,13 +155,10 @@ export function RidersScreen() {
             <option value="inactive">{t('optInactive')}</option>
           </select>
         </label>
-        <label className="row gap8">
-          <span className="sm muted" style={{ fontWeight: 700 }}>
-            {t('filterAvailability')}
-          </span>
+        <label className="toolbar-field">
+          <span className="toolbar-label">{t('filterAvailability')}</span>
           <select
             className="inp"
-            style={{ width: 'auto' }}
             value={list.availability}
             onChange={(e) =>
               setFilter({ availability: e.target.value as RiderListState['availability'] })
@@ -184,13 +170,10 @@ export function RidersScreen() {
             {busyKnown ? <option value="BUSY">{t('optBusy')}</option> : null}
           </select>
         </label>
-        <label className="row gap8">
-          <span className="sm muted" style={{ fontWeight: 700 }}>
-            {t('sortLabel')}
-          </span>
+        <label className="toolbar-field">
+          <span className="toolbar-label">{t('sortLabel')}</span>
           <select
             className="inp"
-            style={{ width: 'auto' }}
             value={list.sort}
             onChange={(e) => setFilter({ sort: e.target.value as RiderSortKey })}
           >
@@ -203,7 +186,7 @@ export function RidersScreen() {
         </label>
         <button
           type="button"
-          className="btn sm"
+          className="btn toolbar-order"
           aria-label={t('orderToggle', { order: orderText })}
           onClick={() => setFilter({ order: list.order === 'asc' ? 'desc' : 'asc' })}
         >
@@ -228,103 +211,107 @@ export function RidersScreen() {
             aria-label={t('tableLabel')}
             aria-busy={riders.isPending || riders.isFetching}
           >
-            <div className="thead cols-riders" role="row">
-              <span role="columnheader">{t('colName')}</span>
-              <span role="columnheader">{t('colPhone')}</span>
-              <span role="columnheader">{t('colBranch')}</span>
-              <span role="columnheader">{t('colStatus')}</span>
-              <span role="columnheader">{t('colAvailability')}</span>
-              <span role="columnheader">
-                <span className="sr-only">{t('colActions')}</span>
-              </span>
+            <div role="rowgroup">
+              <div className="thead cols-riders" role="row">
+                <span role="columnheader">{t('colName')}</span>
+                <span role="columnheader">{t('colPhone')}</span>
+                <span role="columnheader">{t('colBranch')}</span>
+                <span role="columnheader">{t('colStatus')}</span>
+                <span role="columnheader">{t('colAvailability')}</span>
+                <span role="columnheader">
+                  <span className="sr-only">{t('colActions')}</span>
+                </span>
+              </div>
             </div>
-            {riders.isPending
-              ? [0, 1, 2, 3].map((i) => (
-                  <div key={i} className="trow cols-riders" role="row">
-                    <div role="cell" style={{ gridColumn: '1 / -1' }}>
-                      <Skeleton zone="bo" style={{ height: 34, borderRadius: 10 }} />
-                    </div>
-                  </div>
-                ))
-              : items.map((rider) => {
-                  const canUpdate = can('riders.update', rider.branchId);
-                  const occupancy = riderOccupancy(rider);
-                  return (
-                    <div key={rider.id} className="trow cols-riders" role="row">
-                      <div role="cell" style={{ minWidth: 0 }}>
-                        <button
-                          type="button"
-                          className="link-btn cell-main trunc"
-                          aria-label={t('viewLabel', { name: rider.fullName })}
-                          onClick={() => setDetailId(rider.id)}
-                        >
-                          {rider.fullName}
-                        </button>
-                        <div className="xs muted" style={{ fontWeight: 600 }}>
-                          {rider.vehicleType
-                            ? t(`vehicles.${rider.vehicleType}`)
-                            : t('vehicleNone')}
-                        </div>
-                      </div>
-                      <div className="sm muted hide-sm" style={{ fontWeight: 600 }} role="cell">
-                        {rider.phoneMasked}
-                      </div>
-                      <div className="sm r-branch" style={{ fontWeight: 600 }} role="cell">
-                        {rider.branchName}
-                      </div>
-                      <div className="r-status" role="cell">
-                        <Pill zone="bo" tone={rider.active ? 'success' : 'muted'}>
-                          {rider.active ? t('statusActive') : t('statusInactive')}
-                        </Pill>
-                      </div>
-                      <div className="r-avail" role="cell">
-                        <RiderAvailabilityControl rider={rider} canEdit={canUpdate} />
-                        <div className="xs muted" style={{ fontWeight: 600 }}>
-                          {occupancy === 'unknown'
-                            ? t('occupancyUnknown')
-                            : t(occupancy === 'busy' ? 'occupancyBusy' : 'occupancyFree')}
-                        </div>
-                      </div>
-                      <div className="row-actions r-act" role="cell">
-                        {canUpdate ? (
-                          <>
-                            <button
-                              type="button"
-                              className="btn sm edit-btn"
-                              aria-label={t('editLabel', { name: rider.fullName })}
-                              onClick={() => setModal({ kind: 'edit', id: rider.id })}
-                            >
-                              <IconPencil size="sm" />
-                              {t('edit')}
-                            </button>
-                            <button
-                              type="button"
-                              className="btn sm"
-                              aria-label={t('transferLabel', { name: rider.fullName })}
-                              onClick={() => setModal({ kind: 'transfer', rider })}
-                            >
-                              {t('transfer')}
-                            </button>
-                            <button
-                              type="button"
-                              className="btn sm"
-                              aria-label={t(rider.active ? 'deactivateLabel' : 'activateLabel', {
-                                name: rider.fullName,
-                              })}
-                              onClick={() => setModal({ kind: 'status', rider })}
-                            >
-                              {t(rider.active ? 'deactivate' : 'activate')}
-                            </button>
-                          </>
-                        ) : (
-                          <span className="xs muted" style={{ fontWeight: 700 }}>
-                            {t('readOnly')}
-                          </span>
-                        )}
+            <div role="rowgroup">
+              {riders.isPending
+                ? [0, 1, 2, 3].map((i) => (
+                    <div key={i} className="trow cols-riders" role="row">
+                      <div role="cell" style={{ gridColumn: '1 / -1' }}>
+                        <Skeleton zone="bo" style={{ height: 34, borderRadius: 10 }} />
                       </div>
                     </div>
-                  );
-                })}
+                  ))
+                : items.map((rider) => {
+                    const canUpdate = can('riders.update', rider.branchId);
+                    const occupancy = riderOccupancy(rider);
+                    return (
+                      <div key={rider.id} className="trow cols-riders" role="row">
+                        <div role="cell" style={{ minWidth: 0 }}>
+                          <button
+                            type="button"
+                            className="link-btn cell-main trunc"
+                            aria-label={t('viewLabel', { name: rider.fullName })}
+                            onClick={() => setDetailId(rider.id)}
+                          >
+                            {rider.fullName}
+                          </button>
+                          <div className="xs muted" style={{ fontWeight: 600 }}>
+                            {rider.vehicleType
+                              ? t(`vehicles.${rider.vehicleType}`)
+                              : t('vehicleNone')}
+                          </div>
+                        </div>
+                        <div className="sm muted hide-sm" style={{ fontWeight: 600 }} role="cell">
+                          {rider.phoneMasked}
+                        </div>
+                        <div className="sm r-branch" style={{ fontWeight: 600 }} role="cell">
+                          {rider.branchName}
+                        </div>
+                        <div className="r-status" role="cell">
+                          <Pill zone="bo" tone={rider.active ? 'success' : 'muted'}>
+                            {rider.active ? t('statusActive') : t('statusInactive')}
+                          </Pill>
+                        </div>
+                        <div className="r-avail" role="cell">
+                          <RiderAvailabilityControl rider={rider} canEdit={canUpdate} />
+                          <div className="xs muted" style={{ fontWeight: 600 }}>
+                            {occupancy === 'unknown'
+                              ? t('occupancyUnknown')
+                              : t(occupancy === 'busy' ? 'occupancyBusy' : 'occupancyFree')}
+                          </div>
+                        </div>
+                        <div className="row-actions r-act" role="cell">
+                          {canUpdate ? (
+                            <>
+                              <button
+                                type="button"
+                                className="btn sm edit-btn"
+                                aria-label={t('editLabel', { name: rider.fullName })}
+                                onClick={() => setModal({ kind: 'edit', id: rider.id })}
+                              >
+                                <IconPencil size="sm" />
+                                {t('edit')}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn sm"
+                                aria-label={t('transferLabel', { name: rider.fullName })}
+                                onClick={() => setModal({ kind: 'transfer', rider })}
+                              >
+                                {t('transfer')}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn sm"
+                                aria-label={t(rider.active ? 'deactivateLabel' : 'activateLabel', {
+                                  name: rider.fullName,
+                                })}
+                                onClick={() => setModal({ kind: 'status', rider })}
+                              >
+                                {t(rider.active ? 'deactivate' : 'activate')}
+                              </button>
+                            </>
+                          ) : (
+                            <span className="xs muted" style={{ fontWeight: 700 }}>
+                              {t('readOnly')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+            </div>
           </div>
           {!riders.isPending && !riders.isError && items.length === 0 ? (
             hasRiderFilters(list) ? (

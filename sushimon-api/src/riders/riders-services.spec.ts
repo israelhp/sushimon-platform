@@ -237,9 +237,8 @@ describe('Servicios de motoristas (F27)', () => {
       });
       expect(repo.audits.at(-1)).toMatchObject({
         action: 'rider.deactivated',
-        reason: 'baja',
         oldValues: { active: true },
-        newValues: { active: false, availability: 'UNAVAILABLE' },
+        newValues: { active: false, availability: 'UNAVAILABLE', hasReason: true, reasonLength: 4 },
       });
       const n = repo.audits.length;
       const again = await commands.setStatus(admin(), r.id, { active: false });

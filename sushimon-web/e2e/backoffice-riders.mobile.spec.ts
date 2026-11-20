@@ -45,6 +45,7 @@ for (const theme of ['light', 'dark'] as const) {
       row.getByRole('button', { name: 'Desactivar a Luis Coc' }),
       row.locator('label.sw-row'),
       page.getByRole('button', { name: 'Nuevo motorista' }),
+      page.getByRole('button', { name: /^Cambiar el orden/ }),
     ]) {
       expect((await target.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     }

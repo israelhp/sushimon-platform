@@ -2709,6 +2709,7 @@
         "branchLockedHint": "Para cambiar de sucursal usa «Trasladar».",
         "name": "Nombre completo",
         "phone": "Teléfono",
+        "phonePlaceholder": "+50255501234",
         "phoneHint": "Formato +502 y 8 dígitos (ej. +50255501234). Debe ser único.",
         "vehicle": "Vehículo",
         "vehicleNone": "Sin vehículo",
@@ -2743,7 +2744,8 @@
       },
       "transferModal": {
         "title": "Trasladar de sucursal",
-        "text": "{name} se mueve a otra sucursal con el mismo registro (no se duplica). Quedará NO disponible hasta que lo marques disponible en la nueva sucursal.",
+        "text": "{name} cambiará de sucursal con el mismo registro (no se duplica).",
+        "warning": "Quedará NO disponible: no recibirá entregas hasta que lo marques disponible en la nueva sucursal.",
         "current": "Sucursal actual: {branch}",
         "target": "Sucursal destino",
         "targetPick": "Elige la sucursal destino",

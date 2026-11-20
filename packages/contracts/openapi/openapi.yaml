@@ -4375,7 +4375,7 @@ paths:
       description: |
         F27. Exige `riders.update` en su sucursal y `aal2`. Establece `active` con valor explícito: idempotente (si ya tiene ese valor => 200 sin escribir ni auditar; sin `expectedVersion`, el último gana). Desactivar
         fuerza `availability = UNAVAILABLE` en la misma sentencia (un inactivo nunca es asignable) y, con entrega activa (F28), responde 409 `RIDER_HAS_ACTIVE_DELIVERY` sin cambiar nada. Reactivar NO lo marca
-        disponible. Desactivar conserva el teléfono (para reactivar en vez de duplicar) y el historial. `reason` opcional (máx. 200; sin PII). Un cambio real sube `version` y audita `rider.activated`/`rider.deactivated`.
+        disponible. Desactivar conserva el teléfono (para reactivar en vez de duplicar) y el historial. `reason` opcional (máx. 200; se valida pero no se guarda: la auditoría solo registra `hasReason`/`reasonLength`). Un cambio real sube `version` y audita `rider.activated`/`rider.deactivated`.
         ≤ 4 sentencias SQL.
       tags: [admin-riders]
       security:
@@ -9598,7 +9598,7 @@ components:
           {
             type: string,
             maxLength: 200,
-            description: 'Texto libre de operador; se guarda en auditoría. NO debe contener datos personales.',
+            description: 'Texto libre de operador (opcional, máx. 200). Se valida pero NO se persiste ni se devuelve: la auditoría solo guarda `hasReason` y `reasonLength`. NO debe contener datos personales.',
           }
     UpdateRiderAvailabilityRequest:
       type: object

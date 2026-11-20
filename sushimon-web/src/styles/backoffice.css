@@ -1382,6 +1382,26 @@
     align-items: center;
     flex-wrap: wrap;
   }
+  /* Barra de filtros con etiqueta visible (F27): reutiliza .toolbar; el orden mide lo mismo que los selects (44 px). */
+  [data-zone='bo'] .toolbar-mb {
+    margin-bottom: 14px;
+  }
+  [data-zone='bo'] .toolbar-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  [data-zone='bo'] .toolbar-field .inp {
+    width: auto;
+  }
+  [data-zone='bo'] .toolbar-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--bo-muted);
+  }
+  [data-zone='bo'] .toolbar-order {
+    height: 44px;
+  }
   [data-zone='bo'] .tabs {
     display: flex;
     gap: 8px;
@@ -2846,6 +2866,9 @@
     gap: 6px 12px;
     font-size: 13px;
     margin: 0;
+  }
+  [data-zone='bo'] .kv.kv-wide {
+    grid-template-columns: 120px minmax(0, 1fr);
   }
   [data-zone='bo'] .kv dt {
     font-weight: 600;

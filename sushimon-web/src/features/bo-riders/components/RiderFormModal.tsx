@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useState, type FormEvent } from 'react';
 import { IconRider } from '@/components/icons/bo';
 import { Banner } from '@/components/ui/Banner';
 import { Modal } from '@/components/ui/Modal';
@@ -107,6 +107,11 @@ function RiderForm({
   const formId = useId();
   const focusField = (field: RiderFormField) =>
     document.getElementById(`${formId}-${field}`)?.focus();
+  // Foco inicial en el primer campo editable (el diálogo enfoca su contenedor; sin esto el siguiente Tab cae en «Cancelar»).
+  const firstField: RiderFormField = editing || offered.length <= 1 ? 'fullName' : 'branchId';
+  useEffect(() => {
+    document.getElementById(`${formId}-${firstField}`)?.focus();
+  }, [formId, firstField]);
   const pending = create.isPending || update.isPending;
   const serverKind = serverError ? classifyRiderError(serverError) : null;
 
@@ -279,7 +284,7 @@ function RiderForm({
             inputMode="tel"
             value={values.phone}
             autoComplete="off"
-            placeholder="+50255501234"
+            placeholder={t('phonePlaceholder')}
             onChange={(e) => patch({ phone: e.target.value })}
             aria-invalid={invalid('phone')}
             aria-describedby={describe('phone', true)}

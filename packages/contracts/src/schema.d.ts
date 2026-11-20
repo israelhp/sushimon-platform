@@ -1646,7 +1646,7 @@ export interface paths {
          * Activa o desactiva a un motorista (no hay borrado físico)
          * @description F27. Exige `riders.update` en su sucursal y `aal2`. Establece `active` con valor explícito: idempotente (si ya tiene ese valor => 200 sin escribir ni auditar; sin `expectedVersion`, el último gana). Desactivar
          *     fuerza `availability = UNAVAILABLE` en la misma sentencia (un inactivo nunca es asignable) y, con entrega activa (F28), responde 409 `RIDER_HAS_ACTIVE_DELIVERY` sin cambiar nada. Reactivar NO lo marca
-         *     disponible. Desactivar conserva el teléfono (para reactivar en vez de duplicar) y el historial. `reason` opcional (máx. 200; sin PII). Un cambio real sube `version` y audita `rider.activated`/`rider.deactivated`.
+         *     disponible. Desactivar conserva el teléfono (para reactivar en vez de duplicar) y el historial. `reason` opcional (máx. 200; se valida pero no se guarda: la auditoría solo registra `hasReason`/`reasonLength`). Un cambio real sube `version` y audita `rider.activated`/`rider.deactivated`.
          *     ≤ 4 sentencias SQL.
          */
         patch: operations["updateAdminRiderStatus"];
@@ -3968,7 +3968,7 @@ export interface components {
         };
         UpdateRiderStatusRequest: {
             active: boolean;
-            /** @description Texto libre de operador; se guarda en auditoría. NO debe contener datos personales. */
+            /** @description Texto libre de operador (opcional, máx. 200). Se valida pero NO se persiste ni se devuelve: la auditoría solo guarda `hasReason` y `reasonLength`. NO debe contener datos personales. */
             reason?: string;
         };
         UpdateRiderAvailabilityRequest: {

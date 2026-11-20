@@ -176,9 +176,14 @@ export class RidersCommandsService {
           entityType: ENTITY,
           entityId: updated.id,
           action: body.active ? 'rider.activated' : 'rider.deactivated',
-          reason,
+          // PII: el texto libre NO se persiste en auditoría; solo si hubo motivo y su longitud.
           oldValues: { active: current.active },
-          newValues: { active: updated.active, availability: updated.availability },
+          newValues: {
+            active: updated.active,
+            availability: updated.availability,
+            hasReason: reason !== null,
+            reasonLength: reason?.length ?? 0,
+          },
         });
         return updated;
       }),

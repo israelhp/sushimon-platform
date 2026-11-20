@@ -2,7 +2,7 @@
 
 **Rama**: `feature/F27-own-drivers` (desde `develop` con F24) · **Dueño**: B · **Prioridad**: P0 · **Tipo**: API + WEB (motoristas propios en el backoffice)
 **Dependencias**: F07 (sucursales), F03 (RBAC granular, aal2, alcance por sucursal) · **Integración**: F09 (`ownDeliveryZonesEnabled`, solo lectura), F36/`AuditService` · **Integración posterior**: F28 (entregas propias; consume `RiderEligibilityService` y reemplaza el adaptador del puerto), F30/F33 (tarjeta de motoristas agregada) · **Decisiones**: `docs/adr/0031-repartidores-propios.md` · **Pendientes**: P92–P103 en `docs/business-rules/decisiones-pendientes.md`
-**Estado de integración inicial: `CONTRACT_DEFINED`** (operaciones `listAdminRiders`, `createAdminRider`, `getAdminRider`, `updateAdminRider`, `updateAdminRiderStatus`, `updateAdminRiderAvailability` y esquemas `AdminRider`, `AdminRiderSummary`, `AdminRiderPage`, `CreateRiderRequest`, `UpdateRiderRequest`, `UpdateRiderStatusRequest`, `UpdateRiderAvailabilityRequest`, `RiderVehicleType`, `RiderAvailability`, `RiderAvailabilityFilter`, `RiderOperationalState` en `openapi.yaml`, tag `admin-riders`; sin migración aplicada, API ni web). `pnpm contracts:generate` ejecutado; `pnpm contracts:check` queda rojo SOLO por esas 6 operaciones sin implementar (igual que F24). Estado de la feature en el backlog: no se edita aquí. PedidosYa: `BLOCKED_EXTERNAL`/fuera de alcance. La feature solo pasa a `READY` con código real, BD, seguridad, web y pruebas.
+**Estado actual: ver §16 (`API_IMPLEMENTED`, sin verificar contra BD real). Estado de integración inicial: `CONTRACT_DEFINED`** (operaciones `listAdminRiders`, `createAdminRider`, `getAdminRider`, `updateAdminRider`, `updateAdminRiderStatus`, `updateAdminRiderAvailability` y esquemas `AdminRider`, `AdminRiderSummary`, `AdminRiderPage`, `CreateRiderRequest`, `UpdateRiderRequest`, `UpdateRiderStatusRequest`, `UpdateRiderAvailabilityRequest`, `RiderVehicleType`, `RiderAvailability`, `RiderAvailabilityFilter`, `RiderOperationalState` en `openapi.yaml`, tag `admin-riders`; sin migración aplicada, API ni web). `pnpm contracts:generate` ejecutado; `pnpm contracts:check` queda rojo SOLO por esas 6 operaciones sin implementar (igual que F24). Estado de la feature en el backlog: no se edita aquí. PedidosYa: `BLOCKED_EXTERNAL`/fuera de alcance. La feature solo pasa a `READY` con código real, BD, seguridad, web y pruebas.
 
 > **Nomenclatura oficial** (backlog y DBML): tabla `app.riders`, rutas `/v1/admin/riders`, permisos `riders.read|create|update|assign`. No se usa «drivers» en ningún nombre público.
 
@@ -146,7 +146,7 @@ Roles con los permisos hoy (migraciones 0002 + 0005; las ediciones manuales vía
 - **Normalización** (servidor, antes de validar): `fullName` NFC, recortado, espacios colapsados, 2–80 y sin caracteres de control; `name_key` = NFKD sin diacríticos, minúsculas, espacios colapsados; `phone` exactamente `^\+502[0-9]{8}$` (sin reformatear: lo que no cumple es 400); `licensePlate` en mayúsculas sin espacios ni guiones y `^[A-Z0-9]{4,10}$`; `vehicleType` conjunto cerrado.
 - **Edición** (`PATCH`): `expectedVersion` obligatorio; al menos un campo editable; `active`/`availability` y campos desconocidos ⇒ 400 (`additionalProperties: false`). `vehicleType`/`licensePlate` aceptan `null`. Valores idénticos a los vigentes ⇒ 200 sin escribir, sin subir `version` y sin auditar.
 - **Traslado** (`branchId` distinto): exige `riders.update` en origen y destino; destino activo; lo deja `UNAVAILABLE` (debe re-habilitarse en la nueva sucursal); bloquea con 409 si hay entrega activa (§8). Mueve el mismo `id`.
-- **Estado** (`PATCH …/status`): `active` explícito, idempotente (último gana, sin `expectedVersion`); desactivar fuerza `availability=UNAVAILABLE` y exige no tener entrega activa; reactivar no marca disponible; `reason` ≤ 200 opcional.
+- **Estado** (`PATCH …/status`): `active` explícito, idempotente (último gana, sin `expectedVersion`); desactivar fuerza `availability=UNAVAILABLE` y exige no tener entrega activa; reactivar no marca disponible; `reason` ≤ 200 opcional (se valida, NO se persiste ni se devuelve: es texto libre y podría contener PII).
 - **Disponibilidad** (`PATCH …/availability`): `AVAILABLE|UNAVAILABLE` explícito, idempotente; `BUSY` ⇒ 400; `AVAILABLE` con inactivo ⇒ 409 `RIDER_INACTIVE`; `UNAVAILABLE` con entrega activa ⇒ 409 `RIDER_HAS_ACTIVE_DELIVERY`.
 
 ## 4. Errores
@@ -192,7 +192,7 @@ Precedencia: 401 → 403 (permiso/aal2) → 400 (forma) → 404 → 403 `RIDER_A
 | `rider.created`                         | alta                    | — → `{branchId, vehicleType, active: true, availability: 'UNAVAILABLE'}`                                   |
 | `rider.updated`                         | edición con diff real   | `{changedFields: ['fullName','phone','vehicleType','licensePlate']}` (solo nombres de campo; sin valores)  |
 | `rider.branch_changed`                  | traslado real           | `{branchId: origen}` → `{branchId: destino, availability: 'UNAVAILABLE'}`; `branchId` del evento = destino |
-| `rider.activated` / `rider.deactivated` | cambio real de `active` | `{active}` → `{active, availability}`; `reason` opcional                                                   |
+| `rider.activated` / `rider.deactivated` | cambio real de `active` | `{active}` → `{active, availability, hasReason, reasonLength}`; NUNCA el texto de `reason`                 |
 | `rider.availability_changed`            | cambio real             | `{availability}` → `{availability}`                                                                        |
 
 Un `PATCH` con datos y traslado escribe `rider.updated` Y `rider.branch_changed`. Sin cambio real: ni escritura ni evento. Las lecturas no se auditan (P98).
@@ -326,9 +326,16 @@ Trazabilidad usuario → matriz: CRUD y filtros R03–R17/R10; datos mínimos y 
 
 - Sin F28 no se puede bloquear por entrega activa (el puerto no sabe) ⇒ `busyKnown=false`; F28 debe cerrar esta brecha (D3/D4, §8).
 - Solo `admin` global escribe hasta aprobar P93; un encargado no puede registrar a su motorista (decisión de negocio, no se asume).
-- `RIDER_PHONE_TAKEN` confirma la existencia de un teléfono a quien tiene `riders.create/update` (sin id ni nombre).
+- **RIESGO ACEPTADO (P104, recomendación abajo)**: `RIDER_PHONE_TAKEN` es un oráculo de existencia de teléfono entre sucursales: quien tiene `riders.create/update` puede saber si un teléfono ya está registrado (aunque sea en otra sucursal), sin id ni nombre. Mitigado: requiere aal2 + permiso, throttle, y no revela el registro. Recomendación: mantener `UNIQUE(phone)` global (P96); si negocio exige aislamiento por sucursal, devolver el mismo 409 genérico y no distinguir origen, o auditar los intentos repetidos.
 - Sin retención/anonimización (P98) ni turnos/retorno (P100).
 - Decisiones P92–P103 con recomendación adoptada (ver `decisiones-pendientes.md`): disponibilidad manual + `BUSY` derivado (P92); roles (P93); puerto y política de entrega activa (P94); traslado (P95); unicidad del teléfono (P96); vehículo y placa (P97); PII (P98); sin borrado (P99); sin turnos (P100); sin tocar `ownDeliveryZonesEnabled` (P101); alta sin `Idempotency-Key` (P102); búsqueda solo por nombre (P103).
+
+### Dependencias pendientes de F28 (obligaciones al sustituir el puerto)
+
+1. Proveer el adaptador real de `RIDER_ACTIVE_DELIVERIES_PORT` con una prueba que FALLE si el binding sigue siendo `NoActiveDeliveriesAdapter` («sin entregas», `known=false`) cuando ya exista la tabla de entregas.
+2. NO reenviar `riderBranchId` de `RiderEligibilityService.evaluate` al cliente (revela la sucursal de un motorista ajeno).
+3. Validar que `branchId` sea UUID antes de llamar `findEligibilityRow` (el repositorio asume UUID; un valor inválido sería un 500 por cast).
+4. Meter `findBusy` en el MISMO `gate.run` que el resto de la operación y verificar que la suma de cupos de `DbGate` (F27 + F28) no supere `DB_POOL_MAX`.
 
 ## 15. Reparto de trabajo (agentes) y orden
 
@@ -340,15 +347,16 @@ Trazabilidad usuario → matriz: CRUD y filtros R03–R17/R10; datos mínimos y 
 
 ## 16. Estado (implementado · simulado · pendiente de proveedor · bloqueado)
 
-| Pieza                                            | Estado                                                                                        |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| Contrato OpenAPI y tipos (`admin-riders`)        | `CONTRACT_DEFINED` (hecho; `contracts:check` rojo solo por las 6 operaciones sin implementar) |
-| Spec, ADR-0031, P92–P103, `planned-endpoints.md` | Hecho                                                                                         |
-| Migración 0021, `schema.prisma`                  | Pendiente (propuesta en §2.2; requiere aprobación humana para aplicarse)                      |
-| API (`/v1/admin/riders`, elegibilidad, puerto)   | Pendiente                                                                                     |
-| Web (sección Motoristas)                         | Pendiente (mock tipado propio)                                                                |
-| Ocupación (`BUSY`)                               | Simulado: adaptador «sin entregas» (`busyKnown=false`); real = F28                            |
-| PedidosYa / Neonet                               | `BLOCKED_EXTERNAL`; fuera de alcance                                                          |
+| Pieza                                            | Estado                                                                                                                                                        |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Contrato OpenAPI y tipos (`admin-riders`)        | Hecho; `contracts:check` verde                                                                                                                                |
+| Spec, ADR-0031, P92–P104, `planned-endpoints.md` | Hecho                                                                                                                                                         |
+| Migración 0021, `schema.prisma`                  | Escrita y validada en PostgreSQL embebido descartable (se aplica, se relanza, CHECK/UNIQUE/trigger responden). NO aplicada en Supabase (la aplica el usuario) |
+| API (`/v1/admin/riders`, elegibilidad, puerto)   | `API_IMPLEMENTED`: unitarias y e2e con fakes en verde. `test/riders.int-spec.ts` escrito, NO ejecutado contra BD real (se salta si falta `app.riders`)        |
+| Web (sección Motoristas)                         | Implementada con adaptador `http` y mock; Vitest, Playwright (mock) y `next build` verdes. NO probada contra la API real                                      |
+| Ocupación (`BUSY`)                               | Simulado: adaptador «sin entregas» (`busyKnown=false`); real = F28                                                                                            |
+| PedidosYa / Neonet                               | `BLOCKED_EXTERNAL`; fuera de alcance                                                                                                                          |
+| Estado de F27                                    | `API_IMPLEMENTED` + web integrada por tipos/mock; NO `READY` hasta aplicar 0021, correr el int-spec y verificar web↔API real                                  |
 
 ## 17. Qué NO hace F27
 

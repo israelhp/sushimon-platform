@@ -62,6 +62,16 @@ describe('RidersRepository (SQL parametrizado; se prueba contra PostgreSQL en te
     expect(q?.values).toEqual(expect.arrayContaining(['alvaro', 20, 0]));
   });
 
+  it('listado: `q` con %, _ y \\ viaja como parámetro y se compara con position(), nunca LIKE/ILIKE', async () => {
+    const { repo, queries } = make([]);
+    await repo.list(filter({ key: '50%_\\x' }));
+    const q = queries[0];
+    expect(q?.sql).toContain('position(');
+    expect(q?.sql).not.toMatch(/\bI?LIKE\b|~|SIMILAR/i);
+    expect(q?.sql).not.toContain('%');
+    expect(q?.values).toContain('50%_\\x'); // sin escapar ni transformar: literal para position()
+  });
+
   it('listado: orden de lista blanca y desempate por id; página vacía > 1 => +1 conteo', async () => {
     const { repo, queries } = make([]);
     await repo.list(filter({ sort: 'createdAt', order: 'desc', page: 3 }));

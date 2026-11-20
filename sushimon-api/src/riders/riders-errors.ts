@@ -64,9 +64,34 @@ export const ridersBusy = () =>
     HttpStatus.SERVICE_UNAVAILABLE,
   );
 
+/** Mensaje fijo del trigger `app.riders_guard` (migración 0021) cuando la sucursal no existe o está inactiva. */
+const BRANCH_GUARD_MESSAGE = 'la sucursal debe existir y estar activa';
+
+function errorMessages(error: unknown): string[] {
+  const e = error as {
+    message?: unknown;
+    meta?: {
+      message?: unknown;
+      driverAdapterError?: { message?: unknown; cause?: { message?: unknown } };
+    };
+    cause?: { message?: unknown };
+  };
+  return [
+    e.message,
+    e.meta?.message,
+    e.meta?.driverAdapterError?.message,
+    e.meta?.driverAdapterError?.cause?.message,
+    e.cause?.message,
+  ].filter((m): m is string => typeof m === 'string');
+}
+
+function isBranchGuardViolation(error: unknown): boolean {
+  return errorMessages(error).some((m) => m.includes(BRANCH_GUARD_MESSAGE));
+}
+
 /**
- * Traduce errores de BD esperables: `23505` (único: solo `riders_phone_key` y la PK) => 409 `RIDER_PHONE_TAKEN`; `23514`/`23503`
- * del trigger/FK de sucursal => 422 (solo escrituras que mueven o crean con sucursal: `branchCheck`); ocupación => 503.
+ * Traduce errores de BD esperables: `23505` (único: solo `riders_phone_key` y la PK) => 409 `RIDER_PHONE_TAKEN`; `23514` del trigger de sucursal (por mensaje) y `23503`
+ * de la FK de sucursal => 422 (solo escrituras que mueven o crean con sucursal: `branchCheck`); ocupación => 503.
  * Mensajes fijos: nunca valores ni nombres de restricciones.
  */
 export function translateRidersDbError(
@@ -77,7 +102,12 @@ export function translateRidersDbError(
   if (error instanceof HttpException) return error;
   const codes = dbErrorCodes(error);
   if (codes.includes('P2002') || codes.includes('23505')) return riderPhoneTaken();
-  if (ctx.branchCheck && ['23514', '23503', 'P2003'].some((c) => codes.includes(c))) {
+  if (ctx.branchCheck && ['23503', 'P2003'].some((c) => codes.includes(c))) {
+    return branchNotAvailable();
+  }
+  // 23514 solo es «sucursal» si lo lanza el trigger `riders_guard` (mensaje de la migración 0021); cualquier otro CHECK
+  // (formato, versión, etc.) es un defecto inesperado: se devuelve tal cual (500 genérico en AllExceptionsFilter).
+  if (ctx.branchCheck && codes.includes('23514') && isBranchGuardViolation(error)) {
     return branchNotAvailable();
   }
   return isRetryableDbError(error) ? ridersBusy() : error;

@@ -144,6 +144,20 @@ describe('Alta', () => {
   });
 });
 
+describe('Foco inicial y tabla', () => {
+  it('al editar el foco cae en el primer campo (no en Cancelar) y la tabla tiene rowgroups', async () => {
+    const user = userEvent.setup();
+    await renderRiders();
+    await screen.findByText('7 motoristas');
+    expect(within(table()).getAllByRole('rowgroup')).toHaveLength(2);
+    await user.click(screen.getByRole('button', { name: 'Editar a Luis Coc' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Editar motorista' });
+    const name = await within(dialog).findByLabelText('Nombre completo');
+    await waitFor(() => expect(name).toHaveFocus());
+    expect(within(dialog).getByRole('button', { name: 'Cancelar' })).not.toHaveFocus();
+  });
+});
+
 describe('Edición', () => {
   it('carga el detalle (teléfono completo y placa), envía solo lo cambiado con expectedVersion y sube la versión', async () => {
     const user = userEvent.setup();
@@ -329,6 +343,8 @@ describe('Traslado con confirmación', () => {
     );
     const dialog = await screen.findByRole('alertdialog', { name: 'Trasladar de sucursal' });
     expect(within(dialog).getByText(/Quedará NO disponible/)).toBeVisible();
+    expect(within(dialog).getByText(/cambiará de sucursal/)).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'Trasladar' })).toHaveClass('danger');
     expect(within(dialog).getByText('Sucursal actual: Sucursal 1')).toBeVisible();
     const select = within(dialog).getByLabelText('Sucursal destino');
     expect(

@@ -45,7 +45,7 @@ export function RiderDrawer({
       open
       zone="bo"
       title={rider?.fullName ?? td('title')}
-      eyebrow={rider?.branchName ?? td('title')}
+      eyebrow={rider?.branchName}
       onClose={onClose}
       headerExtra={
         rider ? (
@@ -73,7 +73,7 @@ export function RiderDrawer({
           </Banner>
         ) : (
           <>
-            <dl className="kv" style={{ gridTemplateColumns: '120px minmax(0, 1fr)' }}>
+            <dl className="kv kv-wide">
               <dt>{td('name')}</dt>
               <dd>{rider.fullName}</dd>
               <dt>{td('phone')}</dt>
