@@ -84,7 +84,7 @@ describe.skipIf(!url || !ready)('Motoristas propios contra PostgreSQL real (F27)
       (e: unknown) => e,
     );
   const codeOf = (e: unknown) =>
-    (e as { getResponse?: () => { code?: string } }).getResponse?.().code;
+    (e as { getResponse?: () => { code?: string } } | null)?.getResponse?.().code;
   const q = <T extends pg.QueryResultRow>(sql: string, params: unknown[] = []) =>
     withClient(url as string, (c) => c.query<T>(sql, params)).then((r) => r.rows);
   const measure = async <T>(fn: () => Promise<T>): Promise<{ result: T; n: number }> => {
@@ -131,7 +131,7 @@ describe.skipIf(!url || !ready)('Motoristas propios contra PostgreSQL real (F27)
       old_values: unknown;
       new_values: unknown;
     }>(
-      "SELECT action, actor_id, branch_id, reason, old_values, new_values FROM app.audit_events WHERE entity_type = 'rider' AND entity_id = $1 ORDER BY occurred_at, id",
+      "SELECT action, actor_id, branch_id, reason, old_values, new_values FROM app.audit_events WHERE entity_type = 'rider' AND entity_id = $1 ORDER BY created_at, id",
       [id],
     );
 
