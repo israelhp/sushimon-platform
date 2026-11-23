@@ -12,7 +12,7 @@ import { ForbiddenScreen } from '@/features/backoffice-shell/ForbiddenScreen';
 import { useShell } from '@/features/backoffice-shell/shell-context';
 import { isForbidden } from '@/features/bo-orders/error-message';
 import type { AdminRiderSummary } from '@/lib/data-access/models';
-import { useAdminRiders } from '../hooks';
+import { useAdminRiders, useRiderBranches } from '../hooks';
 import {
   DEFAULT_RIDER_LIST,
   RIDER_PAGE_SIZE,
@@ -48,7 +48,8 @@ type Modal =
 export function RidersScreen() {
   const t = useTranslations('backoffice.riders');
   const tu = useTranslations('ui');
-  const { can, branches } = useShell();
+  const { can } = useShell();
+  const branches = useRiderBranches();
   const [list, setList] = useState<RiderListState>(DEFAULT_RIDER_LIST);
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState<Modal | null>(null);

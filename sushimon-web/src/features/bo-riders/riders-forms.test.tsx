@@ -158,6 +158,28 @@ describe('Foco inicial y tabla', () => {
   });
 });
 
+describe('Sucursales reales (modo http)', () => {
+  it('con el shell SIN sucursales (fuente demo caída) alta y traslado usan las sucursales públicas', async () => {
+    const user = userEvent.setup();
+    fault('GET /v1/demo/branches/operations', ...Array<string>(20).fill('offline'));
+    await renderRiders();
+    await screen.findByText('7 motoristas');
+    await user.click(await screen.findByRole('button', { name: 'Nuevo motorista' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Nuevo motorista' });
+    expect(
+      within(within(dialog).getByLabelText('Sucursal')).getAllByRole('option').length,
+    ).toBeGreaterThan(1);
+    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Trasladar a Juan Carlos Pérez a otra sucursal' }),
+    );
+    const move = await screen.findByRole('alertdialog', { name: 'Trasladar de sucursal' });
+    expect(
+      within(within(move).getByLabelText('Sucursal destino')).getAllByRole('option').length,
+    ).toBeGreaterThan(1);
+  });
+});
+
 describe('Edición', () => {
   it('carga el detalle (teléfono completo y placa), envía solo lo cambiado con expectedVersion y sube la versión', async () => {
     const user = userEvent.setup();

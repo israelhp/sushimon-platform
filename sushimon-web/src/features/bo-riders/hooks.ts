@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { usePublicBranches } from '@/features/branches/hooks';
 import { queryKeys } from '@/features/query-keys';
 import { useStaffKey } from '@/features/bo-orders/hooks';
 import type {
@@ -30,6 +31,15 @@ import { MAX_BUSY_RETRIES, busyDelayMs, isRidersBusy } from './rider-model';
  * contenido (PII) en el navegador. Reintento AUTOMÁTICO solo del 503 `RIDERS_BUSY` y acotado (2 veces, respetando `Retry-After`);
  * el resto de errores se muestra y la persona decide. Ocultar acciones es cosmético: la API decide (403/404).
  */
+
+/**
+ * Sucursales activas (id + nombre) del contrato REAL de F07 (`GET /v1/branches`). El shell sigue con la fuente MOCK_ONLY
+ * de operaciones, que en modo http llega vacía; aquí no se depende de ella. El alcance por persona lo da `can(permiso, id)`.
+ */
+export function useRiderBranches(): readonly { id: string; name: string }[] {
+  const query = usePublicBranches();
+  return query.data ?? [];
+}
 
 const retryBusy = (count: number, error: unknown) =>
   isRidersBusy(error) && count < MAX_BUSY_RETRIES;

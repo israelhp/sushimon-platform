@@ -10,7 +10,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useShell } from '@/features/backoffice-shell/shell-context';
 import type { AdminRider } from '@/lib/data-access/models';
 import { RIDER_NAME_MAX } from '@/lib/rider-rules';
-import { useAdminRider, useCreateRider, useUpdateRider } from '../hooks';
+import { useAdminRider, useCreateRider, useRiderBranches, useUpdateRider } from '../hooks';
 import {
   VEHICLE_OPTIONS,
   branchesWhere,
@@ -90,7 +90,8 @@ function RiderForm({
   const t = useTranslations('backoffice.riders.form');
   const tr = useTranslations('backoffice.riders');
   const toast = useToast();
-  const { branches, can } = useShell();
+  const { can } = useShell();
+  const branches = useRiderBranches();
   const errorText = useRiderErrorText();
   const create = useCreateRider();
   const update = useUpdateRider();
