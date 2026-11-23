@@ -347,16 +347,16 @@ Trazabilidad usuario → matriz: CRUD y filtros R03–R17/R10; datos mínimos y 
 
 ## 16. Estado (implementado · simulado · pendiente de proveedor · bloqueado)
 
-| Pieza                                            | Estado                                                                                                                                                        |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Contrato OpenAPI y tipos (`admin-riders`)        | Hecho; `contracts:check` verde                                                                                                                                |
-| Spec, ADR-0031, P92–P104, `planned-endpoints.md` | Hecho                                                                                                                                                         |
-| Migración 0021, `schema.prisma`                  | Escrita y validada en PostgreSQL embebido descartable (se aplica, se relanza, CHECK/UNIQUE/trigger responden). NO aplicada en Supabase (la aplica el usuario) |
-| API (`/v1/admin/riders`, elegibilidad, puerto)   | `API_IMPLEMENTED`: unitarias y e2e con fakes en verde. `test/riders.int-spec.ts` escrito, NO ejecutado contra BD real (se salta si falta `app.riders`)        |
-| Web (sección Motoristas)                         | Implementada con adaptador `http` y mock; Vitest, Playwright (mock) y `next build` verdes. NO probada contra la API real                                      |
-| Ocupación (`BUSY`)                               | Simulado: adaptador «sin entregas» (`busyKnown=false`); real = F28                                                                                            |
-| PedidosYa / Neonet                               | `BLOCKED_EXTERNAL`; fuera de alcance                                                                                                                          |
-| Estado de F27                                    | `API_IMPLEMENTED` + web integrada por tipos/mock; NO `READY` hasta aplicar 0021, correr el int-spec y verificar web↔API real                                  |
+| Pieza                                            | Estado                                                                                                                                                                                                      |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Contrato OpenAPI y tipos (`admin-riders`)        | Hecho; `contracts:check` verde                                                                                                                                                                              |
+| Spec, ADR-0031, P92–P104, `planned-endpoints.md` | Hecho                                                                                                                                                                                                       |
+| Migración 0021, `schema.prisma`                  | Aplicada por el usuario en Supabase (2026-11-23). Antes validada en PostgreSQL embebido descartable (se aplica, se relanza, CHECK/UNIQUE/trigger responden). NO aplicada en Supabase (la aplica el usuario) |
+| API (`/v1/admin/riders`, elegibilidad, puerto)   | `API_IMPLEMENTED`: unitarias y e2e con fakes en verde. `test/riders.int-spec.ts` escrito, NO ejecutado contra BD real (se salta si falta `app.riders`)                                                      |
+| Web (sección Motoristas)                         | Implementada con adaptador `http` y mock; Vitest, Playwright (mock) y `next build` verdes. NO probada contra la API real                                                                                    |
+| Ocupación (`BUSY`)                               | Simulado: adaptador «sin entregas» (`busyKnown=false`); real = F28                                                                                                                                          |
+| PedidosYa / Neonet                               | `BLOCKED_EXTERNAL`; fuera de alcance                                                                                                                                                                        |
+| Estado de F27                                    | `API_IMPLEMENTED` + web integrada por tipos/mock; NO `READY` hasta aplicar 0021, correr el int-spec y verificar web↔API real                                                                                |
 
 ## 17. Qué NO hace F27
 
@@ -381,3 +381,15 @@ Texto sugerido (NO se edita `docs/BACKLOG.md` aquí; lo aplica quien coordine): 
 - Confirmar que Prisma 7 admite `SELECT … FOR UPDATE` y el `UPDATE … WHERE version` vía `$queryRaw` dentro de la transacción de la API, y el nombre real del contexto/`grants` (`req.staff`).
 - Confirmar el nombre y la ruta reales de la sección en `features/bo-*` y el router del backoffice.
 - Confirmar con negocio P93 antes de añadir cualquier `role_permissions`.
+
+## 20. Verificación real (2026-11-23)
+
+Migración 0021 aplicada por el usuario en Supabase (20→21 migraciones). Contra esa base:
+
+- `test/riders.int-spec.ts`: **16/16** (tras corregir dos defectos DE LA PRUEBA: ordenaba la auditoría por `occurred_at` en vez de `created_at` y `codeOf` no toleraba `null`). Doble alta simultánea del mismo teléfono (1×201 + 1×409), dos PATCH con la misma versión (1 gana, 1×409), desactivar vs trasladar y traslado vs PATCH de teléfono quedan consistentes; auditoría sin PII; presupuestos de sentencias.
+- API real (puerto 3055, JWT HS256 de prueba, personal temporal `zzv27`): **38/38** comprobaciones HTTP (401, aal1→403, alcance e IDOR→404, `riders.create` ausente→403, validaciones 400, `RIDER_PHONE_TAKEN` 409, `RIDER_VERSION_CONFLICT` con `current`, `BUSY`→400, traslado sin permiso en destino→403, traslado a sucursal inactiva→422, inactivo no disponible→409, `reason` no devuelto ni persistido, `private, no-store`, listado enmascarado). Auditoría: 6 acciones registradas, sin teléfono/placa/`reason`.
+- Navegador (web en modo `http` contra esa API): listado real, búsqueda, alta, duplicado, disponibilidad, detalle (teléfono completo, «Entregas: disponible con F28»), traslado, desactivación; móvil 390px y tema oscuro.
+- **Hallazgos corregidos por esta verificación**: (1) la pantalla usaba las sucursales del shell (`useBranches`, MOCK_ONLY, 404 en la API real), así que no ofrecía «Nuevo motorista» ni destinos de traslado: ahora usa `usePublicBranches()` (F07); (2) en móvil el botón «Nuevo motorista» se superponía al título.
+- Datos `zzv27` borrados; conteos finales idénticos al inicio (riders 0, branches 2, staff 1, audit 171, auth.users 3, roles 4).
+
+NO verificado: login real con Google/Supabase + TOTP (el JWT era de prueba), EXPLAIN con volumen, `migration-0021.int-spec.ts` (solo en la CI con PostgreSQL plano), F28 (ocupación real).
