@@ -101,7 +101,7 @@ export function RidersScreen() {
 
   return (
     <div className="page">
-      <div className="page-h">
+      <div className="page-h page-h-fit">
         <div className="grow">
           <h1>{t('title')}</h1>
           <div className="page-sub">{riders.data ? t('subtitle', { total }) : ' '}</div>
