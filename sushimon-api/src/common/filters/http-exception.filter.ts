@@ -55,6 +55,8 @@ const PUBLIC_5XX_CODES: ReadonlySet<string> = new Set([
   // idempotencia) y servidor sin `CHECKOUT_QUOTE_SECRET` (configuración, fail-closed). Mensaje fijo; contrato público.
   'ORDERS_BUSY',
   'ORDERS_UNAVAILABLE',
+  // F27 (spec 028 §4): semáforo de motoristas saturado o sin conexión; reintentable, mensaje fijo.
+  'RIDERS_BUSY',
 ]);
 
 /**

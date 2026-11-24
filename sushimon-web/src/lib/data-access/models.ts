@@ -258,6 +258,21 @@ export type AdminPaymentConflict = S['AdminPaymentConflict'];
 export type PaymentEventType = S['PaymentEventType'];
 export type AdminPaymentEvent = S['AdminPaymentEvent'];
 export type AdminPaymentHistory = S['AdminPaymentHistory'];
+/**
+ * F27 (spec 028, ADR-0031): motoristas PROPIOS del backoffice (tag `admin-riders`). Modelo NUEVO, separado del `Rider` de despacho
+ * simulado de `bo-deliveries` (que no se toca hasta F28). `busy` solo es real si `busyKnown`; `operationalState` nunca es `BUSY` sin F28.
+ */
+export type RiderVehicleType = S['RiderVehicleType'];
+export type RiderAvailability = S['RiderAvailability'];
+export type RiderAvailabilityFilter = S['RiderAvailabilityFilter'];
+export type RiderOperationalState = S['RiderOperationalState'];
+export type AdminRiderSummary = S['AdminRiderSummary'];
+export type AdminRider = S['AdminRider'];
+export type AdminRiderPage = S['AdminRiderPage'];
+export type CreateRiderRequest = S['CreateRiderRequest'];
+export type UpdateRiderRequest = S['UpdateRiderRequest'];
+export type UpdateRiderStatusRequest = S['UpdateRiderStatusRequest'];
+export type UpdateRiderAvailabilityRequest = S['UpdateRiderAvailabilityRequest'];
 export type OrderDetail = S['OrderDetail'];
 export type OrderGuestAccess = S['OrderGuestAccess'];
 /** F21 (spec 022): seguimiento ligero para polling; sin importes, líneas, contacto ni dirección. */

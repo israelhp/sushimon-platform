@@ -21,6 +21,7 @@ import type { ClosureRecord } from './fixtures/schedule';
 import type { DeliverySettingsRecord } from './fixtures/delivery';
 import type { BannerRecord } from './fixtures/banners';
 import type { PromotionRecord } from './fixtures/promotions';
+import type { AdminRiderRecord } from './fixtures/admin-riders';
 import type { RiderSeed } from './fixtures/staff';
 import type { Clock } from './clock';
 import type { MockScenario } from './scenarios';
@@ -265,6 +266,11 @@ export interface MockStore {
   staff: StaffRecord[];
   roles: RoleRecord[];
   riders: RiderSeed[];
+  /**
+   * F27 (SIMULADO): motoristas PROPIOS (`app.riders`, contrato `admin-riders`), distintos de `riders` (despacho simulado de `bo-deliveries`).
+   * Opcional: los stores persistidos antes de F27 no lo traen (el handler lo siembra al primer uso).
+   */
+  adminRiders?: AdminRiderRecord[];
   accounts: Record<string, CustomerAccount>;
   jobApplications: JobApplication[];
   /** Pedidos que esta sesión puede ver como invitado (creados aquí o consultados con teléfono). */

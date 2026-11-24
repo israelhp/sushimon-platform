@@ -204,3 +204,60 @@ describe('F24 · mensajes del pago en efectivo (es/en)', () => {
     }
   });
 });
+
+describe('F27 · mensajes de Motoristas (es/en)', () => {
+  const read = (locale: string) =>
+    JSON.parse(readFileSync(join(__dirname, 'messages', `${locale}.json`), 'utf8')) as {
+      backoffice: { riders: Record<string, unknown>; nav: { items: Record<string, string> } };
+    };
+  const flatten = (value: unknown, prefix = ''): string[] =>
+    typeof value === 'object' && value !== null
+      ? Object.entries(value).flatMap(([k, v]) => flatten(v, prefix ? `${prefix}.${k}` : k))
+      : [prefix];
+  const text = (value: unknown, path: string): string =>
+    path.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown>)[k], value) as string;
+
+  it('backoffice.riders tiene EXACTAMENTE las mismas claves en es y en en, ninguna vacía', () => {
+    const es = read('es').backoffice.riders;
+    const en = read('en').backoffice.riders;
+    const keys = flatten(es).sort();
+    expect(keys.length).toBeGreaterThan(100);
+    expect(flatten(en).sort()).toEqual(keys);
+    for (const key of keys) {
+      expect(text(es, key).trim(), `es ${key}`).not.toBe('');
+      expect(text(en, key).trim(), `en ${key}`).not.toBe('');
+    }
+  });
+
+  it('el backoffice es solo español: en.json copia el español de Motoristas', () => {
+    expect(read('en').backoffice.riders).toEqual(read('es').backoffice.riders);
+  });
+
+  it('el menú tiene la entrada Motoristas en ambos idiomas', () => {
+    for (const locale of ['es', 'en']) {
+      expect(read(locale).backoffice.nav.items.motoristas).toBe('Motoristas');
+    }
+  });
+
+  it('todos los códigos de error del contrato tienen mensaje', () => {
+    const errors = read('es').backoffice.riders.errors as Record<string, string>;
+    for (const kind of [
+      'phoneTaken',
+      'versionConflict',
+      'hasActiveDelivery',
+      'inactive',
+      'branchUnavailable',
+      'actionForbidden',
+      'mfa',
+      'forbidden',
+      'notFound',
+      'rate',
+      'busy',
+      'network',
+      'invalid',
+      'unknown',
+    ]) {
+      expect(errors[kind], kind).toBeTruthy();
+    }
+  });
+});

@@ -8,11 +8,12 @@ const screensOf = (grants: Grants) =>
 const grantsOf = (userId: string) => demoStaffFromSeed(userId).grants;
 
 describe('menú por permisos (grants del contexto administrativo)', () => {
-  it('administrador ve las 12 pantallas en 3 secciones', () => {
+  it('administrador ve las 13 pantallas en 3 secciones', () => {
     expect(screensOf(grantsOf('u1'))).toEqual([
       'panel',
       'pedidos',
       'entregas',
+      'motoristas',
       'productos',
       'categorias',
       'modificadores',
@@ -35,6 +36,7 @@ describe('menú por permisos (grants del contexto administrativo)', () => {
       'panel',
       'pedidos',
       'entregas',
+      'motoristas',
       'productos',
       'categorias',
       'modificadores',
@@ -48,6 +50,14 @@ describe('menú por permisos (grants del contexto administrativo)', () => {
   it('cocina solo ve Pedidos y se omiten las secciones vacías', () => {
     expect(screensOf(grantsOf('u5'))).toEqual(['pedidos']);
     expect(navForGrants(grantsOf('u5'))).toHaveLength(1);
+  });
+
+  it('motoristas (F27) depende de riders.read: el empleado y la cocina no lo ven; el encargado sí (solo lectura)', () => {
+    expect(screensOf(grantsOf('u9'))).not.toContain('motoristas');
+    expect(screensOf(grantsOf('u5'))).not.toContain('motoristas');
+    expect(screensOf({ 'riders.read': { allBranches: false, branchIds: ['b1'] } })).toEqual([
+      'motoristas',
+    ]);
   });
 
   it('empleado ve Pedidos y Entregas', () => {
@@ -69,6 +79,8 @@ describe('rutas', () => {
     expect(screenHref('pedidos')).toBe('/backoffice/pedidos');
     expect(screenHref('roles')).toBe('/backoffice/roles');
     expect(screenFromPath('/backoffice/entregas')).toBe('entregas');
+    expect(screenFromPath('/backoffice/motoristas')).toBe('motoristas');
+    expect(screenHref('motoristas')).toBe('/backoffice/motoristas');
     expect(screenFromPath('/backoffice/roles')).toBe('roles');
     expect(screenFromPath('/backoffice/login')).toBeNull();
     expect(screenFromPath(null)).toBeNull();

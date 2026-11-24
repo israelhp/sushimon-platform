@@ -5,6 +5,7 @@ import type { MockScenario } from '@/mocks/scenarios';
 import { createHarness, type TestHarness } from '@/mocks/testing';
 import { validateContract } from '@/test/contract-schema';
 import * as account from '@/services/account';
+import * as adminRiders from '@/services/admin-riders';
 import * as adminOrders from '@/services/admin-orders';
 import * as admin from '@/services/backoffice-admin';
 import * as banners from '@/services/banners';
@@ -1201,6 +1202,98 @@ describe('paridad mock ↔ http', () => {
     expect(a.map((x) => ('error' in x ? x.error.status : 200))).toEqual([
       200, 200, 409, 400, 422, 400, 404, 404,
     ]);
+  });
+
+  it('F27: motoristas propios (listar, detalle, alta, edición, traslado, estado y disponibilidad) producen lo mismo con mock y con http y validan contra el contrato', async () => {
+    const p = pair();
+    p.asStaff('admin');
+    const steps: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => adminRiders.listAdminRiders(c, {}), // 200
+      (c) =>
+        adminRiders.listAdminRiders(c, {
+          q: 'angel',
+          active: true,
+          availability: 'AVAILABLE',
+          sort: 'createdAt',
+          order: 'desc',
+          page: 1,
+          pageSize: 5,
+        }),
+      (c) => adminRiders.listAdminRiders(c, { availability: 'BUSY' }), // vacío: sin F28
+      (c) => adminRiders.listAdminRiders(c, { pageSize: 101 }), // 400
+      (c) => adminRiders.getAdminRider(c, 'rider-1'),
+      (c) => adminRiders.getAdminRider(c, 'rider-999'), // 404 RIDER_NOT_FOUND
+      (c) =>
+        adminRiders.createAdminRider(c, {
+          branchId: 'sucursal-1',
+          fullName: 'Nuevo Motorista',
+          phone: '+50255509999',
+          vehicleType: 'CAR',
+          licensePlate: 'p-551 bcd',
+        }), // 200 (201 en la API real)
+      (c) =>
+        adminRiders.createAdminRider(c, {
+          branchId: 'sucursal-1',
+          fullName: 'Otro',
+          phone: '+50255509999',
+        }), // 409 RIDER_PHONE_TAKEN
+      (c) =>
+        adminRiders.createAdminRider(c, {
+          branchId: 'sucursal-4',
+          fullName: 'Otro Más',
+          phone: '+50255509998',
+        }), // 422 BRANCH_NOT_AVAILABLE
+      (c) =>
+        adminRiders.createAdminRider(c, {
+          branchId: 'sucursal-1',
+          fullName: 'X',
+          phone: '123',
+        }), // 400
+      (c) =>
+        adminRiders.updateAdminRider(c, 'rider-1', { expectedVersion: 1, fullName: 'Juan P.' }),
+      (c) => adminRiders.updateAdminRider(c, 'rider-1', { expectedVersion: 1, fullName: 'Viejo' }), // 409 conflicto
+      (c) =>
+        adminRiders.updateAdminRider(c, 'rider-1', { expectedVersion: 2, fullName: 'Juan P.' }), // sin cambio
+      (c) =>
+        adminRiders.updateAdminRider(c, 'rider-1', { expectedVersion: 2, branchId: 'sucursal-2' }), // traslado
+      (c) => adminRiders.setAdminRiderStatus(c, 'rider-3', { active: false, reason: 'Baja' }),
+      (c) => adminRiders.setAdminRiderStatus(c, 'rider-3', { active: false }), // idempotente
+      (c) => adminRiders.setAdminRiderAvailability(c, 'rider-3', { availability: 'AVAILABLE' }), // 409 RIDER_INACTIVE
+      (c) => adminRiders.setAdminRiderAvailability(c, 'rider-2', { availability: 'AVAILABLE' }),
+      (c) => adminRiders.setAdminRiderAvailability(c, 'rider-2', { availability: 'BUSY' as never }), // 400
+      (c) => adminRiders.listAdminRiders(c, {}),
+    ];
+    const a = await run(steps, p.mock.client);
+    expect(await run(steps, p.http)).toEqual(a);
+    expect(a.map((x) => ('error' in x ? x.error.status : 200))).toEqual([
+      200, 200, 200, 400, 200, 404, 200, 409, 422, 400, 200, 409, 200, 200, 200, 200, 409, 200, 400,
+      200,
+    ]);
+    const ok = (i: number) => (a[i] as { ok: unknown }).ok;
+    expect(validateContract('AdminRiderPage', ok(0))).toEqual([]);
+    expect(validateContract('AdminRider', ok(4))).toEqual([]);
+    expect(validateContract('AdminRider', ok(6))).toEqual([]);
+    expect(validateContract('AdminRider', ok(10))).toEqual([]);
+    expect(validateContract('AdminRider', ok(13))).toEqual([]);
+    expect(validateContract('AdminRider', ok(14))).toEqual([]);
+    expect(validateContract('AdminRider', ok(17))).toEqual([]);
+    expect((a[5] as { error: { businessCode: string } }).error.businessCode).toBe(
+      'RIDER_NOT_FOUND',
+    );
+    expect((a[7] as { error: { businessCode: string } }).error.businessCode).toBe(
+      'RIDER_PHONE_TAKEN',
+    );
+    expect((a[11] as { error: { businessCode: string } }).error.businessCode).toBe(
+      'RIDER_VERSION_CONFLICT',
+    );
+    expect((a[16] as { error: { businessCode: string } }).error.businessCode).toBe(
+      'RIDER_INACTIVE',
+    );
+    expect(ok(13)).toMatchObject({
+      branchId: 'sucursal-2',
+      availability: 'UNAVAILABLE',
+      version: 3,
+    });
   });
 
   it('F24: pago en efectivo (getAdminOrderPayment, registerAdminOrderCashPayment, historial) produce lo mismo con mock y con http y valida contra el contrato', async () => {

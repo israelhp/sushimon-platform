@@ -15,12 +15,13 @@ beforeEach(() => resetNavigationMock('/backoffice/panel'));
 const menu = () => within(screen.getByRole('navigation', { name: 'Menú principal' }));
 
 describe('shell autenticado', () => {
-  it('administrador ve las 12 pantallas del menú', async () => {
+  it('administrador ve las 13 pantallas del menú', async () => {
     await renderBackoffice(<BackofficeShell>contenido</BackofficeShell>, { role: 'admin' });
     const names = [
       'Panel',
       'Pedidos',
       'Entregas',
+      'Motoristas',
       'Productos',
       'Categorías',
       'Extras',
@@ -34,13 +35,14 @@ describe('shell autenticado', () => {
     for (const name of names) {
       expect(await menu().findByRole('link', { name: new RegExp(name) })).toBeVisible();
     }
-    expect(menu().getAllByRole('link')).toHaveLength(12);
+    expect(menu().getAllByRole('link')).toHaveLength(13);
   });
 
   it('el encargado ve su operación, Productos, Categorías y Extras (solo lectura), Sucursales (solo lectura), Usuarios, Roles y Reportes; no Promociones', async () => {
     await renderBackoffice(<BackofficeShell>contenido</BackofficeShell>, { role: 'manager' });
     await menu().findByRole('link', { name: /Entregas/ });
-    expect(menu().getAllByRole('link')).toHaveLength(10);
+    expect(menu().getAllByRole('link')).toHaveLength(11);
+    expect(menu().getByRole('link', { name: /Motoristas/ })).toBeVisible();
     expect(menu().getByRole('link', { name: /Categorías/ })).toBeVisible();
     expect(menu().getByRole('link', { name: /Extras/ })).toBeVisible();
     expect(menu().queryByRole('link', { name: /Promociones/ })).toBeNull();

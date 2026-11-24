@@ -31,6 +31,7 @@ import { StoreModule } from './store/store.module.js';
 import { CheckoutModule } from './checkout/checkout.module.js';
 import { OrdersModule } from './orders/orders.module.js';
 import { StaffModule } from './staff/staff.module.js';
+import { RidersModule } from './riders/riders.module.js';
 import { CustomersModule } from './customers/customers.module.js';
 import { FavoritesModule } from './favorites/favorites.module.js';
 import { DatabaseModule } from './database/database.module.js';
@@ -94,6 +95,7 @@ import { HealthTokenGuard } from './health/health-token.guard.js';
     LocationsModule,
     DeliveryCoverageModule,
     StaffModule,
+    RidersModule,
     CustomersModule,
     FavoritesModule,
   ],
@@ -107,7 +109,13 @@ export class AppModule implements NestModule {
     // F24: `admin/orders/:id/payment…` queda fuera porque `OrdersModule` le fija `private, no-store` (más estricto).
     consumer
       .apply(noStoreMiddleware)
-      .exclude('admin/orders/:id/payment', 'admin/orders/:id/payment/*path')
+      .exclude(
+        'admin/orders/:id/payment',
+        'admin/orders/:id/payment/*path',
+        // F27: motoristas (PII) llevan `private, no-store` desde `RidersModule`.
+        'admin/riders',
+        'admin/riders/*path',
+      )
       .forRoutes('admin/*path');
     // Perfil propio del cliente (F01 + F04): datos personales, nunca en caché compartida.
     // F23: `/v1/me/orders` queda fuera porque `configureApp` ya le fija `private, no-store` + `Vary: Authorization` (más estricto).

@@ -131,6 +131,14 @@ describe('paths', () => {
     expect(Object.keys(paths)).not.toContain('users');
   });
 
+  it('F27: rutas de motoristas propios (id codificado, sin DELETE) y distintas de las de despacho simulado', () => {
+    expect(paths.adminRiders()).toBe('/v1/admin/riders');
+    expect(paths.adminRider('r 1')).toBe('/v1/admin/riders/r%201');
+    expect(paths.adminRiderStatus('r1')).toBe('/v1/admin/riders/r1/status');
+    expect(paths.adminRiderAvailability('r1')).toBe('/v1/admin/riders/r1/availability');
+    expect(paths.riders()).toBe('/v1/backoffice/riders');
+  });
+
   it('F23: rutas del historial, el recibo y la vista previa (id codificado) y su espejo mock', () => {
     expect(paths.myOrders()).toBe('/v1/me/orders');
     expect(paths.orderReceipt('a b')).toBe('/v1/orders/a%20b/receipt');

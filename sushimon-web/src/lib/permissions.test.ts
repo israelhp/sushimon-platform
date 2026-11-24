@@ -58,6 +58,17 @@ describe('pantallas', () => {
     expect(Object.values(SCREEN_PERMISSION).every((p) => p.includes('.'))).toBe(true);
   });
 
+  it('F27: Motoristas depende de riders.read (en alguna sucursal)', () => {
+    expect(SCREEN_PERMISSION.motoristas).toBe('riders.read');
+    expect(canSee({ 'riders.read': { allBranches: false, branchIds: ['b1'] } }, 'motoristas')).toBe(
+      true,
+    );
+    expect(canSee({ 'riders.read': { allBranches: false, branchIds: [] } }, 'motoristas')).toBe(
+      false,
+    );
+    expect(canSee(grants, 'motoristas')).toBe(false);
+  });
+
   it('módulo de un permiso', () => {
     expect(permissionModule('staff.assign_roles')).toBe('staff');
   });

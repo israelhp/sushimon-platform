@@ -144,6 +144,19 @@ export const ADMIN_PAYMENTS_COMMAND_THROTTLE = {
   actor: { limit: 30, ttl: 60_000 },
 };
 
+/**
+ * Motoristas propios del backoffice (F27, spec 028 §3). Mismos topes que F24: lecturas 120/min por IP y 60/min por actor;
+ * escrituras (actos manuales) 60/min por IP y 30/min por actor. Contadores propios, independientes de F20–F24.
+ */
+export const ADMIN_RIDERS_READ_THROTTLE = {
+  default: { limit: 120, ttl: 60_000 },
+  actor: { limit: 60, ttl: 60_000 },
+};
+export const ADMIN_RIDERS_COMMAND_THROTTLE = {
+  default: { limit: 60, ttl: 60_000 },
+  actor: { limit: 30, ttl: 60_000 },
+};
+
 /** Throttler adicional «por actor»: solo cuenta en las rutas que declaran un límite `actor`. */
 export const ACTOR_THROTTLER = 'actor';
 

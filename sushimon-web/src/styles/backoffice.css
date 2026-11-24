@@ -875,6 +875,10 @@
     text-transform: uppercase;
     letter-spacing: -0.01em;
   }
+  /* El título no se encoge por debajo de su palabra más larga: en móvil la acción baja a otra fila en vez de superponerse (F27). */
+  [data-zone='bo'] .page-h-fit > .grow {
+    min-width: min-content;
+  }
   [data-zone='bo'] .page-sub {
     color: var(--bo-muted);
     font-weight: 500;
@@ -1230,6 +1234,12 @@
       minmax(190px, 1.2fr) minmax(190px, 1.1fr) minmax(210px, 1.4fr)
       170px 250px;
   }
+  /* F27: motoristas propios. */
+  [data-zone='bo'] .cols-riders {
+    grid-template-columns:
+      minmax(190px, 1.3fr) 130px minmax(110px, 0.8fr) 100px 210px
+      minmax(250px, 1.1fr);
+  }
   /* F09: zonas propias de entrega (con y sin columna «Sucursal»). */
   [data-zone='bo'] .cols-zones {
     grid-template-columns:
@@ -1285,6 +1295,9 @@
     min-width: 1180px;
   }
   [data-zone='bo'] .min-users {
+    min-width: 1060px;
+  }
+  [data-zone='bo'] .min-riders {
     min-width: 1060px;
   }
   [data-zone='bo'] .min-zones {
@@ -1372,6 +1385,26 @@
     gap: 12px;
     align-items: center;
     flex-wrap: wrap;
+  }
+  /* Barra de filtros con etiqueta visible (F27): reutiliza .toolbar; el orden mide lo mismo que los selects (44 px). */
+  [data-zone='bo'] .toolbar-mb {
+    margin-bottom: 14px;
+  }
+  [data-zone='bo'] .toolbar-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  [data-zone='bo'] .toolbar-field .inp {
+    width: auto;
+  }
+  [data-zone='bo'] .toolbar-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--bo-muted);
+  }
+  [data-zone='bo'] .toolbar-order {
+    height: 44px;
   }
   [data-zone='bo'] .tabs {
     display: flex;
@@ -2838,6 +2871,9 @@
     font-size: 13px;
     margin: 0;
   }
+  [data-zone='bo'] .kv.kv-wide {
+    grid-template-columns: 120px minmax(0, 1fr);
+  }
   [data-zone='bo'] .kv dt {
     font-weight: 600;
     color: var(--bo-muted);
@@ -2958,6 +2994,12 @@
     [data-zone='bo'] .link-btn {
       display: inline-flex;
       align-items: center;
+    }
+  }
+  /* F27: el interruptor de disponibilidad queda dentro de una fila táctil de 44 px (la etiqueta también lo activa). */
+  @media (max-width: 640px) {
+    [data-zone='bo'] .sw-row {
+      min-height: 44px;
     }
   }
   /* Datos conservados de la MISMA clave mientras no hay conexión: atenuados, nunca ocultos. */
@@ -3334,6 +3376,7 @@
     [data-zone='bo'] .min-recent,
     [data-zone='bo'] .min-del,
     [data-zone='bo'] .min-users,
+    [data-zone='bo'] .min-riders,
     [data-zone='bo'] .min-zones,
     [data-zone='bo'] .min-mod,
     [data-zone='bo'] .min-prod {
@@ -3349,6 +3392,20 @@
     }
     [data-zone='bo'] .cols-users .sw-row {
       justify-self: end;
+    }
+    /* F27: en móvil cada motorista es una tarjeta: nombre | estado, sucursal, disponibilidad y acciones a todo el ancho. */
+    [data-zone='bo'] .cols-riders .r-status {
+      grid-column: 2;
+      grid-row: 1;
+      justify-self: end;
+    }
+    [data-zone='bo'] .cols-riders .r-branch {
+      grid-column: 1/-1;
+    }
+    [data-zone='bo'] .cols-riders .r-avail,
+    [data-zone='bo'] .cols-riders .r-act {
+      grid-column: 1/-1;
+      justify-content: flex-start;
     }
     [data-zone='bo'] .hide-sm {
       display: none;
