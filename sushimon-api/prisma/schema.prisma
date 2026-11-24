@@ -39,6 +39,7 @@ model Branch {
   orders            Order[]
   payments          Payment[]
   riders            Rider[]
+  deliveries        Delivery[]
 
   @@map("branches")
   @@schema("app")
@@ -639,6 +640,7 @@ model Order {
   idempotencyKeys         OrderIdempotencyKey[]
   payment                 Payment?
   paymentEvents           PaymentEvent[]
+  delivery                Delivery?
 
   @@index([branchId, status, placedAt(sort: Desc)], map: "orders_branch_status_placed_idx")
   @@map("orders")
@@ -845,26 +847,88 @@ model PaymentEvent {
 /// F27 (0021). Motorista propio (DBML ampliado). UNIQUE(phone); baja = active=false (sin DELETE, trigger). BUSY no se guarda (F28).
 /// Sin @updatedAt: el SQL de la API fija updated_at y version (el trigger exige version = OLD.version + 1).
 model Rider {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  branchId     String   @map("branch_id") @db.Uuid
-  fullName     String   @map("full_name")
+  id             String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  branchId       String                  @map("branch_id") @db.Uuid
+  fullName       String                  @map("full_name")
   /// Nombre sin acentos, minúsculas, espacios colapsados (la API la calcula).
-  nameKey      String   @map("name_key")
-  phone        String   @unique(map: "riders_phone_key")
+  nameKey        String                  @map("name_key")
+  phone          String                  @unique(map: "riders_phone_key")
   /// MOTORCYCLE | BICYCLE | CAR | ON_FOOT (CHECK).
-  vehicleType  String?  @map("vehicle_type")
-  licensePlate String?  @map("license_plate")
-  active       Boolean  @default(true)
+  vehicleType    String?                 @map("vehicle_type")
+  licensePlate   String?                 @map("license_plate")
+  active         Boolean                 @default(true)
   /// AVAILABLE | UNAVAILABLE (CHECK); inactivo => UNAVAILABLE.
-  availability String   @default("UNAVAILABLE")
-  version      Int      @default(1)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
-  branch       Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  availability   String                  @default("UNAVAILABLE")
+  version        Int                     @default(1)
+  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                @default(now()) @map("updated_at") @db.Timestamptz(6)
+  branch         Branch                  @relation(fields: [branchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  deliveries     Delivery[]
+  deliveryEvents DeliveryStatusHistory[]
 
   @@index([branchId, nameKey, id], map: "riders_branch_name_idx")
   @@index([nameKey, id], map: "riders_name_idx")
   // riders_branch_assignable_idx es PARCIAL (WHERE active AND availability = 'AVAILABLE'): solo en SQL (0021).
   @@map("riders")
+  @@schema("app")
+}
+
+/// F28 (0022). Entrega con motorista propio (DBML ampliado). UNIQUE(order_id): una por pedido (la cancelada se reabre). Sin DELETE.
+/// Sin @updatedAt: el SQL de la API fija updated_at y version (el trigger exige version = OLD.version + 1).
+/// CHECK de catálogo, de ciclo de vida (estado <-> marcas de tiempo y rider_id), de orden de marcas, el índice único PARCIAL
+/// «una entrega activa por motorista» y los triggers (deliveries_guard, deliveries_order_coherence, orders_open_delivery_guard)
+/// viven solo en SQL (0022).
+model Delivery {
+  id            String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId       String                  @unique(map: "deliveries_order_id_key") @map("order_id") @db.Uuid
+  /// = orders.branch_id (lo fuerza el trigger).
+  branchId      String                  @map("branch_id") @db.Uuid
+  riderId       String?                 @map("rider_id") @db.Uuid
+  /// pending | assigned | picked_up | delivered | returned | cancelled (CHECK).
+  status        String                  @default("pending")
+  assignedAt    DateTime?               @map("assigned_at") @db.Timestamptz(6)
+  pickedUpAt    DateTime?               @map("picked_up_at") @db.Timestamptz(6)
+  deliveredAt   DateTime?               @map("delivered_at") @db.Timestamptz(6)
+  /// Retorno del motorista a la sucursal: evento SEPARADO de la entrega al cliente.
+  returnedAt    DateTime?               @map("returned_at") @db.Timestamptz(6)
+  cancelledAt   DateTime?               @map("cancelled_at") @db.Timestamptz(6)
+  /// F28 no lo escribe ni lo devuelve (P110).
+  deliveryNotes String?                 @map("delivery_notes")
+  version       Int                     @default(1)
+  createdAt     DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime                @default(now()) @map("updated_at") @db.Timestamptz(6)
+  order         Order                   @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  branch        Branch                  @relation(fields: [branchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  rider         Rider?                  @relation(fields: [riderId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  history       DeliveryStatusHistory[]
+
+  @@index([branchId, status, createdAt(sort: Desc), id(sort: Desc)], map: "deliveries_branch_status_created_idx")
+  // deliveries_one_active_per_rider_idx (UNIQUE PARCIAL: WHERE status IN ('assigned','picked_up','delivered')) y
+  // deliveries_rider_idx (parcial: WHERE rider_id IS NOT NULL): solo en SQL (0022).
+  @@map("deliveries")
+  @@schema("app")
+}
+
+/// F28 (0022). Historial de la entrega SOLO-AÑADIR (trigger). changed_by = staff_users.id SIN FK (criterio de audit_events).
+/// event: created | reopened | rider_assigned | rider_reassigned | rider_unassigned | picked_up | delivered | returned | cancelled (CHECK).
+model DeliveryStatusHistory {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  deliveryId String   @map("delivery_id") @db.Uuid
+  /// NULL al crear.
+  oldStatus  String?  @map("old_status")
+  /// Estado NUEVO.
+  status     String
+  event      String
+  /// Motorista del evento (incluye el liberado).
+  riderId    String?  @map("rider_id") @db.Uuid
+  reason     String?
+  changedBy  String?  @map("changed_by") @db.Uuid
+  changedAt  DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
+  delivery   Delivery @relation(fields: [deliveryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  rider      Rider?   @relation(fields: [riderId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([deliveryId, changedAt, id], map: "delivery_status_history_delivery_idx")
+  // delivery_status_history_rider_idx es PARCIAL (WHERE rider_id IS NOT NULL): solo en SQL (0022).
+  @@map("delivery_status_history")
   @@schema("app")
 }
