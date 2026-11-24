@@ -173,14 +173,19 @@ describe('DeliveriesRepository (SQL parametrizado; se prueba contra PostgreSQL e
       const text = (arg as Sqlish).sql ?? (arg as Sqlish).strings?.join('?') ?? '';
       queries.push({ sql: text.replace(/\s+/g, ' '), values: [] });
       n += 1;
-      return Promise.resolve(n === 1 ? [deliveryRow] : [orderRow]);
+      if (n === 1) return Promise.resolve([deliveryRow]);
+      return Promise.resolve(n === 2 ? [{ last_event: null }] : [orderRow]);
     });
     const out = await repo.transaction((tx) => tx.readDeliveryLocked(ID));
-    expect(queries).toHaveLength(2);
+    // entrega FOR UPDATE (sin subconsulta), su último evento en sentencia aparte (con `FOR UPDATE` la subconsulta saldría
+    // obsoleta tras esperar un bloqueo; spec §23.1) y por último el pedido FOR SHARE
+    expect(queries).toHaveLength(3);
     expect(queries[0]?.sql).toContain('FROM app.deliveries d');
     expect(queries[0]?.sql).toContain('FOR UPDATE OF d');
-    expect(queries[0]?.sql).toContain('AS last_event');
-    expect(queries[1]?.sql).toMatch(/FROM app\.orders o WHERE o\.id = \?::uuid FOR SHARE/);
+    expect(queries[0]?.sql).not.toContain('AS last_event');
+    expect(queries[1]?.sql).toContain('AS last_event');
+    expect(queries[1]?.sql).not.toContain('FOR UPDATE');
+    expect(queries[2]?.sql).toMatch(/FROM app\.orders o WHERE o\.id = \?::uuid FOR SHARE/);
     // el estado del pedido sale de la SEGUNDA sentencia (bloqueada), no de la primera
     expect(out?.orderStatus).toBe('cancelled');
   });
@@ -195,7 +200,9 @@ describe('DeliveriesRepository (SQL parametrizado; se prueba contra PostgreSQL e
     expect(queries).toHaveLength(2);
     expect(queries[0]?.sql).not.toContain('last_event');
     expect(queries[0]?.sql).not.toContain('FOR UPDATE');
-    expect(queries[1]?.sql).toContain('AS last_event');
+    // con bloqueo el último evento NO va en la sentencia bloqueada (se lee aparte, ya con el candado)
+    expect(queries[1]?.sql).toContain('FOR UPDATE');
+    expect(queries[1]?.sql).not.toContain('AS last_event');
   });
 
   it('change: UNA sentencia (CAS por versión y estado + historial con el MISMO instante), valores parametrizados', async () => {
