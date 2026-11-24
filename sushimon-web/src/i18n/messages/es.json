@@ -2124,7 +2124,7 @@
           "view": "Ver la entrega del pedido {code}",
           "open": "Ver detalle",
           "noRider": "Sin motorista",
-          "openLabel": "Abrir el detalle de la entrega {code}"
+          "openLabel": "Ver detalle de la entrega {code}"
         },
         "emptyTitle": "No hay entregas abiertas",
         "emptyText": "Cuando un pedido a domicilio con reparto propio esté listo para despachar, aparecerá aquí.",

@@ -55,14 +55,14 @@ for (const theme of ['light', 'dark'] as const) {
 
     // Objetivos táctiles ≥ 44 px.
     for (const target of [
-      row.getByRole('button', { name: 'Abrir el detalle de la entrega MON-307054' }),
+      row.getByRole('button', { name: 'Ver detalle de la entrega MON-307054' }),
       page.getByRole('tab', { name: 'Reparto propio' }),
       page.getByRole('tab', { name: 'Simulación PedidosYa' }),
     ]) {
       expect((await target.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     }
 
-    await row.getByRole('button', { name: 'Abrir el detalle de la entrega MON-307054' }).click();
+    await row.getByRole('button', { name: 'Ver detalle de la entrega MON-307054' }).click();
     const drawer = page.getByRole('dialog', { name: '#MON-307054' });
     await expect(drawer.getByTestId('delivery-rider')).toBeVisible();
     expect(await noHorizontalOverflow(page)).toBe(true);
@@ -106,6 +106,10 @@ test('móvil · Entregas: crear → asignar → recoger → entregar → retorno
   await drawer.getByRole('button', { name: 'Marcar recogido' }).click();
   await expect(drawer.getByRole('button', { name: 'Marcar entregado' })).toBeVisible();
   await drawer.getByRole('button', { name: 'Marcar entregado' }).click();
+  const deliver = page.getByRole('alertdialog', { name: 'Marcar como entregado' });
+  await expect(deliver).toBeVisible();
+  expect(await axe(page, '[role="dialog"]')).toEqual([]);
+  await deliver.getByRole('button', { name: 'Sí, marcar entregado' }).click();
   await expect(drawer.getByText('Esperando retorno').first()).toBeVisible();
   await drawer.getByRole('button', { name: 'Registrar retorno' }).click();
   const confirm = page.getByRole('alertdialog', { name: 'Registrar retorno' });

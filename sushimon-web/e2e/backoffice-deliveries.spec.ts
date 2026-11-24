@@ -241,6 +241,10 @@ test('F28 · encargado: crear → asignar → recoger → entregar → retorno (
   await drawer.getByRole('button', { name: 'Marcar recogido' }).click();
   await expect(toast(page, '#MON-307051 recogido: el pedido va en camino.')).toBeVisible();
   await drawer.getByRole('button', { name: 'Marcar entregado' }).click();
+  // Entregar no se deshace: pide confirmación antes de enviar.
+  const deliver = page.getByRole('alertdialog', { name: 'Marcar como entregado' });
+  await expect(deliver.getByText(/no se puede deshacer/)).toBeVisible();
+  await deliver.getByRole('button', { name: 'Sí, marcar entregado' }).click();
   await expect(toast(page, '#MON-307051 entregado al cliente.')).toBeVisible();
   await expect(drawer.getByText('Esperando retorno').first()).toBeVisible();
   await expect(drawer.getByText(/Sigue ocupado hasta registrar su retorno/)).toBeVisible();

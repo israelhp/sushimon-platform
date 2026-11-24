@@ -604,3 +604,11 @@ Texto sugerido (NO se edita `docs/BACKLOG.md` aquí; lo aplica quien coordine): 
 - Confirmar el valor real de `DB_POOL_MAX` en producción (el defecto del código es 3) y ajustar `splitGateBudget` sin dejar el pool sin conexiones libres.
 - Confirmar con negocio P105–P114 antes de ampliar permisos o añadir `mark-failed`.
 - Confirmar que `AdminOrdersRepository.transitionTx` no rompe los dobles de F22 y que `apply` acepta una transacción abierta por F28 (comprobación de `SET LOCAL lock_timeout` única).
+
+## 23. Verificación realizada (2026-11-24)
+
+- `pnpm check` verde: API 2754 pruebas unitarias, 1169 e2e (supertest con dobles); web 2777 Vitest; `contracts:check`; build.
+- SQL de 0022 (incluidas las correcciones de revisión S3/S4) validado en PGlite 0.2.17 con las migraciones 0001..0022 y `migration-0022.int-spec.ts` (100/105; 5 casos necesitan dos sesiones).
+- Playwright en worktree aparte, con `--workers=1`: deliveries, deliveries móvil, motoristas, pedidos, visuales y a11y en verde. Con workers en paralelo y dev server en frío aparecen timeouts de `page.goto` ya conocidos (no son de producto).
+- Revisiones: seguridad (0 críticos/altos; 5 medios y 6 bajos aplicados salvo S10 GUC `allow_order_cleanup`, precedente de 0004/0018), rendimiento (estática) y UI/UX.
+- NO verificado: `deliveries.int-spec.ts` y demás int-spec contra PostgreSQL real con 0022 aplicada; concurrencia real (doble asignación, cancelar pedido vs crear entrega, locks); `EXPLAIN` con volumen; navegador real contra la API real; login real Google/Supabase + TOTP; presupuesto de conexiones con `DB_POOL_MAX` real. Estado F28: `API_IMPLEMENTED` + web integrada; NO `READY`.
