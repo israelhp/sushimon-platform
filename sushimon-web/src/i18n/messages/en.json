@@ -2097,7 +2097,8 @@
         },
         "pedidosyaBlocked": "PedidosYa Courier sigue pendiente de documentación y credenciales: no hay envíos reales con PedidosYa desde esta pantalla.",
         "title": "Reparto propio",
-        "badge": "Real",
+        "badge": "Datos reales",
+        "badgeMock": "Datos de prueba",
         "providerOwn": "Reparto propio",
         "providerOther": "Otro proveedor",
         "zoneName": "Zona {zone}",
@@ -2165,7 +2166,7 @@
           "noRider": "Aún no hay motorista asignado.",
           "contact": "Contacto y dirección del cliente",
           "contactHint": "Datos personales: úsalos solo para esta entrega y transmítelos al motorista fuera del sistema.",
-          "contactHidden": "Los datos de contacto y la dirección no se muestran: la entrega ya no está abierta o no tienes permiso para ver pedidos.",
+          "contactHidden": "Los datos de contacto y la dirección no se muestran: la entrega ya no está en curso (entregada, devuelta o cancelada) o no tienes permiso para ver pedidos.",
           "history": "Línea de tiempo",
           "historyTruncated": "Se muestran los últimos 50 eventos.",
           "by": "por {name}",
@@ -2230,6 +2231,13 @@
             "consequences": "La entrega vuelve a «Sin motorista» y el motorista queda libre.",
             "confirm": "Quitar motorista"
           }
+        },
+        "deliveredModal": {
+          "title": "Marcar como entregado",
+          "text": "Confirma que el pedido #{code} ya se entregó al cliente.",
+          "note": "El pedido pasará a «Entregado» y esta acción no se puede deshacer. El motorista seguirá ocupado hasta que registres su retorno.",
+          "back": "Volver",
+          "confirm": "Sí, marcar entregado"
         },
         "returnModal": {
           "title": "Registrar retorno",

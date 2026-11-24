@@ -12,6 +12,7 @@ import type {
   OrderForDelivery,
 } from '../../src/deliveries/deliveries.types.js';
 import {
+  CONTACT_VISIBLE_STATUSES,
   deliveryTransitionAllowed,
   isOccupying,
   OPEN_STATUSES,
@@ -136,6 +137,10 @@ export class FakeDeliveriesRepo {
   branches = new Map<string, string>();
   staffNames = new Map<string, string>();
   calls: string[] = [];
+  /** Motoristas cuya fila SE BLOQUEÓ de verdad (`lockRider` con alcance válido); un 404 por alcance NO bloquea. */
+  lockedRiders: string[] = [];
+  /** Lecturas con bloqueo de entrega (`FOR UPDATE OF d`), en orden. */
+  lockedDeliveries: string[] = [];
   failAudit = false;
   /** Error crudo de BD que lanza la transacción al abrirse (p. ej. `lock_timeout` 55P03). */
   failWith: unknown = null;
@@ -365,13 +370,15 @@ export class FakeDeliveriesRepo {
     id: string,
     scope: string[] | null,
     contactScope: string[] | null,
+    updateScope: string[] | null = null,
   ): Promise<DeliveryDetailRecord | null> {
     this.calls.push('findDetail');
     const d = this.deliveries.get(id);
     if (!d || !this.visible(d, scope)) return Promise.resolve(null);
     const o = this.orders.get(d.orderId) as FakeOrder;
+    const staffVisible = updateScope === null || updateScope.includes(d.branchId);
     const contactVisible =
-      (OPEN_STATUSES as readonly string[]).includes(d.status) &&
+      (CONTACT_VISIBLE_STATUSES as readonly string[]).includes(d.status) &&
       (contactScope === null || contactScope.includes(o.branchId));
     const events = this.eventsOf(id)
       .slice()
@@ -394,8 +401,8 @@ export class FakeDeliveriesRepo {
         status: e.status,
         riderId: e.riderId,
         riderName: e.riderId ? (this.riders.riders.get(e.riderId)?.fullName ?? null) : null,
-        reason: e.reason,
-        actorName: e.changedBy ? (this.staffNames.get(e.changedBy) ?? null) : null,
+        reason: staffVisible ? e.reason : null,
+        actorName: staffVisible && e.changedBy ? (this.staffNames.get(e.changedBy) ?? null) : null,
         at: e.changedAt,
       })),
       historyTruncated: events.length > 50,
@@ -439,14 +446,18 @@ export class FakeDeliveriesRepo {
       readDelivery: (id, scope, opts) => {
         this.calls.push(opts?.lock ? 'read:lock' : 'read');
         const d = this.deliveries.get(id);
-        const row = d && this.visible(d, scope) ? this.rowOf(d, true) : null;
+        const row = d && this.visible(d, scope) ? this.rowOf(d, opts?.lastEvent === true) : null;
+        if (row && opts?.lock) this.lockedDeliveries.push(id);
         this.afterRead?.();
         return Promise.resolve(row);
       },
-      lockRider: (riderId) => {
+      lockRider: (riderId, scope) => {
         this.calls.push('lockRider');
+        if (scope !== null && scope.length === 0) return Promise.resolve(null);
         const r = this.riders.riders.get(riderId);
-        return Promise.resolve(r ? { id: r.id, branchId: r.branchId } : null);
+        if (!r || !this.visible(r, scope)) return Promise.resolve(null);
+        this.lockedRiders.push(r.id);
+        return Promise.resolve({ id: r.id, branchId: r.branchId });
       },
       readDeliveryLocked: (id) => {
         this.calls.push('readLocked');

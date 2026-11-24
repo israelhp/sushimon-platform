@@ -1260,10 +1260,60 @@
     line-height: 1.2;
     font-weight: 800;
   }
+  /* F28: utilidades de texto de la pantalla Entregas (sustituyen estilos en línea repetidos). */
+  [data-zone='bo'] .hint {
+    margin: 0;
+    font-weight: 600;
+  }
+  [data-zone='bo'] .hint-block {
+    display: block;
+    margin-top: 4px;
+    font-weight: 600;
+  }
+  [data-zone='bo'] .sect-note {
+    margin: 6px 0 0;
+    font-weight: 600;
+  }
+  [data-zone='bo'] .fw6 {
+    font-weight: 600;
+  }
+  [data-zone='bo'] .fw7 {
+    font-weight: 700;
+  }
+  [data-zone='bo'] .field-error {
+    color: var(--bo-red-text);
+    font-weight: 700;
+  }
+  [data-zone='bo'] .dl-detail {
+    display: grid;
+    gap: 16px;
+  }
+  [data-zone='bo'] .dl-title-row {
+    margin-bottom: 10px;
+    align-items: center;
+  }
+  [data-zone='bo'] .dl-pills {
+    margin-top: 8px;
+  }
+  [data-zone='bo'] .dl-skel-row {
+    grid-column: 1/-1;
+  }
+  [data-zone='bo'] .dl-cell {
+    min-width: 0;
+  }
+  [data-zone='bo'] .dl-pad-top {
+    padding-top: 14px;
+  }
   [data-zone='bo'] .own-badge {
     border-style: solid;
     border-color: var(--bo-green-text);
     color: var(--bo-green-text);
+  }
+  /* Datos de prueba (mock): ámbar punteado del sistema, nunca el verde de «Datos reales». */
+  [data-zone='bo'] .own-badge-mock {
+    border-style: dashed;
+    border-color: var(--bo-amber-text);
+    color: var(--bo-amber-text);
   }
   [data-zone='bo'] .active-steps {
     list-style: none;
@@ -3480,10 +3530,13 @@
     [data-zone='bo'] .min-odel {
       min-width: 0;
     }
+    [data-zone='bo'] .cols-odel .o-order {
+      grid-column: 1/-1;
+    }
     [data-zone='bo'] .cols-odel .o-status {
-      grid-column: 2;
-      grid-row: 1;
-      justify-self: end;
+      grid-column: 1/-1;
+      grid-row: 2;
+      min-width: 0;
     }
     [data-zone='bo'] .cols-odel .o-branch,
     [data-zone='bo'] .cols-odel .o-rider,

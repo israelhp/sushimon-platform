@@ -106,12 +106,14 @@ export class DeliveriesQueriesService {
   async detail(staff: StaffContext, id: string): Promise<AdminDeliveryDto> {
     const read = this.authorization.scopeFor(staff, 'deliveries.read');
     const orders = this.authorization.scopeFor(staff, 'orders.read');
+    const update = this.authorization.scopeFor(staff, 'deliveries.update');
     const found = await this.db(
       () =>
         this.repo.findDetail(
           id,
           read.allBranches ? null : read.branchIds,
           orders.allBranches ? null : orders.branchIds,
+          update.allBranches ? null : update.branchIds,
         ),
       READ_ADMISSION,
     );

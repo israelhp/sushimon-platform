@@ -170,7 +170,10 @@ export function evaluateTransition(
 
 function dispatchVerdict(facts: TransitionFacts, options: EvaluateOptions): TransitionVerdict {
   if (facts.deliveryProvider === 'PEDIDOSYA') return fail('ORDER_PROVIDER_BLOCKED_EXTERNAL');
-  return options.allowOwnDispatch === true ? OK : fail('ORDER_DISPATCH_NOT_AVAILABLE');
+  // Con `allowOwnDispatch` se exige `OWN` EXPLÍCITO (un proveedor `null` o desconocido NO despacha).
+  return options.allowOwnDispatch === true && facts.deliveryProvider === 'OWN'
+    ? OK
+    : fail('ORDER_DISPATCH_NOT_AVAILABLE');
 }
 
 // ---------- acciones disponibles (servidor => web) ----------

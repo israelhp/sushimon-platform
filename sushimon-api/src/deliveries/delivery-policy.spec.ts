@@ -246,6 +246,25 @@ describe('elegibilidad del pedido y motivo', () => {
     expect(normalizeDeliveryReason('x'.repeat(280), 'required')).toHaveLength(280);
     expect(normalizeDeliveryReason('abc', 'optional')).toBe('abc');
   });
+
+  it('S1: rechaza ≥ 7 dígitos (con o sin espacios/guiones) y correos; admite cifras cortas', () => {
+    const bad = [
+      'llamar al 55512345',
+      'tel 5551 2345',
+      'tel 5551-2345',
+      'tel 5 5 5 1 2 3 4',
+      'dpi 2345 67890 1234',
+      'escribir a juan@correo.com',
+      'a@b',
+    ];
+    for (const text of bad) {
+      expect([text, normalizeDeliveryReason(text, 'required')]).toEqual([text, INVALID_REASON]);
+      expect([text, normalizeDeliveryReason(text, 'optional')]).toEqual([text, INVALID_REASON]);
+    }
+    for (const ok of ['cliente ausente 2 veces', 'calle 12-34 zona 10', 'moto 123456', 'x @ y']) {
+      expect([ok, normalizeDeliveryReason(ok, 'required')]).toEqual([ok, ok]);
+    }
+  });
 });
 
 describe('R34 publicDeliveryStatus (F21): estado grueso sin datos del motorista', () => {

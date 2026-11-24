@@ -140,6 +140,34 @@ describe('GET /v1/admin/deliveries/:id (PII solo con contactVisible)', () => {
     expect(d).toMatchObject({ status: 'cancelled', contactVisible: false, customer: null });
   });
 
+  it('S1: entrega entregada (esperando retorno) ya no muestra contacto ni dirección', async () => {
+    const h = as('admin');
+    const { delivery } = await create(h, ORDER);
+    await assign(h, delivery.id, 'rider-1', 1);
+    await cmd(h, delivery.id, 'mark-picked-up', { expectedVersion: 2 });
+    await cmd(h, delivery.id, 'mark-delivered', { expectedVersion: 3 });
+    const d = await get(h, delivery.id);
+    expect(d).toMatchObject({
+      status: 'delivered',
+      contactVisible: false,
+      customer: null,
+      address: null,
+    });
+  });
+
+  it('S1: el motivo del historial es null sin deliveries.update y visible con él', async () => {
+    const h = as('admin');
+    await cmd(h, 'delivery-1', 'cancel', { expectedVersion: 1, reason: 'Sin motorista' });
+    const withPerm = await get(h, 'delivery-1');
+    expect(withPerm.history.some((e) => e.reason === 'Sin motorista')).toBe(true);
+    const role = h.store.roles.find((r) => r.code === 'admin');
+    if (role) role.permissions = role.permissions.filter((p) => p !== 'deliveries.update');
+    const without = await get(h, 'delivery-1');
+    expect(validateContract('AdminDelivery', without)).toEqual([]);
+    expect(without.history.every((e) => e.reason === null)).toBe(true);
+    expect(JSON.stringify(without)).not.toContain('Sin motorista');
+  });
+
   it('inexistente o fuera del alcance => el MISMO 404 DELIVERY_NOT_FOUND', async () => {
     const h = as('manager'); // sucursal 1: delivery-1 es de la 3
     const a = await fails(get(h, 'delivery-1'));

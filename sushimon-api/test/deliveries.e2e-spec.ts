@@ -320,7 +320,7 @@ describe('Entregas propias del backoffice (e2e, F28)', () => {
 
     it('permiso por sucursal: lee A pero actúa solo en B => 403 DELIVERY_ACTION_FORBIDDEN en A', async () => {
       const auth = await actor([
-        { branchId: A, permissions: ['deliveries.read'] },
+        { branchId: A, permissions: ['deliveries.read', 'orders.read'] },
         { branchId: B, permissions: ['deliveries.read', 'deliveries.update', 'deliveries.assign'] },
       ]);
       const d = repo.seedDelivery({ orderId: order().id });
@@ -332,6 +332,12 @@ describe('Entregas propias del backoffice (e2e, F28)', () => {
       expect(json(res).code).toBe('DELIVERY_ACTION_FORBIDDEN');
       const create = await post(URL, auth, { orderId: order().id });
       expect(json(create).code).toBe('DELIVERY_ACTION_FORBIDDEN');
+      // S5: sin `orders.read` en A el pedido ni existe para el actor (404 uniforme, no 403)
+      const noOrders = await actor([
+        { branchId: A, permissions: ['deliveries.read', 'deliveries.assign'] },
+      ]);
+      const hidden = await post(URL, noOrders, { orderId: order().id });
+      expect([hidden.status, json(hidden).code]).toEqual([404, 'ORDER_NOT_FOUND']);
     });
   });
 

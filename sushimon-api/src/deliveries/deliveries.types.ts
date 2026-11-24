@@ -55,14 +55,16 @@ export interface DeliveryHistoryRow {
   status: string;
   riderId: string | null;
   riderName: string | null;
+  /** `null` salvo con `deliveries.update` en la sucursal de la entrega (decidido EN SQL; S1). */
   reason: string | null;
+  /** `null` salvo con `deliveries.update` en la sucursal de la entrega (decidido EN SQL; S8). */
   actorName: string | null;
   at: Date;
 }
 
 export interface DeliveryDetailRecord {
   row: DeliveryRow;
-  /** `true` solo si la entrega está ABIERTA y el actor tiene `orders.read` en la sucursal (decidido EN SQL). */
+  /** `true` solo si la entrega está `pending|assigned|picked_up` y el actor tiene `orders.read` en la sucursal (decidido EN SQL). */
   contactVisible: boolean;
   customer: { name: string; phone: string } | null;
   address: {
@@ -135,11 +137,17 @@ export interface DeliveriesTx {
   readDelivery(
     id: string,
     branchIds: string[] | null,
-    opts?: { lock?: boolean },
+    opts?: { lock?: boolean; lastEvent?: boolean },
   ): Promise<DeliveryRow | null>;
-  /** `SELECT … FOR UPDATE` de la fila del motorista (primer bloqueo). `null` = no existe. */
-  lockRider(riderId: string): Promise<RiderLock | null>;
-  /** Relectura BLOQUEADA: `FOR UPDATE OF d FOR SHARE OF o` (entrega ANTES que pedido: el orden del `FROM`). */
+  /**
+   * `SELECT … FOR UPDATE` de la fila del motorista (primer bloqueo) CON el alcance de `riders.read` en el propio SQL (S2).
+   * `null` = no existe, fuera de alcance o alcance vacío (en ese caso NO toca la BD): no se bloquea nada.
+   */
+  lockRider(riderId: string, branchIds: string[] | null): Promise<RiderLock | null>;
+  /**
+   * Relectura BLOQUEADA en DOS sentencias de orden explícito (S9): `FOR UPDATE OF d` (con último evento) y luego `FOR SHARE` del
+   * pedido, cuyo estado vigente sustituye al de la primera lectura.
+   */
   readDeliveryLocked(id: string): Promise<DeliveryRow | null>;
   /** Pedido (alcance de `deliveries.read` EN SQL) con la entrega existente. Sin bloqueo. */
   readOrderForCreate(orderId: string, branchIds: string[] | null): Promise<OrderForDelivery | null>;

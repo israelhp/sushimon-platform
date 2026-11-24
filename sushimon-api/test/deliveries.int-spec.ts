@@ -77,7 +77,8 @@ const MANAGER = ROLE_PERMISSIONS['manager'] as string[];
 describe.skipIf(!url || !ready)('Entregas propias contra PostgreSQL real (F28)', () => {
   const run = randomUUID().slice(0, 8);
   const CLIENT = `CLIENTE-SECRETO-${run}`;
-  const REASON = `RAZON-INTERNA-${run}`;
+  // Sin dígitos: el motivo no puede llevar ≥ 7 dígitos seguidos (S1) y `run` es hexadecimal.
+  const REASON = `RAZON-INTERNA-${run.replace(/[0-9]/g, 'k')}`;
   let prisma: PrismaService;
   let commands: DeliveriesCommandsService;
   let queries: DeliveriesQueriesService;
@@ -534,12 +535,13 @@ describe.skipIf(!url || !ready)('Entregas propias contra PostgreSQL real (F28)',
 
   // ---------- asignar ----------
 
-  it('R06 R28 R35 asignar: pending → assigned, historial, auditoría, ocupación real en F27; <= 9 sentencias', async (ctx) => {
+  it('R06 R28 R35 asignar: pending → assigned, historial, auditoría, ocupación real en F27; <= 10 sentencias', async (ctx) => {
     skipUnlessReady(ctx);
     const c = await created();
     const rider = await seedRider();
     const m = await measure(() => assign(c.id, rider, c.version));
-    expect(m.n).toBeLessThanOrEqual(9);
+    // S9: la relectura bloqueada son 2 sentencias (entrega, pedido) => 9 típico, 10 como máximo.
+    expect(m.n).toBeLessThanOrEqual(10);
     expect(m.result.transition).toMatchObject({
       from: 'pending',
       to: 'assigned',
@@ -732,13 +734,14 @@ describe.skipIf(!url || !ready)('Entregas propias contra PostgreSQL real (F28)',
 
   // ---------- recoger, entregar, retorno ----------
 
-  it('R13 R35 recoger: entrega y pedido en UNA transacción, historial y auditoría de ambos; <= 7 sentencias', async (ctx) => {
+  it('R13 R35 recoger: entrega y pedido en UNA transacción, historial y auditoría de ambos; <= 8 sentencias', async (ctx) => {
     skipUnlessReady(ctx);
     const a = await assigned();
     const m = await measure(() =>
       commands.execute(admin, 'mark_picked_up', a.id, { expectedVersion: a.version }),
     );
-    expect(m.n).toBeLessThanOrEqual(7);
+    // S2: lectura SIN bloqueo + autorización + lectura bloqueada => +1 sentencia (7 típico, 8 máximo).
+    expect(m.n).toBeLessThanOrEqual(8);
     expect(await deliveryRow(a.id)).toMatchObject({ status: 'picked_up', version: a.version + 1 });
     expect(await orderState(a.orderId)).toBe('on_the_way');
     expect((await orderHistoryOf(a.orderId)).at(-1)).toMatchObject({
@@ -821,7 +824,7 @@ describe.skipIf(!url || !ready)('Entregas propias contra PostgreSQL real (F28)',
         commands.execute(admin, command, a.id, { expectedVersion: version }),
       );
       expect(m.result.transition).toMatchObject({ replayed: true, appliedByMe: true });
-      expect(m.n).toBeLessThanOrEqual(7);
+      expect(m.n).toBeLessThanOrEqual(8);
       expect([
         (await historyOf(a.id)).length,
         (await auditOf('delivery', a.id)).length,
@@ -1029,6 +1032,36 @@ describe.skipIf(!url || !ready)('Entregas propias contra PostgreSQL real (F28)',
       expect(await orderState(c.orderId)).toBe('ready');
       expect(['pending', 'assigned']).toContain((await deliveryRow(c.id))?.status);
     }
+  });
+
+  it('S9 readDeliveryLocked: dos sentencias en orden entrega → pedido y estado VIGENTE del pedido tras esperar su bloqueo', async (ctx) => {
+    skipUnlessReady(ctx);
+    const c = await created({ status: 'ready' });
+    const repo = new DeliveriesRepository(prisma, new AuditService());
+    await withClient(url as string, async (writer) => {
+      await writer.query('BEGIN');
+      try {
+        // otra transacción cambia el pedido (sigue despachable) y lo retiene sin confirmar
+        await writer.query(
+          `UPDATE app.orders SET status = 'preparing', updated_at = now() WHERE id = $1`,
+          [c.orderId],
+        );
+        statements.n = 0;
+        counting = true;
+        const pending = repo.transaction((tx) => tx.readDeliveryLocked(c.id));
+        await new Promise((r) => setTimeout(r, 300)); // espera el FOR SHARE del pedido (tras bloquear la entrega)
+        await writer.query('COMMIT');
+        const row = await pending;
+        counting = false;
+        // la entrega se leyó/bloqueó ANTES; el pedido se leyó DESPUÉS de esperar y trae el estado confirmado más reciente
+        expect(row?.orderStatus).toBe('preparing');
+        expect(row?.id).toBe(c.id);
+        expect(statements.n).toBe(2);
+      } finally {
+        counting = false;
+        await writer.query('ROLLBACK').catch(() => undefined);
+      }
+    });
   });
 
   it('orden de bloqueos motorista → entrega → pedido: una mezcla concurrente de comandos termina SIN deadlocks (40P01)', async (ctx) => {

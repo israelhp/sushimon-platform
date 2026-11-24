@@ -231,6 +231,37 @@ describe('W02 · detalle', () => {
     expect(within(drawer).queryByTestId('delivery-contact')).toBeNull();
   });
 
+  it('U2: con datos simulados el rótulo es «Datos de prueba» (nunca «Datos reales»)', async () => {
+    await renderDeliveries('admin');
+    const section = await screen.findByTestId('own-deliveries');
+    expect(within(section).getByText('Datos de prueba')).toBeVisible();
+    expect(within(section).queryByText('Datos reales')).toBeNull();
+  });
+
+  it('S1: sin deliveries.update el motivo llega null y el historial no muestra «Motivo» (vacío elegante)', async () => {
+    const user = userEvent.setup();
+    await renderDeliveries('admin', {
+      prepareStore: (store) => {
+        const d = store.adminDeliveries?.find((x) => x.id === 'delivery-2');
+        d?.history.push({
+          at: '2026-11-11T20:30:00.000Z',
+          event: 'rider_unassigned',
+          fromStatus: 'assigned',
+          toStatus: 'pending',
+          riderName: null,
+          actorName: null,
+          reason: 'Cliente pidió cambio',
+        } as never);
+        const role = store.roles.find((r) => r.code === 'admin');
+        if (role) role.permissions = role.permissions.filter((p) => p !== 'deliveries.update');
+      },
+    });
+    const drawer = await openDetail(user, 'MON-307054');
+    const history = await within(drawer).findByTestId('delivery-history');
+    expect(history.textContent).not.toMatch(/Cliente pidió cambio|Motivo/);
+    expect(history.textContent).toMatch(/por el sistema/);
+  });
+
   it('acciones por availableActions: staff (solo lectura) no ve ninguna; el encargado ve las suyas', async () => {
     const user = userEvent.setup();
     await renderDeliveries('staff', { prepareStore: withMainDelivery });
@@ -377,7 +408,21 @@ describe('W04 · recoger, entregar, retorno y cancelación', () => {
     const drawer = await openDetail(user, 'MON-307051');
     await user.click(await within(drawer).findByRole('button', { name: 'Marcar recogido' }));
     expect(await screen.findByText('#MON-307051 recogido: el pedido va en camino.')).toBeVisible();
+    // U3: una sola acción primaria (la siguiente lógica); el resto, secundarias.
+    const deliverBtn = await within(drawer).findByRole('button', { name: 'Marcar entregado' });
+    expect(deliverBtn).toHaveClass('btn-primary');
+    expect(drawer.querySelectorAll('.btn-primary')).toHaveLength(1);
+    await user.click(deliverBtn);
+    // U1: confirma antes; «Volver» no cambia nada.
+    const deliverConfirm = await screen.findByRole('alertdialog', {
+      name: 'Marcar como entregado',
+    });
+    expect(within(deliverConfirm).getByText(/no se puede deshacer/)).toBeVisible();
+    await user.click(within(deliverConfirm).getByRole('button', { name: 'Volver' }));
+    expect(api().store.orders.find((o) => o.id === 'MON-307051')?.status).not.toBe('delivered');
     await user.click(await within(drawer).findByRole('button', { name: 'Marcar entregado' }));
+    const again = await screen.findByRole('alertdialog', { name: 'Marcar como entregado' });
+    await user.click(within(again).getByRole('button', { name: 'Sí, marcar entregado' }));
     expect(await screen.findByText('#MON-307051 entregado al cliente.')).toBeVisible();
     // Esperando retorno: el motorista sigue ocupado hasta registrarlo.
     expect(await within(drawer).findByText('Esperando retorno')).toBeVisible();

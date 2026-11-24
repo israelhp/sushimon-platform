@@ -937,6 +937,82 @@ describe('DeliveriesCommandsService (S)', () => {
     });
   });
 
+  describe('S2 autorizar antes de bloquear · S5 orders.read al crear', () => {
+    it('S2: sin permiso o fuera de alcance NO se bloquea ninguna fila (ni entrega ni motorista)', async () => {
+      const r = rider();
+      const a = await assigned(rider());
+      h.repo.lockedRiders.length = 0;
+      h.repo.lockedDeliveries.length = 0;
+      h.repo.calls.length = 0;
+      // 403: solo `deliveries.read`; 404: otra sucursal. Ningún comando llega a bloquear.
+      for (const staff of [reader(h.branchA), manager(h.branchB)]) {
+        for (const command of ['unassign', 'mark_picked_up', 'mark_delivered', 'cancel'] as const) {
+          await err(
+            h.commands.execute(staff, command, a.id, {
+              expectedVersion: a.version,
+              reason: 'motivo uno',
+            }),
+          );
+        }
+        await err(h.commands.assign(staff, a.id, { riderId: r.id, expectedVersion: a.version }));
+      }
+      expect(h.repo.lockedDeliveries).toEqual([]);
+      expect(h.repo.lockedRiders).toEqual([]);
+      expect(h.repo.calls).not.toContain('lockRider');
+    });
+
+    it('S2: motorista de otra sucursal o actor sin `riders.read` => 404 uniforme SIN bloquear la fila del motorista', async () => {
+      const far = rider({ branchId: h.branchB });
+      const c = await created();
+      const noRead = scopedStaff(
+        ['deliveries.read', 'deliveries.assign', 'riders.assign'],
+        [h.branchA],
+      );
+      const sameBranchOnly = scopedStaff(
+        ['deliveries.read', 'deliveries.assign', 'riders.assign', 'riders.read'],
+        [h.branchA],
+      );
+      for (const staff of [noRead, sameBranchOnly]) {
+        const e = info(
+          await err(
+            h.commands.assign(staff, c.id, { riderId: far.id, expectedVersion: c.version }),
+          ),
+        );
+        expect([e.status, e.code]).toEqual([404, 'RIDER_NOT_FOUND']);
+      }
+      expect(h.repo.lockedRiders).toEqual([]);
+      expect(h.repo.deliveryOf(c.order.id)?.status).toBe('pending');
+    });
+
+    it('S2: un actor autorizado SÍ bloquea (motorista y entrega) en ese orden', async () => {
+      const r = rider();
+      const c = await created();
+      h.repo.lockedRiders.length = 0;
+      await h.commands.assign(admin(), c.id, { riderId: r.id, expectedVersion: c.version });
+      expect(h.repo.lockedRiders).toEqual([r.id]);
+      const at = (name: string) => h.repo.calls.lastIndexOf(name);
+      expect(at('lockRider')).toBeLessThan(at('readLocked'));
+    });
+
+    it('S5: crear exige `orders.read` en la sucursal del pedido: sin él, 404 ORDER_NOT_FOUND idéntico al de un pedido inexistente y sin escribir', async () => {
+      const o = order();
+      const noOrdersRead = scopedStaff(['deliveries.read', 'deliveries.assign'], [h.branchA]);
+      const denied = info(await err(h.commands.create(noOrdersRead, o.id)));
+      const missing = info(
+        await err(h.commands.create(noOrdersRead, 'c0000000-0000-4000-8000-0000000000ab')),
+      );
+      expect([denied.status, denied.code]).toEqual([404, 'ORDER_NOT_FOUND']);
+      expect(denied.raw).toBe(missing.raw);
+      expect(h.repo.deliveries.size).toBe(0);
+      expect(h.repo.audits).toHaveLength(0);
+      const withOrdersRead = scopedStaff(
+        ['deliveries.read', 'deliveries.assign', 'orders.read'],
+        [h.branchA],
+      );
+      expect((await h.commands.create(withOrdersRead, o.id)).delivery.status).toBe('pending');
+    });
+  });
+
   describe('errores de BD (R37)', () => {
     it('lock_timeout (55P03) => 503 DELIVERIES_BUSY con Retry-After', async () => {
       const a = await assigned();
@@ -957,7 +1033,7 @@ describe('DeliveriesCommandsService (S)', () => {
       for (const code of ['23514', '42501']) {
         h.repo.changeFailWith = {
           code,
-          message: 'app.deliveries: transicion pending -> picked_up no permitida',
+          message: 'deliveries_guard: transicion pending -> picked_up no permitida',
         };
         const e = info(
           await err(h.commands.execute(admin(), 'unassign', a.id, { expectedVersion: a.version })),
@@ -971,6 +1047,18 @@ describe('DeliveriesCommandsService (S)', () => {
       }
     });
 
+    it('S4: 23514/42501 SIN nombre de restricción conocido NO se trata como carrera: el error interno sale tal cual (500 genérico)', async () => {
+      const a = await assigned();
+      for (const code of ['23514', '42501', '23505', '23001']) {
+        const raw = Object.assign(new Error('app.otra_tabla: violacion ajena'), { code });
+        h.repo.changeFailWith = raw;
+        const failed = await err(
+          h.commands.execute(admin(), 'unassign', a.id, { expectedVersion: a.version }),
+        );
+        expect([code, failed]).toEqual([code, raw]);
+      }
+    });
+
     it('23514 al CREAR (el pedido se canceló en paralelo) => 409 ORDER_STATE_CONFLICT con el estado vigente del pedido', async () => {
       const o = order();
       // la cancelación la confirmó OTRA transacción: sobrevive al rollback de esta (relectura fuera de la transacción fallida)
@@ -980,7 +1068,10 @@ describe('DeliveriesCommandsService (S)', () => {
       });
       h.repo.afterRead = () => {
         h.repo.afterRead = null;
-        h.repo.insertFailWith = { code: '23514', message: 'app.deliveries: estado incoherente' };
+        h.repo.insertFailWith = {
+          code: '23514',
+          message: 'deliveries_order_coherence: estado incoherente',
+        };
       };
       const e = info(await err(h.commands.create(admin(), o.id)));
       expect([e.status, e.code, e.current?.status]).toEqual([

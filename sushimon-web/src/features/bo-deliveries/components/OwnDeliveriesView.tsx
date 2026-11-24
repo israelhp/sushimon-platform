@@ -10,6 +10,7 @@ import { ForbiddenScreen } from '@/features/backoffice-shell/ForbiddenScreen';
 import { useShell } from '@/features/backoffice-shell/shell-context';
 import { isForbidden } from '@/features/bo-orders/error-message';
 import { useAdminRiders, useRiderBranches } from '@/features/bo-riders/hooks';
+import { useDataClient } from '@/lib/data-access/provider';
 import { formatDateTime } from '@/lib/format';
 import {
   DEFAULT_DELIVERY_LIST,
@@ -40,6 +41,7 @@ export function OwnDeliveriesView() {
   const to = useTranslations('backoffice.orders.live.status');
   const locale = useLocale();
   const { can } = useShell();
+  const real = useDataClient().kind === 'http';
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -84,11 +86,13 @@ export function OwnDeliveriesView() {
 
   return (
     <section aria-labelledby="own-deliveries-title" data-testid="own-deliveries">
-      <div className="row gap8 wrap" style={{ marginBottom: 10, alignItems: 'center' }}>
+      <div className="row gap8 wrap dl-title-row">
         <h2 id="own-deliveries-title" className="sim-title">
           {t('title')}
         </h2>
-        <span className="demo-badge own-badge">{t('badge')}</span>
+        <span className={`demo-badge ${real ? 'own-badge' : 'own-badge-mock'}`}>
+          {real ? t('badge') : t('badgeMock')}
+        </span>
       </div>
 
       <div className="toolbar toolbar-mb" role="group" aria-label={t('filters.label')}>
@@ -155,13 +159,18 @@ export function OwnDeliveriesView() {
       ) : null}
 
       {awaiting > 0 ? (
-        <p className="sm" style={{ fontWeight: 700 }} data-testid="awaiting-return-count">
+        <p className="sm fw7" role="status" aria-live="polite" data-testid="awaiting-return-count">
           {t('awaitingReturnCount', { count: awaiting })}
         </p>
       ) : null}
 
       <div className="card">
-        <div className="tscroll" style={{ paddingTop: 14 }}>
+        <div className="tscroll dl-pad-top">
+          {deliveries.isLoading ? (
+            <span className="sr-only" role="status">
+              {t('loading')}
+            </span>
+          ) : null}
           <div
             className="min-odel"
             role="table"
@@ -183,9 +192,9 @@ export function OwnDeliveriesView() {
             <div role="rowgroup">
               {deliveries.isLoading
                 ? [0, 1, 2, 3].map((i) => (
-                    <div key={i} className="trow cols-odel" role="row">
-                      <div role="cell" style={{ gridColumn: '1 / -1' }}>
-                        <Skeleton zone="bo" style={{ height: 34, borderRadius: 10 }} />
+                    <div key={i} className="trow cols-odel" role="row" aria-hidden="true">
+                      <div role="cell" className="dl-skel-row">
+                        <Skeleton zone="bo" className="h-[34px] rounded-[10px]" />
                       </div>
                     </div>
                   ))
@@ -196,7 +205,7 @@ export function OwnDeliveriesView() {
                       role="row"
                       data-testid="delivery-row"
                     >
-                      <div role="cell" style={{ minWidth: 0 }}>
+                      <div role="cell" className="dl-cell o-order">
                         <button
                           type="button"
                           className="link-btn cell-main trunc"
@@ -205,39 +214,33 @@ export function OwnDeliveriesView() {
                         >
                           #{d.displayNumber}
                         </button>
-                        <div className="xs muted trunc" style={{ fontWeight: 600 }}>
+                        <div className="xs muted trunc fw6">
                           {[d.municipalityName, d.zone ? t('zoneName', { zone: d.zone }) : null]
                             .filter(Boolean)
                             .join(' · ') || '—'}
                         </div>
                       </div>
-                      <div className="sm o-branch" style={{ fontWeight: 600 }} role="cell">
+                      <div className="sm o-branch fw6" role="cell">
                         {d.branchName}
                       </div>
-                      <div className="o-rider" role="cell" style={{ minWidth: 0 }}>
+                      <div className="o-rider dl-cell" role="cell">
                         {d.rider ? (
                           <>
-                            <div className="sm trunc" style={{ fontWeight: 700 }}>
-                              {d.rider.fullName}
-                            </div>
-                            <div className="xs muted num" style={{ fontWeight: 600 }}>
-                              {d.rider.phoneMasked}
-                            </div>
+                            <div className="sm trunc fw7">{d.rider.fullName}</div>
+                            <div className="xs muted num fw6">{d.rider.phoneMasked}</div>
                           </>
                         ) : (
-                          <span className="sm muted" style={{ fontWeight: 600 }}>
-                            {t('table.noRider')}
-                          </span>
+                          <span className="sm muted fw6">{t('table.noRider')}</span>
                         )}
                       </div>
-                      <div className="o-status" role="cell">
+                      <div className="o-status dl-cell" role="cell">
                         <div className="row gap8 wrap">
                           <DeliveryStatusPill status={d.status} />
                           {d.awaitingReturn ? (
-                            <span className="late">{t('awaitingReturn')}</span>
+                            <span className="wait">{t('awaitingReturn')}</span>
                           ) : null}
                         </div>
-                        <div className="xs muted" style={{ fontWeight: 600 }}>
+                        <div className="xs muted fw6">
                           {isOrderStatus(d.orderStatus) ? to(d.orderStatus) : d.orderStatus}
                         </div>
                       </div>
@@ -277,7 +280,7 @@ export function OwnDeliveriesView() {
         </div>
         {deliveries.nextCursor || deliveries.moreError ? (
           <div className="card-foot">
-            <span className="sm" style={{ fontWeight: 700 }} aria-live="polite">
+            <span className="sm fw7" role="status" aria-live="polite">
               {deliveries.moreError ? t('moreError') : t('showing', { count: items.length })}
             </span>
             <span className="spacer" />
@@ -294,9 +297,7 @@ export function OwnDeliveriesView() {
         ) : null}
       </div>
 
-      <p className="sm muted" style={{ fontWeight: 600 }}>
-        {t('note')}
-      </p>
+      <p className="sm muted fw6">{t('note')}</p>
 
       {detail ? (
         <DeliveryDrawer

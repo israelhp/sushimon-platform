@@ -95,9 +95,7 @@ export function DeliveryReasonModal({
         </>
       }
     >
-      <p className="sm" style={{ fontWeight: 600 }}>
-        {t('consequences')}
-      </p>
+      <p className="sm fw6">{t('consequences')}</p>
       <div className="field">
         <label htmlFor={fieldId} className="flabel">
           {required ? tc('labelRequired') : tc('labelOptional')}
@@ -118,17 +116,15 @@ export function DeliveryReasonModal({
           }}
           onBlur={() => setTouched(true)}
         />
-        <div id={helpId} className="xs muted" style={{ fontWeight: 600 }}>
-          {tc('pii')}{' '}
-          <span className="num">{tc('counter', { count: length, max: DELIVERY_REASON_MAX })}</span>
+        <div id={helpId} className="xs muted fw6">
+          {tc('pii')}
+        </div>
+        {/* El contador es visual (aria-hidden): no se anuncia junto al error, que vive en su propia región `alert`. */}
+        <div className="xs muted fw6 num" aria-hidden="true" data-testid="reason-counter">
+          {tc('counter', { count: length, max: DELIVERY_REASON_MAX })}
         </div>
         {showError ? (
-          <div
-            id={errorId}
-            role="alert"
-            className="xs"
-            style={{ color: 'var(--bo-red-text)', fontWeight: 700 }}
-          >
+          <div id={errorId} role="alert" className="xs field-error">
             {tc(`error.${problem}`)}
           </div>
         ) : null}

@@ -148,6 +148,46 @@ describe('comandos', () => {
     expect(gets('GET /v1/admin/deliveries/delivery-2').length).toBeGreaterThan(0);
   });
 
+  it('P2: invalida solo lo afectado (asignar: motoristas sí, pedidos no; recoger/entregar: pedidos sí, motoristas no)', async () => {
+    await renderProbe();
+    await screen.findByText('items:1');
+    await waitFor(() => expect(ctx.detail.data).toBeTruthy());
+    const spy = vi.spyOn(ctx.qc, 'invalidateQueries');
+    const touched = () => spy.mock.calls.map((c) => (c[0]?.queryKey as readonly unknown[])[1]);
+    await act(async () => {
+      await ctx.command.mutateAsync({ kind: 'unassign', id: 'delivery-2', expectedVersion: 2 });
+    });
+    expect(touched()).toContain('adminDeliveries');
+    expect(touched()).toContain('adminRiders');
+    expect(touched()).not.toContain('adminOrders');
+    spy.mockClear();
+    await act(async () => {
+      await ctx.command
+        .mutateAsync({ kind: 'pickedUp', id: 'delivery-1', expectedVersion: 1 })
+        .catch(() => undefined);
+    });
+    // Falló (no estaba asignada): solo se relee esa entrega, ni pedidos ni motoristas.
+    expect(touched()).not.toContain('adminOrders');
+    expect(touched()).not.toContain('adminRiders');
+  });
+
+  it('P2: un 409 no relee pedidos ni motoristas, solo la entrega afectada', async () => {
+    await renderProbe();
+    await screen.findByText('items:1');
+    await waitFor(() => expect(ctx.detail.data).toBeTruthy());
+    window.__sushimonMockFaults = {
+      'POST /v1/admin/deliveries/delivery-2/cancel': ['version-conflict'],
+    };
+    const spy = vi.spyOn(ctx.qc, 'invalidateQueries');
+    await act(async () => {
+      await ctx.command
+        .mutateAsync({ kind: 'cancel', id: 'delivery-2', expectedVersion: 2, reason: 'Prueba' })
+        .catch(() => undefined);
+    });
+    const touched = spy.mock.calls.map((c) => (c[0]?.queryKey as readonly unknown[])[1]);
+    expect(touched).toEqual(['adminDeliveries', 'adminDeliveries']);
+  });
+
   it('el listado de otra sucursal tiene su propia clave (no se mezclan datos)', async () => {
     await renderProbe('sucursal-3');
     await screen.findByText('items:1');

@@ -24,7 +24,7 @@ export const deliveryReasonRequired = () =>
   codedException(
     HttpStatus.BAD_REQUEST,
     'DELIVERY_REASON_REQUIRED',
-    'El motivo es obligatorio o inválido (3 a 280 caracteres, sin caracteres de control)',
+    'El motivo es obligatorio o inválido (3 a 280 caracteres, sin caracteres de control, teléfonos ni correos)',
   );
 
 export const deliveryCursorInvalid = () =>
@@ -99,15 +99,78 @@ export const deliveriesBusy = () =>
     HttpStatus.SERVICE_UNAVAILABLE,
   );
 
-/** SQLSTATE de la migración 0022 que la API traduce (mensajes internos del trigger NUNCA se devuelven). */
+/** Resultado de clasificar un error de BD de las entregas (`null` = no reconocido: error interno, nunca se filtra el mensaje). */
 export type DeliveryDbFailure = 'rider_busy' | 'guard' | 'order_has_active_delivery' | null;
 
+/** Nombres de restricción/trigger de la migración 0022 que la API reconoce (por NOMBRE, no solo por SQLSTATE). */
+const RIDER_BUSY_NAMES = ['deliveries_one_active_per_rider_idx'] as const;
+const DUPLICATE_DELIVERY_NAMES = ['deliveries_order_id_key'] as const;
+const GUARD_NAMES = [
+  'deliveries_guard',
+  'deliveries_order_coherence',
+  'orders_delivery_coherence',
+  'deliveries_lifecycle_chk',
+  'deliveries_status_chk',
+  'deliveries_version_chk',
+  'deliveries_order_times_chk',
+] as const;
+const ORDER_OPEN_DELIVERY_NAMES = [
+  'orders_open_delivery_guard',
+  'orders_open_delivery_identity_guard',
+] as const;
+
 /**
- * Clasifica un error de BD de las operaciones de entregas:
- * - `23505` (único): en la asignación solo puede ser `deliveries_one_active_per_rider_idx` => `rider_busy` (la carrera pierde);
- * - `23514` (CHECK/trigger de guarda o coherencia diferida) y `42501` (inmutables/DELETE/historial) => `guard`: la escritura
- *   perdió una carrera o violó una regla que la API ya valida; el servicio relee y responde 409 con `current` (o 503);
- * - `23001` (`restrict_violation`, guarda de `orders`) => `order_has_active_delivery`.
+ * Texto técnico del error de BD donde viaja el NOMBRE de la restricción o del trigger (mensaje de Prisma/pg, `constraint` y la
+ * causa del adaptador). Solo se COMPARA con los nombres conocidos; jamás se devuelve ni se registra.
+ */
+function dbErrorText(error: unknown): string {
+  const e = error as {
+    message?: unknown;
+    constraint?: unknown;
+    meta?: {
+      message?: unknown;
+      constraint?: unknown;
+      target?: unknown;
+      driverAdapterError?: { cause?: unknown };
+    };
+    cause?: { message?: unknown; constraint?: unknown };
+  };
+  const parts: unknown[] = [
+    e.message,
+    e.constraint,
+    e.meta?.message,
+    e.meta?.constraint,
+    e.meta?.target,
+    e.cause?.message,
+    e.cause?.constraint,
+  ];
+  let text = '';
+  const add = (value: unknown): void => {
+    if (value === undefined || value === null) return;
+    try {
+      text += ` ${typeof value === 'string' ? value : JSON.stringify(value)}`;
+    } catch {
+      // estructura circular: se ignora
+    }
+  };
+  parts.forEach(add);
+  add(e.meta?.driverAdapterError?.cause);
+  return text;
+}
+
+const mentions = (text: string, names: readonly string[]): boolean =>
+  names.some((name) => new RegExp(`(?<![\\w])${name}(?![\\w])`).test(text));
+
+/**
+ * Clasifica un error de BD de las operaciones de entregas por SQLSTATE Y por NOMBRE de la restricción/trigger (S4: un 23505,
+ * 23514, 42501 o 23001 de otro origen NO se confunde con una carrera de entregas):
+ * - `23505` + `deliveries_one_active_per_rider_idx` (solo en la asignación) => `rider_busy` (la carrera pierde);
+ *   `23505` + `deliveries_order_id_key` => `guard` (otra transacción creó la entrega);
+ * - `23514` (CHECK/trigger de guarda o coherencia diferida) y `42501` (`deliveries_guard`: inmutables/DELETE) con un nombre
+ *   conocido => `guard`: perdió una carrera o violó una regla que la API ya valida; el servicio relee y responde 409 o 503;
+ * - `23001` (`restrict_violation`) + `orders_open_delivery_guard`/`orders_open_delivery_identity_guard` =>
+ *   `order_has_active_delivery`.
+ * Todo lo demás (incluido el historial solo-añadir) => `null`: error interno sin filtrar mensajes.
  */
 export function classifyDeliveryDbError(
   error: unknown,
@@ -115,11 +178,18 @@ export function classifyDeliveryDbError(
 ): DeliveryDbFailure {
   if (typeof error !== 'object' || error === null || error instanceof HttpException) return null;
   const codes = dbErrorCodes(error);
-  if (ctx.assign === true && (codes.includes('23505') || codes.includes('P2002'))) {
-    return 'rider_busy';
+  const text = dbErrorText(error);
+  if (codes.includes('23505') || codes.includes('P2002')) {
+    if (ctx.assign === true && mentions(text, RIDER_BUSY_NAMES)) return 'rider_busy';
+    if (mentions(text, DUPLICATE_DELIVERY_NAMES)) return 'guard';
+    return null;
   }
-  if (codes.includes('23001')) return 'order_has_active_delivery';
-  if (codes.includes('23514') || codes.includes('42501')) return 'guard';
+  if (codes.includes('23001')) {
+    return mentions(text, ORDER_OPEN_DELIVERY_NAMES) ? 'order_has_active_delivery' : null;
+  }
+  if ((codes.includes('23514') || codes.includes('42501')) && mentions(text, GUARD_NAMES)) {
+    return 'guard';
+  }
   return null;
 }
 

@@ -256,4 +256,19 @@ describe('availableActionsFor (fila 2)', () => {
       ]);
     });
   });
+
+  it('F28 (S6): con allowOwnDispatch un proveedor null o desconocido NO despacha', () => {
+    const opt = { allowOwnDispatch: true };
+    for (const deliveryProvider of [null, 'OTHER']) {
+      const facts = { fulfillmentType: 'DELIVERY', deliveryProvider };
+      expect(evaluateTransition('ready', 'on_the_way', facts, opt)).toEqual({
+        ok: false,
+        code: 'ORDER_DISPATCH_NOT_AVAILABLE',
+      });
+      expect(evaluateTransition('on_the_way', 'delivered', facts, opt)).toEqual({
+        ok: false,
+        code: 'ORDER_DISPATCH_NOT_AVAILABLE',
+      });
+    }
+  });
 });

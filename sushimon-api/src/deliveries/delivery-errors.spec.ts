@@ -61,19 +61,78 @@ describe('errores de entregas (F28)', () => {
     ]);
   });
 
-  describe('classifyDeliveryDbError', () => {
-    it('23505 solo es «motorista ocupado» en la asignación', () => {
-      expect(classifyDeliveryDbError({ code: '23505' }, { assign: true })).toBe('rider_busy');
-      expect(classifyDeliveryDbError({ meta: { code: '23505' } }, { assign: true })).toBe(
-        'rider_busy',
-      );
-      expect(classifyDeliveryDbError({ code: 'P2002' }, { assign: true })).toBe('rider_busy');
-      expect(classifyDeliveryDbError({ code: '23505' })).toBeNull();
+  describe('classifyDeliveryDbError (S4: por SQLSTATE y por NOMBRE de restricción/trigger)', () => {
+    const named = (code: string, name: string) =>
+      Object.assign(new Error(`ERROR: violates "${name}"`), { code, meta: { code } });
+    it('23505: «motorista ocupado» solo con el índice por motorista y en la asignación', () => {
+      const busy = named('23505', 'deliveries_one_active_per_rider_idx');
+      expect(classifyDeliveryDbError(busy, { assign: true })).toBe('rider_busy');
+      expect(classifyDeliveryDbError(busy)).toBeNull();
+      expect(
+        classifyDeliveryDbError(
+          { code: 'P2002', meta: { target: ['deliveries_one_active_per_rider_idx'] } },
+          { assign: true },
+        ),
+      ).toBe('rider_busy');
+      expect(
+        classifyDeliveryDbError(
+          {
+            meta: {
+              code: '23505',
+              driverAdapterError: {
+                cause: { constraint: { index: 'deliveries_one_active_per_rider_idx' } },
+              },
+            },
+          },
+          { assign: true },
+        ),
+      ).toBe('rider_busy');
+      // otro único (p. ej. teléfono de motorista) o sin nombre: NO es una carrera de entregas
+      expect(
+        classifyDeliveryDbError(named('23505', 'riders_phone_key'), { assign: true }),
+      ).toBeNull();
+      expect(classifyDeliveryDbError({ code: '23505' }, { assign: true })).toBeNull();
+      expect(classifyDeliveryDbError({ code: 'P2002' }, { assign: true })).toBeNull();
+      expect(
+        classifyDeliveryDbError(named('23505', 'deliveries_one_active_per_rider_idx_otro'), {
+          assign: true,
+        }),
+      ).toBeNull();
     });
-    it('23514 y 42501 => guarda; 23001 => entrega abierta; el resto => null', () => {
-      expect(classifyDeliveryDbError({ code: '23514' })).toBe('guard');
-      expect(classifyDeliveryDbError({ cause: { originalCode: '42501' } })).toBe('guard');
-      expect(classifyDeliveryDbError({ code: '23001' })).toBe('order_has_active_delivery');
+    it('23505 de `deliveries_order_id_key` => guarda (otra transacción creó la entrega)', () => {
+      expect(classifyDeliveryDbError(named('23505', 'deliveries_order_id_key'))).toBe('guard');
+    });
+    it('23514 y 42501 con trigger/CHECK conocido => guarda; sin nombre conocido => null', () => {
+      for (const name of [
+        'deliveries_guard',
+        'deliveries_order_coherence',
+        'orders_delivery_coherence',
+        'deliveries_lifecycle_chk',
+        'deliveries_status_chk',
+        'deliveries_version_chk',
+        'deliveries_order_times_chk',
+      ]) {
+        expect([name, classifyDeliveryDbError(named('23514', name))]).toEqual([name, 'guard']);
+      }
+      expect(classifyDeliveryDbError(named('42501', 'deliveries_guard'))).toBe('guard');
+      expect(classifyDeliveryDbError({ code: '23514' })).toBeNull();
+      expect(classifyDeliveryDbError(named('23514', 'orders_total_chk'))).toBeNull();
+      expect(
+        classifyDeliveryDbError(named('42501', 'delivery_status_history_append_only')),
+      ).toBeNull();
+      expect(classifyDeliveryDbError({ cause: { originalCode: '42501' } })).toBeNull();
+    });
+    it('23001 solo con las guardas de pedido de la migración 0022', () => {
+      expect(classifyDeliveryDbError(named('23001', 'orders_open_delivery_guard'))).toBe(
+        'order_has_active_delivery',
+      );
+      expect(classifyDeliveryDbError(named('23001', 'orders_open_delivery_identity_guard'))).toBe(
+        'order_has_active_delivery',
+      );
+      expect(classifyDeliveryDbError({ code: '23001' })).toBeNull();
+      expect(classifyDeliveryDbError(named('23001', 'order_items_order_id_fkey'))).toBeNull();
+    });
+    it('el resto => null (error interno, mensaje nunca expuesto)', () => {
       expect(classifyDeliveryDbError({ code: '55P03' })).toBeNull();
       expect(classifyDeliveryDbError(new Error('x'))).toBeNull();
       expect(classifyDeliveryDbError('texto')).toBeNull();

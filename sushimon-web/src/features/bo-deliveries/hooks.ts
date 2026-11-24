@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useAdminRiders } from '@/features/bo-riders/hooks';
 import { useStaffKey, pollOverrideMs } from '@/features/bo-orders/hooks';
 import { pollMsFrom, usePolledQuery } from '@/features/polling/use-polled-query';
@@ -81,11 +81,13 @@ export function useAdminDeliveryList(
   const [more, setMore] = useState<MorePages | null>(null);
   const extra = more && more.keyId === keyId ? more : null;
 
-  const firstIds = new Set((first.data?.items ?? []).map((d) => d.id));
-  const items = [
-    ...(first.data?.items ?? []),
-    ...(extra?.items ?? []).filter((d) => !firstIds.has(d.id)),
-  ];
+  const firstItems = first.data?.items;
+  const extraItems = extra?.items;
+  const items = useMemo(() => {
+    const head = firstItems ?? [];
+    const firstIds = new Set(head.map((d) => d.id));
+    return [...head, ...(extraItems ?? []).filter((d) => !firstIds.has(d.id))];
+  }, [firstItems, extraItems]);
   const nextCursor = extra ? extra.nextCursor : (first.data?.nextCursor ?? null);
 
   const loadMore = useCallback(async () => {
@@ -216,40 +218,64 @@ export function runDeliveryCommand(
   }
 }
 
+/** Comandos que cambian la ocupación de un motorista (asignar, quitar, cancelar la entrega, retorno). */
+const AFFECTS_RIDERS: readonly DeliveryCommandInput['kind'][] = [
+  'assign',
+  'unassign',
+  'cancel',
+  'return',
+];
+/** Comandos que mueven el estado del pedido (recoger, entregar) o lo condicionan (cancelar). */
+const AFFECTS_ORDERS: readonly DeliveryCommandInput['kind'][] = ['pickedUp', 'delivered', 'cancel'];
+
 /**
- * Un comando de entrega. SIN actualización optimista. Tras CADA resultado (éxito, 409, 404, 422…) se refrescan listas y detalle (y
- * pedidos y motoristas, cuyo estado/ocupación cambian con la entrega: la lectura anterior ya no es fiable). Ante un 409 con
- * `current` se aplica ese estado a lo cacheado para ofrecer de inmediato la versión correcta mientras llega la relectura.
+ * Un comando de entrega. SIN actualización optimista. Refresco DIRIGIDO tras cada resultado: el listado y el detalle de entregas
+ * siempre; pedidos solo con recoger/entregar/cancelar y motoristas solo con asignar/quitar/cancelar/retorno, y SOLO si el comando
+ * se aplicó. Ante un 409 (con `current` se aplica de inmediato) o un `replayed` no se tocó nada más: se relee únicamente la entrega
+ * afectada (detalle y listados), sin pedidos ni motoristas.
  */
 export function useDeliveryCommand() {
   const client = useDataClient();
   const staffKey = useStaffKey();
   const qc = useQueryClient();
+  const keys = queryKeys.backoffice.adminDeliveries;
   return useMutation<AdminDeliveryCommandResult, Error, DeliveryCommandInput>({
     mutationFn: (input) => runDeliveryCommand(client, input),
     onSuccess: (result) => {
       // La respuesta ya trae la fila vigente (resumen): se refleja en el detalle abierto hasta que llegue la relectura.
-      qc.setQueryData<AdminDelivery>(
-        queryKeys.backoffice.adminDeliveries.detail(staffKey, result.delivery.id),
-        (old) => (old ? { ...old, ...result.delivery } : old),
+      qc.setQueryData<AdminDelivery>(keys.detail(staffKey, result.delivery.id), (old) =>
+        old ? { ...old, ...result.delivery } : old,
       );
     },
     onError: (error, input) => {
       if (input.kind === 'create') return;
       const classified = classifyDeliveryError(error);
       if (classified.kind === 'stateConflict' && classified.current) {
-        qc.setQueryData<AdminDelivery>(
-          queryKeys.backoffice.adminDeliveries.detail(staffKey, input.id),
-          (old) => (old ? applyCurrent(old, classified.current) : old),
+        qc.setQueryData<AdminDelivery>(keys.detail(staffKey, input.id), (old) =>
+          old ? applyCurrent(old, classified.current) : old,
         );
       }
     },
-    onSettled: async () => {
+    onSettled: async (result, error, input) => {
+      const applied = !error && result !== undefined && !result.transition.replayed;
+      if (!applied) {
+        // 409/404/422/red o `replayed`: solo la entrega afectada (y sus listados). Sin `id` (crear) basta el listado.
+        await Promise.all([
+          qc.invalidateQueries({ queryKey: keys.lists(staffKey) }),
+          input.kind === 'create'
+            ? Promise.resolve()
+            : qc.invalidateQueries({ queryKey: keys.detail(staffKey, input.id) }),
+        ]);
+        return;
+      }
       await Promise.all([
-        qc.invalidateQueries({ queryKey: queryKeys.backoffice.adminDeliveries.all }),
-        // El pedido cambia con recoger/entregar y los motoristas cambian de ocupación con asignar/liberar.
-        qc.invalidateQueries({ queryKey: queryKeys.backoffice.adminOrders.all }),
-        qc.invalidateQueries({ queryKey: queryKeys.backoffice.adminRiders.all }),
+        qc.invalidateQueries({ queryKey: keys.all }),
+        AFFECTS_ORDERS.includes(input.kind)
+          ? qc.invalidateQueries({ queryKey: queryKeys.backoffice.adminOrders.all })
+          : Promise.resolve(),
+        AFFECTS_RIDERS.includes(input.kind)
+          ? qc.invalidateQueries({ queryKey: queryKeys.backoffice.adminRiders.all })
+          : Promise.resolve(),
       ]);
     },
   });

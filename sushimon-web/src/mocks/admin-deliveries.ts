@@ -19,6 +19,12 @@ export const OPEN_STATUSES: readonly AdminDeliveryStatus[] = [
   'picked_up',
   'delivered',
 ];
+/** Con una de estas la API muestra contacto y dirección del cliente (§8); en `delivered|returned|cancelled` son `null`. */
+export const CONTACT_STATUSES: readonly AdminDeliveryStatus[] = [
+  'pending',
+  'assigned',
+  'picked_up',
+];
 /** El motorista cuenta como OCUPADO hasta registrar el retorno. */
 export const OCCUPYING_STATUSES: readonly AdminDeliveryStatus[] = [
   'assigned',

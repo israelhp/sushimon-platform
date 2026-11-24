@@ -33,6 +33,8 @@ const UNIQUE = { code: '23505' };
 const FK = { code: '23503' };
 const PRIV = { code: '42501' };
 const RESTRICT = { code: '23001' };
+/** `expect.stringContaining` tipado como cadena (evita `any` en los matchers anidados). */
+const has = (text: string): string => expect.stringContaining(text) as string;
 
 type Status = 'pending' | 'assigned' | 'picked_up' | 'delivered' | 'returned' | 'cancelled';
 const STATES: Status[] = ['pending', 'assigned', 'picked_up', 'delivered', 'returned', 'cancelled'];
@@ -339,14 +341,17 @@ describe.skipIf(!url)('Migración 0022: entregas propias (base desechable)', () 
       expect((await q('SELECT 1 FROM app.deliveries WHERE id = $1', [id])).rowCount).toBe(1);
       const trg = await q<{ tgname: string }>(
         `SELECT tgname FROM pg_trigger WHERE NOT tgisinternal AND tgname IN
-           ('deliveries_guard','deliveries_order_coherence','delivery_status_history_append_only','orders_open_delivery_guard')
+           ('deliveries_guard','deliveries_order_coherence','delivery_status_history_append_only','orders_open_delivery_guard',
+            'orders_open_delivery_identity_guard','orders_delivery_coherence')
          ORDER BY 1`,
       );
       expect(trg.rows.map((x) => x.tgname)).toEqual([
         'deliveries_guard',
         'deliveries_order_coherence',
         'delivery_status_history_append_only',
+        'orders_delivery_coherence',
         'orders_open_delivery_guard',
+        'orders_open_delivery_identity_guard',
       ]);
     });
 
@@ -365,12 +370,14 @@ describe.skipIf(!url)('Migración 0022: entregas propias (base desechable)', () 
       });
     });
 
-    it('no añade columnas ni cambia las restricciones de app.orders (solo un trigger)', async () => {
+    it('no añade columnas ni cambia las restricciones de app.orders (solo triggers)', async () => {
       const trg = await q<{ tgname: string }>(
         `SELECT tgname FROM pg_trigger WHERE tgrelid = 'app.orders'::regclass AND NOT tgisinternal ORDER BY 1`,
       );
       expect(trg.rows.map((x) => x.tgname)).toContain('orders_immutable_fields');
       expect(trg.rows.map((x) => x.tgname)).toContain('orders_open_delivery_guard');
+      expect(trg.rows.map((x) => x.tgname)).toContain('orders_open_delivery_identity_guard');
+      expect(trg.rows.map((x) => x.tgname)).toContain('orders_delivery_coherence');
     });
   });
 
@@ -793,11 +800,16 @@ describe.skipIf(!url)('Migración 0022: entregas propias (base desechable)', () 
       );
     });
 
-    it('con entrega returned o cancelled el pedido SÍ puede cancelarse; sin entrega también', async () => {
+    it('con entrega cancelled o sin entrega el pedido SÍ puede cancelarse; con returned no lo bloquea la guarda de cancelación (lo rechaza la coherencia S3a, 23514)', async () => {
       const cancelledDelivery = await makeDelivery('cancelled');
       await expect(setOrderStatus(cancelledDelivery.orderId, 'cancelled')).resolves.toBeDefined();
       const returned = await makeDelivery('returned');
-      await expect(setOrderStatus(returned.orderId, 'cancelled')).resolves.toBeDefined();
+      // `orders_open_delivery_guard` (23001) no interviene con una entrega `returned`; el pedido ya está `delivered` y volverlo a
+      // `cancelled` deja la entrega incoherente (S3a): 23514, no 23001.
+      await expect(setOrderStatus(returned.orderId, 'cancelled')).rejects.toMatchObject({
+        ...CHECK,
+        message: has('orders_delivery_coherence'),
+      });
       const noDelivery = await newOrder();
       await expect(setOrderStatus(noDelivery, 'cancelled')).resolves.toBeDefined();
     });
@@ -861,6 +873,218 @@ describe.skipIf(!url)('Migración 0022: entregas propias (base desechable)', () 
         expect(await creating).toBe('23514');
       });
       expect((await q('SELECT 1 FROM app.deliveries WHERE order_id = $1', [o2])).rowCount).toBe(0);
+    });
+  });
+
+  describe('S3a coherencia diferida desde el PEDIDO (orders_delivery_coherence)', () => {
+    it('cambiar el estado del pedido SIN mover la entrega falla en COMMIT (23514) y no cambia nada', async () => {
+      const d = await makeDelivery('assigned');
+      await expect(setOrderStatus(d.orderId, 'on_the_way')).rejects.toMatchObject(CHECK);
+      await expect(setOrderStatus(d.orderId, 'delivered')).rejects.toMatchObject(CHECK);
+      const o = await q<{ status: string }>('SELECT status FROM app.orders WHERE id = $1', [
+        d.orderId,
+      ]);
+      expect(o.rows[0]?.status).toBe('ready');
+    });
+
+    it('picked_up con el pedido devuelto a ready => falla; delivered/returned con el pedido on_the_way => falla', async () => {
+      const picked = await makeDelivery('picked_up');
+      await expect(setOrderStatus(picked.orderId, 'ready')).rejects.toMatchObject(CHECK);
+      const delivered = await makeDelivery('delivered');
+      await expect(setOrderStatus(delivered.orderId, 'on_the_way')).rejects.toMatchObject(CHECK);
+      const returned = await makeDelivery('returned');
+      await expect(setOrderStatus(returned.orderId, 'ready')).rejects.toMatchObject(CHECK);
+    });
+
+    it('mensaje con el NOMBRE del trigger (la API clasifica por nombre) y CONSTRAINT informado', async () => {
+      const d = await makeDelivery('assigned');
+      await expect(setOrderStatus(d.orderId, 'on_the_way')).rejects.toMatchObject({
+        code: '23514',
+        message: has('orders_delivery_coherence'),
+        constraint: 'orders_delivery_coherence',
+      });
+    });
+
+    it('el cambio coherente en la MISMA transacción (entrega y pedido) pasa; varios cambios se evalúan contra el estado FINAL', async () => {
+      const d = await makeDelivery('assigned');
+      await moveTo(d.id, d.orderId, 'picked_up', null);
+      // pedido y entrega cambian en la MISMA transacción (cualquier orden de sentencias): se evalúa el estado FINAL
+      await tx(async (c) => {
+        await c.query(`UPDATE app.orders SET status = 'delivered' WHERE id = $1`, [d.orderId]);
+        await c.query(
+          `UPDATE app.deliveries SET status = 'delivered', version = version + 1, delivered_at = clock_timestamp() WHERE id = $1`,
+          [d.id],
+        );
+      });
+      expect((await statusOf(d.id))?.status).toBe('delivered');
+    });
+
+    it('sin entrega, o con pedido PICKUP, el cambio de estado del pedido no se ve afectado', async () => {
+      const own = await newOrder({ status: 'ready' });
+      await expect(setOrderStatus(own, 'on_the_way')).resolves.toBeDefined();
+      const pickup = await newOrder({
+        fulfillment_type: 'PICKUP',
+        delivery_provider: null,
+        status: 'ready',
+      });
+      await expect(setOrderStatus(pickup, 'picked_up')).resolves.toBeDefined();
+    });
+
+    it('con entrega cancelled el pedido puede cancelarse, pero NO pasar a on_the_way/delivered', async () => {
+      const d = await makeDelivery('cancelled');
+      await expect(setOrderStatus(d.orderId, 'on_the_way')).rejects.toMatchObject(CHECK);
+      await expect(setOrderStatus(d.orderId, 'cancelled')).resolves.toBeDefined();
+    });
+  });
+
+  describe('S3b identidad del pedido con entrega abierta (orders_open_delivery_identity_guard)', () => {
+    /**
+     * `orders_immutable_fields` (0018) ya hace inmutables sucursal, modalidad y proveedor, y dispara ANTES (orden alfabético): el
+     * guard nuevo es DEFENSA EN PROFUNDIDAD. Para probarlo de verdad se desactiva ese trigger dentro de una transacción y se revierte.
+     */
+    const withoutImmutable = async (fn: (c: pg.Client) => Promise<void>) =>
+      withClient(scratch, async (c) => {
+        await c.query('BEGIN');
+        try {
+          await c.query('ALTER TABLE app.orders DISABLE TRIGGER orders_immutable_fields');
+          await fn(c);
+        } finally {
+          await c.query('ROLLBACK');
+        }
+      });
+
+    it.each(['pending', 'assigned', 'picked_up', 'delivered'] as const)(
+      'entrega %s: no cambian branch_id, fulfillment_type ni delivery_provider (23001)',
+      async (status) => {
+        const d = await makeDelivery(status);
+        for (const [col, value] of [
+          ['branch_id', branch2Id],
+          ['fulfillment_type', 'PICKUP'],
+          ['delivery_provider', 'PEDIDOSYA'],
+        ] as const) {
+          // una transacción por columna: el error deja la transacción abortada y se revierte entera
+          await withoutImmutable(async (c) => {
+            await expect(
+              c.query(`UPDATE app.orders SET ${col} = $2 WHERE id = $1`, [d.orderId, value]),
+            ).rejects.toMatchObject({
+              ...RESTRICT,
+              message: has('orders_open_delivery_identity_guard'),
+            });
+          });
+        }
+      },
+    );
+
+    it('con entrega returned o cancelled, o sin entrega, el guard NO bloquea (queda la inmutabilidad de 0018)', async () => {
+      for (const status of ['returned', 'cancelled'] as const) {
+        const d = await makeDelivery(status);
+        await withoutImmutable(async (c) => {
+          await c.query(`UPDATE app.orders SET delivery_provider = 'PEDIDOSYA' WHERE id = $1`, [
+            d.orderId,
+          ]);
+        });
+      }
+      const alone = await newOrder();
+      await withoutImmutable(async (c) => {
+        await c.query(`UPDATE app.orders SET delivery_provider = 'PEDIDOSYA' WHERE id = $1`, [
+          alone,
+        ]);
+      });
+    });
+
+    it('con el trigger de 0018 activo la modificación ya se rechaza (42501)', async () => {
+      const d = await makeDelivery('assigned');
+      await expect(
+        q(`UPDATE app.orders SET delivery_provider = 'PEDIDOSYA' WHERE id = $1`, [d.orderId]),
+      ).rejects.toMatchObject(PRIV);
+    });
+  });
+
+  describe('S3c pedido despachable al crear, reabrir y asignar (deliveries_guard)', () => {
+    it('INSERT con el pedido pending, on_the_way, delivered, cancelled o rejected => 23514 YA en la sentencia (no en COMMIT)', async () => {
+      for (const st of ['pending', 'on_the_way', 'delivered', 'cancelled', 'rejected']) {
+        const orderId = await newOrder({ status: st });
+        await expect(insertDelivery(orderId)).rejects.toMatchObject({
+          ...CHECK,
+          message: has('deliveries_guard'),
+        });
+      }
+    });
+
+    it('asignar y reabrir exigen accepted|preparing|ready en la misma transacción; recoger/entregar/retornar/cancelar NO', async () => {
+      const d = await makeDelivery('assigned');
+      const rider = await newRider();
+      // asignar/reasignar con el pedido ya en on_the_way (sin pasar por la API): rechazado por la guarda
+      await withClient(scratch, async (c) => {
+        await c.query('BEGIN');
+        try {
+          await c.query(`UPDATE app.orders SET status = 'on_the_way' WHERE id = $1`, [d.orderId]);
+          await expect(
+            c.query(
+              `UPDATE app.deliveries SET rider_id = $2, assigned_at = clock_timestamp(), version = version + 1 WHERE id = $1`,
+              [d.id, rider],
+            ),
+          ).rejects.toMatchObject(CHECK);
+        } finally {
+          await c.query('ROLLBACK');
+        }
+      });
+      // la recogida (assigned → picked_up) con el pedido on_the_way SÍ pasa
+      await moveTo(d.id, d.orderId, 'picked_up', null);
+      expect((await statusOf(d.id))?.status).toBe('picked_up');
+      await moveTo(d.id, d.orderId, 'delivered', null);
+      await moveTo(d.id, d.orderId, 'returned', null);
+      expect((await statusOf(d.id))?.status).toBe('returned');
+      // cancelar una entrega con el pedido ya cancelado/rechazado en la misma transacción
+      const c2 = await makeDelivery('assigned');
+      await tx(async (c) => {
+        await c.query(
+          `UPDATE app.deliveries SET status = 'cancelled', version = version + 1, rider_id = NULL, assigned_at = NULL,
+                  cancelled_at = clock_timestamp() WHERE id = $1`,
+          [c2.id],
+        );
+        await c.query(`UPDATE app.orders SET status = 'cancelled' WHERE id = $1`, [c2.orderId]);
+      });
+      // reabrir con el pedido cancelado => 23514 inmediato
+      await expect(
+        tx((c) =>
+          c.query(
+            `UPDATE app.deliveries SET status = 'pending', version = version + 1, cancelled_at = NULL WHERE id = $1`,
+            [c2.id],
+          ),
+        ),
+      ).rejects.toMatchObject({ ...CHECK, message: has('deliveries_guard') });
+    });
+  });
+
+  describe('S4 mensajes con el nombre del trigger y de la restricción', () => {
+    it('23505/23514 de restricciones llevan su nombre en el mensaje; los triggers informan CONSTRAINT = su nombre', async () => {
+      const a = await makeDelivery('assigned');
+      const second = await newOrder();
+      const secondId = (await insertDelivery(second)).rows[0]?.id as string;
+      await expect(
+        patch(secondId, {
+          status: 'assigned',
+          version: 2,
+          rider_id: a.riderId,
+          assigned_at: new Date().toISOString(),
+        }),
+      ).rejects.toMatchObject({
+        ...UNIQUE,
+        message: has('deliveries_one_active_per_rider_idx'),
+      });
+      await expect(insertDelivery(a.orderId)).rejects.toMatchObject({
+        ...UNIQUE,
+        message: has('deliveries_order_id_key'),
+      });
+      await expect(patch(a.id, { status: 'assigned' })).rejects.toMatchObject({
+        ...CHECK,
+        constraint: 'deliveries_guard',
+      });
+      await expect(setOrderStatus(a.orderId, 'cancelled')).rejects.toMatchObject({
+        ...RESTRICT,
+        constraint: 'orders_open_delivery_guard',
+      });
     });
   });
 
@@ -974,6 +1198,9 @@ describe.skipIf(!url)('Migración 0022: entregas propias (base desechable)', () 
       'deliveries_guard()',
       'deliveries_order_coherence()',
       'orders_open_delivery_guard()',
+      'orders_open_delivery_identity_guard()',
+      'orders_delivery_coherence()',
+      'delivery_order_coherent(text, text)',
     ];
     it('RLS habilitada sin ninguna política en ambas tablas', async () => {
       for (const t of tables) {

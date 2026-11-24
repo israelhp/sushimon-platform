@@ -16,6 +16,7 @@ import {
   COMMAND_SPECS,
   OCCUPYING_STATUSES,
   OPEN_STATUSES,
+  CONTACT_STATUSES,
   availableDeliveryActionsFor,
   deliveriesOf,
   orderEligibilityViolations,
@@ -128,8 +129,10 @@ function detailOf(store: MockStore, actor: StaffActor, d: AdminDeliveryRecord): 
   // §8: contacto y dirección SOLO con la entrega ABIERTA y `orders.read` en la sucursal; si no, `null` (no se leen).
   const contactVisible =
     draft !== undefined &&
-    OPEN_STATUSES.includes(d.status) &&
+    CONTACT_STATUSES.includes(d.status) &&
     canIn(actor, 'orders.read', d.branchId);
+  // S1: el motivo del historial es interno; solo con `deliveries.update` en la sucursal (si no, `null`).
+  const canSeeReason = canIn(actor, 'deliveries.update', d.branchId);
   return {
     ...summary,
     order: {
@@ -152,7 +155,7 @@ function detailOf(store: MockStore, actor: StaffActor, d: AdminDeliveryRecord): 
             referenceNote: draft.address.references || null,
           }
         : null,
-    history: d.history.slice(-MAX_HISTORY),
+    history: d.history.slice(-MAX_HISTORY).map((h) => (canSeeReason ? h : { ...h, reason: null })),
     historyTruncated: d.history.length > MAX_HISTORY,
   };
 }

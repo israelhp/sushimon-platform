@@ -3,7 +3,7 @@ import { AuditService, type AuditEventInput } from '../audit/audit.service.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { COMMAND_LOCK_TIMEOUT } from '../orders/admin/admin-orders.repository.js';
-import { OPEN_STATUSES } from './delivery-policy.js';
+import { CONTACT_VISIBLE_STATUSES, OPEN_STATUSES } from './delivery-policy.js';
 import type {
   ChangeInput,
   DeliveriesTx,
@@ -248,16 +248,19 @@ export class DeliveriesRepository {
 
   /**
    * Detalle con el alcance EN LA CONSULTA (inexistente y fuera de alcance dan la misma sentencia y `null`): 2 sentencias (fila
-   * con JOINs + historial). El contacto y la dirección se SELECCIONAN solo si la entrega está abierta Y la sucursal está en el
-   * alcance de `orders.read` (`contactBranchIds`): no se leen y se descartan después, el valor ni sale de la base.
+   * con JOINs + historial). El contacto y la dirección se SELECCIONAN solo si la entrega está `pending|assigned|picked_up` (S7) Y
+   * la sucursal está en el alcance de `orders.read` (`contactBranchIds`): no se leen y se descartan después, el valor ni sale de
+   * la base. `reason` y `actorName` del historial (S1/S8) solo se seleccionan con `deliveries.update` en la sucursal de la entrega
+   * (`updateBranchIds`); sin él llegan `null` desde SQL.
    */
   async findDetail(
     id: string,
     branchIds: string[] | null,
     contactBranchIds: string[] | null,
+    updateBranchIds: string[] | null,
   ): Promise<DeliveryDetailRecord | null> {
     if (branchIds !== null && branchIds.length === 0) return null;
-    const visible = Prisma.sql`(d.status = ANY(${[...OPEN_STATUSES]}::text[]) AND ${scopeSql(Prisma.sql`o.branch_id`, contactBranchIds)})`;
+    const visible = Prisma.sql`(d.status = ANY(${[...CONTACT_VISIBLE_STATUSES]}::text[]) AND ${scopeSql(Prisma.sql`o.branch_id`, contactBranchIds)})`;
     const rows = await this.prisma.$queryRaw<
       (DeliveryDbRow & {
         contact_visible: boolean;
@@ -277,6 +280,7 @@ export class DeliveriesRepository {
     const h = rows[0];
     if (!h) return null;
 
+    const staffVisible = updateBranchIds === null || updateBranchIds.includes(h.branch_id);
     const history = await this.prisma.$queryRaw<
       {
         event: string;
@@ -289,11 +293,12 @@ export class DeliveriesRepository {
         changed_at: Date;
       }[]
     >`
-      SELECT h.event, h.old_status, h.status, h.rider_id, r.full_name AS rider_name, h.reason,
-             s.full_name AS actor_name, h.changed_at
+      SELECT h.event, h.old_status, h.status, h.rider_id, r.full_name AS rider_name,
+             CASE WHEN ${staffVisible}::boolean THEN h.reason END AS reason,
+             CASE WHEN ${staffVisible}::boolean THEN s.full_name END AS actor_name, h.changed_at
         FROM app.delivery_status_history h
         LEFT JOIN app.riders r ON r.id = h.rider_id
-        LEFT JOIN app.staff_users s ON s.id = h.changed_by
+        LEFT JOIN app.staff_users s ON s.id = h.changed_by AND ${staffVisible}::boolean
        WHERE h.delivery_id = ${id}::uuid
        ORDER BY h.changed_at DESC, h.id DESC
        LIMIT ${DELIVERY_HISTORY_LIMIT + 1}::int`;
@@ -351,9 +356,11 @@ export class DeliveriesRepository {
       id: string,
       scope: Prisma.Sql,
       lock: Prisma.Sql,
+      withLastEvent: boolean,
     ): Promise<DeliveryRow | null> => {
+      // P5: el último evento (subconsulta) solo se lee cuando quien llama lo usa (repeticiones idempotentes).
       const rows = await client.$queryRaw<DeliveryDbRow[]>(Prisma.sql`
-        SELECT ${COLS}, ${LAST_EVENT}
+        SELECT ${COLS}${withLastEvent ? Prisma.sql`, ${LAST_EVENT}` : Prisma.empty}
           FROM app.deliveries d ${JOINS}
          WHERE d.id = ${id}::uuid AND ${scope}
          ${lock}`);
@@ -367,18 +374,40 @@ export class DeliveriesRepository {
           id,
           scopeSql(Prisma.sql`d.branch_id`, branchIds),
           opts?.lock ? Prisma.sql`FOR UPDATE OF d` : Prisma.empty,
+          opts?.lastEvent === true,
         );
       },
-      lockRider: async (riderId): Promise<RiderLock | null> => {
-        // Primer bloqueo del orden motorista → entrega → pedido (el MISMO `FOR UPDATE` que F27 en sus transiciones peligrosas).
+      lockRider: async (riderId, branchIds): Promise<RiderLock | null> => {
+        // S2: el alcance de `riders.read` va EN el SQL del bloqueo: un motorista de otra sucursal (o un actor sin alcance) NO se
+        // bloquea y es indistinguible de uno inexistente (404 uniforme). Primer bloqueo del orden motorista → entrega → pedido
+        // (el MISMO `FOR UPDATE` que F27 en sus transiciones peligrosas).
+        if (branchIds !== null && branchIds.length === 0) return null;
         const rows = await client.$queryRaw<{ id: string; branch_id: string }[]>(Prisma.sql`
-          SELECT r.id, r.branch_id FROM app.riders r WHERE r.id = ${riderId}::uuid FOR UPDATE`);
+          SELECT r.id, r.branch_id FROM app.riders r
+           WHERE r.id = ${riderId}::uuid AND ${scopeSql(Prisma.sql`r.branch_id`, branchIds)} FOR UPDATE`);
         const r = rows[0];
         return r ? { id: r.id, branchId: r.branch_id } : null;
       },
-      readDeliveryLocked: (id) =>
-        // `deliveries d` ANTES de `orders o` en el FROM: PostgreSQL bloquea en ese orden (entrega → pedido).
-        readOne(id, Prisma.sql`TRUE`, Prisma.sql`FOR UPDATE OF d FOR SHARE OF o`),
+      readDeliveryLocked: async (id) => {
+        // S9: DOS sentencias con orden EXPLÍCITO entrega → pedido (no se depende del plan de una sola sentencia). La entrega se
+        // bloquea y se lee con su último evento; luego se bloquea el pedido y se toma su estado VIGENTE (READ COMMITTED: tras
+        // esperar el bloqueo se lee la versión confirmada más reciente), que sustituye al leído sin bloqueo en la primera.
+        const row = await readOne(id, Prisma.sql`TRUE`, Prisma.sql`FOR UPDATE OF d`, true);
+        if (!row) return null;
+        const orders = await client.$queryRaw<
+          { status: string; fulfillment_type: string; delivery_provider: string | null }[]
+        >(Prisma.sql`
+          SELECT o.status, o.fulfillment_type, o.delivery_provider FROM app.orders o
+           WHERE o.id = ${row.orderId}::uuid FOR SHARE`);
+        const o = orders[0];
+        if (!o) return null;
+        return {
+          ...row,
+          orderStatus: o.status,
+          fulfillmentType: o.fulfillment_type,
+          deliveryProvider: o.delivery_provider,
+        };
+      },
       readOrderForCreate: async (orderId, branchIds): Promise<OrderForDelivery | null> => {
         if (branchIds !== null && branchIds.length === 0) return null;
         const rows = await client.$queryRaw<

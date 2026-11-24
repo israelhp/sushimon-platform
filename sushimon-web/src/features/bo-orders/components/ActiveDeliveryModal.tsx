@@ -90,12 +90,10 @@ export function ActiveDeliveryModal({
         </button>
       }
     >
-      <p className="sm" style={{ fontWeight: 600 }}>
-        {t('text', { code: order.displayNumber })}
-      </p>
+      <p className="sm fw6">{t('text', { code: order.displayNumber })}</p>
       {list.isLoading ? (
         <div role="status" aria-busy="true" aria-label={t('loading')}>
-          <Skeleton zone="bo" style={{ height: 44, borderRadius: 10 }} />
+          <Skeleton zone="bo" className="h-11 rounded-[10px]" />
         </div>
       ) : !delivery && !deliveryCancelled ? (
         <Banner zone="bo" tone="warning" role="alert">
@@ -117,7 +115,7 @@ export function ActiveDeliveryModal({
               aria-invalid={problem !== null}
               onChange={(e) => setReason(e.target.value)}
             />
-            <div className="xs muted" style={{ fontWeight: 600 }}>
+            <div className="xs muted fw6">
               {t('pii')}{' '}
               <span className="num">
                 {tr('counter', { count: reason.trim().length, max: REASON_MAX })}
@@ -133,10 +131,7 @@ export function ActiveDeliveryModal({
             <li>
               <span className="strong">{t('step1')}</span>
               {deliveryCancelled ? (
-                <span className="xs" style={{ fontWeight: 700 }}>
-                  {' '}
-                  · {t('step1Done')}
-                </span>
+                <span className="xs fw7"> · {t('step1Done')}</span>
               ) : (
                 <button
                   type="button"
@@ -152,10 +147,7 @@ export function ActiveDeliveryModal({
             <li>
               <span className="strong">{t('step2')}</span>
               {orderCancelled ? (
-                <span className="xs" style={{ fontWeight: 700 }}>
-                  {' '}
-                  · {t('step2Done')}
-                </span>
+                <span className="xs fw7"> · {t('step2Done')}</span>
               ) : (
                 <button
                   type="button"

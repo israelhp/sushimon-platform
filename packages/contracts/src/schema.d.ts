@@ -2745,7 +2745,7 @@ export interface paths {
          * Detalle de una entrega propia (con historial)
          * @description F28. Exige `deliveries.read` y `aal2`. Inexistente o de una sucursal fuera del alcance => el MISMO 404 `DELIVERY_NOT_FOUND` (anti-IDOR). Incluye pedido, motorista (nombre, vehículo y teléfono ENMASCARADO; el teléfono
          *     completo es de `getAdminRider` con `riders.read`), tiempos, acciones disponibles para ESTE personal y el historial cronológico (≤ 50 eventos con `old_status`, `status`, evento, motorista, motivo interno y quién). El contacto y la
-         *     dirección del cliente (`customer`, `address`) SOLO se devuelven si la entrega está ABIERTA y el personal tiene además `orders.read` en la sucursal (si no, `null` con `contactVisible=false`); las lecturas no se auditan.
+         *     dirección del cliente (`customer`, `address`) SOLO se devuelven si la entrega está `pending|assigned|picked_up` (NO `delivered`/`returned`/`cancelled`) y el personal tiene además `orders.read` en la sucursal (si no, `null` con `contactVisible=false`); `reason` y `actorName` del historial solo se devuelven con `deliveries.update` en la sucursal (si no, `null`); las lecturas no se auditan.
          *     ≤ 2 sentencias SQL (fila con JOINs + historial). `Cache-Control: private, no-store`.
          */
         get: operations["getAdminDelivery"];
@@ -6581,7 +6581,7 @@ export interface components {
             status: components["schemas"]["OrderLifecycleStatus"];
             deliveryProvider: components["schemas"]["CourierProvider"];
         };
-        /** @description Snapshot de la dirección del pedido (PII). Solo en el detalle de una entrega ABIERTA y a quien tiene `orders.read`. */
+        /** @description Snapshot de la dirección del pedido (PII). Solo en el detalle de una entrega `pending|assigned|picked_up` y a quien tiene `orders.read`. */
         AdminDeliveryAddress: {
             municipalityName: string;
             zone: string | null;
@@ -6633,7 +6633,7 @@ export interface components {
             updatedAt: string;
             availableActions: components["schemas"]["AdminDeliveryActionState"][];
         };
-        /** @description Evento del historial de la entrega (solo-añadir). `reason` es texto INTERNO (cancelación/desasignación). `riderName` es el del motorista del evento (puede ser el liberado). */
+        /** @description Evento del historial de la entrega (solo-añadir). `reason` es texto INTERNO (cancelación/desasignación; sin teléfonos, correos ni otros datos personales) y, igual que `actorName`, es `null` salvo para el personal con `deliveries.update` en la sucursal de la entrega. `riderName` es el del motorista del evento (puede ser el liberado). */
         AdminDeliveryHistoryEntry: {
             event: components["schemas"]["AdminDeliveryEvent"];
             oldStatus: components["schemas"]["AdminDeliveryStatus"] | null;
@@ -6642,7 +6642,7 @@ export interface components {
             riderId: string | null;
             riderName: string | null;
             reason: string | null;
-            /** @description Nombre del personal; `null` si fue el sistema. */
+            /** @description Nombre del personal; `null` si fue el sistema o si quien consulta no tiene `deliveries.update` en la sucursal. */
             actorName: string | null;
             /** Format: date-time */
             at: string;
@@ -6650,7 +6650,7 @@ export interface components {
         /** @description Detalle de una entrega: `AdminDeliverySummary` + pedido, contacto y dirección (condicionados) e historial (≤ 50 eventos, cronológico ascendente). */
         AdminDelivery: components["schemas"]["AdminDeliverySummary"] & {
             order: components["schemas"]["AdminDeliveryOrderRef"];
-            /** @description `true` solo si la entrega está abierta Y el personal tiene `orders.read` en la sucursal; si no, `customer` y `address` son `null`. */
+            /** @description `true` solo si la entrega está `pending|assigned|picked_up` Y el personal tiene `orders.read` en la sucursal; si no, `customer` y `address` son `null`. */
             contactVisible: boolean;
             customer: components["schemas"]["AdminDeliveryCustomer"] | null;
             address: components["schemas"]["AdminDeliveryAddress"] | null;

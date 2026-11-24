@@ -1,6 +1,6 @@
 -- 0022 · F28 entregas con repartidores propios (specs/029-own-deliveries §3, ADR-0032). CREA app.deliveries y
 -- app.delivery_status_history (el DBML las define; las columnas añadidas sobre el DBML se justifican abajo, en la spec §3 y en
--- docs/database/README.md) y AÑADE un trigger de guarda a app.orders. El DBML no se edita.
+-- docs/database/README.md) y AÑADE tres triggers a app.orders (guarda de cancelación, guarda de identidad y coherencia diferida). El DBML no se edita.
 -- Aditiva y NO destructiva: solo CREATE (tablas, funciones, triggers, índices, comentarios) y ENABLE RLS/REVOKE sobre objetos
 -- NUEVOS. No toca datos ni columnas existentes, ni role_permissions. Relanzable (IF NOT EXISTS, CREATE OR REPLACE, triggers
 -- guardados por catálogo). Guarda inicial (como 0018/0019/0021): si app.deliveries o app.delivery_status_history ya existen con
@@ -12,8 +12,10 @@
 --   DROP TRIGGER orders_open_delivery_guard ON app.orders;
 --   DROP TABLE app.delivery_status_history;
 --   DROP TABLE app.deliveries;
---   DROP FUNCTION app.deliveries_guard(), app.deliveries_order_coherence(),
---                 app.delivery_status_history_append_only(), app.orders_open_delivery_guard();
+--   DROP FUNCTION app.deliveries_guard(), app.deliveries_order_coherence(), app.delivery_order_coherent(text, text),
+--                 app.delivery_status_history_append_only(), app.orders_open_delivery_guard(),
+--                 app.orders_open_delivery_identity_guard(), app.orders_delivery_coherence();
+-- (antes de las tablas se eliminan también los triggers orders_open_delivery_identity_guard y orders_delivery_coherence de app.orders.)
 --
 -- Excepción de limpieza (precedente 0004/0018/0019/0021): un DELETE sobre deliveries o delivery_status_history se permite SOLO si
 -- la transacción hizo `SET LOCAL app.allow_order_cleanup = 'on'`. La API nunca lo hace; lo usan las pruebas. No es un control de acceso.
@@ -35,6 +37,17 @@
 --       picked_up/delivered/returned) no se reescriban (el CHECK solo valida presencia/orden, no que el valor se conserve).
 --   (d) Guarda inicial ampliada: exige que existan app.orders, app.branches y app.riders, y verifica columnas y restricciones de
 --       las dos tablas nuevas.
+--   (e) [revisión de seguridad S3a] Coherencia diferida TAMBIÉN desde el pedido: constraint trigger `orders_delivery_coherence`
+--       (AFTER UPDATE OF status en app.orders, DEFERRABLE INITIALLY DEFERRED, solo DELIVERY/OWN) que revalida pedido ↔ entrega
+--       al confirmar con la MISMA función pura `delivery_order_coherent` que usa `deliveries_order_coherence` (sin ciclos: ambas
+--       solo LEEN). Antes un UPDATE de orders.status que saltara OrderTransitionsService no se detectaba (solo corría al escribir
+--       deliveries).
+--   (f) [S3b] `orders_open_delivery_identity_guard`: con una entrega ABIERTA (pending|assigned|picked_up|delivered) no se puede
+--       cambiar branch_id, fulfillment_type ni delivery_provider del pedido (23001, como la guarda de cancelación).
+--   (g) [S3c] deliveries_guard exige pedido en accepted|preparing|ready al INSERT, al reabrir y al asignar/reasignar (antes solo
+--       lo comprobaba la API y la coherencia diferida). Recoger/entregar/retornar/cancelar NO lo exigen.
+--   (h) [S4] Los mensajes de los triggers empiezan por el NOMBRE del trigger (p. ej. `deliveries_guard: …`) y llevan
+--       CONSTRAINT = nombre del trigger, para que la API los clasifique por nombre y no solo por SQLSTATE.
 
 -- ------------------------------------------------------------------------------------------------
 -- 0) Guarda: requisitos y, si las tablas ya existen, columnas y restricciones esperadas.
@@ -195,20 +208,23 @@ AS $$
 BEGIN
     IF TG_OP = 'DELETE' THEN
         IF current_setting('app.allow_order_cleanup', true) = 'on' THEN RETURN OLD; END IF;
-        RAISE EXCEPTION 'app.deliveries no admite DELETE: se cancela' USING ERRCODE = 'insufficient_privilege';
+        RAISE EXCEPTION 'deliveries_guard: app.deliveries no admite DELETE: se cancela' USING ERRCODE = 'insufficient_privilege', CONSTRAINT = 'deliveries_guard';
     END IF;
 
     IF TG_OP = 'INSERT' THEN
         IF NEW.status <> 'pending' OR NEW.version <> 1 THEN
-            RAISE EXCEPTION 'app.deliveries nace pending y version 1' USING ERRCODE = 'check_violation';
+            RAISE EXCEPTION 'deliveries_guard: app.deliveries nace pending y version 1' USING ERRCODE = 'check_violation', CONSTRAINT = 'deliveries_guard';
         END IF;
         -- Solo pedidos DELIVERY con reparto propio, y de la MISMA sucursal. F29 (PedidosYa) relajará esto con su propia migración.
         -- FOR SHARE (cambio (a)): serializa contra un UPDATE orders.status concurrente (cancelar/rechazar); ver la cabecera.
+        -- Cambio (g): además el pedido debe estar despachable (accepted|preparing|ready).
         PERFORM 1 FROM app.orders o
          WHERE o.id = NEW.order_id AND o.fulfillment_type = 'DELIVERY' AND o.delivery_provider = 'OWN' AND o.branch_id = NEW.branch_id
+           AND o.status IN ('accepted', 'preparing', 'ready')
            FOR SHARE OF o;
         IF NOT FOUND THEN
-            RAISE EXCEPTION 'app.deliveries: el pedido debe ser DELIVERY OWN de la misma sucursal' USING ERRCODE = 'check_violation';
+            RAISE EXCEPTION 'deliveries_guard: el pedido debe ser DELIVERY OWN de la misma sucursal y estar aceptado, en preparacion o listo'
+                USING ERRCODE = 'check_violation', CONSTRAINT = 'deliveries_guard';
         END IF;
         RETURN NEW;
     END IF;
@@ -216,43 +232,58 @@ BEGIN
     -- UPDATE
     IF NEW.id IS DISTINCT FROM OLD.id OR NEW.order_id IS DISTINCT FROM OLD.order_id OR NEW.branch_id IS DISTINCT FROM OLD.branch_id
        OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
-        RAISE EXCEPTION 'app.deliveries: id, order_id, branch_id y created_at son inmutables' USING ERRCODE = 'insufficient_privilege';
+        RAISE EXCEPTION 'deliveries_guard: id, order_id, branch_id y created_at son inmutables' USING ERRCODE = 'insufficient_privilege', CONSTRAINT = 'deliveries_guard';
     END IF;
     IF NEW.version IS DISTINCT FROM OLD.version + 1 THEN
-        RAISE EXCEPTION 'app.deliveries: todo UPDATE debe subir version en 1' USING ERRCODE = 'check_violation';
+        RAISE EXCEPTION 'deliveries_guard: todo UPDATE debe subir version en 1' USING ERRCODE = 'check_violation', CONSTRAINT = 'deliveries_guard';
     END IF;
     -- Grafo de estados (spec §3.2). Mismo estado solo para la reasignación (assigned → assigned con OTRO motorista).
     IF NOT ((OLD.status, NEW.status) IN (('pending', 'assigned'), ('assigned', 'pending'), ('assigned', 'picked_up'),
                                          ('picked_up', 'delivered'), ('delivered', 'returned'), ('pending', 'cancelled'),
                                          ('assigned', 'cancelled'), ('cancelled', 'pending'))
             OR (OLD.status = 'assigned' AND NEW.status = 'assigned' AND NEW.rider_id IS DISTINCT FROM OLD.rider_id)) THEN
-        RAISE EXCEPTION 'app.deliveries: transicion % -> % no permitida', OLD.status, NEW.status USING ERRCODE = 'check_violation';
+        RAISE EXCEPTION 'deliveries_guard: transicion % -> % no permitida', OLD.status, NEW.status USING ERRCODE = 'check_violation', CONSTRAINT = 'deliveries_guard';
     END IF;
     -- El motorista solo cambia al asignar (o se anula al volver a pending/cancelled).
     IF NEW.rider_id IS DISTINCT FROM OLD.rider_id AND NEW.status NOT IN ('assigned', 'pending', 'cancelled') THEN
-        RAISE EXCEPTION 'app.deliveries: el motorista no puede cambiar en %', NEW.status USING ERRCODE = 'check_violation';
+        RAISE EXCEPTION 'deliveries_guard: el motorista no puede cambiar en %', NEW.status USING ERRCODE = 'check_violation', CONSTRAINT = 'deliveries_guard';
     END IF;
     IF NEW.rider_id IS NOT NULL AND NEW.rider_id IS DISTINCT FROM OLD.rider_id
        AND NOT EXISTS (SELECT 1 FROM app.riders r WHERE r.id = NEW.rider_id AND r.active AND r.branch_id = NEW.branch_id) THEN
-        RAISE EXCEPTION 'app.deliveries: el motorista debe estar activo y ser de la sucursal del pedido' USING ERRCODE = 'check_violation';
+        RAISE EXCEPTION 'deliveries_guard: el motorista debe estar activo y ser de la sucursal del pedido' USING ERRCODE = 'check_violation', CONSTRAINT = 'deliveries_guard';
     END IF;
     -- Cambio (c): las marcas ya establecidas no se reescriben (assigned_at solo cambia al asignar/reasignar).
     IF (OLD.assigned_at IS NOT NULL AND NEW.status IN ('picked_up', 'delivered', 'returned') AND NEW.assigned_at IS DISTINCT FROM OLD.assigned_at)
        OR (OLD.picked_up_at IS NOT NULL AND NEW.picked_up_at IS DISTINCT FROM OLD.picked_up_at)
        OR (OLD.delivered_at IS NOT NULL AND NEW.delivered_at IS DISTINCT FROM OLD.delivered_at)
        OR (OLD.returned_at IS NOT NULL AND NEW.returned_at IS DISTINCT FROM OLD.returned_at) THEN
-        RAISE EXCEPTION 'app.deliveries: las marcas de tiempo ya establecidas no se reescriben' USING ERRCODE = 'check_violation';
+        RAISE EXCEPTION 'deliveries_guard: las marcas de tiempo ya establecidas no se reescriben' USING ERRCODE = 'check_violation', CONSTRAINT = 'deliveries_guard';
     END IF;
     -- Cambio (a): al reabrir o asignar, el pedido se bloquea FOR SHARE (orden motorista → entrega → pedido; la fila de la entrega ya
-    -- está bloqueada por este UPDATE). Cierra la carrera con la cancelación/rechazo del pedido.
+    -- está bloqueada por este UPDATE). Cierra la carrera con la cancelación/rechazo del pedido. Cambio (g): y debe estar despachable.
     IF OLD.status = 'cancelled' OR NEW.status = 'assigned' THEN
-        PERFORM 1 FROM app.orders o WHERE o.id = NEW.order_id FOR SHARE OF o;
+        PERFORM 1 FROM app.orders o WHERE o.id = NEW.order_id AND o.status IN ('accepted', 'preparing', 'ready') FOR SHARE OF o;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'deliveries_guard: el pedido debe estar aceptado, en preparacion o listo para reabrir o asignar'
+                USING ERRCODE = 'check_violation', CONSTRAINT = 'deliveries_guard';
+        END IF;
     END IF;
     RETURN NEW;
 END;
 $$;
 
 -- 3.3 Coherencia (diferida a COMMIT) entrega ↔ estado del pedido: red de seguridad contra escrituras que salten OrderTransitionsService.
+--     La regla vive en UNA función pura (IMMUTABLE, sin I/O) que comparten los dos disparadores (el de deliveries y, [S3a], el de orders).
+CREATE OR REPLACE FUNCTION "app"."delivery_order_coherent"(p_delivery text, p_order text) RETURNS boolean
+LANGUAGE sql IMMUTABLE
+SET search_path = pg_catalog, app
+AS $$
+    SELECT (p_delivery IN ('pending', 'assigned') AND p_order IN ('accepted', 'preparing', 'ready'))
+        OR (p_delivery = 'picked_up' AND p_order = 'on_the_way')
+        OR (p_delivery IN ('delivered', 'returned') AND p_order = 'delivered')
+        OR (p_delivery = 'cancelled' AND p_order NOT IN ('on_the_way', 'delivered'));
+$$;
+
 --     Cambio (b): relee la entrega vigente por id en lugar de fiarse de NEW (versión del evento).
 CREATE OR REPLACE FUNCTION "app"."deliveries_order_coherence"() RETURNS trigger
 LANGUAGE plpgsql
@@ -268,13 +299,33 @@ BEGIN
     IF NOT FOUND THEN
         RETURN NULL;   -- la entrega ya no existe (limpieza de pruebas): nada que verificar
     END IF;
-    IF NOT (
-         (v_delivery IN ('pending', 'assigned') AND v_order IN ('accepted', 'preparing', 'ready'))
-      OR (v_delivery = 'picked_up' AND v_order = 'on_the_way')
-      OR (v_delivery IN ('delivered', 'returned') AND v_order = 'delivered')
-      OR (v_delivery = 'cancelled' AND v_order NOT IN ('on_the_way', 'delivered'))) THEN
-        RAISE EXCEPTION 'app.deliveries: estado % incoherente con el pedido (%)', v_delivery, v_order
-            USING ERRCODE = 'check_violation';
+    IF NOT app.delivery_order_coherent(v_delivery, v_order) THEN
+        RAISE EXCEPTION 'deliveries_order_coherence: estado % incoherente con el pedido (%)', v_delivery, v_order
+            USING ERRCODE = 'check_violation', CONSTRAINT = 'deliveries_order_coherence';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+--     Cambio (e) [S3a]: el mismo control desde el PEDIDO (AFTER UPDATE OF status, diferido). Relee por id (estado FINAL) y solo
+--     LEE: no bloquea ni escribe, así que no puede formar ciclos con deliveries_order_coherence. Sin entrega no hay nada que verificar.
+CREATE OR REPLACE FUNCTION "app"."orders_delivery_coherence"() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, app
+AS $$
+DECLARE
+    v_delivery text;
+    v_order text;
+BEGIN
+    SELECT d.status, o.status INTO v_delivery, v_order
+      FROM app.orders o JOIN app.deliveries d ON d.order_id = o.id
+     WHERE o.id = NEW.id;
+    IF NOT FOUND THEN
+        RETURN NULL;
+    END IF;
+    IF NOT app.delivery_order_coherent(v_delivery, v_order) THEN
+        RAISE EXCEPTION 'orders_delivery_coherence: pedido % incoherente con la entrega (%)', v_order, v_delivery
+            USING ERRCODE = 'check_violation', CONSTRAINT = 'orders_delivery_coherence';
     END IF;
     RETURN NULL;
 END;
@@ -292,7 +343,24 @@ AS $$
 BEGIN
     IF EXISTS (SELECT 1 FROM app.deliveries d WHERE d.order_id = OLD.id AND d.status IN ('pending', 'assigned', 'picked_up')) THEN
         -- 23001 (restrict_violation); la API lo traduce a 409 ORDER_HAS_ACTIVE_DELIVERY
-        RAISE EXCEPTION 'ORDER_HAS_ACTIVE_DELIVERY' USING ERRCODE = 'restrict_violation';
+        RAISE EXCEPTION 'orders_open_delivery_guard: ORDER_HAS_ACTIVE_DELIVERY'
+            USING ERRCODE = 'restrict_violation', CONSTRAINT = 'orders_open_delivery_guard';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+-- 3.5 Cambio (f) [S3b]: con una entrega ABIERTA no cambian la sucursal, la modalidad ni el proveedor del pedido. Lee deliveries sin
+--     bloquearla (igual que 3.4): el FOR SHARE de deliveries_guard sobre el pedido choca con el FOR NO KEY UPDATE de este UPDATE y
+--     serializa contra la entrega creada/asignada en una transacción aún abierta.
+CREATE OR REPLACE FUNCTION "app"."orders_open_delivery_identity_guard"() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, app
+AS $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM app.deliveries d WHERE d.order_id = OLD.id AND d.status IN ('pending', 'assigned', 'picked_up', 'delivered')) THEN
+        RAISE EXCEPTION 'orders_open_delivery_identity_guard: ORDER_HAS_ACTIVE_DELIVERY'
+            USING ERRCODE = 'restrict_violation', CONSTRAINT = 'orders_open_delivery_identity_guard';
     END IF;
     RETURN NEW;
 END;
@@ -327,6 +395,25 @@ BEGIN
             WHEN (NEW."status" IN ('cancelled', 'rejected') AND OLD."status" IS DISTINCT FROM NEW."status")
             EXECUTE FUNCTION "app"."orders_open_delivery_guard"();
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'orders_open_delivery_identity_guard'
+                   AND tgrelid = 'app.orders'::regclass) THEN
+        CREATE TRIGGER "orders_open_delivery_identity_guard"
+            BEFORE UPDATE OF "branch_id", "fulfillment_type", "delivery_provider" ON "app"."orders"
+            FOR EACH ROW
+            WHEN (OLD."branch_id" IS DISTINCT FROM NEW."branch_id"
+                  OR OLD."fulfillment_type" IS DISTINCT FROM NEW."fulfillment_type"
+                  OR OLD."delivery_provider" IS DISTINCT FROM NEW."delivery_provider")
+            EXECUTE FUNCTION "app"."orders_open_delivery_identity_guard"();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'orders_delivery_coherence'
+                   AND tgrelid = 'app.orders'::regclass) THEN
+        CREATE CONSTRAINT TRIGGER "orders_delivery_coherence"
+            AFTER UPDATE OF "status" ON "app"."orders"
+            DEFERRABLE INITIALLY DEFERRED
+            FOR EACH ROW
+            WHEN (OLD."status" IS DISTINCT FROM NEW."status" AND NEW."fulfillment_type" = 'DELIVERY' AND NEW."delivery_provider" = 'OWN')
+            EXECUTE FUNCTION "app"."orders_delivery_coherence"();
+    END IF;
 END $$;
 
 -- ------------------------------------------------------------------------------------------------
@@ -358,6 +445,9 @@ REVOKE ALL ON FUNCTION "app"."delivery_status_history_append_only"() FROM PUBLIC
 REVOKE ALL ON FUNCTION "app"."deliveries_guard"() FROM PUBLIC;
 REVOKE ALL ON FUNCTION "app"."deliveries_order_coherence"() FROM PUBLIC;
 REVOKE ALL ON FUNCTION "app"."orders_open_delivery_guard"() FROM PUBLIC;
+REVOKE ALL ON FUNCTION "app"."orders_open_delivery_identity_guard"() FROM PUBLIC;
+REVOKE ALL ON FUNCTION "app"."orders_delivery_coherence"() FROM PUBLIC;
+REVOKE ALL ON FUNCTION "app"."delivery_order_coherent"(text, text) FROM PUBLIC;
 
 DO $$
 DECLARE
@@ -371,9 +461,11 @@ BEGIN
                 EXECUTE format('REVOKE ALL ON "app".%I FROM %I', v_table, v_role);
             END LOOP;
             FOREACH v_func IN ARRAY ARRAY['delivery_status_history_append_only', 'deliveries_guard',
-                                          'deliveries_order_coherence', 'orders_open_delivery_guard'] LOOP
+                                          'deliveries_order_coherence', 'orders_open_delivery_guard',
+                                          'orders_open_delivery_identity_guard', 'orders_delivery_coherence'] LOOP
                 EXECUTE format('REVOKE ALL ON FUNCTION "app".%I() FROM %I', v_func, v_role);
             END LOOP;
+            EXECUTE format('REVOKE ALL ON FUNCTION "app"."delivery_order_coherent"(text, text) FROM %I', v_role);
         END IF;
     END LOOP;
 END $$;

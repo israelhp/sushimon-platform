@@ -405,12 +405,36 @@ describe('OrdersRepository: seguimiento (F21)', () => {
   };
   const make = (found: unknown) => {
     const findFirst = vi.fn().mockResolvedValue(found);
+    const deliveryFindUnique = vi.fn().mockResolvedValue({ status: 'assigned' });
     const repo = new OrdersRepository(
-      { order: { findFirst } } as unknown as PrismaService,
+      {
+        order: { findFirst },
+        delivery: { findUnique: deliveryFindUnique },
+      } as unknown as PrismaService,
       {} as AuditService,
     );
-    return { repo, findFirst };
+    return { repo, findFirst, deliveryFindUnique };
   };
+
+  it('F28 (P3): `deliveries` se consulta SOLO para DELIVERY + OWN (PICKUP y PEDIDOSYA: 0 sentencias extra)', async () => {
+    const pickup = make(row);
+    expect((await pickup.repo.findTrackingForOwnerAuthUser('o1', 'a'))?.delivery).toBeNull();
+    expect(pickup.deliveryFindUnique).not.toHaveBeenCalled();
+    const pya = make({ ...row, fulfillmentType: 'DELIVERY', deliveryProvider: 'PEDIDOSYA' });
+    await pya.repo.findTrackingForGuestToken('o1', Buffer.alloc(32, 1), new Date());
+    expect(pya.deliveryFindUnique).not.toHaveBeenCalled();
+    const none = make(null);
+    expect(await none.repo.findTrackingForOwnerAuthUser('o1', 'a')).toBeNull();
+    expect(none.deliveryFindUnique).not.toHaveBeenCalled();
+    const own = make({ ...row, fulfillmentType: 'DELIVERY', deliveryProvider: 'OWN' });
+    const record = await own.repo.findTrackingForOwnerAuthUser('o1', 'a');
+    expect(own.deliveryFindUnique).toHaveBeenCalledTimes(1);
+    expect(own.deliveryFindUnique).toHaveBeenCalledWith({
+      where: { orderId: 'o1' },
+      select: { status: true },
+    });
+    expect(record?.delivery).toEqual({ status: 'assigned' });
+  });
 
   it('findTrackingForGuestToken: UNA consulta con hash, no revocado, no vencido; select mínimo e historial de los 51 más recientes', async () => {
     const { repo, findFirst } = make(row);
@@ -445,7 +469,6 @@ describe('OrdersRepository: seguimiento (F21)', () => {
     expect(Object.keys(arg.select).sort()).toEqual(
       [
         'branchId',
-        'delivery',
         'deliveryProvider',
         'fulfillmentType',
         'id',

@@ -425,8 +425,18 @@ function deploymentSignal(raw: Record<string, unknown>, env: Env): string | null
 }
 
 /** Avisos de arranque no bloqueantes (se registran en `main.ts`). Sin valores sensibles. */
-export function envWarnings(env: Pick<Env, 'NODE_ENV' | 'TRUST_PROXY_HOPS'>): string[] {
+export function envWarnings(
+  env: Pick<Env, 'NODE_ENV' | 'TRUST_PROXY_HOPS'> & Partial<Pick<Env, 'DB_POOL_MAX'>>,
+): string[] {
   const warnings: string[] = [];
+  // F28 (spec 029 §11, P1): con DB_POOL_MAX < 6 los cinco semáforos (cupo mínimo 1 cada uno) suman más que `DB_POOL_MAX - 1` y las
+  // rutas sin semáforo (auth, salud, backoffice) pueden quedarse sin conexión. Solo advertencia: NO impide el arranque.
+  if (env.NODE_ENV === 'production' && env.DB_POOL_MAX !== undefined && env.DB_POOL_MAX < 6) {
+    warnings.push(
+      `DB_POOL_MAX=${env.DB_POOL_MAX} en producción: se recomienda >= 6 para que los cinco semáforos de BD ` +
+        '(tienda, cotización, pedidos, motoristas y entregas) dejen al menos una conexión a las rutas sin semáforo.',
+    );
+  }
   if (env.NODE_ENV === 'production' && env.TRUST_PROXY_HOPS === 0) {
     warnings.push(
       'TRUST_PROXY_HOPS=0 en producción: detrás de un proxy/CDN todos los clientes compartirían la IP del proxy ' +

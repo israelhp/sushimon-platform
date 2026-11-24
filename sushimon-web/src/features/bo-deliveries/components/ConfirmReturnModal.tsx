@@ -64,9 +64,7 @@ export function ConfirmReturnModal({
         </>
       }
     >
-      <p className="sm" style={{ fontWeight: 600 }}>
-        {t('text', { name: delivery.rider?.fullName ?? '—' })}
-      </p>
+      <p className="sm fw6">{t('text', { name: delivery.rider?.fullName ?? '—' })}</p>
       <Banner zone="bo" tone="info" role="note">
         {t('note')}
       </Banner>

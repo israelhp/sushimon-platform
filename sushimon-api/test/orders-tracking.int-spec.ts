@@ -503,7 +503,7 @@ describe.skipIf(!url || !ready)('Seguimiento de pedidos contra PostgreSQL real (
     for (const d of denied) expect(statusOf(await err(d()))).toBe(404);
   });
 
-  it('fila 14: presupuesto de consultas (invitado <= 4, dueño <= 4, token fallido + JWT <= 8; F24 añade la búsqueda del pago y F28 la de la entrega) y SIN N+1 con 50 eventos', async (ctx) => {
+  it('fila 14: presupuesto de consultas (invitado <= 3, dueño <= 3, token fallido + JWT <= 6; F24 añade la búsqueda del pago; F28 solo DELIVERY OWN) y SIN N+1 con 50 eventos', async (ctx) => {
     skipUnlessReady(ctx);
     const owner = await newPrincipal();
     const small = await seedOrder({});
@@ -520,18 +520,18 @@ describe.skipIf(!url || !ready)('Seguimiento de pedidos contra PostgreSQL real (
     const guestSmall = await count(() => orders.getTracking(undefined, small.id, small.token));
     const guestBig = await count(() => orders.getTracking(undefined, big.id, big.token));
     const ownerCount = await count(() => orders.getTracking(owner, mine.id, undefined));
-    // F24 (spec 025 §11): pedido + historial + pago (búsqueda por la única `payments_order_key`): 3, sin N+1. F28 (spec 029 §12)
-    // añade la entrega (`deliveries` por `UNIQUE(order_id)`, estrategia de carga por defecto de Prisma): 4, sin N+1.
-    expect(guestSmall).toBeLessThanOrEqual(4);
+    // F24 (spec 025 §11): pedido + historial + pago (búsqueda por la única `payments_order_key`): 3, sin N+1. F28 (spec 029 §12,
+    // P3) consulta `deliveries` SOLO para DELIVERY + OWN (+1); estos pedidos son PICKUP: siguen en 3.
+    expect(guestSmall).toBeLessThanOrEqual(3);
     expect(guestBig).toBe(guestSmall);
-    expect(ownerCount).toBeLessThanOrEqual(4);
+    expect(ownerCount).toBeLessThanOrEqual(3);
     // El fallo ejecuta las MISMAS sentencias que el éxito (404 uniforme).
     const failedAlone = await count(() =>
       orders.getTracking(undefined, mine.id, big.token).catch(() => null),
     );
     expect(failedAlone).toBe(guestSmall);
     const tokenThenOwner = await count(() => orders.getTracking(owner, mine.id, big.token));
-    expect(tokenThenOwner).toBeLessThanOrEqual(8); // token fallido (4) + dueño (4)
+    expect(tokenThenOwner).toBeLessThanOrEqual(6); // token fallido (3) + dueño (3)
   });
 
   it('fila 16: solo lectura (no cambia orders, historial, tokens ni auditoría)', async (ctx) => {

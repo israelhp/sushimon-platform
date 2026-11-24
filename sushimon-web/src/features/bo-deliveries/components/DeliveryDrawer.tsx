@@ -18,13 +18,14 @@ import {
 import { useAdminDelivery } from '../hooks';
 import { useDeliveryActions, useDeliveryErrorText } from '../use-delivery-actions';
 import { AssignRiderModal } from './AssignRiderModal';
+import { ConfirmDeliveredModal } from './ConfirmDeliveredModal';
 import { ConfirmReturnModal } from './ConfirmReturnModal';
 import { DeliveryReasonModal, type DeliveryReasonKind } from './DeliveryReasonModal';
 import { DeliveryStatusPill } from './DeliveryStatusPill';
 
 const phoneHref = (phone: string) => `tel:${phone.replace(/[^0-9+]/g, '')}`;
 
-type ModalState = 'assign' | 'return' | DeliveryReasonKind | null;
+type ModalState = 'assign' | 'return' | 'delivered' | DeliveryReasonKind | null;
 
 /**
  * Detalle de una entrega propia (panel lateral): pedido, motorista (nombre, vehículo, teléfono ENMASCARADO), línea de tiempo del
@@ -65,9 +66,10 @@ export function DeliveryDrawer({
     if (result !== 'closed') onChanged();
   };
 
-  const direct = async (kind: 'pickedUp' | 'delivered', d: AdminDelivery) => {
+  // Solo «recoger» va directo (paso rutinario); «entregado» y «retorno» piden confirmación (no se deshacen).
+  const pickUp = async (d: AdminDelivery) => {
     const result = await actions.run(
-      { kind, id: d.id, expectedVersion: d.version },
+      { kind: 'pickedUp', id: d.id, expectedVersion: d.version },
       d.displayNumber,
     );
     setNote(result.ok ? null : result.text);
@@ -88,13 +90,13 @@ export function DeliveryDrawer({
               delivery={delivery}
               pending={actions.pending}
               onModal={setModal}
-              onDirect={(kind) => void direct(kind, delivery)}
+              onPickUp={() => void pickUp(delivery)}
             />
           ) : undefined
         }
         onClose={onClose}
       >
-        <div data-testid="delivery-detail" style={{ display: 'grid', gap: 16 }}>
+        <div data-testid="delivery-detail" className="dl-detail">
           {note ? (
             <Banner zone="bo" tone="warning" role="status" data-testid="delivery-note">
               {note} {td('noteHint')}
@@ -118,9 +120,9 @@ export function DeliveryDrawer({
           ) : (
             <div role="status" aria-busy="true" className="col gap8">
               <span className="sr-only">{t('loading')}</span>
-              <Skeleton zone="bo" style={{ height: 64, borderRadius: 12 }} />
-              <Skeleton zone="bo" style={{ height: 120, borderRadius: 12 }} />
-              <Skeleton zone="bo" style={{ height: 160, borderRadius: 12 }} />
+              <Skeleton zone="bo" className="h-16 rounded-xl" />
+              <Skeleton zone="bo" className="h-[120px] rounded-xl" />
+              <Skeleton zone="bo" className="h-40 rounded-xl" />
             </div>
           )}
         </div>
@@ -128,6 +130,9 @@ export function DeliveryDrawer({
 
       {delivery && modal === 'assign' ? (
         <AssignRiderModal delivery={delivery} onClose={closeModal} />
+      ) : null}
+      {delivery && modal === 'delivered' ? (
+        <ConfirmDeliveredModal delivery={delivery} onClose={closeModal} />
       ) : null}
       {delivery && modal === 'return' ? (
         <ConfirmReturnModal delivery={delivery} onClose={closeModal} />
@@ -142,9 +147,9 @@ export function DeliveryDrawer({
 function DrawerHeader({ delivery }: { delivery: AdminDelivery }) {
   const t = useTranslations('backoffice.deliveries.fleet');
   return (
-    <div className="row gap8 wrap" style={{ marginTop: 8 }}>
+    <div className="row gap8 wrap dl-pills">
       <DeliveryStatusPill status={delivery.status} />
-      {delivery.awaitingReturn ? <span className="late">{t('awaitingReturn')}</span> : null}
+      {delivery.awaitingReturn ? <span className="wait">{t('awaitingReturn')}</span> : null}
     </div>
   );
 }
@@ -153,12 +158,12 @@ function DrawerFooter({
   delivery,
   pending,
   onModal,
-  onDirect,
+  onPickUp,
 }: {
   delivery: AdminDelivery;
   pending: boolean;
   onModal: (modal: ModalState) => void;
-  onDirect: (kind: 'pickedUp' | 'delivered') => void;
+  onPickUp: () => void;
 }) {
   const t = useTranslations('backoffice.deliveries.fleet.actions');
   const td = useTranslations('backoffice.deliveries.fleet.detail');
@@ -170,18 +175,26 @@ function DrawerFooter({
   const cancel = findAction(delivery, 'cancel');
   const any = assign || picked || delivered || ret || unassign || cancel;
   if (!any) {
-    return (
-      <p className="xs muted" style={{ margin: 0, fontWeight: 600 }}>
-        {td('noActions')}
-      </p>
-    );
+    return <p className="xs muted hint">{td('noActions')}</p>;
   }
+  // UNA sola acción primaria: la siguiente lógica del flujo entre las habilitadas por el servidor (`availableActions`).
+  const primary: 'pickedUp' | 'delivered' | 'return' | 'assign' | null = picked?.enabled
+    ? 'pickedUp'
+    : delivered?.enabled
+      ? 'delivered'
+      : ret?.enabled
+        ? 'return'
+        : assign === 'assign_rider'
+          ? 'assign'
+          : null;
+  const cls = (which: NonNullable<typeof primary>) =>
+    `btn block${primary === which ? ' btn-primary' : ''}`;
   return (
     <>
       {assign ? (
         <button
           type="button"
-          className="btn btn-primary block"
+          className={cls('assign')}
           disabled={pending}
           onClick={() => onModal('assign')}
         >
@@ -192,20 +205,16 @@ function DrawerFooter({
         <div>
           <button
             type="button"
-            className="btn btn-primary block"
+            className={cls('pickedUp')}
             disabled={!picked.enabled || pending}
             aria-busy={pending}
             aria-describedby={picked.enabled ? undefined : 'dl-picked-hint'}
-            onClick={() => onDirect('pickedUp')}
+            onClick={onPickUp}
           >
             {t('pickedUp')}
           </button>
           {!picked.enabled ? (
-            <span
-              id="dl-picked-hint"
-              className="xs muted"
-              style={{ fontWeight: 600, display: 'block', marginTop: 4 }}
-            >
+            <span id="dl-picked-hint" className="xs muted hint-block">
               {td('orderNotReady')}
             </span>
           ) : null}
@@ -214,10 +223,10 @@ function DrawerFooter({
       {delivered ? (
         <button
           type="button"
-          className="btn btn-primary block"
+          className={cls('delivered')}
           disabled={!delivered.enabled || pending}
           aria-busy={pending}
-          onClick={() => onDirect('delivered')}
+          onClick={() => onModal('delivered')}
         >
           {t('delivered')}
         </button>
@@ -225,7 +234,7 @@ function DrawerFooter({
       {ret ? (
         <button
           type="button"
-          className="btn btn-primary block"
+          className={cls('return')}
           disabled={!ret.enabled || pending}
           onClick={() => onModal('return')}
         >
@@ -313,7 +322,7 @@ function DrawerBody({ delivery, locale }: { delivery: AdminDelivery; locale: str
               <dd className="num">{rider.phoneMasked}</dd>
             </dl>
             {delivery.riderOccupied ? (
-              <p className="xs muted" style={{ margin: '6px 0 0', fontWeight: 600 }}>
+              <p className="xs muted sect-note">
                 {delivery.awaitingReturn ? td('occupiedUntilReturn') : td('occupied')}
               </p>
             ) : null}
@@ -333,11 +342,7 @@ function DrawerBody({ delivery, locale }: { delivery: AdminDelivery; locale: str
               <IconPhone />
               <div className="grow">
                 <div className="strong">{delivery.customer.name}</div>
-                <a
-                  className="muted sm num"
-                  style={{ fontWeight: 600 }}
-                  href={phoneHref(delivery.customer.phone)}
-                >
+                <a className="muted sm num fw6" href={phoneHref(delivery.customer.phone)}>
                   {delivery.customer.phone}
                 </a>
               </div>
@@ -352,7 +357,7 @@ function DrawerBody({ delivery, locale }: { delivery: AdminDelivery; locale: str
                       ? ` · ${t('zoneName', { zone: delivery.address.zone })}`
                       : ''}
                   </div>
-                  <div className="muted sm" style={{ fontWeight: 600 }}>
+                  <div className="muted sm fw6">
                     {[delivery.address.municipalityName, delivery.address.referenceNote]
                       .filter(Boolean)
                       .join(' · ')}
@@ -360,9 +365,7 @@ function DrawerBody({ delivery, locale }: { delivery: AdminDelivery; locale: str
                 </div>
               </div>
             ) : null}
-            <p className="xs muted" style={{ margin: 0, fontWeight: 600 }}>
-              {td('contactHint')}
-            </p>
+            <p className="xs muted hint">{td('contactHint')}</p>
           </div>
         ) : (
           <div className="empty-mini" data-testid="delivery-contact-hidden">
@@ -376,9 +379,7 @@ function DrawerBody({ delivery, locale }: { delivery: AdminDelivery; locale: str
           {td('history')}
         </div>
         {delivery.historyTruncated ? (
-          <p className="xs muted" style={{ margin: '0 0 6px', fontWeight: 600 }}>
-            {td('historyTruncated')}
-          </p>
+          <p className="xs muted sect-note">{td('historyTruncated')}</p>
         ) : null}
         <ol className="dl-timeline" data-testid="delivery-history">
           {delivery.history.map((h, i) => (
@@ -389,16 +390,12 @@ function DrawerBody({ delivery, locale }: { delivery: AdminDelivery; locale: str
                 </span>
                 <span className="xs muted num">{when(h.at)}</span>
               </div>
-              <div className="xs muted" style={{ fontWeight: 600 }}>
+              <div className="xs muted fw6">
                 {[h.riderName, h.actorName ? td('by', { name: h.actorName }) : td('bySystem')]
                   .filter(Boolean)
                   .join(' · ')}
               </div>
-              {h.reason ? (
-                <div className="xs" style={{ fontWeight: 600 }}>
-                  {td('reason', { reason: h.reason })}
-                </div>
-              ) : null}
+              {h.reason ? <div className="xs fw6">{td('reason', { reason: h.reason })}</div> : null}
             </li>
           ))}
         </ol>

@@ -29,6 +29,12 @@ export const ORDER_BLOCKING_STATUSES: readonly DeliveryStatus[] = [
   'assigned',
   'picked_up',
 ];
+/** S7: estados de la entrega en los que el detalle muestra contacto y dirección del cliente (no `delivered`/`returned`/`cancelled`). */
+export const CONTACT_VISIBLE_STATUSES: readonly DeliveryStatus[] = [
+  'pending',
+  'assigned',
+  'picked_up',
+];
 /** Estados del PEDIDO en los que se puede crear/reabrir/asignar una entrega. */
 export const DISPATCHABLE_ORDER_STATUSES = ['accepted', 'preparing', 'ready'] as const;
 
@@ -244,6 +250,11 @@ export const REASON_MAX = 280;
 /** Control (Cc), formato (Cf: bidi, ancho cero…) y separadores de línea/párrafo (Zl, Zp): el mismo saneado que F22. */
 const FORBIDDEN_REASON_CHARS = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
 
+/** S1: ≥ 7 dígitos seguidos (con o sin espacios/guiones entre ellos): teléfonos, DPI, tarjetas. */
+const DIGIT_RUN_REASON = /(?:\p{Nd}[\s-]*){7,}/u;
+/** S1: algo con forma de correo (`x@y`). */
+const EMAIL_REASON = /[^\s@]@[^\s@]/u;
+
 /** Marca de motivo inválido (el servicio lanza 400 `DELIVERY_REASON_REQUIRED`). */
 export const INVALID_REASON: unique symbol = Symbol('INVALID_DELIVERY_REASON');
 
@@ -259,6 +270,8 @@ export function normalizeDeliveryReason(
   const reason = raw.trim();
   if (reason.length < REASON_MIN || reason.length > REASON_MAX) return INVALID_REASON;
   if (FORBIDDEN_REASON_CHARS.test(reason)) return INVALID_REASON;
+  // El motivo es texto libre INTERNO: se rechazan los patrones evidentes de PII (teléfono/documento y correo).
+  if (DIGIT_RUN_REASON.test(reason) || EMAIL_REASON.test(reason)) return INVALID_REASON;
   return reason;
 }
 

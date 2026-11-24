@@ -255,15 +255,42 @@ describe('DeliveriesQueriesService (S)', () => {
       expect(JSON.stringify(res)).not.toContain('SECRETO');
     });
 
-    it.each(['returned', 'cancelled'] as const)(
-      '%s => contactVisible=false aunque tenga orders.read',
+    it.each(['delivered', 'returned', 'cancelled'] as const)(
+      '%s => contactVisible=false aunque tenga orders.read (S7: solo pending|assigned|picked_up)',
       async (status) => {
-        const d = seed(status, { riderId: status === 'returned' ? rider().id : null });
+        const d = seed(status, { riderId: status === 'cancelled' ? null : rider().id });
         const res = await h.queries.detail(admin(), d.id);
         expect(res).toMatchObject({ contactVisible: false, customer: null, address: null });
         expect(JSON.stringify(res)).not.toContain('SECRETO');
       },
     );
+
+    it('S1/S8: `reason` y `actorName` del historial solo con deliveries.update en la sucursal de la entrega (si no, null)', async () => {
+      const d = seed('pending');
+      const actor = '66666666-6666-4666-8666-666666666666';
+      h.repo.staffNames.set(actor, 'Marta');
+      const last = h.repo.history.at(-1)!;
+      last.changedBy = actor;
+      last.reason = 'cliente ausente dos veces';
+      const full = await h.queries.detail(admin(), d.id);
+      expect(full.history.at(-1)).toMatchObject({
+        reason: 'cliente ausente dos veces',
+        actorName: 'Marta',
+      });
+      // solo lectura (staff) o `deliveries.update` en OTRA sucursal: ni motivo ni nombre
+      const readOnly = reader(h.branchA);
+      const mixed = scopedStaff(['deliveries.read'], [h.branchA]);
+      mixed.grants['deliveries.update'] = { allBranches: false, branchIds: [h.branchB] };
+      for (const staff of [readOnly, mixed]) {
+        const res = await h.queries.detail(staff, d.id);
+        expect(res.history.every((e) => e.reason === null && e.actorName === null)).toBe(true);
+        const dump = JSON.stringify(res);
+        expect(dump).not.toContain('cliente ausente');
+        expect(dump).not.toContain('Marta');
+      }
+      const withUpdate = await h.queries.detail(manager(h.branchA), d.id);
+      expect(withUpdate.history.at(-1)).toMatchObject({ reason: 'cliente ausente dos veces' });
+    });
 
     it('orders.read solo en OTRA sucursal => sin contacto', async () => {
       const d = seed('pending');

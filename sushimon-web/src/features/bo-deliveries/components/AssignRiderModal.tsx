@@ -87,13 +87,11 @@ export function AssignRiderModal({
       }
     >
       {reassign ? (
-        <p className="sm" style={{ fontWeight: 600 }}>
-          {t('current', { name: delivery.rider?.fullName ?? '' })}
-        </p>
+        <p className="sm fw6">{t('current', { name: delivery.rider?.fullName ?? '' })}</p>
       ) : null}
       {eligible.isPending ? (
         <div role="status" aria-busy="true" aria-label={t('loading')}>
-          <Skeleton zone="bo" style={{ height: 44, borderRadius: 10 }} />
+          <Skeleton zone="bo" className="h-11 rounded-[10px]" />
         </div>
       ) : eligible.isError ? (
         <Banner zone="bo" tone="warning" role="alert">
@@ -131,18 +129,11 @@ export function AssignRiderModal({
             ))}
           </select>
           {fieldError && !riderId ? (
-            <span
-              id={errId}
-              role="alert"
-              className="xs"
-              style={{ color: 'var(--bo-red-text)', fontWeight: 700 }}
-            >
+            <span id={errId} role="alert" className="xs field-error">
               {t('required')}
             </span>
           ) : null}
-          <span className="xs muted" style={{ fontWeight: 600 }}>
-            {t('hint')}
-          </span>
+          <span className="xs muted fw6">{t('hint')}</span>
         </div>
       )}
       {serverError ? (

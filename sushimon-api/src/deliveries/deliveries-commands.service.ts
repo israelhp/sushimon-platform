@@ -52,7 +52,8 @@ interface FailureContext {
 
 /**
  * Comandos de entregas propias (F28, spec 029 §3.2, §6, §9 y §10). Cada comando es UNA transacción corta, en UN solo `gate.run`,
- * con el orden de bloqueos motorista → entrega → pedido: solo asignar bloquea al motorista; el pedido solo cambia por
+ * con el orden de bloqueos motorista → entrega → pedido (S2: SIEMPRE se lee sin bloqueo, se autoriza y SOLO entonces se bloquea;
+ * un actor sin permiso o alcance no bloquea ninguna fila): solo asignar bloquea al motorista; el pedido solo cambia por
  * `OrderTransitionsService.apply` (misma transacción, `allowOwnDispatch`, `authorize` explícito) y NUNCA por SQL directo.
  * Precedencia: 401 → 403 (permiso base/aal2) → 400 (forma) → 404 (alcance) → 403 `DELIVERY_ACTION_FORBIDDEN` → 404
  * `RIDER_NOT_FOUND` → 409 (versión/estado, incluida la repetición idempotente) → 422 (elegibilidad). Repeticiones, conflictos y
@@ -75,11 +76,14 @@ export class DeliveriesCommandsService {
 
   async create(staff: StaffContext, orderId: string): Promise<CommandOutcome> {
     const readScope = this.scopeOf(staff, 'deliveries.read');
+    // S5: el pedido se autoriza TAMBIÉN con `orders.read` en su sucursal (intersección de alcances EN SQL): sin él, 404 uniforme
+    // `ORDER_NOT_FOUND` (igual que un pedido fuera de alcance), sin desglose de qué permiso falta.
+    const orderScope = intersectScopes(readScope, this.scopeOf(staff, 'orders.read'));
     const ctx: FailureContext = { orderId, authorized: false };
     const outcome = await this.db(
       () =>
         this.repo.transaction(async (tx) => {
-          const order = await tx.readOrderForCreate(orderId, readScope);
+          const order = await tx.readOrderForCreate(orderId, orderScope);
           if (!order) throw adminOrderNotFound();
           if (!this.authorization.canAccess(staff, 'deliveries.assign', order.branchId)) {
             throw deliveryActionForbidden();
@@ -111,7 +115,7 @@ export class DeliveriesCommandsService {
           const created = await tx.insert(order.orderId, order.branchId, staff.staffId);
           // 0 filas = otra transacción creó la entrega entre la lectura y el INSERT (UNIQUE(order_id)): idempotente.
           if (!created) {
-            const again = await tx.readOrderForCreate(orderId, readScope);
+            const again = await tx.readOrderForCreate(orderId, orderScope);
             if (!again?.existing) throw deliveriesBusy();
             return this.replayExisting(tx, staff, again.existing.id, readScope, true);
           }
@@ -144,8 +148,9 @@ export class DeliveriesCommandsService {
           if (!visible) throw deliveryNotFound();
           this.assertCan(staff, spec.permissions, visible.branchId);
           ctx.authorized = true;
-          // 2. Bloqueo del MOTORISTA (primero del orden). Inexistente o no visible (`riders.read` en SU sucursal) => 404 uniforme.
-          const rider = await tx.lockRider(body.riderId);
+          // 2. Bloqueo del MOTORISTA (primero del orden), ya autorizado el actor. El alcance de `riders.read` va EN el SQL del
+          //    bloqueo (S2): inexistente, de otra sucursal o sin alcance => 404 uniforme y NINGUNA fila bloqueada.
+          const rider = await tx.lockRider(body.riderId, this.scopeOf(staff, 'riders.read'));
           if (!rider || !this.authorization.canAccess(staff, 'riders.read', rider.branchId)) {
             throw riderNotFound();
           }
@@ -234,11 +239,14 @@ export class DeliveriesCommandsService {
     const outcome = await this.db(
       () =>
         this.repo.transaction(async (tx) => {
-          // 1. Lectura con alcance y `FOR UPDATE OF d` (la entrega es el primer bloqueo; no hay motorista que bloquear).
-          const found = await tx.readDelivery(id, readScope, { lock: true });
-          if (!found) throw deliveryNotFound();
-          this.assertCan(staff, spec.permissions, found.branchId);
+          // 1. Lectura con alcance SIN bloqueo y autorización (S2); solo entonces `FOR UPDATE OF d` (la entrega es el primer
+          //    bloqueo; no hay motorista que bloquear). El último evento solo se lee en la relectura bloqueada (P5).
+          const visible = await tx.readDelivery(id, readScope);
+          if (!visible) throw deliveryNotFound();
+          this.assertCan(staff, spec.permissions, visible.branchId);
           ctx.authorized = true;
+          const found = await tx.readDelivery(id, readScope, { lock: true, lastEvent: true });
+          if (!found) throw deliveryNotFound();
           // Repetición idempotente: ya en el destino, `version = esperada + 1` y último evento = este comando.
           if (this.isReplay(found, spec, body.expectedVersion))
             return this.replayResult(staff, found);
@@ -374,7 +382,7 @@ export class DeliveriesCommandsService {
     scope: string[] | null,
     afterRace = false,
   ): Promise<CommandOutcome> {
-    const row = await tx.readDelivery(deliveryId, scope);
+    const row = await tx.readDelivery(deliveryId, scope, { lastEvent: true });
     if (!row) throw deliveryNotFound();
     // Tras una carrera la entrega puede haberse movido a un estado terminal: no es una repetición del «crear».
     if (afterRace && !isOpen(row.status)) throw deliveryStateConflict(row);
@@ -491,4 +499,12 @@ export class DeliveriesCommandsService {
     }
     return deliveriesBusy();
   }
+}
+
+/** Intersección de dos alcances de sucursal (`null` = todas): lista vacía = ninguna. */
+function intersectScopes(a: string[] | null, b: string[] | null): string[] | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  const allowed = new Set(b);
+  return a.filter((id) => allowed.has(id));
 }
