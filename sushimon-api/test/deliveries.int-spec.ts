@@ -850,10 +850,20 @@ describe.skipIf(!url || !ready)('Entregas propias contra PostgreSQL real (F28)',
   it('R18 dos comandos EN PARALELO con la misma versión: uno gana; dos mark-picked-up => una escribe y la otra es replayed', async (ctx) => {
     skipUnlessReady(ctx);
     const a = await assigned();
-    const [x, y] = await Promise.all([
-      commands.execute(admin, 'mark_picked_up', a.id, { expectedVersion: a.version }),
-      commands.execute(managerA, 'mark_picked_up', a.id, { expectedVersion: a.version }),
-    ]);
+    // Con latencia alta hacia la BD el ganador retiene el candado más que `lock_timeout` y el perdedor recibe 503
+    // `DELIVERIES_BUSY` (reintentable, `Retry-After`): el cliente reintenta y ESA repetición es la `replayed`.
+    const run = async (who: typeof admin) => {
+      const exec = () =>
+        commands.execute(who, 'mark_picked_up', a.id, { expectedVersion: a.version });
+      try {
+        return await exec();
+      } catch (e) {
+        const body = (e as { getResponse?: () => { code?: string } } | null)?.getResponse?.();
+        if (body?.code !== 'DELIVERIES_BUSY') throw e;
+        return exec();
+      }
+    };
+    const [x, y] = await Promise.all([run(admin), run(managerA)]);
     expect([x.transition.replayed, y.transition.replayed].sort()).toEqual([false, true]);
     expect(
       await q(
@@ -1056,7 +1066,8 @@ describe.skipIf(!url || !ready)('Entregas propias contra PostgreSQL real (F28)',
         // la entrega se leyó/bloqueó ANTES; el pedido se leyó DESPUÉS de esperar y trae el estado confirmado más reciente
         expect(row?.orderStatus).toBe('preparing');
         expect(row?.id).toBe(c.id);
-        expect(statements.n).toBe(2);
+        // entrega FOR UPDATE + su último evento (sentencia aparte: ver `readOne`) + pedido FOR SHARE
+        expect(statements.n).toBe(3);
       } finally {
         counting = false;
         await writer.query('ROLLBACK').catch(() => undefined);
@@ -1310,19 +1321,16 @@ describe.skipIf(!url || !ready)('Entregas propias contra PostgreSQL real (F28)',
     expect(open).not.toContain(made[1]?.id); // cancelada: fuera de la lista por defecto
     expect(open).toHaveLength(4);
     // orden created_at DESC, id DESC y cursor sin repetir ni saltar
-    const p1 = await queries.list(admin, { branchId: b.id, limit: 2 });
+    // 4 abiertas con páginas de 3 (1.ª con cursor, 2.ª con el resto y sin cursor): sin repetir ni saltar.
+    const p1 = await queries.list(admin, { branchId: b.id, limit: 3 });
+    expect(p1.nextCursor).not.toBeNull();
     const p2 = await queries.list(admin, {
       branchId: b.id,
-      limit: 2,
+      limit: 3,
       cursor: p1.nextCursor as string,
     });
-    const p3 = await queries.list(admin, {
-      branchId: b.id,
-      limit: 2,
-      cursor: p2.nextCursor as string,
-    });
-    expect([...p1.items, ...p2.items, ...p3.items].map((i) => i.id)).toEqual(open);
-    expect(p3.nextCursor).toBeNull();
+    expect([...p1.items, ...p2.items].map((i) => i.id)).toEqual(open);
+    expect(p2.nextCursor).toBeNull();
     const bad = await err(
       queries.list(admin, { branchId: b.id, limit: 2, cursor: `${p1.nextCursor as string}x` }),
     );

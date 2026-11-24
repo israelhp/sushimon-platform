@@ -359,12 +359,25 @@ export class DeliveriesRepository {
       withLastEvent: boolean,
     ): Promise<DeliveryRow | null> => {
       // P5: el último evento (subconsulta) solo se lee cuando quien llama lo usa (repeticiones idempotentes).
+      // Con `FOR UPDATE`, si otra transacción confirmó un cambio mientras esperábamos, PostgreSQL relee la FILA bloqueada
+      // (columnas frescas) pero las subconsultas de la lista de selección conservan la instantánea de la sentencia: el
+      // `last_event` saldría OBSOLETO (hallazgo de la verificación real: dos `mark-picked-up` en paralelo daban 409 en lugar de
+      // `replayed`). Por eso, con bloqueo, el último evento se lee en una SEGUNDA sentencia, ya con el candado tomado.
+      const locked = lock !== Prisma.empty;
+      const inline = withLastEvent && !locked;
       const rows = await client.$queryRaw<DeliveryDbRow[]>(Prisma.sql`
-        SELECT ${COLS}${withLastEvent ? Prisma.sql`, ${LAST_EVENT}` : Prisma.empty}
+        SELECT ${COLS}${inline ? Prisma.sql`, ${LAST_EVENT}` : Prisma.empty}
           FROM app.deliveries d ${JOINS}
          WHERE d.id = ${id}::uuid AND ${scope}
          ${lock}`);
-      return rows[0] ? toRow(rows[0]) : null;
+      const row = rows[0];
+      if (!row) return null;
+      if (withLastEvent && locked) {
+        const ev = await client.$queryRaw<{ last_event: LastEventJson | null }[]>(Prisma.sql`
+          SELECT ${LAST_EVENT} FROM app.deliveries d WHERE d.id = ${id}::uuid`);
+        row.last_event = ev[0]?.last_event ?? null;
+      }
+      return toRow(row);
     };
     return {
       client,
