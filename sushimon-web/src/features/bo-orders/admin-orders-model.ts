@@ -141,16 +141,23 @@ export function reasonActions(order: Pick<AdminOrderSummary, 'availableActions'>
   return (['reject', 'cancel'] as const).filter((a) => findAction(order, a)?.enabled);
 }
 
-/** Estado informado de `dispatch` (deshabilitada con motivo honesto) o `null` si no aplica. */
+/**
+ * Estado informado de `dispatch` DESHABILITADA (motivo honesto) o `null` si no aplica o está HABILITADA (F28: entrega propia con
+ * `deliveries.assign`; entonces se muestra el botón que abre Entregas, ver `dispatchEnabled`).
+ */
 export function dispatchInfo(
   order: Pick<AdminOrderSummary, 'availableActions'>,
 ): 'DISPATCH_NOT_AVAILABLE' | 'PROVIDER_BLOCKED_EXTERNAL' | null {
   const action = findAction(order, 'dispatch');
-  if (!action) return null;
+  if (!action || action.enabled) return null;
   return action.disabledReason === 'PROVIDER_BLOCKED_EXTERNAL'
     ? 'PROVIDER_BLOCKED_EXTERNAL'
     : 'DISPATCH_NOT_AVAILABLE';
 }
+
+/** ¿Ofrece el servidor `dispatch` habilitada (reparto propio con permiso)? La web solo abre Entregas: el servidor decide el resto. */
+export const dispatchEnabled = (order: Pick<AdminOrderSummary, 'availableActions'>): boolean =>
+  findAction(order, 'dispatch')?.enabled === true;
 
 // ── Motivo (reject/cancel) ──────────────────────────────────────────────────────────────────────
 

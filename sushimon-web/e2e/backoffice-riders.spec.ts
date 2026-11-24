@@ -99,7 +99,7 @@ test('flujo completo: alta → disponible → traslado → desactivar, con confi
   const row = rowOf(page, 'Ana Ruiz');
   await expect(row.getByText('No disponible')).toBeVisible();
   await expect(row.getByText('+502****9999')).toBeVisible();
-  await expect(row.getByText('Ocupación: sin dato')).toBeVisible();
+  await expect(row.getByText('Ocupación: sin entrega activa')).toBeVisible();
 
   // Disponible.
   await row.getByRole('switch', { name: 'Disponible: Ana Ruiz' }).click();
@@ -136,7 +136,7 @@ test('flujo completo: alta → disponible → traslado → desactivar, con confi
   ]);
 });
 
-test('edición y detalle: datos completos, versión y «Entregas: disponible con F28» sin historial', async ({
+test('edición y detalle: datos completos, versión y enlace a la pantalla Entregas sin historial', async ({
   page,
 }) => {
   await enterAs(page, ADMIN);
@@ -145,8 +145,8 @@ test('edición y detalle: datos completos, versión y «Entregas: disponible con
   const detail = drawer.getByTestId('rider-detail');
   await expect(detail.getByText('+50255501002')).toBeVisible();
   await expect(detail.getByText('M219PLX')).toBeVisible();
-  await expect(detail.getByTestId('rider-occupancy')).toHaveText('Sin dato');
-  await expect(detail.getByTestId('rider-deliveries')).toHaveText('Entregas: disponible con F28');
+  await expect(detail.getByTestId('rider-occupancy')).toHaveText('Sin entrega activa');
+  await expect(detail.getByTestId('rider-deliveries')).toHaveText('Consulta la pantalla Entregas');
   await expect(detail.getByText(/historial de entregas/i)).toHaveCount(0);
 
   await drawer.getByRole('button', { name: 'Editar' }).click();
@@ -208,7 +208,7 @@ test('disponibilidad: el 409 de entrega activa revierte el interruptor', async (
   await expect(sw).toBeChecked();
 });
 
-test('filtros y búsqueda: nombre sin acentos, sucursal, estado y disponibilidad (sin «Ocupado»)', async ({
+test('filtros y búsqueda: nombre sin acentos, sucursal, estado y disponibilidad (con «Ocupado», F28)', async ({
   page,
 }) => {
   await enterAs(page, ADMIN);
@@ -224,7 +224,7 @@ test('filtros y búsqueda: nombre sin acentos, sucursal, estado y disponibilidad
   await expect(page.getByText('1 motorista', { exact: true })).toBeVisible();
   await expect(
     filters.getByLabel('Disponibilidad').getByRole('option', { name: 'Ocupado' }),
-  ).toHaveCount(0);
+  ).toHaveCount(1);
   await filters.getByLabel('Disponibilidad').selectOption({ label: 'Disponible' });
   await expect(page.getByText('Sin resultados')).toBeVisible();
   await page.getByRole('button', { name: 'Limpiar filtros' }).click();

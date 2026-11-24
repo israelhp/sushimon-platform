@@ -1,3 +1,4 @@
+import { publicDeliveryStatus } from './admin-deliveries';
 import type {
   DraftOrder,
   OrderDetail,
@@ -75,6 +76,8 @@ export function buildOrderTracking(
   detail: OrderDetail,
   draft: DraftOrder,
   generatedAt: Date,
+  /** F28: estado de la entrega propia del pedido (`pending|assigned|picked_up|delivered|returned|cancelled`) o `null` si no hay. */
+  deliveryStatus: string | null = null,
 ): OrderTracking {
   const fulfillmentType = detail.fulfillmentType;
   const all: OrderTrackingEvent[] = draft.history
@@ -118,7 +121,14 @@ export function buildOrderTracking(
     eventsTruncated: all.length > MAX_EVENTS,
     delivery:
       fulfillmentType === 'DELIVERY'
-        ? { provider: detail.deliveryProvider ?? 'OWN', status: null }
+        ? {
+            provider: detail.deliveryProvider ?? 'OWN',
+            // F28 (spec 029 §12): estado público GRUESO de la entrega propia; nunca datos del motorista. PedidosYa => `null`.
+            status:
+              (detail.deliveryProvider ?? 'OWN') === 'OWN'
+                ? publicDeliveryStatus(deliveryStatus)
+                : null,
+          }
         : null,
     // F24: el pago NO forma parte de `steps`/`events` (el seguimiento es solo operativo).
     payment: detail.payment,

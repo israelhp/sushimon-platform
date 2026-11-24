@@ -261,3 +261,37 @@ describe('F27 · mensajes de Motoristas (es/en)', () => {
     }
   });
 });
+
+describe('F28 · mensajes de Entregas propias', () => {
+  const read = (locale: string) =>
+    JSON.parse(readFileSync(join(__dirname, 'messages', `${locale}.json`), 'utf8')) as {
+      backoffice: {
+        deliveries: { fleet: Record<string, unknown>; simulation: Record<string, unknown> };
+        orders: { live: Record<string, unknown> };
+      };
+      tracking: { deliveryStatus: Record<string, string> };
+    };
+
+  it('el backoffice es solo español: en.json copia el español de Entregas propias', () => {
+    const es = read('es');
+    const en = read('en');
+    expect(en.backoffice.deliveries.fleet).toEqual(es.backoffice.deliveries.fleet);
+    expect(en.backoffice.deliveries.simulation).toEqual(es.backoffice.deliveries.simulation);
+    expect(en.backoffice.orders.live.dispatchOwn).toEqual(es.backoffice.orders.live.dispatchOwn);
+    expect(en.backoffice.orders.live.activeDelivery).toEqual(
+      es.backoffice.orders.live.activeDelivery,
+    );
+  });
+
+  it('la simulación de PedidosYa dice que no es un envío real', () => {
+    expect(read('es').backoffice.deliveries.simulation.banner).toMatch(/no es un envío real/);
+  });
+
+  it('el seguimiento público (tienda) sí está traducido y no nombra al repartidor por su nombre', () => {
+    const es = read('es').tracking.deliveryStatus;
+    const en = read('en').tracking.deliveryStatus;
+    expect(Object.keys(en).sort()).toEqual(['ASSIGNED', 'DELIVERED', 'PENDING', 'PICKED_UP']);
+    expect(Object.keys(es).sort()).toEqual(Object.keys(en).sort());
+    for (const key of Object.keys(en)) expect(en[key]).not.toBe(es[key]);
+  });
+});

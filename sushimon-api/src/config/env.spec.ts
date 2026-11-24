@@ -249,12 +249,26 @@ describe('NODE_ENV ausente en un despliegue (M3)', () => {
 
 describe('envWarnings (M2)', () => {
   it('producción con TRUST_PROXY_HOPS=0 => aviso (no falla el arranque)', () => {
-    const env = validateEnv({ ...prod, TRUST_PROXY_HOPS: '0' });
+    const env = validateEnv({ ...prod, TRUST_PROXY_HOPS: '0', DB_POOL_MAX: '6' });
     expect(envWarnings(env)).toEqual([expect.stringContaining('TRUST_PROXY_HOPS=0')]);
   });
 
+  it('F28 (P1): producción con DB_POOL_MAX < 6 => aviso sin fallar el arranque; >= 6 o desarrollo => sin aviso', () => {
+    const low = validateEnv({ ...prod, TRUST_PROXY_HOPS: '1', DB_POOL_MAX: '3' });
+    expect(low.DB_POOL_MAX).toBe(3); // no lanza
+    const warnings = envWarnings(low);
+    expect(warnings).toEqual([expect.stringContaining('DB_POOL_MAX=3')]);
+    expect(warnings.join(' ')).not.toContain('postgresql://');
+    expect(envWarnings(validateEnv({ ...prod, TRUST_PROXY_HOPS: '1', DB_POOL_MAX: '6' }))).toEqual(
+      [],
+    );
+    expect(envWarnings(validateEnv({ DB_POOL_MAX: '3' }))).toEqual([]);
+  });
+
   it('producción con >= 1, o desarrollo con 0 => sin avisos', () => {
-    expect(envWarnings(validateEnv({ ...prod, TRUST_PROXY_HOPS: '1' }))).toEqual([]);
+    expect(envWarnings(validateEnv({ ...prod, TRUST_PROXY_HOPS: '1', DB_POOL_MAX: '6' }))).toEqual(
+      [],
+    );
     expect(envWarnings(validateEnv({}))).toEqual([]);
   });
 });

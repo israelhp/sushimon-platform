@@ -1191,7 +1191,14 @@
     "simulationNote": "Demo tracking: statuses only advance with the simulation button.",
     "incomplete": "We didn’t receive all the order phases; showing the available status and history.",
     "recovered": "Connection restored: your order status is up to date.",
-    "paymentTitle": "Payment"
+    "paymentTitle": "Payment",
+    "deliveryStatusLabel": "Delivery",
+    "deliveryStatus": {
+      "PENDING": "Arranging a rider",
+      "ASSIGNED": "Rider assigned",
+      "PICKED_UP": "Your order is on its way",
+      "DELIVERED": "Delivered"
+    }
   },
   "hub": {
     "personal": "My personal details",
@@ -2080,7 +2087,222 @@
         "more": "Mostrar {count} más",
         "loading": "Cargando envíos…"
       },
-      "note": "Las horas de llegada son estimadas. Si el costo final de PedidosYa supera lo cobrado al cliente, la diferencia se registra aquí y no se le cobra de nuevo. Los envíos con repartidor del restaurante no tienen costo de PedidosYa."
+      "note": "Las horas de llegada son estimadas. Si el costo final de PedidosYa supera lo cobrado al cliente, la diferencia se registra aquí y no se le cobra de nuevo. Los envíos con repartidor del restaurante no tienen costo de PedidosYa.",
+      "fleet": {
+        "subtitle": "Reparto propio con motoristas del restaurante, separado de la simulación de PedidosYa",
+        "tabs": {
+          "label": "Tipo de reparto",
+          "own": "Reparto propio",
+          "pedidosya": "Simulación PedidosYa"
+        },
+        "pedidosyaBlocked": "PedidosYa Courier sigue pendiente de documentación y credenciales: no hay envíos reales con PedidosYa desde esta pantalla.",
+        "title": "Reparto propio",
+        "badge": "Datos reales",
+        "badgeMock": "Datos de prueba",
+        "providerOwn": "Reparto propio",
+        "providerOther": "Otro proveedor",
+        "zoneName": "Zona {zone}",
+        "awaitingReturn": "Esperando retorno",
+        "awaitingReturnCount": "{count, plural, one {# motorista aún no registra su retorno} other {# motoristas aún no registran su retorno}}",
+        "status": {
+          "pending": "Sin motorista",
+          "assigned": "Asignada",
+          "picked_up": "En camino",
+          "delivered": "Entregada",
+          "returned": "Retornó",
+          "cancelled": "Cancelada",
+          "unknown": "Estado desconocido"
+        },
+        "filters": {
+          "label": "Filtros de entregas",
+          "branch": "Sucursal",
+          "branchAll": "Todas",
+          "status": "Estado",
+          "statusOpen": "Abiertas (por defecto)",
+          "rider": "Motorista",
+          "riderAll": "Todos",
+          "clear": "Limpiar filtros"
+        },
+        "table": {
+          "label": "Entregas con reparto propio",
+          "order": "Pedido",
+          "branch": "Sucursal",
+          "rider": "Motorista",
+          "status": "Estado",
+          "updated": "Actualizada",
+          "actions": "Acciones",
+          "view": "Ver la entrega del pedido {code}",
+          "open": "Ver detalle",
+          "noRider": "Sin motorista",
+          "openLabel": "Ver detalle de la entrega {code}"
+        },
+        "emptyTitle": "No hay entregas abiertas",
+        "emptyText": "Cuando un pedido a domicilio con reparto propio esté listo para despachar, aparecerá aquí.",
+        "noResultsTitle": "Sin resultados",
+        "noResultsText": "Ninguna entrega coincide con los filtros.",
+        "loading": "Cargando la entrega…",
+        "moreError": "No se pudieron cargar más entregas.",
+        "showing": "Mostrando {count} entregas",
+        "loadMore": "Cargar más",
+        "loadingMore": "Cargando…",
+        "note": "El listado se actualiza solo mientras la pestaña está visible. Nunca muestra datos de contacto: se ven en el detalle, solo con la entrega abierta y con permiso sobre pedidos.",
+        "detail": {
+          "noteHint": "Revisa el estado actual y vuelve a intentarlo si aún aplica.",
+          "noActions": "No hay acciones disponibles para ti en este estado.",
+          "orderNotReady": "El pedido aún no está listo: no se puede marcar como recogido.",
+          "order": "Pedido",
+          "orderNumber": "Número",
+          "orderStatus": "Estado del pedido",
+          "provider": "Reparto",
+          "zone": "Zona",
+          "createdAt": "Creada",
+          "updatedAt": "Actualizada",
+          "rider": "Motorista",
+          "riderName": "Nombre",
+          "riderVehicle": "Vehículo",
+          "riderPhone": "Teléfono",
+          "occupied": "Ocupado con esta entrega.",
+          "occupiedUntilReturn": "Sigue ocupado hasta registrar su retorno a la sucursal.",
+          "noRider": "Aún no hay motorista asignado.",
+          "contact": "Contacto y dirección del cliente",
+          "contactHint": "Datos personales: úsalos solo para esta entrega y transmítelos al motorista fuera del sistema.",
+          "contactHidden": "Los datos de contacto y la dirección no se muestran: la entrega ya no está en curso (entregada, devuelta o cancelada) o no tienes permiso para ver pedidos.",
+          "history": "Línea de tiempo",
+          "historyTruncated": "Se muestran los últimos 50 eventos.",
+          "by": "por {name}",
+          "bySystem": "por el sistema",
+          "reason": "Motivo: {reason}"
+        },
+        "actions": {
+          "assign": "Asignar motorista",
+          "reassign": "Reasignar motorista",
+          "pickedUp": "Marcar recogido",
+          "delivered": "Marcar entregado",
+          "return": "Registrar retorno",
+          "unassign": "Quitar motorista",
+          "cancel": "Cancelar entrega"
+        },
+        "event": {
+          "created": "Entrega creada",
+          "reopened": "Entrega reabierta",
+          "rider_assigned": "Motorista asignado",
+          "rider_reassigned": "Motorista reasignado",
+          "rider_unassigned": "Motorista retirado",
+          "picked_up": "Pedido recogido",
+          "delivered": "Pedido entregado",
+          "returned": "Retorno registrado",
+          "cancelled": "Entrega cancelada"
+        },
+        "assignModal": {
+          "title": "Asignar motorista",
+          "titleReassign": "Reasignar motorista",
+          "back": "Volver",
+          "confirm": "Asignar",
+          "confirmReassign": "Reasignar",
+          "current": "Motorista actual: {name}. El actual quedará libre.",
+          "loading": "Cargando motoristas",
+          "ridersError": "No se pudieron cargar los motoristas (se necesita permiso para verlos).",
+          "retry": "Reintentar",
+          "none": "No hay motoristas elegibles en {branch}. Márcalos como disponibles en Motoristas.",
+          "label": "Motorista elegible",
+          "pick": "Elige un motorista",
+          "required": "Elige un motorista.",
+          "hint": "Solo se ofrecen motoristas activos de la sucursal, disponibles y sin otra entrega. El servidor lo confirma al asignar."
+        },
+        "reasonModal": {
+          "back": "Volver",
+          "labelRequired": "Motivo (obligatorio)",
+          "labelOptional": "Motivo (opcional)",
+          "pii": "Texto interno: no escribas datos personales del cliente ni del motorista.",
+          "counter": "{count}/{max}",
+          "error": {
+            "required": "Indica el motivo.",
+            "short": "El motivo debe tener al menos 3 caracteres.",
+            "long": "El motivo supera los 280 caracteres.",
+            "control": "El motivo tiene caracteres no permitidos."
+          },
+          "cancel": {
+            "title": "Cancelar entrega",
+            "consequences": "La entrega se cancela y el motorista queda libre. El pedido NO se cancela: sigue su curso y se puede volver a crear la entrega.",
+            "confirm": "Cancelar entrega"
+          },
+          "unassign": {
+            "title": "Quitar motorista",
+            "consequences": "La entrega vuelve a «Sin motorista» y el motorista queda libre.",
+            "confirm": "Quitar motorista"
+          }
+        },
+        "deliveredModal": {
+          "title": "Marcar como entregado",
+          "text": "Confirma que el pedido #{code} ya se entregó al cliente.",
+          "note": "El pedido pasará a «Entregado» y esta acción no se puede deshacer. El motorista seguirá ocupado hasta que registres su retorno.",
+          "back": "Volver",
+          "confirm": "Sí, marcar entregado"
+        },
+        "returnModal": {
+          "title": "Registrar retorno",
+          "text": "Confirma que {name} ya regresó a la sucursal. Quedará libre para otra entrega.",
+          "note": "El retorno es un evento separado de la entrega: no cambia el pedido ni su pago y queda en el historial con tu nombre.",
+          "back": "Volver",
+          "confirm": "Registrar retorno"
+        },
+        "toast": {
+          "replayedMine": "La entrega #{code} ya estaba así: no se hizo ningún cambio.",
+          "replayedOther": "La entrega #{code} ya estaba hecha por otra persona ({status}).",
+          "event": {
+            "created": "Entrega creada para #{code}.",
+            "reopened": "Entrega de #{code} reabierta.",
+            "rider_assigned": "Motorista asignado a #{code}.",
+            "rider_reassigned": "Motorista reasignado en #{code}.",
+            "rider_unassigned": "Motorista retirado de #{code}.",
+            "picked_up": "#{code} recogido: el pedido va en camino.",
+            "delivered": "#{code} entregado al cliente.",
+            "returned": "Retorno registrado para #{code}.",
+            "cancelled": "Entrega de #{code} cancelada."
+          }
+        },
+        "errors": {
+          "stateConflict": "La entrega #{code} cambió mientras la veías: ahora está «{status}». Ya la actualizamos; revisa y vuelve a intentarlo.",
+          "stateConflictUnknown": "La entrega #{code} cambió mientras la veías. Ya la actualizamos; revisa y vuelve a intentarlo.",
+          "orderConflict": "El pedido #{code} no está en el estado que se necesita: ahora está «{status}». Revisa y vuelve a intentarlo.",
+          "orderConflictUnknown": "El pedido #{code} cambió. Revisa y vuelve a intentarlo.",
+          "hasActiveDelivery": "El pedido #{code} tiene una entrega abierta: cancela primero la entrega.",
+          "riderNotEligible": "Ese motorista no puede tomar la entrega: {reasons}.",
+          "riderNotEligibleUnknown": "Ese motorista no puede tomar la entrega. Elige otro.",
+          "orderNotEligible": "El pedido no admite una entrega propia: {reasons}.",
+          "orderNotEligibleUnknown": "El pedido no admite una entrega propia.",
+          "reasonRequired": "El motivo es obligatorio (3 a 280 caracteres, sin caracteres de control).",
+          "cursorInvalid": "La lista cambió; vuelve a cargarla.",
+          "actionForbidden": "No tienes permiso para esta acción en la sucursal de la entrega.",
+          "forbidden": "No tienes permiso para esto.",
+          "mfa": "Se necesita verificación en dos pasos para esta acción.",
+          "auth": "Tu sesión expiró; vuelve a iniciar sesión.",
+          "deliveryNotFound": "La entrega ya no está disponible.",
+          "riderNotFound": "El motorista no está disponible.",
+          "orderNotFound": "El pedido no está disponible.",
+          "rate": "Demasiadas solicitudes. Espera {seconds} s e inténtalo de nuevo.",
+          "busy": "Hay mucha demanda. Reintenta en {seconds} s.",
+          "network": "No pudimos confirmar si se aplicó el cambio en #{code}. Revisa el estado antes de repetir.",
+          "invalid": "No se puede hacer esto con el estado actual.",
+          "unknown": "No se pudo completar la acción.",
+          "riderReason": {
+            "INACTIVE": "está inactivo",
+            "WRONG_BRANCH": "no es de la sucursal del pedido",
+            "UNAVAILABLE": "no está marcado como disponible",
+            "BUSY": "ya tiene una entrega abierta",
+            "OWN_DELIVERY_DISABLED": "el reparto propio no está habilitado en la sucursal"
+          },
+          "orderReason": {
+            "ORDER_STATUS_NOT_DISPATCHABLE": "debe estar aceptado, en preparación o listo",
+            "ORDER_NOT_DELIVERY": "no es a domicilio",
+            "ORDER_PROVIDER_NOT_OWN": "no usa reparto propio"
+          }
+        }
+      },
+      "simulation": {
+        "title": "Simulación — PedidosYa Courier",
+        "banner": "Simulación — no es un envío real. Cotizar, solicitar y seguir con PedidosYa son datos de demostración (MOCK_ONLY, integración pendiente de proveedor); nunca confirman entregas reales."
+      }
     },
     "dispatch": {
       "title": "Despachar pedido",
@@ -2707,8 +2929,8 @@
         "updatedAt": "Última actualización",
         "version": "Versión",
         "deliveriesTitle": "Entregas",
-        "deliveriesText": "Entregas: disponible con F28",
-        "deliveriesNote": "Aquí no hay historial ni métricas: se mostrarán cuando existan entregas propias."
+        "deliveriesText": "Consulta la pantalla Entregas",
+        "deliveriesNote": "El detalle de cada entrega vive en la pantalla Entregas. El motorista figura ocupado mientras tenga una entrega sin retorno registrado."
       },
       "form": {
         "titleNew": "Nuevo motorista",
@@ -3398,6 +3620,30 @@
               "unknown": "The payment could not be recorded. Try again."
             }
           }
+        },
+        "dispatchOwn": {
+          "button": "Despachar",
+          "creating": "Creando entrega…",
+          "hint": "Crea la entrega y abre Entregas para asignar un motorista.",
+          "error": "No se pudo crear la entrega: {message}"
+        },
+        "activeDelivery": {
+          "title": "El pedido tiene una entrega abierta",
+          "text": "Para cancelar o rechazar el pedido #{code} primero hay que cancelar su entrega. Son dos pasos separados: no se hacen a la vez.",
+          "reason": "Motivo (se usa en ambos pasos)",
+          "step1": "Paso 1: cancelar la entrega",
+          "step1Done": "Entrega cancelada.",
+          "step2": "Paso 2: cancelar el pedido",
+          "step2Done": "Pedido cancelado.",
+          "cancelDelivery": "Cancelar entrega",
+          "cancelOrder": "Cancelar pedido",
+          "close": "Cerrar",
+          "open": "Cancelar entrega y luego el pedido",
+          "step2Failed": "La entrega ya se canceló, pero el pedido sigue sin cancelarse: {message}",
+          "pii": "Texto interno: no escribas datos personales.",
+          "loading": "Buscando la entrega abierta…",
+          "notFound": "No encontramos la entrega abierta de este pedido (o no tienes permiso para verla). Ábrela en Entregas.",
+          "notCancellable": "La entrega ya salió y no se puede cancelar desde aquí."
         }
       }
     },

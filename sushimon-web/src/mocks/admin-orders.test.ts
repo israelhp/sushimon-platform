@@ -158,22 +158,28 @@ describe('availableActionsFor (§4.2)', () => {
     ]);
   });
 
-  it('dispatch SIEMPRE deshabilitada: propia → DISPATCH_NOT_AVAILABLE, PedidosYa → PROVIDER_BLOCKED_EXTERNAL', () => {
-    const own = availableActionsFor(rule('ready', 'DELIVERY', 'OWN'), all).find(
-      (a) => a.action === 'dispatch',
-    );
-    const py = availableActionsFor(rule('ready', 'DELIVERY', 'PEDIDOSYA'), all).find(
-      (a) => a.action === 'dispatch',
-    );
-    expect(own).toEqual({
+  it('dispatch (F28): propia con deliveries.assign → habilitada; sin permiso → NO_PERMISSION; PedidosYa → PROVIDER_BLOCKED_EXTERNAL', () => {
+    const find = (provider: 'OWN' | 'PEDIDOSYA' | null, can: () => boolean) =>
+      availableActionsFor(rule('ready', 'DELIVERY', provider), can).find(
+        (a) => a.action === 'dispatch',
+      );
+    expect(find('OWN', all)).toEqual({ action: 'dispatch', enabled: true, disabledReason: null });
+    expect(find('OWN', none)).toEqual({
       action: 'dispatch',
       enabled: false,
-      disabledReason: 'DISPATCH_NOT_AVAILABLE',
+      disabledReason: 'NO_PERMISSION',
     });
-    expect(py).toEqual({
+    // PedidosYa sigue BLOCKED_EXTERNAL aunque tenga todos los permisos (F29).
+    expect(find('PEDIDOSYA', all)).toEqual({
       action: 'dispatch',
       enabled: false,
       disabledReason: 'PROVIDER_BLOCKED_EXTERNAL',
+    });
+    // `DISPATCH_NOT_AVAILABLE` solo para un proveedor desconocido (valor heredado).
+    expect(find(null, all)).toEqual({
+      action: 'dispatch',
+      enabled: false,
+      disabledReason: 'DISPATCH_NOT_AVAILABLE',
     });
   });
 });

@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import type { TxClient } from '../riders.types.js';
 
 /**
- * Puerto de lectura de entregas ACTIVAS de motoristas (F27, spec 028 §8.1). F28 (entregas propias) lo implementa con un
- * adaptador `known=true` que consulta `deliveries` y reemplaza el provider del módulo, sin tocar controladores ni contrato.
+ * Puerto de lectura de entregas ACTIVAS de motoristas (F27, spec 028 §8.1). Desde F28 lo implementa `RiderActiveDeliveriesAdapter`
+ * (`known=true`, lee `app.deliveries`) enlazado en `RidersModule`.
  */
 export interface RiderBusyResult {
   /** `false`: el adaptador no puede afirmar nada (F28 inexistente). `busyIds` solo es fiable si `known = true`. */
@@ -20,8 +20,8 @@ export interface RiderActiveDeliveriesPort {
 export const RIDER_ACTIVE_DELIVERIES_PORT = Symbol('RIDER_ACTIVE_DELIVERIES_PORT');
 
 /**
- * Adaptador por defecto: «F28 no existe». No simula entregas ni inventa datos: `known=false`, sin sentencias SQL. Los comandos
- * peligrosos (desactivar, `UNAVAILABLE`, traslado) no pueden bloquear por entrega activa hasta que F28 lo reemplace.
+ * Adaptador «sin entregas» de F27 (`known=false`, sin SQL). Ya NO está enlazado en `RidersModule` (F28 lo reemplazó): queda SOLO
+ * para dobles de pruebas. Con él, la asignación de F28 falla CERRADA (503 `DELIVERIES_BUSY`).
  */
 @Injectable()
 export class NoActiveDeliveriesAdapter implements RiderActiveDeliveriesPort {

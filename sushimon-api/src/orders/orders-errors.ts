@@ -132,6 +132,13 @@ export const pendingOrdersLimit = () =>
 export const isLockTimeout = (error: unknown): boolean => dbErrorCodes(error).includes('55P03');
 
 /**
+ * F28: SQLSTATE 23001 (`restrict_violation`) = el trigger `orders_open_delivery_guard` (migración 0022) rechazó cancelar o
+ * rechazar un pedido con entrega abierta. El servicio de comandos lo traduce a 409 `ORDER_HAS_ACTIVE_DELIVERY` con `current`.
+ */
+export const isActiveDeliveryViolation = (error: unknown): boolean =>
+  !(error instanceof HttpException) && dbErrorCodes(error).includes('23001');
+
+/**
  * Traduce SOLO «ocupado o sin conexión» a 503 `ORDERS_BUSY`. El `lock_timeout` de la creación lo trata el servicio
  * (409 `IDEMPOTENCY_IN_PROGRESS`) ANTES de llamar aquí. Cualquier otro error vuelve igual (el filtro global lo trata).
  */

@@ -62,7 +62,10 @@ export const envSchema = z
     ),
     /** Conexión directa o session pooler (5432). Solo para `prisma migrate`; no la usa la API. */
     DIRECT_URL: optional(z.string().regex(/^postgres(ql)?:\/\//, 'debe ser una URL postgresql://')),
-    /** Conexiones por instancia. Pequeño a propósito: cada instancia serverless abre su propio pool. */
+    /**
+     * Conexiones por instancia. Pequeño a propósito: cada instancia serverless abre su propio pool. Producción: >= 6 (cinco
+     * semáforos con cupo >= 1, ver `splitGateBudget`; con menos, los gates suman más que el pool: excepción documentada de desarrollo).
+     */
     DB_POOL_MAX: z.coerce.number().int().min(1).max(20).default(3),
     DB_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(500).max(30_000).default(5_000),
     /**
@@ -422,8 +425,18 @@ function deploymentSignal(raw: Record<string, unknown>, env: Env): string | null
 }
 
 /** Avisos de arranque no bloqueantes (se registran en `main.ts`). Sin valores sensibles. */
-export function envWarnings(env: Pick<Env, 'NODE_ENV' | 'TRUST_PROXY_HOPS'>): string[] {
+export function envWarnings(
+  env: Pick<Env, 'NODE_ENV' | 'TRUST_PROXY_HOPS'> & Partial<Pick<Env, 'DB_POOL_MAX'>>,
+): string[] {
   const warnings: string[] = [];
+  // F28 (spec 029 §11, P1): con DB_POOL_MAX < 6 los cinco semáforos (cupo mínimo 1 cada uno) suman más que `DB_POOL_MAX - 1` y las
+  // rutas sin semáforo (auth, salud, backoffice) pueden quedarse sin conexión. Solo advertencia: NO impide el arranque.
+  if (env.NODE_ENV === 'production' && env.DB_POOL_MAX !== undefined && env.DB_POOL_MAX < 6) {
+    warnings.push(
+      `DB_POOL_MAX=${env.DB_POOL_MAX} en producción: se recomienda >= 6 para que los cinco semáforos de BD ` +
+        '(tienda, cotización, pedidos, motoristas y entregas) dejen al menos una conexión a las rutas sin semáforo.',
+    );
+  }
   if (env.NODE_ENV === 'production' && env.TRUST_PROXY_HOPS === 0) {
     warnings.push(
       'TRUST_PROXY_HOPS=0 en producción: detrás de un proxy/CDN todos los clientes compartirían la IP del proxy ' +

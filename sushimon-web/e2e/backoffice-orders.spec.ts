@@ -72,18 +72,19 @@ test('encargado: rechaza un pedido con motivo desde el detalle', async ({ page }
   await expect(column(page, 'Nuevo').getByText('#MON-307057')).toHaveCount(0);
 });
 
-test('encargado: «Despachar» aparece DESHABILITADO con la explicación (no hay despacho en esta fase)', async ({
+test('encargado: «Despachar» (reparto propio) está HABILITADO y solo abre Entregas; no hay despacho simulado (F28)', async ({
   page,
 }) => {
   await enterAs(page, /Marco Antonio Gómez/);
   await page.goto('/backoffice/pedidos');
   const dispatch = card(page, '#MON-307051').getByRole('button', { name: 'Despachar' });
-  await expect(dispatch).toBeDisabled();
+  await expect(dispatch).toBeEnabled();
   await expect(
     card(page, '#MON-307051').getByText(
-      'La asignación de repartidor llegará con la gestión de entregas.',
+      /Crea la entrega y abre Entregas para asignar un motorista/,
     ),
   ).toBeVisible();
+  // Sin modal simulado: el despacho real vive en Entregas (su flujo completo está en backoffice-deliveries.spec.ts).
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 

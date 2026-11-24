@@ -20,6 +20,7 @@ import { MODIFIER_GROUP_SEEDS, PRODUCT_MODIFIER_GROUP_SEEDS } from './fixtures/m
 import { BANNER_ASSET_SEEDS, BANNER_ASSET_SEED_AT, BANNER_SEEDS } from './fixtures/banners';
 import { PROMOTION_SEEDS } from './fixtures/promotions';
 import { ROLE_SEEDS } from './fixtures/rbac';
+import { ADMIN_DELIVERY_SEEDS } from './fixtures/admin-deliveries';
 import { ADMIN_RIDER_SEEDS } from './fixtures/admin-riders';
 import { RIDER_SEEDS, STAFF_SEEDS } from './fixtures/staff';
 import { MENU_CATEGORY_SEEDS } from './fixtures/categories';
@@ -421,6 +422,7 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
     })),
     riders: structuredClone(RIDER_SEEDS),
     adminRiders: scenario === 'empty' ? [] : structuredClone([...ADMIN_RIDER_SEEDS]),
+    adminDeliveries: scenario === 'empty' ? [] : structuredClone([...ADMIN_DELIVERY_SEEDS]),
     accounts: { [DEMO_ACCOUNT.profile.email]: demoAccount },
     jobApplications: [],
     verifiedOrderIds: [],

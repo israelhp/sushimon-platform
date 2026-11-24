@@ -27,6 +27,7 @@ import { readMockQuoteToken, stableStringify, type MockQuoteEvidence } from '../
 import { sha256Hex } from '../sha256';
 import type { MockStore, PlacedOrderRecord } from '../store';
 import { materializeById, syncFromDraft, uuidFor } from '../order-history';
+import { deliveryOfOrder } from '../admin-deliveries';
 import { buildOrderTracking } from '../order-tracking';
 import { publicPayment } from '../cash-payments';
 import { quoteCheckout } from './checkout';
@@ -681,5 +682,10 @@ export const getOrderTracking: Handler = (req): OrderTracking => {
   authorizePlaced(req, record);
   const draft = req.store.orders.find((o) => o.id === record.draftId);
   if (!draft) fail(404, 'Pedido no encontrado');
-  return buildOrderTracking(liveDetail(req.store, record), draft, now(req));
+  return buildOrderTracking(
+    liveDetail(req.store, record),
+    draft,
+    now(req),
+    deliveryOfOrder(req.store, draft.id)?.status ?? null,
+  );
 };

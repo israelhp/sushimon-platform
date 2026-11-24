@@ -352,6 +352,60 @@ describe('valores fuera de catálogo (nunca se exponen crudos)', () => {
   });
 });
 
+describe('R34 delivery.status público (F28, spec 029 §12)', () => {
+  const own = (delivery: OrderTrackingRecord['delivery']) =>
+    toOrderTracking(record({ fulfillmentType: 'DELIVERY', deliveryProvider: 'OWN', delivery }), NOW)
+      .delivery;
+
+  it.each([
+    ['pending', 'PENDING'],
+    ['assigned', 'ASSIGNED'],
+    ['picked_up', 'PICKED_UP'],
+    ['delivered', 'DELIVERED'],
+    ['returned', 'DELIVERED'],
+  ])('entrega %s => status %s', (status, expected) => {
+    expect(own({ status })).toEqual({ provider: 'OWN', status: expected });
+  });
+
+  it('sin entrega, cancelada o estado desconocido => status null', () => {
+    expect(own(null)).toEqual({ provider: 'OWN', status: null });
+    expect(own(undefined)).toEqual({ provider: 'OWN', status: null });
+    expect(own({ status: 'cancelled' })).toEqual({ provider: 'OWN', status: null });
+    expect(own({ status: 'otro' })).toEqual({ provider: 'OWN', status: null });
+  });
+
+  it('PEDIDOSYA => null aunque exista una fila (F29, BLOCKED_EXTERNAL); PICKUP => delivery null', () => {
+    expect(
+      toOrderTracking(
+        record({
+          fulfillmentType: 'DELIVERY',
+          deliveryProvider: 'PEDIDOSYA',
+          delivery: { status: 'assigned' },
+        }),
+        NOW,
+      ).delivery,
+    ).toEqual({ provider: 'PEDIDOSYA', status: null });
+    expect(toOrderTracking(record({ delivery: { status: 'assigned' } }), NOW).delivery).toBeNull();
+  });
+
+  it('NUNCA expone datos del motorista, ids ni quién/por qué: la respuesta solo lleva provider y status', () => {
+    const t = toOrderTracking(
+      record({
+        fulfillmentType: 'DELIVERY',
+        deliveryProvider: 'OWN',
+        delivery: {
+          status: 'picked_up',
+          riderId: 'RIDER-SECRETO',
+          riderName: 'NOMBRE-SECRETO',
+        } as never,
+      }),
+      NOW,
+    );
+    expect(Object.keys(t.delivery ?? {}).sort()).toEqual(['provider', 'status']);
+    expect(JSON.stringify(t)).not.toMatch(/SECRETO|rider|phone|vehicle/i);
+  });
+});
+
 describe('delivery y forma de la respuesta', () => {
   it('PICKUP => null; OWN y PEDIDOSYA => solo proveedor con status null', () => {
     expect(toOrderTracking(record(), NOW).delivery).toBeNull();

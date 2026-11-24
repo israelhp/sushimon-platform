@@ -2701,6 +2701,226 @@ export interface paths {
         patch: operations["updateAdminBannerStatus"];
         trace?: never;
     };
+    "/v1/admin/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Entregas propias del backoffice (paginado por cursor, ligero)
+         * @description F28 (spec 029, ADR-0032). Exige `deliveries.read` y `aal2`. LISTADO ligero (sin teléfono, dirección completa, notas ni historial: eso es `getAdminDelivery`). Alcance por sucursal EN SQL
+         *     (`branch_id = ANY(sucursales con deliveries.read)`; alcance global = todas): nunca se filtra en la web. `branchId` fuera de alcance o inexistente => 404 `BRANCH_NOT_FOUND`.
+         *     Filtros: `status` (lista separada por comas; por defecto los estados ABIERTOS `pending,assigned,picked_up,delivered`, sin ventana de fechas), `riderId`, `from`/`to` (instantes de `createdAt`; solo acotan los
+         *     estados terminales `returned|cancelled`; por defecto `from = ahora − 7 días`; rango máximo 92 días, si no 400). `status=delivered` = «esperando retorno» (el motorista sigue ocupado). Orden FIJO `createdAt`
+         *     descendente, `id` descendente; paginación por CURSOR opaco (`nextCursor`; `null` = última página); un cursor alterado => 400 `DELIVERY_CURSOR_INVALID` (el alcance se aplica SIEMPRE en la consulta). Sin conteo
+         *     total. UNA sentencia SQL (JOIN `orders`, `branches`, `order_addresses` solo municipio y zona, `riders` solo nombre y vehículo). Sin PII del cliente. `Cache-Control: private, no-store`. Solo entregas propias
+         *     (`OWN`); PedidosYa no tiene filas (F29, `BLOCKED_EXTERNAL`).
+         */
+        get: operations["listAdminDeliveries"];
+        put?: never;
+        /**
+         * Crea (o reabre) la entrega propia de un pedido elegible
+         * @description F28 (spec 029 §7). Exige `deliveries.assign` en la sucursal del pedido y `aal2`; el personal debe poder VER el pedido (`deliveries.read` en esa sucursal; si no => `ORDER_NOT_FOUND`, el mismo 404 que un pedido inexistente).
+         *     Crea la entrega en `pending` (sin motorista) para un pedido DELIVERY con proveedor `OWN` en `accepted|preparing|ready`; si no => 422 `DELIVERY_ORDER_NOT_ELIGIBLE` (`violations[].code`: `ORDER_STATUS_NOT_DISPATCHABLE`,
+         *     `ORDER_NOT_DELIVERY`, `ORDER_PROVIDER_NOT_OWN`, que incluye `PEDIDOSYA`: `BLOCKED_EXTERNAL`, F29). IDEMPOTENTE por pedido (`UNIQUE(order_id)`): si ya existe y está abierta => 200 con `transition.replayed=true` y la fila
+         *     vigente SIN escribir; si existe `cancelled` => se REABRE a `pending` (201, evento `reopened`). 201 al crear o reabrir. No cambia el pedido. Sin `Idempotency-Key`. `Cache-Control: private, no-store`.
+         */
+        post: operations["createAdminDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/deliveries/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detalle de una entrega propia (con historial)
+         * @description F28. Exige `deliveries.read` y `aal2`. Inexistente o de una sucursal fuera del alcance => el MISMO 404 `DELIVERY_NOT_FOUND` (anti-IDOR). Incluye pedido, motorista (nombre, vehículo y teléfono ENMASCARADO; el teléfono
+         *     completo es de `getAdminRider` con `riders.read`), tiempos, acciones disponibles para ESTE personal y el historial cronológico (≤ 50 eventos con `old_status`, `status`, evento, motorista, motivo interno y quién). El contacto y la
+         *     dirección del cliente (`customer`, `address`) SOLO se devuelven si la entrega está `pending|assigned|picked_up` (NO `delivered`/`returned`/`cancelled`) y el personal tiene además `orders.read` en la sucursal (si no, `null` con `contactVisible=false`); `reason` y `actorName` del historial solo se devuelven con `deliveries.update` en la sucursal (si no, `null`); las lecturas no se auditan.
+         *     ≤ 2 sentencias SQL (fila con JOINs + historial). `Cache-Control: private, no-store`.
+         */
+        get: operations["getAdminDelivery"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/deliveries/{id}/assign-own-rider": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Asigna (o reasigna antes de la recogida) un motorista propio
+         * @description F28 (spec 029 §8). Exige `deliveries.assign` Y `riders.assign` en la sucursal de la entrega, y `aal2`. Válido desde `pending` (asignar) o `assigned` (REASIGNAR antes de la recogida; el motorista anterior queda libre y el
+         *     historial conserva ambos). Dentro de UNA transacción: `SELECT … FOR UPDATE` del motorista, luego de la entrega, `FOR SHARE` del pedido (orden de bloqueos motorista → entrega → pedido), `RiderEligibilityService.evaluate`
+         *     (activo, misma sucursal que el PEDIDO, `AVAILABLE`, no ocupado, `ownDeliveryZonesEnabled`) y compare-and-set por `expectedVersion`. El pedido debe seguir en `accepted|preparing|ready`. Un motorista inexistente o
+         *     que el personal no puede ver (`riders.read`) => 404 `RIDER_NOT_FOUND` (la sucursal del motorista nunca se devuelve); no elegible => 422 `RIDER_NOT_ELIGIBLE` (`violations[].code` ∈ `INACTIVE`, `WRONG_BRANCH`, `UNAVAILABLE`,
+         *     `BUSY`, `OWN_DELIVERY_DISABLED`). Doble asignación imposible: índice único parcial «una entrega activa por motorista» (la carrera pierde con 422 `RIDER_NOT_ELIGIBLE`/`BUSY`) y `UNIQUE(order_id)`. Repetir la MISMA asignación
+         *     (mismo motorista, `version = expectedVersion + 1`, último evento `rider_assigned|rider_reassigned` a ese motorista) => 200 `replayed=true`. NO cambia el pedido. ≤ 9 sentencias SQL.
+         *
+         *     Comando de entrega propia (`OWN`). Autorización: JWT + aal2 + personal activo; alcance EN SQL con `deliveries.read` (404 uniforme) y luego el permiso del comando EN LA SUCURSAL DE LA ENTREGA (403 `DELIVERY_ACTION_FORBIDDEN`).
+         *     Cuerpo con `expectedVersion` OBLIGATORIO (la `version` que la persona vio). Comparación y cambio en UNA transacción corta (`SELECT … FOR UPDATE` de la entrega, compare-and-set por versión, fila de `delivery_status_history` y auditoría `delivery.*`).
+         *     REPETICIÓN IDEMPOTENTE: si la entrega YA está en el estado destino, `version = expectedVersion + 1` y el último evento del historial es exactamente este comando, responde 200 con `transition.replayed=true` SIN
+         *     duplicar historial ni auditoría, sea quien sea el actor (`appliedByMe` lo indica); cualquier otra discrepancia => 409 `DELIVERY_STATE_CONFLICT` con `current`. Sin `Idempotency-Key`. `Cache-Control: private, no-store`.
+         */
+        post: operations["assignOwnRiderToAdminDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/deliveries/{id}/unassign-rider": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Quita el motorista de una entrega asignada (vuelve a pendiente)
+         * @description F28 (spec 029 §6). Exige `deliveries.assign` y `aal2`. Solo `assigned → pending` (antes de la recogida). Libera al motorista (sin él, la entrega deja de contar como ocupación) y conserva el historial (`rider_unassigned`, con el
+         *     motorista liberado). `reason` opcional (3..280, interno: no pongas datos personales). NO cambia el pedido. ≤ 4 sentencias SQL.
+         *
+         *     Comando de entrega propia (`OWN`). Autorización: JWT + aal2 + personal activo; alcance EN SQL con `deliveries.read` (404 uniforme) y luego el permiso del comando EN LA SUCURSAL DE LA ENTREGA (403 `DELIVERY_ACTION_FORBIDDEN`).
+         *     Cuerpo con `expectedVersion` OBLIGATORIO (la `version` que la persona vio). Comparación y cambio en UNA transacción corta (`SELECT … FOR UPDATE` de la entrega, compare-and-set por versión, fila de `delivery_status_history` y auditoría `delivery.*`).
+         *     REPETICIÓN IDEMPOTENTE: si la entrega YA está en el estado destino, `version = expectedVersion + 1` y el último evento del historial es exactamente este comando, responde 200 con `transition.replayed=true` SIN
+         *     duplicar historial ni auditoría, sea quien sea el actor (`appliedByMe` lo indica); cualquier otra discrepancia => 409 `DELIVERY_STATE_CONFLICT` con `current`. Sin `Idempotency-Key`. `Cache-Control: private, no-store`.
+         */
+        post: operations["unassignRiderFromAdminDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/deliveries/{id}/mark-picked-up": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirma la recogida: la entrega pasa a `picked_up` y el pedido `ready → on_the_way`
+         * @description F28 (spec 029 §6). Exige `deliveries.update` y `aal2`. Solo `assigned → picked_up` con el pedido en `ready`. En la MISMA transacción: la entrega cambia por compare-and-set y el pedido cambia SOLO por
+         *     `OrderTransitionsService.apply(tx, …, allowOwnDispatch: true)` (misma matriz, compare-and-set, historial y auditoría `order.dispatched` de F22; jamás SQL directo a `orders`). Pedido fuera de `ready` => 409
+         *     `ORDER_STATE_CONFLICT` con `current`, sin escribir nada. El motorista sigue ocupado. ≤ 7 sentencias SQL.
+         *
+         *     Comando de entrega propia (`OWN`). Autorización: JWT + aal2 + personal activo; alcance EN SQL con `deliveries.read` (404 uniforme) y luego el permiso del comando EN LA SUCURSAL DE LA ENTREGA (403 `DELIVERY_ACTION_FORBIDDEN`).
+         *     Cuerpo con `expectedVersion` OBLIGATORIO (la `version` que la persona vio). Comparación y cambio en UNA transacción corta (`SELECT … FOR UPDATE` de la entrega, compare-and-set por versión, fila de `delivery_status_history` y auditoría `delivery.*`).
+         *     REPETICIÓN IDEMPOTENTE: si la entrega YA está en el estado destino, `version = expectedVersion + 1` y el último evento del historial es exactamente este comando, responde 200 con `transition.replayed=true` SIN
+         *     duplicar historial ni auditoría, sea quien sea el actor (`appliedByMe` lo indica); cualquier otra discrepancia => 409 `DELIVERY_STATE_CONFLICT` con `current`. Sin `Idempotency-Key`. `Cache-Control: private, no-store`.
+         */
+        post: operations["markAdminDeliveryPickedUp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/deliveries/{id}/mark-delivered": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirma la entrega al cliente: `picked_up → delivered` y el pedido `on_the_way → delivered`
+         * @description F28 (spec 029 §6). Exige `deliveries.update` y `aal2`. Solo `picked_up → delivered` con el pedido en `on_the_way`. Misma transacción y mismo mecanismo que `mark-picked-up` (auditoría `order.delivered`). El
+         *     motorista SIGUE OCUPADO hasta registrar `return-to-branch` (el retorno es un evento SEPARADO). No registra cobro de efectivo ni rendición de caja (F24 ya registra el cobro del personal; la rendición es otra feature).
+         *     La entrega fallida/no entregada queda fuera de F28 (P107). ≤ 7 sentencias SQL.
+         *
+         *     Comando de entrega propia (`OWN`). Autorización: JWT + aal2 + personal activo; alcance EN SQL con `deliveries.read` (404 uniforme) y luego el permiso del comando EN LA SUCURSAL DE LA ENTREGA (403 `DELIVERY_ACTION_FORBIDDEN`).
+         *     Cuerpo con `expectedVersion` OBLIGATORIO (la `version` que la persona vio). Comparación y cambio en UNA transacción corta (`SELECT … FOR UPDATE` de la entrega, compare-and-set por versión, fila de `delivery_status_history` y auditoría `delivery.*`).
+         *     REPETICIÓN IDEMPOTENTE: si la entrega YA está en el estado destino, `version = expectedVersion + 1` y el último evento del historial es exactamente este comando, responde 200 con `transition.replayed=true` SIN
+         *     duplicar historial ni auditoría, sea quien sea el actor (`appliedByMe` lo indica); cualquier otra discrepancia => 409 `DELIVERY_STATE_CONFLICT` con `current`. Sin `Idempotency-Key`. `Cache-Control: private, no-store`.
+         */
+        post: operations["markAdminDeliveryDelivered"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/deliveries/{id}/return-to-branch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Registra el retorno del motorista al restaurante (libera su ocupación)
+         * @description F28 (spec 029 §6). Exige `deliveries.update` y `aal2`. Solo `delivered → returned` (terminal). El retorno es un evento SEPARADO de la entrega al cliente: libera al motorista (deja de estar ocupado y vuelve a ser
+         *     asignable según su disponibilidad manual de F27). No toca el pedido (ya `delivered`). Si el retorno no se registró en su momento, se registra después con este mismo comando (liberación manual con permiso y rastro
+         *     en el historial); no hay temporizadores automáticos. ≤ 4 sentencias SQL.
+         *
+         *     Comando de entrega propia (`OWN`). Autorización: JWT + aal2 + personal activo; alcance EN SQL con `deliveries.read` (404 uniforme) y luego el permiso del comando EN LA SUCURSAL DE LA ENTREGA (403 `DELIVERY_ACTION_FORBIDDEN`).
+         *     Cuerpo con `expectedVersion` OBLIGATORIO (la `version` que la persona vio). Comparación y cambio en UNA transacción corta (`SELECT … FOR UPDATE` de la entrega, compare-and-set por versión, fila de `delivery_status_history` y auditoría `delivery.*`).
+         *     REPETICIÓN IDEMPOTENTE: si la entrega YA está en el estado destino, `version = expectedVersion + 1` y el último evento del historial es exactamente este comando, responde 200 con `transition.replayed=true` SIN
+         *     duplicar historial ni auditoría, sea quien sea el actor (`appliedByMe` lo indica); cualquier otra discrepancia => 409 `DELIVERY_STATE_CONFLICT` con `current`. Sin `Idempotency-Key`. `Cache-Control: private, no-store`.
+         */
+        post: operations["returnAdminDeliveryToBranch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/deliveries/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancela una entrega aún no recogida (`pending|assigned → cancelled`, motivo obligatorio)
+         * @description F28 (spec 029 §9). Exige `deliveries.update` y `aal2`. Solo `pending|assigned → cancelled` (nunca desde `picked_up`: el pedido ya está en manos del motorista). Libera al motorista y es terminal para la entrega
+         *     (se puede REABRIR con `createAdminDelivery` mientras el pedido siga despachable). `reason` OBLIGATORIO (3..280; falta => 400 `DELIVERY_REASON_REQUIRED`), interno. Es el paso previo para cancelar un pedido con entrega
+         *     abierta: `cancelAdminOrder` responde 409 `ORDER_HAS_ACTIVE_DELIVERY` mientras exista una entrega `pending|assigned|picked_up`. NO cambia el pedido. ≤ 4 sentencias SQL.
+         *
+         *     Comando de entrega propia (`OWN`). Autorización: JWT + aal2 + personal activo; alcance EN SQL con `deliveries.read` (404 uniforme) y luego el permiso del comando EN LA SUCURSAL DE LA ENTREGA (403 `DELIVERY_ACTION_FORBIDDEN`).
+         *     Cuerpo con `expectedVersion` OBLIGATORIO (la `version` que la persona vio). Comparación y cambio en UNA transacción corta (`SELECT … FOR UPDATE` de la entrega, compare-and-set por versión, fila de `delivery_status_history` y auditoría `delivery.*`).
+         *     REPETICIÓN IDEMPOTENTE: si la entrega YA está en el estado destino, `version = expectedVersion + 1` y el último evento del historial es exactamente este comando, responde 200 con `transition.replayed=true` SIN
+         *     duplicar historial ni auditoría, sea quien sea el actor (`appliedByMe` lo indica); cualquier otra discrepancia => 409 `DELIVERY_STATE_CONFLICT` con `current`. Sin `Idempotency-Key`. `Cache-Control: private, no-store`.
+         */
+        post: operations["cancelAdminDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3096,7 +3316,7 @@ export interface components {
             details?: string[];
             /**
              * @description Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16: `BANNER_NOT_FOUND`, `BANNER_CODE_TAKEN`, `BANNER_VERSION_CONFLICT`, `BANNER_IMAGE_INVALID`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_LIMIT_REACHED`, `BANNER_SCOPE_FORBIDDEN` (403), `BANNERS_BUSY` (503 reintentable); F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); F20: `IDEMPOTENCY_KEY_INVALID` (400), `QUOTE_CHANGED` (409), `QUOTE_EXPIRED` (409), `IDEMPOTENCY_KEY_REUSED` (409), `IDEMPOTENCY_IN_PROGRESS` (409), `QUOTE_INVALID` (422), `CHECKOUT_BLOCKED` (422), `DELIVERY_PROVIDER_NOT_SELECTABLE` (422), `CONTACT_INCOMPLETE` (422), `PENDING_ORDERS_LIMIT` (429), `ORDERS_BUSY` (503 reintentable), `ORDERS_UNAVAILABLE` (503); 404 de dirección ajena sin código; F22: `ORDER_NOT_FOUND` (404), `ORDER_REASON_REQUIRED` (400), `ORDER_CURSOR_INVALID` (400), `ORDER_ACTION_FORBIDDEN` (403), `ORDER_STATE_CONFLICT` (409), `ORDER_TRANSITION_INVALID` (422; `violations[].code`: `ORDER_TERMINAL`, `ORDER_FULFILLMENT_MISMATCH`, `ORDER_SOURCE_INVALID`, `ORDER_DISPATCH_NOT_AVAILABLE`, `ORDER_PROVIDER_BLOCKED_EXTERNAL`, `ORDER_CANCEL_NOT_ALLOWED`); 503 reintentable: `ORDERS_BUSY`; F24 (pagos en efectivo; `PAYMENT_METHOD_UNAVAILABLE` de F20 queda RETIRADO: ahora cualquier método distinto de `cash` es 400): `PAYMENT_AMOUNT_INVALID` (400), `PAYMENT_CONFIRMATION_REQUIRED` (400), `PAYMENT_ACTION_FORBIDDEN` (403), `PAYMENT_ALREADY_REGISTERED` (409), `ORDER_NOT_PAYABLE` (409), `CASH_AMOUNT_INSUFFICIENT` (422), `CASH_TENDERED_TOO_LARGE` (422), `PAYMENT_NOT_COLLECTABLE` (422; `violations[].code`: `PROVIDER_BLOCKED_EXTERNAL`, `LEGACY_PAYMENT_METHOD`, `AMOUNT_ZERO`); reutiliza `ORDER_NOT_FOUND`, `IDEMPOTENCY_KEY_INVALID`, `IDEMPOTENCY_KEY_REUSED`, `ORDERS_BUSY`); F27 (motoristas propios): `RIDER_NOT_FOUND` (404), `RIDER_ACTION_FORBIDDEN` (403), `RIDER_PHONE_TAKEN` (409), `RIDER_VERSION_CONFLICT` (409; `current` = versión vigente), `RIDER_HAS_ACTIVE_DELIVERY` (409), `RIDER_INACTIVE` (409), `BRANCH_NOT_AVAILABLE` (422, reutilizado), `RIDERS_BUSY` (503 reintentable). Los clientes deben ramificar por `code`, nunca por `message`.
+             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16: `BANNER_NOT_FOUND`, `BANNER_CODE_TAKEN`, `BANNER_VERSION_CONFLICT`, `BANNER_IMAGE_INVALID`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_LIMIT_REACHED`, `BANNER_SCOPE_FORBIDDEN` (403), `BANNERS_BUSY` (503 reintentable); F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); F20: `IDEMPOTENCY_KEY_INVALID` (400), `QUOTE_CHANGED` (409), `QUOTE_EXPIRED` (409), `IDEMPOTENCY_KEY_REUSED` (409), `IDEMPOTENCY_IN_PROGRESS` (409), `QUOTE_INVALID` (422), `CHECKOUT_BLOCKED` (422), `DELIVERY_PROVIDER_NOT_SELECTABLE` (422), `CONTACT_INCOMPLETE` (422), `PENDING_ORDERS_LIMIT` (429), `ORDERS_BUSY` (503 reintentable), `ORDERS_UNAVAILABLE` (503); 404 de dirección ajena sin código; F22: `ORDER_NOT_FOUND` (404), `ORDER_REASON_REQUIRED` (400), `ORDER_CURSOR_INVALID` (400), `ORDER_ACTION_FORBIDDEN` (403), `ORDER_STATE_CONFLICT` (409), `ORDER_TRANSITION_INVALID` (422; `violations[].code`: `ORDER_TERMINAL`, `ORDER_FULFILLMENT_MISMATCH`, `ORDER_SOURCE_INVALID`, `ORDER_DISPATCH_NOT_AVAILABLE`, `ORDER_PROVIDER_BLOCKED_EXTERNAL`, `ORDER_CANCEL_NOT_ALLOWED`); 503 reintentable: `ORDERS_BUSY`; F24 (pagos en efectivo; `PAYMENT_METHOD_UNAVAILABLE` de F20 queda RETIRADO: ahora cualquier método distinto de `cash` es 400): `PAYMENT_AMOUNT_INVALID` (400), `PAYMENT_CONFIRMATION_REQUIRED` (400), `PAYMENT_ACTION_FORBIDDEN` (403), `PAYMENT_ALREADY_REGISTERED` (409), `ORDER_NOT_PAYABLE` (409), `CASH_AMOUNT_INSUFFICIENT` (422), `CASH_TENDERED_TOO_LARGE` (422), `PAYMENT_NOT_COLLECTABLE` (422; `violations[].code`: `PROVIDER_BLOCKED_EXTERNAL`, `LEGACY_PAYMENT_METHOD`, `AMOUNT_ZERO`); reutiliza `ORDER_NOT_FOUND`, `IDEMPOTENCY_KEY_INVALID`, `IDEMPOTENCY_KEY_REUSED`, `ORDERS_BUSY`); F27 (motoristas propios): `RIDER_NOT_FOUND` (404), `RIDER_ACTION_FORBIDDEN` (403), `RIDER_PHONE_TAKEN` (409), `RIDER_VERSION_CONFLICT` (409; `current` = versión vigente), `RIDER_HAS_ACTIVE_DELIVERY` (409), `RIDER_INACTIVE` (409), `BRANCH_NOT_AVAILABLE` (422, reutilizado), `RIDERS_BUSY` (503 reintentable); F28 (entregas propias): `DELIVERY_NOT_FOUND` (404), `DELIVERY_ACTION_FORBIDDEN` (403), `DELIVERY_CURSOR_INVALID` (400), `DELIVERY_REASON_REQUIRED` (400), `DELIVERY_STATE_CONFLICT` (409; `current` = `{status, version}` de la entrega), `ORDER_HAS_ACTIVE_DELIVERY` (409; `current` del pedido; al cancelar un pedido con entrega abierta), `DELIVERY_ORDER_NOT_ELIGIBLE` (422; `violations[].code`: `ORDER_STATUS_NOT_DISPATCHABLE`, `ORDER_NOT_DELIVERY`, `ORDER_PROVIDER_NOT_OWN`), `RIDER_NOT_ELIGIBLE` (422; `violations[].code`: `INACTIVE`, `WRONG_BRANCH`, `UNAVAILABLE`, `BUSY`, `OWN_DELIVERY_DISABLED`), `DELIVERIES_BUSY` (503 reintentable); reutiliza `ORDER_NOT_FOUND`, `ORDER_STATE_CONFLICT`, `ORDER_TRANSITION_INVALID`, `RIDER_NOT_FOUND`, `BRANCH_NOT_FOUND`. Los clientes deben ramificar por `code`, nunca por `message`.
              */
             code?: string;
             /** @description Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09). */
@@ -5015,8 +5235,8 @@ export interface components {
         OrderTrackingDelivery: {
             provider: components["schemas"]["CourierProvider"];
             /**
-             * @description RESERVADO para F28/F29 (estado de la entrega). Siempre `null` en F21; su enum se definirá con la fuente real
-             *     (ADR propio). Los clientes deben ignorar valores desconocidos.
+             * @description F28 (ADR-0032 D12, spec 029 §12): estado PÚBLICO y grueso de la entrega propia, derivado sin PII del motorista: `PENDING` (sin motorista), `ASSIGNED`, `PICKED_UP`, `DELIVERED` (incluye el retorno); `null` si
+             *     no hay entrega, está `cancelled` o el proveedor es `PEDIDOSYA` (F29). Sigue siendo `string` y los clientes deben ignorar valores desconocidos; nunca expone nombre, teléfono ni ubicación del motorista.
              */
             status: string | null;
         };
@@ -5912,13 +6132,14 @@ export interface components {
         };
         /**
          * @description Acciones que el backoffice puede ofrecer sobre un pedido. `accept|reject|start_preparing|mark_ready|complete|cancel` se ejecutan con las operaciones `…AdminOrder` de F22; `dispatch`
-         *     es RESERVADA (F28 entrega propia; F29 PedidosYa) y NUNCA está habilitada en F22: se informa deshabilitada para que la web diferencie reparto propio y externo sin inventar capacidades.
+         *     NO es un comando de pedidos: es el ACCESO al despacho en Entregas. F28: en entrega propia (`OWN`) está HABILITADA si el personal tiene `deliveries.assign` en la sucursal del pedido (la web abre Entregas; no cambia el pedido); con `PEDIDOSYA` sigue deshabilitada
+         *     (`PROVIDER_BLOCKED_EXTERNAL`, F29). En F22 nunca estaba habilitada; la web debe seguir tolerando ambos casos.
          *     Los clientes deben tolerar valores futuros.
          * @enum {string}
          */
         AdminOrderAction: "accept" | "reject" | "start_preparing" | "mark_ready" | "complete" | "cancel" | "dispatch";
         /**
-         * @description Estado de una acción para ESTE personal y ESTE pedido. `enabled=false` con `NO_PERMISSION`: la web la OCULTA; con `DISPATCH_NOT_AVAILABLE` (entrega propia: llega con F28) o
+         * @description Estado de una acción para ESTE personal y ESTE pedido. `enabled=false` con `NO_PERMISSION`: la web la OCULTA; con `DISPATCH_NOT_AVAILABLE` (valor heredado de F22; desde F28 ya no se emite para `OWN`) o
          *     `PROVIDER_BLOCKED_EXTERNAL` (PedidosYa: integración pendiente de documentación/credenciales) la muestra DESHABILITADA con el motivo. Solo se listan las acciones que existen para el estado y la
          *     modalidad del pedido (un terminal no lista ninguna).
          */
@@ -6312,6 +6533,200 @@ export interface components {
             /** Format: date-time */
             generatedAt: string;
         };
+        /**
+         * @description Estado de la entrega propia (F28, ADR-0032). `pending` = sin motorista; `assigned` = motorista asignado, aún no recogió; `picked_up` = recogió y va en camino (el pedido está `on_the_way`);
+         *     `delivered` = entregada al cliente, el motorista REGRESA (sigue ocupado); `returned` = retorno registrado (terminal; libera al motorista); `cancelled` = cancelada antes de la recogida (terminal salvo reapertura).
+         *     El motorista cuenta como OCUPADO en `assigned`, `picked_up` y `delivered`. Los clientes deben tolerar valores futuros.
+         * @enum {string}
+         */
+        AdminDeliveryStatus: "pending" | "assigned" | "picked_up" | "delivered" | "returned" | "cancelled";
+        /**
+         * @description Evento del historial (distingue asignar de reasignar y reabrir de crear). Los clientes deben tolerar valores futuros.
+         * @enum {string}
+         */
+        AdminDeliveryEvent: "created" | "reopened" | "rider_assigned" | "rider_reassigned" | "rider_unassigned" | "picked_up" | "delivered" | "returned" | "cancelled";
+        /**
+         * @description Acciones que el backoffice puede ofrecer sobre una entrega. Los clientes deben tolerar valores futuros.
+         * @enum {string}
+         */
+        AdminDeliveryAction: "assign_rider" | "reassign_rider" | "unassign_rider" | "mark_picked_up" | "mark_delivered" | "return_to_branch" | "cancel";
+        /**
+         * @description Estado de una acción para ESTE personal y ESTE estado de la entrega. `enabled=false` con `NO_PERMISSION`: la web la OCULTA; con `ORDER_NOT_READY` (recoger antes de que el pedido esté `ready`) la
+         *     muestra deshabilitada con el motivo. Solo se listan las acciones que existen para el estado. El servidor revalida siempre.
+         */
+        AdminDeliveryActionState: {
+            action: components["schemas"]["AdminDeliveryAction"];
+            enabled: boolean;
+            /**
+             * @description `null` si `enabled`. Los clientes deben tolerar valores futuros.
+             * @enum {string|null}
+             */
+            disabledReason: "NO_PERMISSION" | "ORDER_NOT_READY" | null;
+        };
+        /** @description Motorista de la entrega. Sin sucursal, placa ni teléfono completo (PII: `getAdminRider`, con `riders.read`). */
+        AdminDeliveryRider: {
+            /** Format: uuid */
+            id: string;
+            fullName: string;
+            vehicleType: components["schemas"]["RiderVehicleType"] | null;
+            /** @example +502****5678 */
+            phoneMasked: string;
+        };
+        /** @description Pedido de la entrega (solo datos operativos; sin importes ni líneas). */
+        AdminDeliveryOrderRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example MON-001042 */
+            displayNumber: string;
+            status: components["schemas"]["OrderLifecycleStatus"];
+            deliveryProvider: components["schemas"]["CourierProvider"];
+        };
+        /** @description Snapshot de la dirección del pedido (PII). Solo en el detalle de una entrega `pending|assigned|picked_up` y a quien tiene `orders.read`. */
+        AdminDeliveryAddress: {
+            municipalityName: string;
+            zone: string | null;
+            addressLine: string;
+            referenceNote: string | null;
+        };
+        /** @description Contacto del cliente (PII). Mismas condiciones que `AdminDeliveryAddress`. El motorista NO es usuario: el personal le transmite lo necesario. */
+        AdminDeliveryCustomer: {
+            name: string;
+            /** @example +50255501122 */
+            phone: string;
+        };
+        /**
+         * @description Fila ligera de entrega (listado y resultado de comandos). Sin PII del cliente. `riderOccupied` = hay motorista y la entrega es `assigned|picked_up|delivered`; `awaitingReturn` = `delivered` (entregada, el
+         *     motorista aún no registró el retorno). `version` es la que debe reenviarse como `expectedVersion`.
+         */
+        AdminDeliverySummary: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            orderId: string;
+            /** @example MON-001042 */
+            displayNumber: string;
+            /** Format: uuid */
+            branchId: string;
+            branchName: string;
+            status: components["schemas"]["AdminDeliveryStatus"];
+            orderStatus: components["schemas"]["OrderLifecycleStatus"];
+            municipalityName: string | null;
+            zone?: string | null;
+            /** @description `null` en `pending` y `cancelled`. */
+            rider: components["schemas"]["AdminDeliveryRider"] | null;
+            riderOccupied: boolean;
+            awaitingReturn: boolean;
+            version: number;
+            /** Format: date-time */
+            assignedAt?: string | null;
+            /** Format: date-time */
+            pickedUpAt?: string | null;
+            /** Format: date-time */
+            deliveredAt?: string | null;
+            /** Format: date-time */
+            returnedAt?: string | null;
+            /** Format: date-time */
+            cancelledAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            availableActions: components["schemas"]["AdminDeliveryActionState"][];
+        };
+        /** @description Evento del historial de la entrega (solo-añadir). `reason` es texto INTERNO (cancelación/desasignación; sin teléfonos, correos ni otros datos personales) y, igual que `actorName`, es `null` salvo para el personal con `deliveries.update` en la sucursal de la entrega. `riderName` es el del motorista del evento (puede ser el liberado). */
+        AdminDeliveryHistoryEntry: {
+            event: components["schemas"]["AdminDeliveryEvent"];
+            oldStatus: components["schemas"]["AdminDeliveryStatus"] | null;
+            status: components["schemas"]["AdminDeliveryStatus"];
+            /** Format: uuid */
+            riderId: string | null;
+            riderName: string | null;
+            reason: string | null;
+            /** @description Nombre del personal; `null` si fue el sistema o si quien consulta no tiene `deliveries.update` en la sucursal. */
+            actorName: string | null;
+            /** Format: date-time */
+            at: string;
+        };
+        /** @description Detalle de una entrega: `AdminDeliverySummary` + pedido, contacto y dirección (condicionados) e historial (≤ 50 eventos, cronológico ascendente). */
+        AdminDelivery: components["schemas"]["AdminDeliverySummary"] & {
+            order: components["schemas"]["AdminDeliveryOrderRef"];
+            /** @description `true` solo si la entrega está `pending|assigned|picked_up` Y el personal tiene `orders.read` en la sucursal; si no, `customer` y `address` son `null`. */
+            contactVisible: boolean;
+            customer: components["schemas"]["AdminDeliveryCustomer"] | null;
+            address: components["schemas"]["AdminDeliveryAddress"] | null;
+            history: components["schemas"]["AdminDeliveryHistoryEntry"][];
+            historyTruncated: boolean;
+        };
+        AdminDeliveryPage: {
+            items: components["schemas"]["AdminDeliverySummary"][];
+            /** @description Cursor opaco para la página siguiente; `null` = última. */
+            nextCursor: string | null;
+            /** Format: date-time */
+            generatedAt: string;
+        };
+        AdminDeliveryTransition: {
+            /** @description `null` al crear. */
+            from: components["schemas"]["AdminDeliveryStatus"] | null;
+            to: components["schemas"]["AdminDeliveryStatus"];
+            event: components["schemas"]["AdminDeliveryEvent"];
+            /**
+             * Format: date-time
+             * @description Momento real de la transición (en una repetición, el de la original).
+             */
+            at: string;
+            /** @description `true` si la entrega YA estaba en ese estado por este mismo comando: no se escribió nada. */
+            replayed: boolean;
+            appliedByMe: boolean;
+        };
+        AdminDeliveryCommandResult: {
+            delivery: components["schemas"]["AdminDeliverySummary"];
+            transition: components["schemas"]["AdminDeliveryTransition"];
+        };
+        AdminDeliveryStateSnapshot: {
+            status: components["schemas"]["AdminDeliveryStatus"];
+            version: number;
+        };
+        /**
+         * @description 409 `DELIVERY_STATE_CONFLICT` (versión o estado distintos de lo esperado) y 409 `ORDER_STATE_CONFLICT` del pedido (en este caso `current` es el del pedido: `AdminOrderStateSnapshot`). Hereda
+         *     `ErrorResponse` y añade el estado ACTUAL para refrescar la vista sin otra consulta.
+         * @example {
+         *       "statusCode": 409,
+         *       "error": "CONFLICT",
+         *       "message": "La entrega cambió mientras la veías",
+         *       "code": "DELIVERY_STATE_CONFLICT",
+         *       "current": {
+         *         "status": "assigned",
+         *         "version": 3
+         *       }
+         *     }
+         */
+        AdminDeliveryStateError: components["schemas"]["ErrorResponse"] & {
+            current: components["schemas"]["AdminDeliveryStateSnapshot"] | components["schemas"]["AdminOrderStateSnapshot"];
+        };
+        CreateAdminDeliveryRequest: {
+            /** Format: uuid */
+            orderId: string;
+        };
+        AssignOwnRiderRequest: {
+            /** Format: uuid */
+            riderId: string;
+            /** @description La `version` de la entrega que la persona vio. */
+            expectedVersion: number;
+        };
+        AdminDeliveryCommandRequest: {
+            /** @description La `version` de la entrega que la persona vio. */
+            expectedVersion: number;
+        };
+        UnassignRiderRequest: {
+            expectedVersion: number;
+            /** @description Opcional. Texto INTERNO; no incluyas datos personales. */
+            reason?: string;
+        };
+        CancelAdminDeliveryRequest: {
+            expectedVersion: number;
+            /** @description OBLIGATORIO. Texto INTERNO; no incluyas datos personales. */
+            reason: string;
+        };
     };
     responses: never;
     parameters: {
@@ -6351,6 +6766,8 @@ export interface components {
         BranchProductId: string;
         /** @description UUID del pedido (`orders.id`). */
         AdminOrderId: string;
+        /** @description UUID de la entrega (`deliveries.id`). */
+        DeliveryId: string;
     };
     requestBodies: never;
     headers: never;
@@ -10662,7 +11079,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `ORDER_STATE_CONFLICT`: el estado actual ya no es `expectedStatus` (otra persona lo cambió); el cuerpo trae `current` */
+            /** @description `ORDER_STATE_CONFLICT`: el estado actual ya no es `expectedStatus` (otra persona lo cambió); el cuerpo trae `current`. F28: `ORDER_HAS_ACTIVE_DELIVERY` si el pedido tiene una entrega propia `pending|assigned|picked_up` (cancela antes la entrega con `cancelAdminDelivery`; el cuerpo trae `current` del pedido) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15107,6 +15524,887 @@ export interface operations {
             /** @description `BANNERS_BUSY`: la transacción agotó su tiempo; reintentable */
             503: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAdminDeliveries: {
+        parameters: {
+            query?: {
+                branchId?: string;
+                /** @description Uno o varios estados separados por comas (p. ej. `assigned,picked_up`). Por defecto los abiertos. */
+                status?: components["schemas"]["AdminDeliveryStatus"][];
+                /** @description UUID del motorista. Inexistente o fuera de alcance => lista vacía (no distingue). */
+                riderId?: string;
+                /** @description Instante ISO 8601 con zona. Sin zona => 400. */
+                from?: string;
+                /** @description Instante ISO 8601 con zona; mayor que `from` y a lo sumo 92 días después (si no, 400). */
+                to?: string;
+                /** @description Cursor opaco devuelto por la página anterior (`nextCursor`). */
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de entregas */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliveryPage"];
+                };
+            };
+            /** @description Parámetros inválidos, rango excesivo o `DELIVERY_CURSOR_INVALID` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `deliveries.read` o la sesión no es aal2 (`MFA_REQUIRED`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `BRANCH_NOT_FOUND`: filtro `branchId` inexistente o fuera de alcance */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERIES_BUSY`: base de datos saturada o bloqueo agotado; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAdminDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAdminDeliveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Entrega creada o reabierta (`200` con `transition.replayed=true` si ya existía abierta) */
+            201: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliveryCommandResult"];
+                };
+            };
+            /** @description Forma inválida, identificador no UUID, campos desconocidos o `expectedVersion` ausente */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `deliveries.assign` o la sesión no es aal2 (`MFA_REQUIRED`); `DELIVERY_ACTION_FORBIDDEN` si ve el pedido pero no tiene el permiso en su sucursal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDER_NOT_FOUND`: el pedido no existe o su sucursal está fuera del alcance de `deliveries.read` (misma respuesta) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `ORDER_STATE_CONFLICT` (el pedido cambió entre la lectura y la escritura) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderStateError"];
+                };
+            };
+            /** @description `DELIVERY_ORDER_NOT_ELIGIBLE`: el pedido no es DELIVERY `OWN` en `accepted|preparing|ready` (ver `violations[].code`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERIES_BUSY`: base de datos saturada o bloqueo agotado; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAdminDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la entrega (`deliveries.id`). */
+                id: components["parameters"]["DeliveryId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Entrega */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDelivery"];
+                };
+            };
+            /** @description Forma inválida, identificador no UUID, campos desconocidos o `expectedVersion` ausente */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta `deliveries.read` o la sesión no es aal2 (`MFA_REQUIRED`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERY_NOT_FOUND`: la entrega no existe o su sucursal está fuera del alcance de `deliveries.read` (misma respuesta; anti-IDOR) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERIES_BUSY`: base de datos saturada o bloqueo agotado; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    assignOwnRiderToAdminDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la entrega (`deliveries.id`). */
+                id: components["parameters"]["DeliveryId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignOwnRiderRequest"];
+            };
+        };
+        responses: {
+            /** @description Entrega con su estado actual (o repetición idempotente: `transition.replayed=true`) */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliveryCommandResult"];
+                };
+            };
+            /** @description Forma inválida, identificador no UUID, campos desconocidos o `expectedVersion` ausente */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta el permiso o la sesión no es aal2 (`MFA_REQUIRED`); `DELIVERY_ACTION_FORBIDDEN` si ve la entrega pero no tiene el permiso del comando en su sucursal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERY_NOT_FOUND` (entrega inexistente o fuera de alcance) o `RIDER_NOT_FOUND` (motorista inexistente o fuera del alcance de `riders.read`); respuestas uniformes (anti-IDOR) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERY_STATE_CONFLICT`: la entrega cambió (`expectedVersion` no coincide) o su estado no admite el comando; el cuerpo trae `current` (`status`, `version`). `ORDER_STATE_CONFLICT`: el pedido ya no está en el estado requerido (`ready` para recoger, `on_the_way` para entregar). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliveryStateError"];
+                };
+            };
+            /** @description `RIDER_NOT_ELIGIBLE` (motorista no elegible; ver `violations[].code`) o `DELIVERY_ORDER_NOT_ELIGIBLE` (el pedido ya no es despachable) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERIES_BUSY`: base de datos saturada o bloqueo agotado; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    unassignRiderFromAdminDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la entrega (`deliveries.id`). */
+                id: components["parameters"]["DeliveryId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnassignRiderRequest"];
+            };
+        };
+        responses: {
+            /** @description Entrega con su estado actual (o repetición idempotente: `transition.replayed=true`) */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliveryCommandResult"];
+                };
+            };
+            /** @description Forma inválida, identificador no UUID, campos desconocidos o `expectedVersion` ausente */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta el permiso o la sesión no es aal2 (`MFA_REQUIRED`); `DELIVERY_ACTION_FORBIDDEN` si ve la entrega pero no tiene el permiso del comando en su sucursal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERY_NOT_FOUND`: la entrega no existe o su sucursal está fuera del alcance de `deliveries.read` (misma respuesta; anti-IDOR) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERY_STATE_CONFLICT`: la entrega cambió (`expectedVersion` no coincide) o su estado no admite el comando; el cuerpo trae `current` (`status`, `version`). `ORDER_STATE_CONFLICT`: el pedido ya no está en el estado requerido (`ready` para recoger, `on_the_way` para entregar). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliveryStateError"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERIES_BUSY`: base de datos saturada o bloqueo agotado; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    markAdminDeliveryPickedUp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la entrega (`deliveries.id`). */
+                id: components["parameters"]["DeliveryId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminDeliveryCommandRequest"];
+            };
+        };
+        responses: {
+            /** @description Entrega con su estado actual (o repetición idempotente: `transition.replayed=true`) */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliveryCommandResult"];
+                };
+            };
+            /** @description Forma inválida, identificador no UUID, campos desconocidos o `expectedVersion` ausente */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta el permiso o la sesión no es aal2 (`MFA_REQUIRED`); `DELIVERY_ACTION_FORBIDDEN` si ve la entrega pero no tiene el permiso del comando en su sucursal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERY_NOT_FOUND`: la entrega no existe o su sucursal está fuera del alcance de `deliveries.read` (misma respuesta; anti-IDOR) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERY_STATE_CONFLICT`: la entrega cambió (`expectedVersion` no coincide) o su estado no admite el comando; el cuerpo trae `current` (`status`, `version`). `ORDER_STATE_CONFLICT`: el pedido ya no está en el estado requerido (`ready` para recoger, `on_the_way` para entregar). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliveryStateError"];
+                };
+            };
+            /** @description `ORDER_TRANSITION_INVALID` (modalidad o proveedor del pedido incompatibles; ver `violations[].code`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderStateError"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERIES_BUSY`: base de datos saturada o bloqueo agotado; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    markAdminDeliveryDelivered: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la entrega (`deliveries.id`). */
+                id: components["parameters"]["DeliveryId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminDeliveryCommandRequest"];
+            };
+        };
+        responses: {
+            /** @description Entrega con su estado actual (o repetición idempotente: `transition.replayed=true`) */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliveryCommandResult"];
+                };
+            };
+            /** @description Forma inválida, identificador no UUID, campos desconocidos o `expectedVersion` ausente */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta el permiso o la sesión no es aal2 (`MFA_REQUIRED`); `DELIVERY_ACTION_FORBIDDEN` si ve la entrega pero no tiene el permiso del comando en su sucursal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERY_NOT_FOUND`: la entrega no existe o su sucursal está fuera del alcance de `deliveries.read` (misma respuesta; anti-IDOR) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERY_STATE_CONFLICT`: la entrega cambió (`expectedVersion` no coincide) o su estado no admite el comando; el cuerpo trae `current` (`status`, `version`). `ORDER_STATE_CONFLICT`: el pedido ya no está en el estado requerido (`ready` para recoger, `on_the_way` para entregar). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliveryStateError"];
+                };
+            };
+            /** @description `ORDER_TRANSITION_INVALID` (modalidad o proveedor del pedido incompatibles; ver `violations[].code`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrderStateError"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERIES_BUSY`: base de datos saturada o bloqueo agotado; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    returnAdminDeliveryToBranch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la entrega (`deliveries.id`). */
+                id: components["parameters"]["DeliveryId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminDeliveryCommandRequest"];
+            };
+        };
+        responses: {
+            /** @description Entrega con su estado actual (o repetición idempotente: `transition.replayed=true`) */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliveryCommandResult"];
+                };
+            };
+            /** @description Forma inválida, identificador no UUID, campos desconocidos o `expectedVersion` ausente */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta el permiso o la sesión no es aal2 (`MFA_REQUIRED`); `DELIVERY_ACTION_FORBIDDEN` si ve la entrega pero no tiene el permiso del comando en su sucursal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERY_NOT_FOUND`: la entrega no existe o su sucursal está fuera del alcance de `deliveries.read` (misma respuesta; anti-IDOR) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERY_STATE_CONFLICT`: la entrega cambió (`expectedVersion` no coincide) o su estado no admite el comando; el cuerpo trae `current` (`status`, `version`). `ORDER_STATE_CONFLICT`: el pedido ya no está en el estado requerido (`ready` para recoger, `on_the_way` para entregar). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliveryStateError"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERIES_BUSY`: base de datos saturada o bloqueo agotado; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cancelAdminDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la entrega (`deliveries.id`). */
+                id: components["parameters"]["DeliveryId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CancelAdminDeliveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Entrega con su estado actual (o repetición idempotente: `transition.replayed=true`) */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliveryCommandResult"];
+                };
+            };
+            /** @description Forma inválida, identificador no UUID, campos desconocidos, `expectedVersion` ausente o `DELIVERY_REASON_REQUIRED` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No es personal activo, falta el permiso o la sesión no es aal2 (`MFA_REQUIRED`); `DELIVERY_ACTION_FORBIDDEN` si ve la entrega pero no tiene el permiso del comando en su sucursal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERY_NOT_FOUND`: la entrega no existe o su sucursal está fuera del alcance de `deliveries.read` (misma respuesta; anti-IDOR) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERY_STATE_CONFLICT`: la entrega cambió (`expectedVersion` no coincide) o su estado no admite el comando; el cuerpo trae `current` (`status`, `version`). `ORDER_STATE_CONFLICT`: el pedido ya no está en el estado requerido (`ready` para recoger, `on_the_way` para entregar). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliveryStateError"];
+                };
+            };
+            /** @description `RATE_LIMITED` */
+            429: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `DELIVERIES_BUSY`: base de datos saturada o bloqueo agotado; reintentable (`Retry-After`) */
+            503: {
+                headers: {
+                    /** @description Segundos sugeridos de espera. */
+                    "Retry-After"?: number;
                     [name: string]: unknown;
                 };
                 content: {

@@ -65,13 +65,13 @@ export class RidersQueriesService {
 
   async get(staff: StaffContext, id: string): Promise<AdminRiderDto> {
     const scope = this.scopeOf(staff, 'riders.read');
-    const rider = await this.db(() => this.repo.findOne(id, scope), READ_ADMISSION);
-    if (!rider) throw riderNotFound();
-    const busy = await this.db(
-      () => this.busyPort.findBusy({ riderIds: [rider.id] }),
-      READ_ADMISSION,
-    );
-    return toDetail(rider, busy);
+    // `findOne` y `findBusy` en UNA sola adquisición del gate (F28, spec 029 §11 F27-4).
+    return this.db(async () => {
+      const rider = await this.repo.findOne(id, scope);
+      if (!rider) throw riderNotFound();
+      const busy = await this.busyPort.findBusy({ riderIds: [rider.id] });
+      return toDetail(rider, busy);
+    }, READ_ADMISSION);
   }
 
   /** `null` = todas las sucursales; lista = SOLO esas. */

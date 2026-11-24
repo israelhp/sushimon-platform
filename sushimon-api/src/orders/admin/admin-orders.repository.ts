@@ -105,6 +105,17 @@ export class AdminOrdersRepository {
     return (rows[0]?.n ?? 0) > 0;
   }
 
+  /**
+   * Estado vigente del pedido (F28): solo para el `current` de un 409 `ORDER_HAS_ACTIVE_DELIVERY` tras un rechazo del trigger de
+   * `orders` (la transacción fallida ya se revirtió). Se llama DESPUÉS de autorizar; 1 sentencia.
+   */
+  async currentOf(orderId: string): Promise<{ status: string; updatedAt: Date } | null> {
+    const rows = await this.prisma.$queryRaw<{ status: string; updated_at: Date }[]>`
+      SELECT status, updated_at FROM app.orders WHERE id = ${orderId}::uuid`;
+    const r = rows[0];
+    return r ? { status: r.status, updatedAt: r.updated_at } : null;
+  }
+
   /** Una página (limit + 1 filas para saber si hay más): UNA sentencia con unidades y sucursal agregadas. */
   async list(filter: ListFilter): Promise<AdminOrderListRow[]> {
     if (filter.branchIds !== null && filter.branchIds.length === 0) return [];
@@ -338,11 +349,16 @@ export class AdminOrdersRepository {
   transaction<T>(fn: (tx: TransitionTx) => Promise<T>): Promise<T> {
     return this.prisma.$transaction(async (client) => {
       await client.$executeRawUnsafe(`SET LOCAL lock_timeout = '${COMMAND_LOCK_TIMEOUT}'`);
-      return fn(this.txOf(client));
+      return fn(this.transitionTx(client));
     }, TX_OPTIONS);
   }
 
-  private txOf(client: Prisma.TransactionClient): TransitionTx {
+  /**
+   * Fábrica PÚBLICA de las operaciones de transición sobre un cliente transaccional YA abierto (F28, spec 029 §14): la entrega
+   * abre SU transacción (con su `SET LOCAL lock_timeout`) y pasa este objeto a `OrderTransitionsService.apply`, de modo que
+   * entrega, pedido, historiales y auditoría se confirman o se revierten juntos. No abre ni cierra transacciones.
+   */
+  transitionTx(client: Prisma.TransactionClient): TransitionTx {
     return {
       readOrder: async (orderId) => {
         const rows = await client.$queryRaw<SummaryDbRow[]>(Prisma.sql`

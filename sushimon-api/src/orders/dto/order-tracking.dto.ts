@@ -53,7 +53,13 @@ export class OrderTrackingDeliveryDto {
   @ApiProperty({ type: String, enum: ['OWN', 'PEDIDOSYA'] })
   provider!: 'OWN' | 'PEDIDOSYA';
 
-  @ApiProperty({ type: String, nullable: true, description: 'Reservado F28/F29; siempre null.' })
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    enum: ['PENDING', 'ASSIGNED', 'PICKED_UP', 'DELIVERED'],
+    description:
+      'F28: estado público grueso de la entrega propia; `null` sin entrega, cancelada o PEDIDOSYA. Sin datos del motorista.',
+  })
   status!: string | null;
 }
 

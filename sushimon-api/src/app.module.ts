@@ -32,6 +32,7 @@ import { CheckoutModule } from './checkout/checkout.module.js';
 import { OrdersModule } from './orders/orders.module.js';
 import { StaffModule } from './staff/staff.module.js';
 import { RidersModule } from './riders/riders.module.js';
+import { DeliveriesModule } from './deliveries/deliveries.module.js';
 import { CustomersModule } from './customers/customers.module.js';
 import { FavoritesModule } from './favorites/favorites.module.js';
 import { DatabaseModule } from './database/database.module.js';
@@ -96,6 +97,7 @@ import { HealthTokenGuard } from './health/health-token.guard.js';
     DeliveryCoverageModule,
     StaffModule,
     RidersModule,
+    DeliveriesModule,
     CustomersModule,
     FavoritesModule,
   ],
@@ -115,6 +117,9 @@ export class AppModule implements NestModule {
         // F27: motoristas (PII) llevan `private, no-store` desde `RidersModule`.
         'admin/riders',
         'admin/riders/*path',
+        // F28: entregas (contacto y dirección del cliente en el detalle) llevan `private, no-store` desde `DeliveriesModule`.
+        'admin/deliveries',
+        'admin/deliveries/*path',
       )
       .forRoutes('admin/*path');
     // Perfil propio del cliente (F01 + F04): datos personales, nunca en caché compartida.

@@ -45,13 +45,16 @@ const retryBusy = (count: number, error: unknown) =>
   isRidersBusy(error) && count < MAX_BUSY_RETRIES;
 
 /** Listado paginado (`riders.read`). Mantiene la página anterior mientras llega la nueva (sin parpadeo al filtrar). */
-export function useAdminRiders(filters: AdminRiderFilters) {
+export function useAdminRiders(
+  filters: AdminRiderFilters,
+  { enabled = true }: { enabled?: boolean } = {},
+) {
   const client = useDataClient();
   const staffKey = useStaffKey();
   return useQuery<AdminRiderPage, Error>({
     queryKey: queryKeys.backoffice.adminRiders.list(staffKey, filters),
     queryFn: ({ signal }) => listAdminRiders(client, filters, signal),
-    enabled: staffKey !== null,
+    enabled: staffKey !== null && enabled,
     placeholderData: (previous) => previous,
     retry: retryBusy,
     retryDelay: (_n, error) => busyDelayMs(error),

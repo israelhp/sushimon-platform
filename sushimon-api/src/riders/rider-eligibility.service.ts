@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { isUUID } from 'class-validator';
 import {
   RIDER_ACTIVE_DELIVERIES_PORT,
   type RiderActiveDeliveriesPort,
@@ -13,6 +14,7 @@ export interface RiderEligibility {
   riderId: string;
   /** Sucursal del pedido evaluado. */
   branchId: string;
+  /** USO INTERNO: la sucursal del motorista NUNCA se serializa al cliente (F27 obligación 2; F28 mapea solo `reasons`). */
   riderBranchId: string | null;
   active: boolean;
   /** Activo Y marcado `AVAILABLE`. */
@@ -43,7 +45,11 @@ export class RiderEligibilityService {
     input: { riderId: string; branchId: string },
     tx?: TxClient,
   ): Promise<RiderEligibility> {
-    const row = await this.repo.findEligibilityRow(input.riderId, input.branchId, tx);
+    // F28 (spec 029 §11 F27-3): `findEligibilityRow` castea `::uuid`; un valor inválido sería un 500. Se valida ANTES.
+    const row =
+      isUUID(input.riderId) && isUUID(input.branchId)
+        ? await this.repo.findEligibilityRow(input.riderId, input.branchId, tx)
+        : null;
     if (!row) {
       return {
         riderId: input.riderId,

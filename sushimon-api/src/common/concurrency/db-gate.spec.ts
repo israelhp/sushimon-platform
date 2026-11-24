@@ -116,43 +116,51 @@ describe('DbGate (F19: generalización de StoreDbGate)', () => {
   });
 });
 
-describe('splitGateBudget (F17 + F19 + F20 comparten DB_POOL_MAX - 1)', () => {
+describe('splitGateBudget (F17 + F19 + F20 + F27 + F28 comparten DB_POOL_MAX - 1)', () => {
+  const total = (s: ReturnType<typeof splitGateBudget>) =>
+    s.checkout + s.orders + s.store + s.riders + s.deliveries;
+
   it.each([
-    [5, 1, 1, 2],
-    [7, 2, 1, 3],
-    [10, 3, 2, 4],
-    [20, 6, 4, 9],
+    [6, 1, 1, 1, 1, 1],
+    [7, 2, 1, 1, 1, 1],
+    [10, 3, 2, 2, 1, 1],
+    [20, 6, 4, 5, 2, 2],
   ])(
-    'pool %i => cotizador %i, pedidos %i y tienda %i; la suma no supera pool-1',
-    (pool, checkout, orders, store) => {
+    'pool %i => cotizador %i, pedidos %i, tienda %i, motoristas %i y entregas %i',
+    (pool, checkout, orders, store, riders, deliveries) => {
       const split = splitGateBudget(pool);
-      expect(split).toEqual({ checkout, orders, store });
-      expect(split.checkout + split.orders + split.store).toBeLessThanOrEqual(pool - 1);
+      expect(split).toEqual({ checkout, orders, store, riders, deliveries });
+      expect(total(split)).toBeLessThanOrEqual(pool - 1);
     },
   );
 
-  it('excepción documentada: con DB_POOL_MAX <= 3 (B < 3) el mínimo de 1 por gate suma 3 > B', () => {
+  it('excepción documentada: con DB_POOL_MAX <= 5 (B < 5) el mínimo de 1 por gate suma 5 > B', () => {
     for (const pool of [1, 2, 3]) {
-      expect(splitGateBudget(pool)).toEqual({ checkout: 1, orders: 1, store: 1 });
+      expect(splitGateBudget(pool)).toEqual({
+        checkout: 1,
+        orders: 1,
+        store: 1,
+        riders: 1,
+        deliveries: 1,
+      });
     }
-    expect(splitGateBudget(3).checkout + splitGateBudget(3).orders + splitGateBudget(3).store).toBe(
-      3,
-    ); // con pool 3 los tres gates consumen el pool completo: 0 conexiones para rutas sin gate
+    expect(total(splitGateBudget(5))).toBe(5); // pool 5: los cinco gates consumen el pool completo (> pool - 1)
   });
 
-  it('con DB_POOL_MAX >= 4 (B >= 3) queda SIEMPRE al menos 1 conexión libre y cada gate tiene >= 1', () => {
-    for (let pool = 4; pool <= 60; pool += 1) {
+  // R31: FALLA con el reparto anterior de F27 (`RIDERS_DB_GATE` reutilizaba el cupo de pedidos: B + floor(B/4) > B).
+  it('R31 con DB_POOL_MAX >= 6 la suma nunca supera pool-1 y cada gate (incl. motoristas y entregas) tiene >= 1', () => {
+    for (let pool = 6; pool <= 60; pool += 1) {
       const s = splitGateBudget(pool);
-      expect(Math.min(s.checkout, s.orders, s.store)).toBeGreaterThanOrEqual(1);
-      expect(s.checkout + s.orders + s.store).toBeLessThanOrEqual(pool - 1);
+      expect(
+        Math.min(s.checkout, s.orders, s.store, s.riders, s.deliveries),
+      ).toBeGreaterThanOrEqual(1);
+      expect(total(s)).toBeLessThanOrEqual(pool - 1);
     }
   });
 
-  it('cada cupo es al menos 1 y la suma nunca supera pool-1 con pool >= 5', () => {
-    for (let pool = 5; pool <= 60; pool += 1) {
-      const s = splitGateBudget(pool);
-      expect(Math.min(s.checkout, s.orders, s.store)).toBeGreaterThanOrEqual(1);
-      expect(s.checkout + s.orders + s.store).toBeLessThanOrEqual(pool - 1);
-    }
+  it('motoristas y entregas tienen cupo PROPIO (no el de pedidos)', () => {
+    const s = splitGateBudget(20);
+    expect(s.riders).toBeLessThan(s.orders);
+    expect(s.deliveries).toBeLessThan(s.orders);
   });
 });

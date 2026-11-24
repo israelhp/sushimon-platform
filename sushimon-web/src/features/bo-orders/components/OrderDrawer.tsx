@@ -35,6 +35,7 @@ import { STATUS_TONE, useAdminOrderText } from '../use-admin-order-text';
 import { DispatchNotice, PrimaryActionButton } from './ActionButton';
 import { LegacyLogisticsSection } from './LegacyLogistics';
 import { PaymentPanel } from './PaymentPanel';
+import { ActiveDeliveryModal } from './ActiveDeliveryModal';
 import { ReasonModal, type ReasonKind } from './ReasonModal';
 
 const phoneHref = (phone: string) => `tel:${phone.replace(/[^0-9+]/g, '')}`;
@@ -51,6 +52,8 @@ export function OrderDrawer({ orderId }: { orderId: string }) {
   const t = useTranslations('backoffice.orders.live.drawer');
   const actions = useAdminOrderActions();
   const [reasonKind, setReasonKind] = useState<ReasonKind | null>(null);
+  // F28: 409 `ORDER_HAS_ACTIVE_DELIVERY` al cancelar/rechazar: se ofrece cancelar primero la entrega (dos pasos explícitos).
+  const [blocked, setBlocked] = useState<{ kind: ReasonKind; reason: string } | null>(null);
   const [pending, setPending] = useState<readonly AdminOrderPendingAction[]>([]);
   // Texto visible (además del aviso del toast) de la última acción que falló: estado actual y qué hacer.
   const [note, setNote] = useState<string | null>(null);
@@ -116,6 +119,9 @@ export function OrderDrawer({ orderId }: { orderId: string }) {
           onSubmit={async (reason) => {
             const result = await actions.run(order, reasonKind, reason);
             onResult(result);
+            if (!result.ok && result.error.code === 'ORDER_HAS_ACTIVE_DELIVERY') {
+              setBlocked({ kind: reasonKind, reason });
+            }
             if (result.ok) setPending(result.outcome.pending);
             return result;
           }}
@@ -131,6 +137,14 @@ export function OrderDrawer({ orderId }: { orderId: string }) {
               }
             }, 0);
           }}
+        />
+      ) : null}
+      {order && blocked ? (
+        <ActiveDeliveryModal
+          order={order}
+          kind={blocked.kind}
+          initialReason={blocked.reason}
+          onClose={() => setBlocked(null)}
         />
       ) : null}
     </>

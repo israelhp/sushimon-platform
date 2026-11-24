@@ -163,8 +163,10 @@ const PERMISSION_OF: Record<Exclude<AdminAction, 'dispatch'>, StaffPermission> =
 };
 
 /**
- * `availableActions` como las calcularía el servidor (`availableActionsFor`): sin permiso => `NO_PERMISSION`; `dispatch` SIEMPRE
- * deshabilitada (`DISPATCH_NOT_AVAILABLE` con entrega propia, `PROVIDER_BLOCKED_EXTERNAL` con PedidosYa).
+ * `availableActions` como las calcularía el servidor (`availableActionsFor`): sin permiso => `NO_PERMISSION`. `dispatch` es
+ * INFORMATIVA (no es un comando de pedidos: la web abre Entregas para crear y asignar); desde F28 (spec 029 §11 F22-5b) está
+ * HABILITADA para `OWN` con `deliveries.assign` en la sucursal del pedido, `NO_PERMISSION` sin él y deshabilitada con
+ * `PROVIDER_BLOCKED_EXTERNAL` para PedidosYa (F29, `BLOCKED_EXTERNAL`).
  */
 export function availableActionsFor(
   order: RuleOrder,
@@ -172,14 +174,15 @@ export function availableActionsFor(
 ): AdminOrderActionState[] {
   return actionsFor(order).map((action): AdminOrderActionState => {
     if (action === 'dispatch') {
-      return {
-        action,
-        enabled: false,
-        disabledReason:
-          order.deliveryProvider === 'PEDIDOSYA'
-            ? 'PROVIDER_BLOCKED_EXTERNAL'
-            : 'DISPATCH_NOT_AVAILABLE',
-      };
+      if (order.deliveryProvider === 'PEDIDOSYA') {
+        return { action, enabled: false, disabledReason: 'PROVIDER_BLOCKED_EXTERNAL' };
+      }
+      if (order.deliveryProvider !== 'OWN') {
+        return { action, enabled: false, disabledReason: 'DISPATCH_NOT_AVAILABLE' };
+      }
+      return can('deliveries.assign')
+        ? { action, enabled: true, disabledReason: null }
+        : { action, enabled: false, disabledReason: 'NO_PERMISSION' };
     }
     return can(PERMISSION_OF[action])
       ? { action, enabled: true, disabledReason: null }

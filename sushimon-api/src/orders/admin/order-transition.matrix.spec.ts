@@ -192,18 +192,83 @@ describe('availableActionsFor (fila 2)', () => {
     ]);
   });
 
-  it('dispatch SIEMPRE deshabilitada: DISPATCH_NOT_AVAILABLE (OWN) o PROVIDER_BLOCKED_EXTERNAL (PEDIDOSYA)', () => {
-    const d = (f: { fulfillmentType: string; deliveryProvider: string | null }) =>
-      availableActionsFor({ status: 'ready', ...f }, all).find((a) => a.action === 'dispatch');
-    expect(d(OWN)).toEqual({
-      action: 'dispatch',
-      enabled: false,
-      disabledReason: 'DISPATCH_NOT_AVAILABLE',
+  // R34/R33 (F28, spec 029 §11 F22-5b): `dispatch` pasa a HABILITADA para OWN con `deliveries.assign`.
+  describe('dispatch (F28)', () => {
+    const d = (
+      f: { fulfillmentType: string; deliveryProvider: string | null },
+      canDo: (p: string) => boolean,
+    ) => availableActionsFor({ status: 'ready', ...f }, canDo).find((a) => a.action === 'dispatch');
+
+    it('OWN con deliveries.assign => habilitada', () => {
+      expect(d(OWN, all)).toEqual({ action: 'dispatch', enabled: true, disabledReason: null });
     });
-    expect(d(PYA)).toEqual({
-      action: 'dispatch',
-      enabled: false,
-      disabledReason: 'PROVIDER_BLOCKED_EXTERNAL',
+
+    it('OWN sin deliveries.assign => NO_PERMISSION aunque tenga el resto de permisos de pedidos', () => {
+      expect(d(OWN, (p) => p !== 'deliveries.assign')).toEqual({
+        action: 'dispatch',
+        enabled: false,
+        disabledReason: 'NO_PERMISSION',
+      });
+      expect(d(OWN, none)).toEqual({
+        action: 'dispatch',
+        enabled: false,
+        disabledReason: 'NO_PERMISSION',
+      });
     });
+
+    it('el permiso se consulta con el nombre exacto `deliveries.assign` (no con orders.*)', () => {
+      const asked: string[] = [];
+      d(OWN, (p) => {
+        asked.push(p);
+        return true;
+      });
+      expect(asked).toContain('deliveries.assign');
+      expect(asked.filter((p) => p.startsWith('orders.dispatch'))).toEqual([]);
+    });
+
+    it('PEDIDOSYA sigue deshabilitada con PROVIDER_BLOCKED_EXTERNAL, tenga o no permiso', () => {
+      for (const canDo of [all, none]) {
+        expect(d(PYA, canDo)).toEqual({
+          action: 'dispatch',
+          enabled: false,
+          disabledReason: 'PROVIDER_BLOCKED_EXTERNAL',
+        });
+      }
+    });
+
+    it('proveedor desconocido (null) => DISPATCH_NOT_AVAILABLE (valor heredado)', () => {
+      expect(d({ fulfillmentType: 'DELIVERY', deliveryProvider: null }, all)).toEqual({
+        action: 'dispatch',
+        enabled: false,
+        disabledReason: 'DISPATCH_NOT_AVAILABLE',
+      });
+    });
+
+    it('solo existe en `ready` y en DELIVERY: el resto de acciones no cambia', () => {
+      for (const status of ['pending', 'accepted', 'preparing', 'on_the_way', 'delivered']) {
+        expect(names(availableActionsFor({ status, ...OWN }, all)).includes('dispatch')).toBe(
+          false,
+        );
+      }
+      expect(names(availableActionsFor({ status: 'ready', ...PICKUP }, all))).toEqual([
+        'complete',
+        'cancel',
+      ]);
+    });
+  });
+
+  it('F28 (S6): con allowOwnDispatch un proveedor null o desconocido NO despacha', () => {
+    const opt = { allowOwnDispatch: true };
+    for (const deliveryProvider of [null, 'OTHER']) {
+      const facts = { fulfillmentType: 'DELIVERY', deliveryProvider };
+      expect(evaluateTransition('ready', 'on_the_way', facts, opt)).toEqual({
+        ok: false,
+        code: 'ORDER_DISPATCH_NOT_AVAILABLE',
+      });
+      expect(evaluateTransition('on_the_way', 'delivered', facts, opt)).toEqual({
+        ok: false,
+        code: 'ORDER_DISPATCH_NOT_AVAILABLE',
+      });
+    }
   });
 });

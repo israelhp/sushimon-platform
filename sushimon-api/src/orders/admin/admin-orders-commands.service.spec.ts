@@ -461,4 +461,55 @@ describe('AdminOrdersCommandsService (S)', () => {
     }
     expect(audit?.reason).toBe('MOTIVO-INTERNO');
   });
+
+  // R21 (F28, spec 029 §6.3): el trigger de `orders` rechaza cancelar/rechazar con entrega abierta (SQLSTATE 23001).
+  describe('ORDER_HAS_ACTIVE_DELIVERY (F28)', () => {
+    it.each([
+      ['cancel', 'ready'],
+      ['reject', 'pending'],
+    ] as const)(
+      '%s con entrega abierta => 409 con `current` del pedido, sin cambios ni historial',
+      async (command, from) => {
+        const { repo, commands } = adminOrdersHarness();
+        const id = repo.seed({ branchId: BRANCH_A, fulfillmentType: 'DELIVERY', status: from });
+        repo.beforeCas = () =>
+          Promise.reject(
+            Object.assign(new Error('ORDER_HAS_ACTIVE_DELIVERY interno'), { code: '23001' }),
+          );
+        const e = await err(
+          commands.execute(admin(), command, id, { expectedStatus: from, reason: 'motivo uno' }),
+        );
+        expect(status(e)).toBe(409);
+        expect(body(e)).toMatchObject({ code: 'ORDER_HAS_ACTIVE_DELIVERY' });
+        expect(body(e).extra?.current?.status).toBe(from);
+        expect(JSON.stringify(body(e))).not.toContain('interno');
+        expect(repo.orders.get(id)?.status).toBe(from);
+        expect(repo.eventsOf(id)).toHaveLength(1); // solo el evento de creación
+        expect(repo.audits).toHaveLength(0);
+      },
+    );
+
+    it('el resto de errores de BD siguen su camino (55P03 => 503 ORDERS_BUSY)', async () => {
+      const { repo, commands } = adminOrdersHarness();
+      const id = repo.seed({ branchId: BRANCH_A });
+      repo.failWith = { code: '55P03' };
+      const e = await err(commands.execute(admin(), 'accept', id, { expectedStatus: 'pending' }));
+      expect(status(e)).toBe(503);
+      expect(body(e).code).toBe('ORDERS_BUSY');
+    });
+
+    it('si el pedido ya no se puede releer responde 503 ORDERS_BUSY (reintentable) y no un 500', async () => {
+      const { repo, commands } = adminOrdersHarness();
+      const id = repo.seed({ branchId: BRANCH_A });
+      repo.beforeCas = () => Promise.reject(Object.assign(new Error('x'), { code: '23001' }));
+      vi.spyOn(repo, 'currentOf').mockRejectedValue(new Error('db caída'));
+      const e = await err(
+        commands.execute(admin(), 'cancel', id, {
+          expectedStatus: 'pending',
+          reason: 'motivo uno',
+        }),
+      );
+      expect([status(e), body(e).code]).toEqual([503, 'ORDERS_BUSY']);
+    });
+  });
 });

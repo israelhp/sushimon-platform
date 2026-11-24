@@ -71,7 +71,7 @@ const MANY = (n: number): Seed[] =>
   }));
 
 describe('Motoristas · listado', () => {
-  it('muestra nombre, teléfono ENMASCARADO, sucursal, estado y disponibilidad; ocupación «sin dato», nunca «libre»', async () => {
+  it('muestra nombre, teléfono ENMASCARADO, sucursal, estado y disponibilidad; ocupación derivada de las entregas (F28)', async () => {
     await renderRiders();
     expect(await screen.findByText('7 motoristas')).toBeVisible();
     // 7 filas + encabezado
@@ -81,11 +81,13 @@ describe('Motoristas · listado', () => {
     expect(within(luis).getByText('Sucursal 1')).toBeVisible();
     expect(within(luis).getByText('Activo')).toBeVisible();
     expect(within(luis).getByText('No disponible')).toBeVisible();
-    expect(within(luis).getByText('Ocupación: sin dato')).toBeVisible();
-    // Ningún teléfono completo ni placa en el listado; sin «libre»/«ocupado» inventados.
+    expect(within(luis).getByText('Ocupación: sin entrega activa')).toBeVisible();
+    // Ningún teléfono completo ni placa en el listado; la ocupación sale de las entregas (Marvin Tzoc tiene una abierta).
     expect(screen.queryByText(/\+50255501002/)).toBeNull();
     expect(screen.queryByText(/M219PLX/)).toBeNull();
-    expect(within(table()).queryByText(/Ocupado|libre/i)).toBeNull();
+    expect(
+      within(await rowOf('Marvin Tzoc')).getByText('Ocupación: con entrega activa'),
+    ).toBeVisible();
     const olga = await rowOf('Olga Tuyuc');
     expect(within(olga).getByText('Inactivo', { selector: '.pill' })).toBeVisible();
   });
@@ -172,7 +174,7 @@ describe('Motoristas · filtros', () => {
     expect(queries[0]).toContain('q=angel');
   });
 
-  it('filtra por sucursal, estado y disponibilidad; «Ocupado» no se ofrece sin ocupación conocida', async () => {
+  it('filtra por sucursal, estado y disponibilidad; «Ocupado» se ofrece porque el servidor conoce la ocupación (F28)', async () => {
     const user = userEvent.setup();
     await renderRiders();
     await screen.findByText('7 motoristas');
@@ -182,7 +184,7 @@ describe('Motoristas · filtros', () => {
     expect(await screen.findByText('1 motorista')).toBeVisible();
     expect(within(table()).getByText('Olga Tuyuc')).toBeVisible();
     const availability = screen.getByLabelText('Disponibilidad');
-    expect(within(availability).queryByRole('option', { name: 'Ocupado' })).toBeNull();
+    expect(within(availability).getByRole('option', { name: 'Ocupado' })).toBeInTheDocument();
     await user.selectOptions(availability, 'Disponible');
     expect(await screen.findByText('Sin resultados')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Limpiar filtros' }));
@@ -229,7 +231,7 @@ describe('Motoristas · permisos de UI (cosmética; la API decide)', () => {
 });
 
 describe('Motoristas · detalle', () => {
-  it('muestra los datos completos, ocupación sin dato y el espacio «Entregas: disponible con F28» SIN historial', async () => {
+  it('muestra los datos completos, la ocupación derivada de las entregas y remite a Entregas SIN historial', async () => {
     const user = userEvent.setup();
     await renderRiders();
     await screen.findByText('7 motoristas');
@@ -241,9 +243,9 @@ describe('Motoristas · detalle', () => {
     expect(within(detail).getByText('Moto')).toBeVisible();
     expect(within(detail).getAllByText('Sucursal 1').length).toBeGreaterThan(0);
     expect(within(detail).getByText('Versión')).toBeVisible();
-    expect(within(detail).getByTestId('rider-occupancy')).toHaveTextContent('Sin dato');
+    expect(within(detail).getByTestId('rider-occupancy')).toHaveTextContent('Sin entrega activa');
     expect(within(detail).getByTestId('rider-deliveries')).toHaveTextContent(
-      'Entregas: disponible con F28',
+      'Consulta la pantalla Entregas',
     );
     expect(within(detail).queryByText(/historial de entregas|entregas realizadas/i)).toBeNull();
     expect(

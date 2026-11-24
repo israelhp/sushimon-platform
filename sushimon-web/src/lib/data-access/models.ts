@@ -273,6 +273,31 @@ export type CreateRiderRequest = S['CreateRiderRequest'];
 export type UpdateRiderRequest = S['UpdateRiderRequest'];
 export type UpdateRiderStatusRequest = S['UpdateRiderStatusRequest'];
 export type UpdateRiderAvailabilityRequest = S['UpdateRiderAvailabilityRequest'];
+/**
+ * F28 (spec 029, ADR-0032): entregas PROPIAS del backoffice (tag `admin-deliveries`). Modelo NUEVO, separado del despacho simulado
+ * (`DraftOrder.delivery`, `CourierQuote`, `Rider`) que sigue siendo MOCK_ONLY para PedidosYa. La web nunca decide transiciones ni
+ * permisos: usa `availableActions` y `contactVisible` del servidor.
+ */
+export type AdminDeliveryStatus = S['AdminDeliveryStatus'];
+export type AdminDeliveryEvent = S['AdminDeliveryEvent'];
+export type AdminDeliveryAction = S['AdminDeliveryAction'];
+export type AdminDeliveryActionState = S['AdminDeliveryActionState'];
+export type AdminDeliveryRider = S['AdminDeliveryRider'];
+export type AdminDeliveryOrderRef = S['AdminDeliveryOrderRef'];
+export type AdminDeliveryAddress = S['AdminDeliveryAddress'];
+export type AdminDeliveryCustomer = S['AdminDeliveryCustomer'];
+export type AdminDeliverySummary = S['AdminDeliverySummary'];
+export type AdminDeliveryHistoryEntry = S['AdminDeliveryHistoryEntry'];
+export type AdminDelivery = S['AdminDelivery'];
+export type AdminDeliveryPage = S['AdminDeliveryPage'];
+export type AdminDeliveryTransition = S['AdminDeliveryTransition'];
+export type AdminDeliveryCommandResult = S['AdminDeliveryCommandResult'];
+export type AdminDeliveryStateSnapshot = S['AdminDeliveryStateSnapshot'];
+export type CreateAdminDeliveryRequest = S['CreateAdminDeliveryRequest'];
+export type AssignOwnRiderRequest = S['AssignOwnRiderRequest'];
+export type AdminDeliveryCommandRequest = S['AdminDeliveryCommandRequest'];
+export type UnassignRiderRequest = S['UnassignRiderRequest'];
+export type CancelAdminDeliveryRequest = S['CancelAdminDeliveryRequest'];
 export type OrderDetail = S['OrderDetail'];
 export type OrderGuestAccess = S['OrderGuestAccess'];
 /** F21 (spec 022): seguimiento ligero para polling; sin importes, líneas, contacto ni dirección. */

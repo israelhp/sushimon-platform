@@ -97,6 +97,8 @@ const TRACKING_SELECT = {
   placedAt: true,
   updatedAt: true,
   payment: { select: { status: true, receivedAt: true } },
+  // F28 (spec 029 §12): la entrega NO se anida aquí (Prisma costaría una sentencia extra SIEMPRE): se lee aparte y SOLO para
+  // pedidos DELIVERY + OWN (`withDelivery`), de modo que PICKUP y PEDIDOSYA no pagan sentencias adicionales.
   statusHistory: {
     orderBy: [{ changedAt: 'desc' }, { id: 'desc' }],
     take: TRACKING_HISTORY_READ_LIMIT,
@@ -125,11 +127,14 @@ function toOrderRecord(row: OrderRow | null): OrderRecord | null {
   };
 }
 
-function toTrackingRecord(row: TrackingRow | null): OrderTrackingRecord | null {
+function toTrackingRecord(
+  row: TrackingRow | null,
+  delivery: { status: string } | null,
+): OrderTrackingRecord | null {
   if (!row) return null;
   const { statusHistory, payment, ...order } = row;
   // La consulta trae los MÁS RECIENTES (desc) para no perder el último evento; se entregan en orden cronológico.
-  return { ...order, payment, history: [...statusHistory].reverse() };
+  return { ...order, payment, delivery, history: [...statusHistory].reverse() };
 }
 
 /**
@@ -388,12 +393,25 @@ export class OrdersRepository {
     id: string,
     authUserId: string,
   ): Promise<OrderTrackingRecord | null> {
-    return toTrackingRecord(
-      await this.prisma.order.findFirst({
-        where: { id, customer: { authUserId } },
-        select: TRACKING_SELECT,
-      }),
-    );
+    const row = await this.prisma.order.findFirst({
+      where: { id, customer: { authUserId } },
+      select: TRACKING_SELECT,
+    });
+    return toTrackingRecord(row, await this.trackingDelivery(row));
+  }
+
+  /**
+   * F28 (spec 029 §12, P3): estado de la entrega SOLO si el pedido es `DELIVERY` + `OWN` (`UNIQUE(order_id)`, 1 sentencia);
+   * PICKUP, PEDIDOSYA o sin pedido no consultan `deliveries`. Solo el estado: jamás motorista ni notas.
+   */
+  private async trackingDelivery(
+    row: Pick<TrackingRow, 'id' | 'fulfillmentType' | 'deliveryProvider'> | null,
+  ): Promise<{ status: string } | null> {
+    if (!row || row.fulfillmentType !== 'DELIVERY' || row.deliveryProvider !== 'OWN') return null;
+    return this.prisma.delivery.findUnique({
+      where: { orderId: row.id },
+      select: { status: true },
+    });
   }
 
   /** Seguimiento (F21) con un token de invitado vigente y no revocado (mismo criterio que `findForGuestToken`). */
@@ -402,17 +420,16 @@ export class OrdersRepository {
     tokenHash: Buffer,
     now: Date,
   ): Promise<OrderTrackingRecord | null> {
-    return toTrackingRecord(
-      await this.prisma.order.findFirst({
-        where: {
-          id,
-          accessTokens: {
-            some: { tokenHash: new Uint8Array(tokenHash), revokedAt: null, expiresAt: { gt: now } },
-          },
+    const row = await this.prisma.order.findFirst({
+      where: {
+        id,
+        accessTokens: {
+          some: { tokenHash: new Uint8Array(tokenHash), revokedAt: null, expiresAt: { gt: now } },
         },
-        select: TRACKING_SELECT,
-      }),
-    );
+      },
+      select: TRACKING_SELECT,
+    });
+    return toTrackingRecord(row, await this.trackingDelivery(row));
   }
 
   /**

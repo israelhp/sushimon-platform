@@ -157,6 +157,19 @@ export const ADMIN_RIDERS_COMMAND_THROTTLE = {
   actor: { limit: 30, ttl: 60_000 },
 };
 
+/**
+ * Entregas propias del backoffice (F28, spec 029 §14). Mismas formas que F27: lecturas 120/min por IP y 60/min por actor;
+ * comandos (actos manuales) 60/min por IP y 30/min por actor. Contadores propios, independientes de F20–F27.
+ */
+export const ADMIN_DELIVERIES_READ_THROTTLE = {
+  default: { limit: 120, ttl: 60_000 },
+  actor: { limit: 60, ttl: 60_000 },
+};
+export const ADMIN_DELIVERIES_COMMAND_THROTTLE = {
+  default: { limit: 60, ttl: 60_000 },
+  actor: { limit: 30, ttl: 60_000 },
+};
+
 /** Throttler adicional «por actor»: solo cuenta en las rutas que declaran un límite `actor`. */
 export const ACTOR_THROTTLER = 'actor';
 

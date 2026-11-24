@@ -1240,6 +1240,125 @@
       minmax(190px, 1.3fr) 130px minmax(110px, 0.8fr) 100px 210px
       minmax(250px, 1.1fr);
   }
+  /* F28: entregas propias (reparto real) y simulación de PedidosYa separadas. */
+  [data-zone='bo'] .cols-odel {
+    grid-template-columns:
+      minmax(150px, 1fr) minmax(120px, 0.8fr) minmax(170px, 1.1fr) minmax(190px, 1fr)
+      160px 120px;
+  }
+  [data-zone='bo'] .min-odel {
+    min-width: 960px;
+  }
+  [data-zone='bo'] .sim-view {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  [data-zone='bo'] .sim-title {
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.2;
+    font-weight: 800;
+  }
+  /* F28: utilidades de texto de la pantalla Entregas (sustituyen estilos en línea repetidos). */
+  [data-zone='bo'] .hint {
+    margin: 0;
+    font-weight: 600;
+  }
+  [data-zone='bo'] .hint-block {
+    display: block;
+    margin-top: 4px;
+    font-weight: 600;
+  }
+  [data-zone='bo'] .sect-note {
+    margin: 6px 0 0;
+    font-weight: 600;
+  }
+  [data-zone='bo'] .fw6 {
+    font-weight: 600;
+  }
+  [data-zone='bo'] .fw7 {
+    font-weight: 700;
+  }
+  [data-zone='bo'] .field-error {
+    color: var(--bo-red-text);
+    font-weight: 700;
+  }
+  [data-zone='bo'] .dl-detail {
+    display: grid;
+    gap: 16px;
+  }
+  [data-zone='bo'] .dl-title-row {
+    margin-bottom: 10px;
+    align-items: center;
+  }
+  [data-zone='bo'] .dl-pills {
+    margin-top: 8px;
+  }
+  [data-zone='bo'] .dl-skel-row {
+    grid-column: 1/-1;
+  }
+  [data-zone='bo'] .dl-cell {
+    min-width: 0;
+  }
+  [data-zone='bo'] .dl-pad-top {
+    padding-top: 14px;
+  }
+  [data-zone='bo'] .own-badge {
+    border-style: solid;
+    border-color: var(--bo-green-text);
+    color: var(--bo-green-text);
+  }
+  /* Datos de prueba (mock): ámbar punteado del sistema, nunca el verde de «Datos reales». */
+  [data-zone='bo'] .own-badge-mock {
+    border-style: dashed;
+    border-color: var(--bo-amber-text);
+    color: var(--bo-amber-text);
+  }
+  [data-zone='bo'] .active-steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 12px;
+  }
+  [data-zone='bo'] .active-steps li {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+  }
+  [data-zone='bo'] .dl-timeline {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 14px;
+    border-left: 2px solid var(--bo-line-strong);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  [data-zone='bo'] .dl-timeline li {
+    position: relative;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  [data-zone='bo'] .dl-timeline li::before {
+    content: '';
+    position: absolute;
+    left: -21px;
+    top: 5px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--bo-surface);
+    border: 2px solid var(--bo-primary);
+  }
+  [data-zone='bo'] .dl-tl-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 4px 12px;
+    font-size: 13px;
+  }
   /* F09: zonas propias de entrega (con y sin columna «Sucursal»). */
   [data-zone='bo'] .cols-zones {
     grid-template-columns:
@@ -3404,6 +3523,24 @@
     }
     [data-zone='bo'] .cols-riders .r-avail,
     [data-zone='bo'] .cols-riders .r-act {
+      grid-column: 1/-1;
+      justify-content: flex-start;
+    }
+    /* F28: en móvil cada entrega es una tarjeta: pedido | estado, motorista y acciones a todo el ancho. */
+    [data-zone='bo'] .min-odel {
+      min-width: 0;
+    }
+    [data-zone='bo'] .cols-odel .o-order {
+      grid-column: 1/-1;
+    }
+    [data-zone='bo'] .cols-odel .o-status {
+      grid-column: 1/-1;
+      grid-row: 2;
+      min-width: 0;
+    }
+    [data-zone='bo'] .cols-odel .o-branch,
+    [data-zone='bo'] .cols-odel .o-rider,
+    [data-zone='bo'] .cols-odel .o-act {
       grid-column: 1/-1;
       justify-content: flex-start;
     }

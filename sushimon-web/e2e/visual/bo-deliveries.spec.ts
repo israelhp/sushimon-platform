@@ -33,10 +33,12 @@ interface Screen {
 const visible = (page: Page, role: 'button' | 'radio', name: string | RegExp, exact = false) =>
   page.getByRole(role, { name, exact }).filter({ visible: true }).first();
 
+// F28: la pantalla abre en «Reparto propio» (real); el prototipo se compara contra la pestaña «Simulación PedidosYa».
 const entregas = (p: Page) =>
   p
     .getByRole('heading', { name: 'Entregas', level: 1 })
     .waitFor({ timeout: 90_000 })
+    .then(() => p.getByRole('tab', { name: 'Simulación PedidosYa' }).click())
     .then(() =>
       p
         .getByText(/MON-3070\d\d/)

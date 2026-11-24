@@ -19,6 +19,7 @@ import {
   riderNameProblem,
   riderOperationalState,
 } from '@/lib/rider-rules';
+import { busyRiderIds } from '../admin-deliveries';
 import { ADMIN_RIDER_SEEDS, type AdminRiderRecord } from '../fixtures/admin-riders';
 import type { MockStore } from '../store';
 import { problem } from './admin-orders';
@@ -28,8 +29,9 @@ import { now, requireStaff, type Handler, type Req, type StaffActor } from './sh
  * F27 (spec 028) — Handlers SIMULADOS de `/v1/admin/riders*` con la FORMA REAL del contrato `admin-riders`. Mismas reglas que la
  * API: permiso por operación + alcance por sucursal, 404 uniforme fuera del alcance de `riders.read` (anti-IDOR), `expectedVersion`
  * obligatorio en la edición, estado/disponibilidad idempotentes, traslado deja NO disponible, `BUSY` imposible de fijar, teléfono
- * único (`+502` + 8 dígitos) y sin DELETE. Sin F28 no hay entregas: `busy=false` y `busyKnown=false` SIEMPRE (nunca se inventa
- * ocupación ni «libre»). SIMULACIÓN: nada de esto toca la base real ni confirma nada real.
+ * único (`+502` + 8 dígitos) y sin DELETE. Desde F28 la ocupación (`busy`, `busyKnown=true`) se DERIVA de las entregas
+ * (`assigned|picked_up|delivered`) y un motorista ocupado no se desactiva, no se marca no disponible ni se traslada (409
+ * `RIDER_HAS_ACTIVE_DELIVERY`). SIMULACIÓN: nada de esto toca la base real ni confirma nada real.
  *
  * Fallos de prueba (`window.__sushimonMockFaults['<MÉTODO> /v1/admin/riders…']`): `rate-limited` (429 `RATE_LIMITED`), `busy`
  * (503 `RIDERS_BUSY`), `has-active-delivery` (409 `RIDER_HAS_ACTIVE_DELIVERY` en desactivar, `UNAVAILABLE` o traslado) y
@@ -51,6 +53,8 @@ const branchNameOf = (store: MockStore, id: string) =>
   store.branches.find((b) => b.id === id)?.name ?? '';
 
 function summaryOf(store: MockStore, r: AdminRiderRecord): AdminRiderSummary {
+  // F28: la ocupación se DERIVA de las entregas (`assigned|picked_up|delivered`); nunca se guarda en el motorista.
+  const busy = busyRiderIds(store).has(r.id);
   return {
     id: r.id,
     branchId: r.branchId,
@@ -60,10 +64,9 @@ function summaryOf(store: MockStore, r: AdminRiderRecord): AdminRiderSummary {
     vehicleType: r.vehicleType,
     active: r.active,
     availability: r.availability,
-    // Sin F28 (adaptador «sin entregas»): la ocupación NO se conoce y `busy` no es una afirmación real.
-    busy: false,
-    busyKnown: false,
-    operationalState: riderOperationalState(r.active, r.availability, false),
+    busy,
+    busyKnown: true,
+    operationalState: riderOperationalState(r.active, r.availability, busy),
     version: r.version,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
@@ -199,10 +202,16 @@ export const listAdminRiders: Handler = (req): AdminRiderPage => {
     rows = rows.filter((r) => r.active === (activeRaw === 'true'));
   }
   if (availability === 'UNAVAILABLE') rows = rows.filter((r) => r.availability === 'UNAVAILABLE');
-  // `AVAILABLE` = activo + disponible + NO ocupado (sin F28 nadie está ocupado); `BUSY` queda vacío mientras `busyKnown=false`.
-  else if (availability === 'AVAILABLE') {
-    rows = rows.filter((r) => r.active && r.availability === 'AVAILABLE');
-  } else if (availability === 'BUSY') rows = [];
+  // `AVAILABLE` = activo + disponible + NO ocupado; `BUSY` = activo + disponible + ocupado (derivado de las entregas, F28).
+  else if (availability === 'AVAILABLE' || availability === 'BUSY') {
+    const busyIds = busyRiderIds(req.store);
+    rows = rows.filter(
+      (r) =>
+        r.active &&
+        r.availability === 'AVAILABLE' &&
+        busyIds.has(r.id) === (availability === 'BUSY'),
+    );
+  }
 
   const dir = order === 'desc' ? -1 : 1;
   const compare = (a: AdminRiderRecord, b: AdminRiderRecord): number => {
@@ -320,7 +329,7 @@ export const updateAdminRider: Handler = (req): AdminRider => {
     (k) => patch[k] !== rider[k],
   );
   if (changed.length === 0) return detailOf(req.store, rider); // sin cambio real: sin escribir ni subir versión
-  if (transfer && req.fault === 'has-active-delivery') {
+  if (transfer && (req.fault === 'has-active-delivery' || busyRiderIds(req.store).has(rider.id))) {
     problem(409, 'RIDER_HAS_ACTIVE_DELIVERY', 'El motorista tiene una entrega activa');
   }
   Object.assign(rider, patch);
@@ -344,7 +353,10 @@ export const updateAdminRiderStatus: Handler = (req): AdminRider => {
   const rider = visibleRider(req, actor);
   if (!inScope(actor, 'riders.update', rider.branchId)) forbiddenAction();
   if (rider.active === input.active) return detailOf(req.store, rider);
-  if (!input.active && req.fault === 'has-active-delivery') {
+  if (
+    !input.active &&
+    (req.fault === 'has-active-delivery' || busyRiderIds(req.store).has(rider.id))
+  ) {
     problem(409, 'RIDER_HAS_ACTIVE_DELIVERY', 'El motorista tiene una entrega activa');
   }
   rider.active = input.active as boolean;
@@ -367,7 +379,10 @@ export const updateAdminRiderAvailability: Handler = (req): AdminRider => {
     problem(409, 'RIDER_INACTIVE', 'Un motorista inactivo no puede marcarse disponible');
   }
   if (rider.availability === input.availability) return detailOf(req.store, rider);
-  if (input.availability === 'UNAVAILABLE' && req.fault === 'has-active-delivery') {
+  if (
+    input.availability === 'UNAVAILABLE' &&
+    (req.fault === 'has-active-delivery' || busyRiderIds(req.store).has(rider.id))
+  ) {
     problem(409, 'RIDER_HAS_ACTIVE_DELIVERY', 'El motorista tiene una entrega activa');
   }
   rider.availability = input.availability as AdminRiderRecord['availability'];

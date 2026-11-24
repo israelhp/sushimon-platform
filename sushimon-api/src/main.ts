@@ -14,6 +14,7 @@ async function bootstrap(): Promise<void> {
   for (const warning of envWarnings({
     NODE_ENV: config.get('NODE_ENV', { infer: true }),
     TRUST_PROXY_HOPS: config.get('TRUST_PROXY_HOPS', { infer: true }),
+    DB_POOL_MAX: config.get('DB_POOL_MAX', { infer: true }),
   })) {
     logger.warn(warning);
   }

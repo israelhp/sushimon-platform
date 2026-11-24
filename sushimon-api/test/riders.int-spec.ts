@@ -605,12 +605,12 @@ describe.skipIf(!url || !ready)('Motoristas propios contra PostgreSQL real (F27)
       await q<{ oid: string | null }>("SELECT to_regclass('app.payments') AS oid")
     )[0]?.oid;
     const before = hasPayments ? await count('app.payments') : 0;
+    const deliveriesBefore = await count('app.deliveries');
     const r = await make();
     await commands.setAvailability(admin, r.id, { availability: 'AVAILABLE' });
     await commands.setStatus(admin, r.id, { active: false });
     expect(hasPayments ? await count('app.payments') : 0).toBe(before);
-    expect(
-      (await q<{ oid: string | null }>("SELECT to_regclass('app.deliveries') AS oid"))[0]?.oid,
-    ).toBeNull();
+    // F28 creó `app.deliveries`: F27 sigue sin escribir entregas (el recuento no cambia con sus comandos).
+    expect(await count('app.deliveries')).toBe(deliveriesBefore);
   });
 });

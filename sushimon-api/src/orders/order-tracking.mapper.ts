@@ -1,3 +1,4 @@
+import { publicDeliveryStatus } from '../deliveries/delivery-policy.js';
 import { displayNumberOf, toPublicPayment } from './order-mapper.js';
 import type { OrderTrackingRecord } from './order-tracking.types.js';
 import type {
@@ -155,8 +156,15 @@ export function toOrderTracking(record: OrderTrackingRecord, now: Date): OrderTr
     steps: buildSteps(record.fulfillmentType, status, shown),
     events,
     eventsTruncated: truncated,
-    // Sin tabla `deliveries` (F28/F29): solo el proveedor del pedido; `status` reservado, siempre null.
-    delivery: isDelivery && provider ? { provider, status: null } : null,
+    // F28 (spec 029 §12): `status` público GRUESO de la entrega propia (`PENDING|ASSIGNED|PICKED_UP|DELIVERED`); `null` sin
+    // entrega, cancelada o PEDIDOSYA (F29). Nunca nombre, teléfono, vehículo, ubicación ni ETA del motorista.
+    delivery:
+      isDelivery && provider
+        ? {
+            provider,
+            status: provider === 'OWN' ? publicDeliveryStatus(record.delivery?.status) : null,
+          }
+        : null,
     // F24: estado de pago real, FUERA de `steps`/`events` (el timeline es solo operativo).
     payment: toPublicPayment(record.payment),
     pollAfterSeconds: pollAfterSeconds(status),

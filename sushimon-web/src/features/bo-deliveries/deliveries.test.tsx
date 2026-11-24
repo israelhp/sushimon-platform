@@ -41,8 +41,16 @@ beforeEach(() => {
 const NOW = new Date(DEMO_BASE_TIME);
 const TODAY = localDate(NOW);
 
-function renderDeliveries(role: StaffRole = 'admin', scenario: MockScenario = 'default') {
-  return renderBackoffice(
+/**
+ * F28: la pantalla abre en «Reparto propio» (real); estas pruebas cubren la «Simulación PedidosYa» (MOCK_ONLY), que sigue existiendo
+ * en su propia pestaña rotulada. Se cambia a ella antes de cada prueba (cambio por diseño; el contenido simulado no cambia).
+ */
+async function renderDeliveries(
+  role: StaffRole = 'admin',
+  scenario: MockScenario = 'default',
+  { simulation = true }: { simulation?: boolean } = {},
+) {
+  const view = renderBackoffice(
     <BackofficeShell>
       <ScreenGuard screen="entregas">
         <DeliveriesScreen />
@@ -50,6 +58,12 @@ function renderDeliveries(role: StaffRole = 'admin', scenario: MockScenario = 'd
     </BackofficeShell>,
     { role, scenario },
   );
+  const rendered = await view;
+  if (simulation) {
+    const tab = await screen.findByRole('tab', { name: 'Simulación PedidosYa' });
+    await userEvent.setup().click(tab);
+  }
+  return rendered;
 }
 
 const kpi = (label: string) => {
@@ -199,7 +213,7 @@ describe('estados', () => {
   });
 
   it('cocina: sin permiso para Entregas', async () => {
-    await renderDeliveries('kitchen');
+    await renderDeliveries('kitchen', 'default', { simulation: false });
     await waitFor(() => expect(screen.queryByText('#MON-307049')).toBeNull());
     expect(await screen.findByText('No tienes permiso para ver esta pantalla')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Exportar CSV' })).toBeNull();

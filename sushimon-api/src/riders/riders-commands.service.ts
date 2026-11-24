@@ -58,30 +58,29 @@ export class RidersCommandsService {
     if (!this.authorization.canAccess(staff, 'riders.create', data.branchId)) {
       throw riderActionForbidden();
     }
-    const rider = await this.db(
-      () =>
-        this.repo.transaction(async (tx) => {
-          const created = await tx.insert(data);
-          if (!created) throw branchNotAvailable();
-          await tx.audit({
-            actorId: staff.staffId,
+    const detail = await this.commit(
+      async (tx) => {
+        const created = await tx.insert(data);
+        if (!created) throw branchNotAvailable();
+        await tx.audit({
+          actorId: staff.staffId,
+          branchId: created.branchId,
+          entityType: ENTITY,
+          entityId: created.id,
+          action: 'rider.created',
+          newValues: {
             branchId: created.branchId,
-            entityType: ENTITY,
-            entityId: created.id,
-            action: 'rider.created',
-            newValues: {
-              branchId: created.branchId,
-              vehicleType: created.vehicleType,
-              active: true,
-              availability: 'UNAVAILABLE',
-            },
-          });
-          return created;
-        }),
+            vehicleType: created.vehicleType,
+            active: true,
+            availability: 'UNAVAILABLE',
+          },
+        });
+        return created;
+      },
       { branchCheck: true },
     );
-    this.logger.log(`motorista creado riderId=${rider.id}`);
-    return this.view(rider);
+    this.logger.log(`motorista creado riderId=${detail.id}`);
+    return detail;
   }
 
   async update(staff: StaffContext, id: string, body: UpdateRiderRequest): Promise<AdminRiderDto> {
@@ -89,64 +88,62 @@ export class RidersCommandsService {
     const readScope = this.scopeOf(staff, 'riders.read');
     const moving = patch.branchId !== undefined;
 
-    const rider = await this.db(
-      () =>
-        this.repo.transaction(async (tx) => {
-          const found = await tx.read(id, readScope, {
-            lock: moving,
-            ...(patch.branchId !== undefined ? { destBranchId: patch.branchId } : {}),
-          });
-          if (!found) throw riderNotFound();
-          const current = found.rider;
-          if (!this.authorization.canAccess(staff, 'riders.update', current.branchId)) {
+    return this.commit(
+      async (tx) => {
+        const found = await tx.read(id, readScope, {
+          lock: moving,
+          ...(patch.branchId !== undefined ? { destBranchId: patch.branchId } : {}),
+        });
+        if (!found) throw riderNotFound();
+        const current = found.rider;
+        if (!this.authorization.canAccess(staff, 'riders.update', current.branchId)) {
+          throw riderActionForbidden();
+        }
+        const target = patch.branchId !== undefined && patch.branchId !== current.branchId;
+        if (target) {
+          if (!this.authorization.canAccess(staff, 'riders.update', patch.branchId ?? null)) {
             throw riderActionForbidden();
           }
-          const target = patch.branchId !== undefined && patch.branchId !== current.branchId;
-          if (target) {
-            if (!this.authorization.canAccess(staff, 'riders.update', patch.branchId ?? null)) {
-              throw riderActionForbidden();
-            }
-            if (found.destActive !== true) throw branchNotAvailable();
-          }
-          if (current.version !== expectedVersion) throw riderVersionConflict(current.version);
+          if (found.destActive !== true) throw branchNotAvailable();
+        }
+        if (current.version !== expectedVersion) throw riderVersionConflict(current.version);
 
-          const changedFields = changedFieldsOf(current, patch);
-          if (changedFields.length === 0 && !target) return current; // sin cambio real: ni escritura ni evento
-          if (target) await this.assertNoActiveDelivery(tx, current.id);
+        const changedFields = changedFieldsOf(current, patch);
+        if (changedFields.length === 0 && !target) return current; // sin cambio real: ni escritura ni evento
+        if (target) await this.assertNoActiveDelivery(tx, current.id);
 
-          const effective = target ? patch : { ...patch, branchId: undefined };
-          const updated = await tx.update(current.id, expectedVersion, current.branchId, effective);
-          if (!updated) {
-            const again = await tx.read(id, readScope);
-            if (!again) throw riderNotFound();
-            throw riderVersionConflict(again.rider.version);
-          }
-          if (changedFields.length > 0) {
-            await tx.audit({
-              actorId: staff.staffId,
-              branchId: updated.branchId,
-              entityType: ENTITY,
-              entityId: updated.id,
-              action: 'rider.updated',
-              newValues: { changedFields },
-            });
-          }
-          if (target) {
-            await tx.audit({
-              actorId: staff.staffId,
-              branchId: updated.branchId,
-              entityType: ENTITY,
-              entityId: updated.id,
-              action: 'rider.branch_changed',
-              oldValues: { branchId: current.branchId },
-              newValues: { branchId: updated.branchId, availability: 'UNAVAILABLE' },
-            });
-          }
-          return updated;
-        }),
+        const effective = target ? patch : { ...patch, branchId: undefined };
+        const updated = await tx.update(current.id, expectedVersion, current.branchId, effective);
+        if (!updated) {
+          const again = await tx.read(id, readScope);
+          if (!again) throw riderNotFound();
+          throw riderVersionConflict(again.rider.version);
+        }
+        if (changedFields.length > 0) {
+          await tx.audit({
+            actorId: staff.staffId,
+            branchId: updated.branchId,
+            entityType: ENTITY,
+            entityId: updated.id,
+            action: 'rider.updated',
+            newValues: { changedFields },
+          });
+        }
+        if (target) {
+          await tx.audit({
+            actorId: staff.staffId,
+            branchId: updated.branchId,
+            entityType: ENTITY,
+            entityId: updated.id,
+            action: 'rider.branch_changed',
+            oldValues: { branchId: current.branchId },
+            newValues: { branchId: updated.branchId, availability: 'UNAVAILABLE' },
+          });
+        }
+        return updated;
+      },
       { branchCheck: true },
     );
-    return this.view(rider);
   }
 
   async setStatus(
@@ -156,39 +153,36 @@ export class RidersCommandsService {
   ): Promise<AdminRiderDto> {
     const readScope = this.scopeOf(staff, 'riders.read');
     const reason = normalizeReason(body.reason);
-    const rider = await this.db(() =>
-      this.repo.transaction(async (tx) => {
-        const found = await tx.read(id, readScope, { lock: !body.active });
-        if (!found) throw riderNotFound();
-        const current = found.rider;
-        if (!this.authorization.canAccess(staff, 'riders.update', current.branchId)) {
-          throw riderActionForbidden();
-        }
-        if (current.active === body.active) return current; // idempotente: sin escritura ni evento
-        if (!body.active) await this.assertNoActiveDelivery(tx, current.id);
+    return this.commit(async (tx) => {
+      const found = await tx.read(id, readScope, { lock: !body.active });
+      if (!found) throw riderNotFound();
+      const current = found.rider;
+      if (!this.authorization.canAccess(staff, 'riders.update', current.branchId)) {
+        throw riderActionForbidden();
+      }
+      if (current.active === body.active) return current; // idempotente: sin escritura ni evento
+      if (!body.active) await this.assertNoActiveDelivery(tx, current.id);
 
-        const updated = await tx.setActive(current.id, current.branchId, body.active);
-        if (!updated)
-          return this.settled(tx, id, readScope, current, (r) => r.active === body.active);
-        await tx.audit({
-          actorId: staff.staffId,
-          branchId: updated.branchId,
-          entityType: ENTITY,
-          entityId: updated.id,
-          action: body.active ? 'rider.activated' : 'rider.deactivated',
-          // PII: el texto libre NO se persiste en auditoría; solo si hubo motivo y su longitud.
-          oldValues: { active: current.active },
-          newValues: {
-            active: updated.active,
-            availability: updated.availability,
-            hasReason: reason !== null,
-            reasonLength: reason?.length ?? 0,
-          },
-        });
-        return updated;
-      }),
-    );
-    return this.view(rider);
+      const updated = await tx.setActive(current.id, current.branchId, body.active);
+      if (!updated)
+        return this.settled(tx, id, readScope, current, (r) => r.active === body.active);
+      await tx.audit({
+        actorId: staff.staffId,
+        branchId: updated.branchId,
+        entityType: ENTITY,
+        entityId: updated.id,
+        action: body.active ? 'rider.activated' : 'rider.deactivated',
+        // PII: el texto libre NO se persiste en auditoría; solo si hubo motivo y su longitud.
+        oldValues: { active: current.active },
+        newValues: {
+          active: updated.active,
+          availability: updated.availability,
+          hasReason: reason !== null,
+          reasonLength: reason?.length ?? 0,
+        },
+      });
+      return updated;
+    });
   }
 
   async setAvailability(
@@ -197,45 +191,42 @@ export class RidersCommandsService {
     body: UpdateRiderAvailabilityRequest,
   ): Promise<AdminRiderDto> {
     const readScope = this.scopeOf(staff, 'riders.read');
-    const rider = await this.db(() =>
-      this.repo.transaction(async (tx) => {
-        const found = await tx.read(id, readScope, { lock: body.availability === 'UNAVAILABLE' });
-        if (!found) throw riderNotFound();
-        const current = found.rider;
-        if (!this.authorization.canAccess(staff, 'riders.update', current.branchId)) {
-          throw riderActionForbidden();
-        }
-        if (body.availability === 'AVAILABLE' && !current.active) throw riderInactive();
-        if (current.availability === body.availability) return current; // idempotente
-        if (body.availability === 'UNAVAILABLE') await this.assertNoActiveDelivery(tx, current.id);
+    return this.commit(async (tx) => {
+      const found = await tx.read(id, readScope, { lock: body.availability === 'UNAVAILABLE' });
+      if (!found) throw riderNotFound();
+      const current = found.rider;
+      if (!this.authorization.canAccess(staff, 'riders.update', current.branchId)) {
+        throw riderActionForbidden();
+      }
+      if (body.availability === 'AVAILABLE' && !current.active) throw riderInactive();
+      if (current.availability === body.availability) return current; // idempotente
+      if (body.availability === 'UNAVAILABLE') await this.assertNoActiveDelivery(tx, current.id);
 
-        const updated = await tx.setAvailability(current.id, current.branchId, body.availability);
-        if (!updated) {
-          const again = await tx.read(id, readScope);
-          if (again && body.availability === 'AVAILABLE' && !again.rider.active) {
-            throw riderInactive();
-          }
-          return this.settled(
-            tx,
-            id,
-            readScope,
-            current,
-            (r) => r.availability === body.availability,
-          );
+      const updated = await tx.setAvailability(current.id, current.branchId, body.availability);
+      if (!updated) {
+        const again = await tx.read(id, readScope);
+        if (again && body.availability === 'AVAILABLE' && !again.rider.active) {
+          throw riderInactive();
         }
-        await tx.audit({
-          actorId: staff.staffId,
-          branchId: updated.branchId,
-          entityType: ENTITY,
-          entityId: updated.id,
-          action: 'rider.availability_changed',
-          oldValues: { availability: current.availability },
-          newValues: { availability: updated.availability },
-        });
-        return updated;
-      }),
-    );
-    return this.view(rider);
+        return this.settled(
+          tx,
+          id,
+          readScope,
+          current,
+          (r) => r.availability === body.availability,
+        );
+      }
+      await tx.audit({
+        actorId: staff.staffId,
+        branchId: updated.branchId,
+        entityType: ENTITY,
+        entityId: updated.id,
+        action: 'rider.availability_changed',
+        oldValues: { availability: current.availability },
+        newValues: { availability: updated.availability },
+      });
+      return updated;
+    });
   }
 
   /**
@@ -261,9 +252,23 @@ export class RidersCommandsService {
     if (busy.known && busy.busyIds.has(riderId)) throw riderHasActiveDelivery();
   }
 
-  private async view(rider: RiderRecord): Promise<AdminRiderDto> {
-    const busy = await this.db(() => this.busyPort.findBusy({ riderIds: [rider.id] }));
-    return toDetail(rider, busy);
+  /**
+   * Transacción de comando + vista: la ocupación (`findBusy`) se consulta DENTRO de la MISMA transacción y del MISMO `gate.run`
+   * (F28, spec 029 §11 F27-4: un solo cupo del gate y una sola conexión por solicitud; antes eran dos adquisiciones).
+   */
+  private commit(
+    task: (tx: RidersTx) => Promise<RiderRecord>,
+    ctx: { branchCheck?: boolean } = {},
+  ): Promise<AdminRiderDto> {
+    return this.db(
+      () =>
+        this.repo.transaction(async (tx) => {
+          const rider = await task(tx);
+          const busy = await this.busyPort.findBusy({ riderIds: [rider.id] }, tx.client);
+          return toDetail(rider, busy);
+        }),
+      ctx,
+    );
   }
 
   private scopeOf(staff: StaffContext, permission: string): string[] | null {

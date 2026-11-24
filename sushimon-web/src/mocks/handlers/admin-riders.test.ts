@@ -5,8 +5,8 @@ import { createHarness, type TestHarness } from '../testing';
 
 /**
  * F27 (spec 028 §13): el mock responde `/v1/admin/riders*` con la forma y las reglas del servidor: permiso por operación y alcance
- * por sucursal, 404 uniforme (anti-IDOR), `expectedVersion`, idempotencia, traslado → no disponible, `BUSY` imposible y sin F28
- * (`busyKnown=false`).
+ * por sucursal, 404 uniforme (anti-IDOR), `expectedVersion`, idempotencia, traslado → no disponible, `BUSY` imposible de fijar y, desde
+ * F28, ocupación DERIVADA de las entregas (`busyKnown=true`).
  */
 
 const as = (role: Parameters<TestHarness['asStaff']>[0], grantManagerWrites = false) => {
@@ -45,14 +45,14 @@ afterEach(() => {
 });
 
 describe('GET /v1/admin/riders', () => {
-  it('admin ve todos con la forma del contrato, teléfono enmascarado y sin placa; sin F28 busyKnown=false', async () => {
+  it('admin ve todos con la forma del contrato, teléfono enmascarado y sin placa; desde F28 busyKnown=true y la ocupación sale de las entregas', async () => {
     const page = await list(as('admin'));
     expect(page).toMatchObject({ page: 1, pageSize: 20, total: 7 });
     for (const item of page.items) {
       expect(validateContract('AdminRiderSummary', item)).toEqual([]);
-      expect(item.busyKnown).toBe(false);
-      expect(item.busy).toBe(false);
-      expect(item.operationalState).not.toBe('BUSY');
+      expect(item.busyKnown).toBe(true);
+      // Solo `rider-4` tiene una entrega abierta sembrada (`assigned`): único ocupado.
+      expect(item.busy).toBe(item.id === 'rider-4');
       expect(item).not.toHaveProperty('phone');
       expect(item).not.toHaveProperty('licensePlate');
       expect(item.phoneMasked).toMatch(/^\+502\*{4}\d{4}$/);
@@ -75,7 +75,7 @@ describe('GET /v1/admin/riders', () => {
     expect(await list(h, { branchId: 'sucursal-2' })).toMatchObject({ items: [], total: 0 });
   });
 
-  it('filtros: nombre sin acentos, active, availability (BUSY vacío sin F28) y sucursal', async () => {
+  it('filtros: nombre sin acentos, active, availability (BUSY = disponible y ocupado por una entrega) y sucursal', async () => {
     const h = as('admin');
     expect((await list(h, { q: 'angel' })).items.map((r) => r.id)).toEqual(['rider-3']);
     expect((await list(h, { q: '  PÉREZ ' })).items.map((r) => r.id)).toEqual(['rider-1']);
@@ -84,10 +84,9 @@ describe('GET /v1/admin/riders', () => {
     expect((await list(h, { availability: 'AVAILABLE' })).items.map((r) => r.id).sort()).toEqual([
       'rider-1',
       'rider-3',
-      'rider-4',
     ]);
     expect((await list(h, { availability: 'UNAVAILABLE' })).total).toBe(4); // incluye al inactivo
-    expect(await list(h, { availability: 'BUSY' })).toMatchObject({ items: [], total: 0 });
+    expect((await list(h, { availability: 'BUSY' })).items.map((r) => r.id)).toEqual(['rider-4']);
     expect((await list(h, { branchId: 'sucursal-3' })).total).toBe(2);
     // El teléfono NO es buscable.
     expect((await list(h, { q: '5550100' })).total).toBe(0);
@@ -161,7 +160,8 @@ describe('POST /v1/admin/riders', () => {
       version: 1,
       operationalState: 'UNAVAILABLE',
       licensePlate: 'P551BCD',
-      busyKnown: false,
+      busyKnown: true,
+      busy: false,
     });
     expect(validateContract('AdminRider', created)).toEqual([]);
     expect((await list(h)).total).toBe(8);
@@ -339,7 +339,7 @@ describe('PATCH status y availability', () => {
       availability: 'AVAILABLE',
       operationalState: 'AVAILABLE',
       version: 2,
-      busyKnown: false,
+      busyKnown: true,
     });
     expect((await availability(h, 'rider-2', { availability: 'AVAILABLE' })).version).toBe(2);
     expect((await fails(availability(h, 'rider-2', { availability: 'BUSY' }))).status).toBe(400);

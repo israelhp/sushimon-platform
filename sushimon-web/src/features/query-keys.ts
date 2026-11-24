@@ -1,5 +1,6 @@
 import type { StoreMenuParams } from '@/lib/store-rules';
 import type { AdminProductFilters } from '@/services/products';
+import type { AdminDeliveryFilters } from '@/services/admin-deliveries';
 import type { AdminRiderFilters } from '@/services/admin-riders';
 import type { DeliveryZoneFilters } from '@/services/delivery-zones';
 import type { OrderHistoryFilters } from './orders/history/history-model';
@@ -268,6 +269,23 @@ export const queryKeys = {
         ['backoffice', 'adminRiders', staffKey ?? 'anon', 'list', filters] as const,
       detail: (staffKey: string | null, id: string) =>
         ['backoffice', 'adminRiders', staffKey ?? 'anon', 'detail', id] as const,
+    },
+    /**
+     * F28 (spec 029 §13): entregas PROPIAS (admin). La clave lleva SIEMPRE la persona (`staffKey`): el detalle trae PII (contacto y
+     * dirección). `all` descarta todo al cerrar sesión; `lists` = prefijo de las listas de esa persona. Distinta de `deliveries`
+     * (despacho SIMULADO de PedidosYa): invalidar una no toca la otra.
+     */
+    adminDeliveries: {
+      all: ['backoffice', 'adminDeliveries'] as const,
+      lists: (staffKey: string | null) =>
+        ['backoffice', 'adminDeliveries', staffKey ?? 'anon', 'list'] as const,
+      list: (staffKey: string | null, filters: AdminDeliveryFilters) =>
+        ['backoffice', 'adminDeliveries', staffKey ?? 'anon', 'list', filters] as const,
+      detail: (staffKey: string | null, id: string) =>
+        ['backoffice', 'adminDeliveries', staffKey ?? 'anon', 'detail', id] as const,
+      /** Motoristas ELEGIBLES de una sucursal para el selector de asignación (cuelga de `all`). */
+      eligibleRiders: (staffKey: string | null, branchId: string) =>
+        ['backoffice', 'adminDeliveries', staffKey ?? 'anon', 'eligible-riders', branchId] as const,
     },
     deliveries: (filters: DeliveryFilters = {}) => ['orders', 'deliveries', filters] as const,
     riders: (branchId?: string) => ['backoffice', 'riders', branchId ?? 'all'] as const,

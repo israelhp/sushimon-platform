@@ -6,6 +6,10 @@ import {
   CREATE_ORDER_THROTTLE,
   ORDER_READ_THROTTLE,
   ORDER_TRACKING_THROTTLE,
+  ADMIN_DELIVERIES_COMMAND_THROTTLE,
+  ADMIN_DELIVERIES_READ_THROTTLE,
+  ADMIN_RIDERS_COMMAND_THROTTLE,
+  ADMIN_RIDERS_READ_THROTTLE,
   COUPON_ACTOR_THROTTLER,
   COUPON_THROTTLER,
   skipUnlessActorLimited,
@@ -107,5 +111,25 @@ describe('throttlers de pedidos (F20)', () => {
       expect(run({ 'Retry-After': '7' }, { timeToExpire: 3 }).headers['Retry-After']).toBe('7');
       expect(run({}, { timeToExpire: 0, timeToBlockExpire: 0 }).headers['Retry-After']).toBe('1');
     });
+  });
+});
+
+describe('throttles de entregas propias (F28, spec 029 §14)', () => {
+  it('mismas formas que F27: lectura 120/min por IP y 60/min por actor; comandos 60/min por IP y 30/min por actor', () => {
+    expect(ADMIN_DELIVERIES_READ_THROTTLE).toEqual({
+      default: { limit: 120, ttl: 60_000 },
+      actor: { limit: 60, ttl: 60_000 },
+    });
+    expect(ADMIN_DELIVERIES_COMMAND_THROTTLE).toEqual({
+      default: { limit: 60, ttl: 60_000 },
+      actor: { limit: 30, ttl: 60_000 },
+    });
+    expect(ADMIN_DELIVERIES_READ_THROTTLE).toEqual(ADMIN_RIDERS_READ_THROTTLE);
+    expect(ADMIN_DELIVERIES_COMMAND_THROTTLE).toEqual(ADMIN_RIDERS_COMMAND_THROTTLE);
+  });
+
+  it('son objetos propios: modificar uno no altera los de F27', () => {
+    expect(ADMIN_DELIVERIES_READ_THROTTLE).not.toBe(ADMIN_RIDERS_READ_THROTTLE);
+    expect(ADMIN_DELIVERIES_COMMAND_THROTTLE).not.toBe(ADMIN_RIDERS_COMMAND_THROTTLE);
   });
 });
