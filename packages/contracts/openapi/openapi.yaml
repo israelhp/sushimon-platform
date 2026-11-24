@@ -2163,12 +2163,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminDeliveryZone'
-        '200':
-          description: Zona creada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AdminDeliveryZone'
         '400':
           description: Forma inválida (UUID, `baseFee` no decimal/negativo/fuera de rango, `zoneLabel` demasiado larga o con caracteres de control)
           content:

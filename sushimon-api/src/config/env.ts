@@ -62,7 +62,10 @@ export const envSchema = z
     ),
     /** Conexión directa o session pooler (5432). Solo para `prisma migrate`; no la usa la API. */
     DIRECT_URL: optional(z.string().regex(/^postgres(ql)?:\/\//, 'debe ser una URL postgresql://')),
-    /** Conexiones por instancia. Pequeño a propósito: cada instancia serverless abre su propio pool. */
+    /**
+     * Conexiones por instancia. Pequeño a propósito: cada instancia serverless abre su propio pool. Producción: >= 6 (cinco
+     * semáforos con cupo >= 1, ver `splitGateBudget`; con menos, los gates suman más que el pool: excepción documentada de desarrollo).
+     */
     DB_POOL_MAX: z.coerce.number().int().min(1).max(20).default(3),
     DB_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(500).max(30_000).default(5_000),
     /**

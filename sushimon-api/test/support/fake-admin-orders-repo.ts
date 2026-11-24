@@ -278,6 +278,13 @@ export class FakeAdminOrdersRepo {
     return Promise.resolve({ row, record, history: shown, historyTruncated: truncated });
   }
 
+  /** F28: estado vigente del pedido para el `current` del 409 `ORDER_HAS_ACTIVE_DELIVERY`. */
+  currentOf(id: string): Promise<{ status: string; updatedAt: Date } | null> {
+    this.calls.push('currentOf');
+    const o = this.orders.get(id);
+    return Promise.resolve(o ? { status: o.status, updatedAt: o.updatedAt } : null);
+  }
+
   // ---------- transacciones ----------
 
   async transaction<T>(fn: (tx: TransitionTx) => Promise<T>): Promise<T> {

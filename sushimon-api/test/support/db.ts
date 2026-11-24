@@ -186,3 +186,30 @@ export async function deleteRidersOf(c: pg.Client, branchIds: string[]): Promise
     throw error;
   }
 }
+
+/**
+ * F28 (0022): borra las entregas (y su historial solo-añadir) de las sucursales dadas ANTES de borrar sus pedidos, motoristas y
+ * sucursales (FK RESTRICT). Los triggers de `deliveries` y `delivery_status_history` rechazan `DELETE` salvo con
+ * `app.allow_order_cleanup = 'on'`: se habilita SOLO en esta transacción. Si 0022 aún no está aplicada no hace nada. Solo para
+ * limpieza de datos de las pruebas (sucursales sembradas por ellas).
+ */
+export async function deleteDeliveriesOf(c: pg.Client, branchIds: string[]): Promise<void> {
+  const found = await c.query<{ oid: string | null }>(
+    `SELECT to_regclass('app.deliveries') AS oid`,
+  );
+  if (!found.rows[0]?.oid) return;
+  await c.query('BEGIN');
+  try {
+    await c.query("SET LOCAL app.allow_order_cleanup = 'on'");
+    await c.query(
+      `DELETE FROM app.delivery_status_history
+        WHERE delivery_id IN (SELECT id FROM app.deliveries WHERE branch_id = ANY($1::uuid[]))`,
+      [branchIds],
+    );
+    await c.query('DELETE FROM app.deliveries WHERE branch_id = ANY($1::uuid[])', [branchIds]);
+    await c.query('COMMIT');
+  } catch (error) {
+    await c.query('ROLLBACK');
+    throw error;
+  }
+}

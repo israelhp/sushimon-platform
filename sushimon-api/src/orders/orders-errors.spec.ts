@@ -1,6 +1,7 @@
 import { HttpException } from '@nestjs/common';
 import {
   idempotencyInProgress,
+  isActiveDeliveryViolation,
   isLockTimeout,
   ORDERS_DB_GATE,
   ordersBusy,
@@ -47,5 +48,21 @@ describe('errores de pedidos (F20)', () => {
     const http = ordersUnavailable();
     expect(translateOrdersDbError(http)).toBe(http);
     expect(translateOrdersDbError('texto')).toBe('texto');
+  });
+
+  // F28 (spec 029 §6.3): el trigger `orders_open_delivery_guard` lanza SQLSTATE 23001 (restrict_violation).
+  it('23001 se reconoce como «entrega abierta» (en cualquiera de los lugares donde Prisma/pg lo dejan)', () => {
+    expect(isActiveDeliveryViolation({ code: '23001' })).toBe(true);
+    expect(isActiveDeliveryViolation({ meta: { code: '23001' } })).toBe(true);
+    expect(
+      isActiveDeliveryViolation({
+        meta: { driverAdapterError: { cause: { originalCode: '23001' } } },
+      }),
+    ).toBe(true);
+    expect(isActiveDeliveryViolation({ code: '23505' })).toBe(false);
+    expect(isActiveDeliveryViolation({ code: '55P03' })).toBe(false);
+    expect(isActiveDeliveryViolation(new Error('x'))).toBe(false);
+    expect(isActiveDeliveryViolation(ordersBusy())).toBe(false);
+    expect(isActiveDeliveryViolation('texto')).toBe(false);
   });
 });

@@ -445,6 +445,7 @@ describe('OrdersRepository: seguimiento (F21)', () => {
     expect(Object.keys(arg.select).sort()).toEqual(
       [
         'branchId',
+        'delivery',
         'deliveryProvider',
         'fulfillmentType',
         'id',

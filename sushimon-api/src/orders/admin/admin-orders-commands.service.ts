@@ -2,7 +2,12 @@ import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common'
 import { AuthorizationService } from '../../auth/authorization.service.js';
 import { DbGate } from '../../common/concurrency/db-gate.js';
 import type { StaffContext } from '../../identity/identity.types.js';
-import { ORDERS_DB_GATE, translateOrdersDbError } from '../orders-errors.js';
+import {
+  isActiveDeliveryViolation,
+  ORDERS_DB_GATE,
+  ordersBusy,
+  translateOrdersDbError,
+} from '../orders-errors.js';
 import {
   ORDER_FULFILLMENT_PORT,
   type OrderFulfillmentPort,
@@ -20,6 +25,7 @@ import type { AdminOrderTransitionResultDto } from './dto/admin-orders-responses
 import {
   adminOrderNotFound,
   orderActionForbidden,
+  orderHasActiveDelivery,
   orderReasonRequired,
 } from './order-admin-errors.js';
 import {
@@ -59,26 +65,28 @@ export class AdminOrdersCommandsService {
     if (!isOrderStatus(expectedStatus)) throw new BadRequestException('expectedStatus inválido');
 
     // Sin `rejectIfWaiting`: las escrituras del personal tienen prioridad sobre el sondeo (spec §7).
-    const outcome = await this.db(() =>
-      this.repo.transaction((tx) =>
-        this.transitions.apply(tx, {
-          orderId,
-          expectedStatus,
-          to: spec.to,
-          actor: { kind: 'staff', staffId: staff.staffId },
-          reason,
-          auditAction: spec.auditAction,
-          authorize: (order) => {
-            // 404 uniforme si no ve el pedido; 403 solo si lo ve pero no tiene el permiso del comando EN SU sucursal.
-            if (!this.authorization.canAccess(staff, 'orders.read', order.branchId)) {
-              throw adminOrderNotFound();
-            }
-            if (!this.authorization.canAccess(staff, spec.permission, order.branchId)) {
-              throw orderActionForbidden();
-            }
-          },
-        }),
-      ),
+    const outcome = await this.db(
+      () =>
+        this.repo.transaction((tx) =>
+          this.transitions.apply(tx, {
+            orderId,
+            expectedStatus,
+            to: spec.to,
+            actor: { kind: 'staff', staffId: staff.staffId },
+            reason,
+            auditAction: spec.auditAction,
+            authorize: (order) => {
+              // 404 uniforme si no ve el pedido; 403 solo si lo ve pero no tiene el permiso del comando EN SU sucursal.
+              if (!this.authorization.canAccess(staff, 'orders.read', order.branchId)) {
+                throw adminOrderNotFound();
+              }
+              if (!this.authorization.canAccess(staff, spec.permission, order.branchId)) {
+                throw orderActionForbidden();
+              }
+            },
+          }),
+        ),
+      orderId,
     );
 
     // Tras el COMMIT y en solo lectura: un fallo de un puerto jamás revierte ni retrasa la transición.
@@ -131,11 +139,26 @@ export class AdminOrdersCommandsService {
     return out;
   }
 
-  private async db<T>(task: () => Promise<T>): Promise<T> {
+  private async db<T>(task: () => Promise<T>, orderId?: string): Promise<T> {
     try {
       return await this.gate.run(task);
     } catch (error) {
+      // F28: el trigger de `orders` rechazó cancelar/rechazar un pedido con entrega abierta (23001). Solo ocurre DESPUÉS de
+      // `authorize` (el UPDATE va tras la lectura y la autorización), así que revelar el estado vigente es seguro.
+      if (orderId !== undefined && isActiveDeliveryViolation(error)) {
+        throw await this.activeDeliveryConflict(orderId);
+      }
       throw translateOrdersDbError(error);
     }
+  }
+
+  private async activeDeliveryConflict(orderId: string): Promise<unknown> {
+    try {
+      const current = await this.repo.currentOf(orderId);
+      if (current) return orderHasActiveDelivery(current);
+    } catch {
+      // la relectura falló: se responde reintentable
+    }
+    return ordersBusy();
   }
 }

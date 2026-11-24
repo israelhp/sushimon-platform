@@ -23,7 +23,8 @@ import { OrderDocumentsController } from './order-documents.controller.js';
 import { OrderDocumentsService } from './order-documents.service.js';
 import { reorderBodyLimitMiddleware } from './reorder/reorder-body-limit.middleware.js';
 import { OrderSourceRepository } from './order-source.repository.js';
-import { NoDeliveryFulfillment, ORDER_FULFILLMENT_PORT } from './ports/order-fulfillment.port.js';
+import { DeliveriesFulfillmentAdapter } from './ports/deliveries-fulfillment.adapter.js';
+import { ORDER_FULFILLMENT_PORT } from './ports/order-fulfillment.port.js';
 import { ORDER_PAYMENT_READ_PORT } from './ports/order-payment-read.port.js';
 import { AdminPaymentsController } from './payments/admin-payments.controller.js';
 import { CashPaymentsService } from './payments/cash-payments.service.js';
@@ -81,7 +82,8 @@ import { OrdersService } from './orders.service.js';
     AdminOrdersQueryService,
     AdminOrdersCommandsService,
     OrderTransitionsService,
-    { provide: ORDER_FULFILLMENT_PORT, useClass: NoDeliveryFulfillment },
+    // F28: adaptador REAL (lee `app.deliveries`; `NoDeliveryFulfillment` queda solo para dobles de pruebas).
+    { provide: ORDER_FULFILLMENT_PORT, useClass: DeliveriesFulfillmentAdapter },
     // F24: pagos en efectivo (registro, lecturas y lectura REAL de `payment_review` para F22). Un solo servicio de registro:
     // F28 (cobro del motorista) lo reutilizará con SU transacción.
     PaymentsRepository,

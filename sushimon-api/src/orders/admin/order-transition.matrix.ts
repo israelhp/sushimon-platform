@@ -203,24 +203,32 @@ function actionsExisting(status: string, fulfillmentType: string): AdminOrderAct
 
 /**
  * Lista de acciones para ESTE personal y ESTE pedido. `canDo(permiso)` debe resolver el permiso EN LA SUCURSAL DEL PEDIDO.
- * `dispatch` jamás está habilitada en F22.
+ * `dispatch` es INFORMATIVA (no es un comando de pedidos: la web abre Entregas para crear y asignar); desde F28 (spec 029 §11
+ * F22-5b) está HABILITADA para `OWN` si el personal tiene `deliveries.assign` en la sucursal del pedido (solo en `ready`, donde
+ * existe), `NO_PERMISSION` sin él, y sigue deshabilitada con `PROVIDER_BLOCKED_EXTERNAL` para `PEDIDOSYA`. `DISPATCH_NOT_AVAILABLE`
+ * queda en el enum (valor heredado) y solo se emite para un proveedor desconocido.
  */
 export function availableActionsFor(
   order: { status: string; fulfillmentType: string; deliveryProvider: string | null },
   canDo: (permission: string) => boolean,
 ): ActionState[] {
   return actionsExisting(order.status, order.fulfillmentType).map((action): ActionState => {
-    if (action === 'dispatch') {
-      return {
-        action,
-        enabled: false,
-        disabledReason:
-          order.deliveryProvider === 'PEDIDOSYA'
-            ? 'PROVIDER_BLOCKED_EXTERNAL'
-            : 'DISPATCH_NOT_AVAILABLE',
-      };
-    }
+    if (action === 'dispatch') return dispatchAction(order.deliveryProvider, canDo);
     const allowed = canDo(COMMAND_SPECS[action].permission);
     return { action, enabled: allowed, disabledReason: allowed ? null : 'NO_PERMISSION' };
   });
+}
+
+function dispatchAction(
+  provider: string | null,
+  canDo: (permission: string) => boolean,
+): ActionState {
+  if (provider === 'PEDIDOSYA') {
+    return { action: 'dispatch', enabled: false, disabledReason: 'PROVIDER_BLOCKED_EXTERNAL' };
+  }
+  if (provider !== 'OWN') {
+    return { action: 'dispatch', enabled: false, disabledReason: 'DISPATCH_NOT_AVAILABLE' };
+  }
+  const allowed = canDo('deliveries.assign');
+  return { action: 'dispatch', enabled: allowed, disabledReason: allowed ? null : 'NO_PERMISSION' };
 }

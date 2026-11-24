@@ -1,6 +1,6 @@
 import type { OrderStatus } from '../admin/order-transition.matrix.js';
 
-/** Token de inyección del puerto de entrega (F28/F29 lo reemplazan sin tocar los comandos de F22). */
+/** Token de inyección del puerto de entrega (F28 lo reemplazó por `DeliveriesFulfillmentAdapter`; F29 añadirá PedidosYa). */
 export const ORDER_FULFILLMENT_PORT = Symbol('ORDER_FULFILLMENT_PORT');
 
 export interface FulfillmentInspection {
@@ -22,7 +22,7 @@ export interface OrderFulfillmentPort {
   }): Promise<FulfillmentInspection>;
 }
 
-/** Implementación de F22: aún no existen entregas, así que nunca hay una activa ni acciones pendientes. */
+/** Doble de F22 («sin entregas»). Ya NO está enlazado en `OrdersModule` (F28: `DeliveriesFulfillmentAdapter`): solo para pruebas. */
 export class NoDeliveryFulfillment implements OrderFulfillmentPort {
   inspect(): Promise<FulfillmentInspection> {
     return Promise.resolve({ activeDelivery: false, pendingActions: [] });

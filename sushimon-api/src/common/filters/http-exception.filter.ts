@@ -57,6 +57,8 @@ const PUBLIC_5XX_CODES: ReadonlySet<string> = new Set([
   'ORDERS_UNAVAILABLE',
   // F27 (spec 028 §4): semáforo de motoristas saturado o sin conexión; reintentable, mensaje fijo.
   'RIDERS_BUSY',
+  // F28 (spec 029 §5): semáforo de entregas saturado, sin conexión o `lock_timeout`; reintentable, mensaje fijo.
+  'DELIVERIES_BUSY',
 ]);
 
 /**

@@ -47,6 +47,20 @@ export const orderStateConflict = (current: CurrentState) =>
     HttpStatus.CONFLICT,
   );
 
+/**
+ * F28 (spec 029 §6.3): el pedido tiene una entrega propia `pending|assigned|picked_up` (el trigger `orders_open_delivery_guard`
+ * rechazó el cambio con SQLSTATE 23001). Se cancela antes la entrega con `cancelAdminDelivery`; `current` es el del pedido.
+ */
+export const orderHasActiveDelivery = (current: CurrentState) =>
+  new HttpException(
+    {
+      message: 'El pedido tiene una entrega activa; cancela antes la entrega',
+      code: 'ORDER_HAS_ACTIVE_DELIVERY',
+      extra: { current: currentOf(current) },
+    },
+    HttpStatus.CONFLICT,
+  );
+
 const VIOLATION_MESSAGES: Readonly<Record<ViolationCode, string>> = {
   ORDER_TERMINAL: 'El pedido ya está finalizado',
   ORDER_FULFILLMENT_MISMATCH: 'La acción no corresponde a la modalidad de entrega del pedido',

@@ -24,5 +24,7 @@ export interface OrderTrackingRecord {
   updatedAt: Date;
   /** F24: pago del pedido (LEFT JOIN en la lectura del pedido); `null`/ausente = sin fila de pago (se lee `PENDING`). */
   payment?: Pick<OrderPaymentRecord, 'status' | 'receivedAt'> | null;
+  /** F28: estado de la entrega propia (LEFT JOIN); `null`/ausente = sin entrega. Nunca datos del motorista. */
+  delivery?: { status: string } | null;
   history: OrderTrackingHistoryEntry[];
 }

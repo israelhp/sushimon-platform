@@ -121,4 +121,26 @@ describe('RiderEligibilityService (R26–R28)', () => {
       busy: false,
     });
   });
+
+  // R30 (F28, spec 029 §11 F27-3): `findEligibilityRow` castea `::uuid`; un valor inválido sería un 500.
+  it('R30 riderId o branchId que no son UUID => NOT_FOUND SIN ninguna sentencia', async () => {
+    const r = ready();
+    for (const input of [
+      { riderId: 'no-uuid', branchId: branch },
+      { riderId: r.id, branchId: 'no-uuid' },
+      { riderId: '', branchId: branch },
+      { riderId: "' OR 1=1 --", branchId: branch },
+      { riderId: r.id, branchId: '12345678-1234-1234-1234' },
+    ]) {
+      const e = await svc.evaluate(input);
+      expect(e).toMatchObject({ eligible: false, reasons: ['NOT_FOUND'], riderBranchId: null });
+    }
+    expect(repo.calls).toEqual([]);
+    // un UUID válido que no existe sí consulta y también es NOT_FOUND
+    expect(
+      (await svc.evaluate({ riderId: 'c0000000-0000-4000-8000-0000000000ee', branchId: branch }))
+        .reasons,
+    ).toEqual(['NOT_FOUND']);
+    expect(repo.calls).toEqual(['eligibility']);
+  });
 });

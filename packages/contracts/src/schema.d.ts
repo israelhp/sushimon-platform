@@ -9308,15 +9308,6 @@ export interface operations {
         };
         responses: {
             /** @description Zona creada */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminDeliveryZone"];
-                };
-            };
-            /** @description Zona creada */
             201: {
                 headers: {
                     [name: string]: unknown;

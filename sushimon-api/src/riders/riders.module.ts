@@ -5,10 +5,8 @@ import { DbGate, splitGateBudget } from '../common/concurrency/db-gate.js';
 import { privateNoStoreMiddleware } from '../common/http/cache-control.js';
 import type { Env } from '../config/env.js';
 import { AdminRidersController } from './admin-riders.controller.js';
-import {
-  NoActiveDeliveriesAdapter,
-  RIDER_ACTIVE_DELIVERIES_PORT,
-} from './ports/rider-active-deliveries.port.js';
+import { RiderActiveDeliveriesAdapter } from './ports/rider-active-deliveries.adapter.js';
+import { RIDER_ACTIVE_DELIVERIES_PORT } from './ports/rider-active-deliveries.port.js';
 import { RiderEligibilityService } from './rider-eligibility.service.js';
 import { RidersCommandsService } from './riders-commands.service.js';
 import { RIDERS_DB_GATE, ridersBusy } from './riders-errors.js';
@@ -17,8 +15,8 @@ import { RidersRepository } from './riders.repository.js';
 
 /**
  * F27: motoristas propios (`/v1/admin/riders`), `RiderEligibilityService` (exportado para F28) y el puerto
- * `RiderActiveDeliveriesPort`, cuyo binding por defecto es «sin entregas» (F28 lo reemplaza con un provider propio).
- * `AuthorizationService`/`StaffGuard` vienen de módulos globales. No lee ni escribe entregas, pagos ni PedidosYa.
+ * `RiderActiveDeliveriesPort`, enlazado desde F28 al adaptador REAL que lee `app.deliveries` (`known = true`).
+ * `AuthorizationService`/`StaffGuard` vienen de módulos globales. No escribe entregas, pagos ni PedidosYa (solo las LEE a través del puerto).
  */
 @Module({
   imports: [AuditModule],
@@ -28,14 +26,16 @@ import { RidersRepository } from './riders.repository.js';
     RidersQueriesService,
     RidersCommandsService,
     RiderEligibilityService,
-    { provide: RIDER_ACTIVE_DELIVERIES_PORT, useClass: NoActiveDeliveriesAdapter },
+    // F28: adaptador REAL (`known = true`, lee `app.deliveries`). `NoActiveDeliveriesAdapter` queda solo para dobles de pruebas.
+    { provide: RIDER_ACTIVE_DELIVERIES_PORT, useClass: RiderActiveDeliveriesAdapter },
     {
-      // Cupo ~1/4 del pool (como pedidos), cola de 8 y espera de 1,5 s => 503 `RIDERS_BUSY`.
+      // Cupo PROPIO (`splitGateBudget(...).riders`, ~1/8 del pool; antes reutilizaba el de pedidos), cola de 8 y espera de 1,5 s =>
+      // 503 `RIDERS_BUSY`.
       provide: RIDERS_DB_GATE,
       inject: [ConfigService],
       useFactory: (config: ConfigService<Env, true>): DbGate =>
         new DbGate(
-          splitGateBudget(config.get('DB_POOL_MAX', { infer: true })).orders,
+          splitGateBudget(config.get('DB_POOL_MAX', { infer: true })).riders,
           8,
           1_500,
           ridersBusy,

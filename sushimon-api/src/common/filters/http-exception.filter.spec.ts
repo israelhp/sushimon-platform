@@ -321,6 +321,44 @@ describe('AllExceptionsFilter', () => {
     });
   });
 
+  describe('F28: entregas', () => {
+    it('DELIVERIES_BUSY es público en 503 (mensaje fijo, `code` y Retry-After); `current` solo en 4xx', () => {
+      const busy = fakeRes();
+      new AllExceptionsFilter().catch(
+        new HttpException(
+          {
+            message: 'reintenta',
+            code: 'DELIVERIES_BUSY',
+            retryAfter: 2,
+            extra: { current: { status: 'assigned', version: 2 } },
+          },
+          HttpStatus.SERVICE_UNAVAILABLE,
+        ),
+        hostWith(busy),
+      );
+      expect(busy.json).toHaveBeenCalledWith(
+        expect.objectContaining({ statusCode: 503, code: 'DELIVERIES_BUSY', message: 'reintenta' }),
+      );
+      expect(busy.json.mock.calls[0]?.[0]).not.toHaveProperty('current');
+      expect(busy.setHeader).toHaveBeenCalledWith('Retry-After', '2');
+      const conflict = fakeRes();
+      new AllExceptionsFilter().catch(
+        new HttpException(
+          {
+            message: 'cambió',
+            code: 'DELIVERY_STATE_CONFLICT',
+            extra: { current: { status: 'assigned', version: 2 }, secreto: 1 },
+          },
+          HttpStatus.CONFLICT,
+        ),
+        hostWith(conflict),
+      );
+      const body = conflict.json.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(body['current']).toEqual({ status: 'assigned', version: 2 });
+      expect(body).not.toHaveProperty('secreto');
+    });
+  });
+
   describe('F20: pedidos', () => {
     it('ORDERS_BUSY y ORDERS_UNAVAILABLE son públicos en 503 (mensaje fijo y `code`)', () => {
       for (const code of ['ORDERS_BUSY', 'ORDERS_UNAVAILABLE']) {

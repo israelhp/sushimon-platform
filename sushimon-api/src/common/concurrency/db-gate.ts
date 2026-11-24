@@ -71,22 +71,34 @@ export class DbGate {
 }
 
 /**
- * Reparto del presupuesto de conexiones entre los semáforos de la API pública (F17 tienda, F19 cotización y F20 pedidos),
- * de modo que ENTRE LOS TRES no superen `DB_POOL_MAX - 1` (siempre queda una conexión para el resto de rutas y la salud).
- * Una cotización lanza ~6-7 consultas en paralelo (2 oleadas): cupo ~1/3 (`max(1, floor(B/3))`). Los pedidos usan
- * una conexión por transacción (más 3 lecturas cortas de snapshot): cupo ~1/4 (`max(1, floor(B/4))`). La tienda recibe el
- * resto (`max(1, B - checkout - orders)`). Con `B >= 3` (`DB_POOL_MAX >= 4`) cada cupo es >= 1 y la suma es <= B: SIEMPRE queda al
- * menos una conexión libre para las rutas sin gate (auth, salud, backoffice). EXCEPCIÓN documentada: con `B < 3`
- * (`DB_POOL_MAX <= 3`, incluido el defecto 3) el mínimo de 1 por semáforo suma 3 > B y las rutas sin gate pueden quedarse
- * sin conexión bajo carga simultánea de los tres gates. REQUISITO OPERATIVO de producción: `DB_POOL_MAX >= 5`.
+ * Reparto del presupuesto de conexiones entre los semáforos de la API (F17 tienda, F19 cotización, F20 pedidos, F27 motoristas
+ * y F28 entregas), de modo que ENTRE LOS CINCO no superen `DB_POOL_MAX - 1` (siempre queda una conexión para el resto de rutas y
+ * la salud). Una cotización lanza ~6-7 consultas en paralelo (2 oleadas): cupo ~1/3 (`max(1, floor(B/3))`). Los pedidos usan
+ * una conexión por transacción (más 3 lecturas cortas de snapshot): cupo ~1/4 (`max(1, floor(B/4))`). Motoristas y entregas
+ * (backoffice, volumen bajo, una conexión por operación) tienen cada uno su cupo propio ~1/8 (`max(1, floor(B/8))`): F27 NO
+ * reutiliza el de pedidos (spec 029 §2, contradicción 2). La tienda recibe el resto (`max(1, B - checkout - orders - riders -
+ * deliveries)`). Con `B >= 5` (`DB_POOL_MAX >= 6`) cada cupo es >= 1 y la suma es <= B: SIEMPRE queda al menos una conexión
+ * libre para las rutas sin gate (auth, salud, backoffice). EXCEPCIÓN documentada: con `B < 5` (`DB_POOL_MAX <= 5`, incluido el
+ * defecto 3) el mínimo de 1 por semáforo suma 5 > B y las rutas sin gate pueden quedarse sin conexión bajo carga simultánea de
+ * los cinco gates. REQUISITO OPERATIVO de producción: `DB_POOL_MAX >= 6` (spec 029 §11, F27-4).
  */
 export function splitGateBudget(poolMax: number): {
   checkout: number;
   orders: number;
   store: number;
+  riders: number;
+  deliveries: number;
 } {
   const budget = Math.max(1, Math.floor(poolMax) - 1);
   const checkout = Math.max(1, Math.floor(budget / 3));
   const orders = Math.max(1, Math.floor(budget / 4));
-  return { checkout, orders, store: Math.max(1, budget - checkout - orders) };
+  const riders = Math.max(1, Math.floor(budget / 8));
+  const deliveries = Math.max(1, Math.floor(budget / 8));
+  return {
+    checkout,
+    orders,
+    riders,
+    deliveries,
+    store: Math.max(1, budget - checkout - orders - riders - deliveries),
+  };
 }

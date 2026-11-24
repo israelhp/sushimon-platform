@@ -97,6 +97,10 @@ const TRACKING_SELECT = {
   placedAt: true,
   updatedAt: true,
   payment: { select: { status: true, receivedAt: true } },
+  // F28 (spec 029 §12): SOLO el estado de la entrega (el mapper lo reduce a un estado público grueso); jamás motorista, ni
+  // `changed_by`, ni notas. Con la estrategia de carga por defecto de Prisma (`relationLoadStrategy` exige la vista previa
+  // `relationJoins`, que el esquema no habilita) cuesta UNA sentencia extra (`deliveries` por `UNIQUE(order_id)`): 4 en total.
+  delivery: { select: { status: true } },
   statusHistory: {
     orderBy: [{ changedAt: 'desc' }, { id: 'desc' }],
     take: TRACKING_HISTORY_READ_LIMIT,
@@ -127,9 +131,9 @@ function toOrderRecord(row: OrderRow | null): OrderRecord | null {
 
 function toTrackingRecord(row: TrackingRow | null): OrderTrackingRecord | null {
   if (!row) return null;
-  const { statusHistory, payment, ...order } = row;
+  const { statusHistory, payment, delivery, ...order } = row;
   // La consulta trae los MÁS RECIENTES (desc) para no perder el último evento; se entregan en orden cronológico.
-  return { ...order, payment, history: [...statusHistory].reverse() };
+  return { ...order, payment, delivery, history: [...statusHistory].reverse() };
 }
 
 /**
