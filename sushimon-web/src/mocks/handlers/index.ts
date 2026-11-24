@@ -3,6 +3,7 @@ import type { MockContext, MockStore } from '../store';
 import * as account from './account';
 import * as adminOrders from './admin-orders';
 import * as adminPayments from './admin-payments';
+import * as adminDeliveries from './admin-deliveries';
 import * as adminRiders from './admin-riders';
 import * as admin from './backoffice-admin';
 import * as banners from './banners';
@@ -117,6 +118,16 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'PATCH /v1/admin/riders/:id': adminRiders.updateAdminRider,
   'PATCH /v1/admin/riders/:id/status': adminRiders.updateAdminRiderStatus,
   'PATCH /v1/admin/riders/:id/availability': adminRiders.updateAdminRiderAvailability,
+  // F28: entregas propias (contrato `admin-deliveries`); el despacho de PedidosYa sigue SIMULADO en `/v1/backoffice/deliveries`
+  'GET /v1/admin/deliveries': adminDeliveries.listAdminDeliveries,
+  'POST /v1/admin/deliveries': adminDeliveries.createAdminDelivery,
+  'GET /v1/admin/deliveries/:id': adminDeliveries.getAdminDelivery,
+  'POST /v1/admin/deliveries/:id/assign-own-rider': adminDeliveries.assignOwnRiderToAdminDelivery,
+  'POST /v1/admin/deliveries/:id/unassign-rider': adminDeliveries.unassignRiderFromAdminDelivery,
+  'POST /v1/admin/deliveries/:id/mark-picked-up': adminDeliveries.markAdminDeliveryPickedUp,
+  'POST /v1/admin/deliveries/:id/mark-delivered': adminDeliveries.markAdminDeliveryDelivered,
+  'POST /v1/admin/deliveries/:id/return-to-branch': adminDeliveries.returnAdminDeliveryToBranch,
+  'POST /v1/admin/deliveries/:id/cancel': adminDeliveries.cancelAdminDelivery,
   // F07: administración de sucursales (contrato)
   'GET /v1/admin/branches': branches.listAdminBranches,
   'POST /v1/admin/branches': branches.createAdminBranch,

@@ -139,6 +139,24 @@ describe('paths', () => {
     expect(paths.riders()).toBe('/v1/backoffice/riders');
   });
 
+  it('F28: rutas de entregas propias (id codificado, sin PATCH/DELETE) y distintas del despacho simulado', () => {
+    expect(paths.adminDeliveries()).toBe('/v1/admin/deliveries');
+    expect(paths.adminDelivery('d 1')).toBe('/v1/admin/deliveries/d%201');
+    expect(paths.adminDeliveryAssignOwnRider('d1')).toBe(
+      '/v1/admin/deliveries/d1/assign-own-rider',
+    );
+    expect(paths.adminDeliveryUnassignRider('d1')).toBe('/v1/admin/deliveries/d1/unassign-rider');
+    expect(paths.adminDeliveryMarkPickedUp('d1')).toBe('/v1/admin/deliveries/d1/mark-picked-up');
+    expect(paths.adminDeliveryMarkDelivered('d1')).toBe('/v1/admin/deliveries/d1/mark-delivered');
+    expect(paths.adminDeliveryReturnToBranch('d1')).toBe(
+      '/v1/admin/deliveries/d1/return-to-branch',
+    );
+    expect(paths.adminDeliveryCancel('d1')).toBe('/v1/admin/deliveries/d1/cancel');
+    // El despacho simulado (PedidosYa, MOCK_ONLY) conserva sus rutas.
+    expect(paths.deliveries()).toBe('/v1/backoffice/deliveries');
+    expect(paths.boOrderDispatch('X')).toBe('/v1/backoffice/orders/X/dispatch');
+  });
+
   it('F23: rutas del historial, el recibo y la vista previa (id codificado) y su espejo mock', () => {
     expect(paths.myOrders()).toBe('/v1/me/orders');
     expect(paths.orderReceipt('a b')).toBe('/v1/orders/a%20b/receipt');
@@ -241,8 +259,18 @@ describe('paths', () => {
       // F24: solo efectivo; el mock de tarjeta/Neonet se RETIRÓ (el contrato conserva el borrador para F25, BLOCKED_EXTERNAL).
       '/v1/payments/card',
     ]);
+    // F28: el documento usa notación de familia (`/v1/admin/deliveries*`) y alternativas (`…/{mark-picked-up,mark-delivered}`):
+    // la familia se cubre con las rutas concretas y las alternativas se expanden una por una.
+    const expand = (path: string): string[] => {
+      const alt = /\/\{([\w-]+(?:,[\w-]+)+)\}$/.exec(path);
+      return alt
+        ? (alt[1] ?? '').split(',').map((name) => path.replace(alt[0], `/${name}`))
+        : [path];
+    };
     const documented = [...doc.matchAll(/`(\/v1\/[^`?\s[]+)/g)]
       .map((m) => (m[1] ?? '').replace(/\{(\w+)\}/g, 'X'))
+      .filter((path) => !path.endsWith('*'))
+      .flatMap(expand)
       .filter((path) => !superseded.has(path));
     expect(documented.length).toBeGreaterThan(25);
     const registered = Object.keys(mockRoutes).map(

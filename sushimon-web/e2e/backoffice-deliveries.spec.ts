@@ -1,8 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * Backoffice, bloque 3: modal Despachar y pantalla Entregas. PedidosYa está SIMULADO (sin documentación ni
- * credenciales): cotización, referencia, repartidor y estados salen del adaptador mock; no hay red externa.
+ * Backoffice, bloque 3 y F28: pantalla Entregas. «Reparto propio» es REAL (contrato `admin-deliveries`, aquí contra el adaptador mock
+ * que reproduce las reglas del servidor); PedidosYa está SIMULADO (sin documentación ni credenciales) en su propia pestaña rotulada
+ * «Simulación — no es un envío real»: cotización, referencia, repartidor y estados salen del adaptador mock; no hay red externa.
  */
 
 async function enterAs(page: Page, profile: RegExp) {
@@ -13,8 +14,15 @@ async function enterAs(page: Page, profile: RegExp) {
 
 const ORDER = '#MON-307051'; // sucursal 1 · a domicilio · listo · sin logística
 const card = (page: Page) => page.locator('.kcard', { hasText: ORDER });
+const column = (page: Page, name: string) => page.getByRole('region', { name, exact: true });
 const nav = (page: Page) => page.getByRole('navigation', { name: 'Menú principal' });
 const row = (page: Page, code = ORDER) => page.locator('.trow', { hasText: code });
+
+/** F28: Entregas abre en «Reparto propio»; los envíos simulados de PedidosYa viven en su pestaña. */
+async function openSimulation(page: Page) {
+  await page.getByRole('tab', { name: 'Simulación PedidosYa' }).click();
+  await expect(page.getByTestId('simulation-banner')).toContainText('no es un envío real');
+}
 
 async function openDispatch(page: Page) {
   // F22: en Pedidos «Despachar» está deshabilitado; el despacho simulado se abre desde el Panel (alertas).
@@ -72,7 +80,7 @@ test('encargado: despacha con PedidosYa (cotización → confirmar), lo ve en En
   await page.keyboard.press('Escape');
   await expect(drawer).toHaveCount(0);
 
-  // Pedidos: el despacho sigue deshabilitado (F28); el pedido queda con su logística simulada.
+  // Pedidos: con PedidosYa el despacho sigue deshabilitado (BLOCKED_EXTERNAL); el pedido queda con su logística simulada.
   await page.goto('/backoffice/pedidos');
   await expect(card(page).getByRole('button', { name: 'Despachar' })).toBeDisabled();
 
@@ -82,6 +90,7 @@ test('encargado: despacha con PedidosYa (cotización → confirmar), lo ve en En
     .click();
   await expect(page).toHaveURL(/\/backoffice\/entregas$/);
   await expect(page.getByRole('heading', { name: 'Entregas', level: 1 })).toBeVisible();
+  await openSimulation(page);
   await expect(row(page).getByText('Buscando repartidor')).toBeVisible();
   await expect(row(page).getByText(/^PY-GT-77\d+$/)).toBeVisible();
 
@@ -115,6 +124,7 @@ test('encargado: asigna un repartidor del restaurante y lo sigue hasta entregado
   await nav(page)
     .getByRole('link', { name: /Entregas/ })
     .click();
+  await openSimulation(page);
   await expect(row(page).getByText('Luis Coc')).toBeVisible();
   await expect(row(page).getByText('Repartidor del restaurante', { exact: true })).toBeVisible();
   await expect(row(page).getByText('Sin costo extra')).toBeVisible();
@@ -136,6 +146,7 @@ test('Entregas: filtros, periodo y totales de costo PedidosYa vs. cobrado', asyn
   await enterAs(page, /Ana Lucía Pérez/);
   await page.goto('/backoffice/entregas');
   await expect(page.getByRole('heading', { name: 'Entregas', level: 1 })).toBeVisible();
+  await openSimulation(page);
   await expect(
     page.getByText(/Envíos con PedidosYa Courier · Miércoles 11 de noviembre de 2026/),
   ).toBeVisible();
@@ -165,6 +176,7 @@ test('Entregas: un envío de días anteriores abre su detalle con el día correc
 }) => {
   await enterAs(page, /Ana Lucía Pérez/);
   await page.goto('/backoffice/entregas');
+  await openSimulation(page);
   await page.getByRole('button', { name: 'Ayer' }).click();
   const first = page.getByRole('button', { name: /^Ver seguimiento de/ }).first();
   await expect(first).toBeVisible();
@@ -182,4 +194,134 @@ test('cocina: sin Entregas en el menú, sin acceso por URL y sin despacho', asyn
 
   await page.goto('/backoffice/pedidos');
   await expect(page.getByRole('button', { name: /Despachar/ })).toHaveCount(0);
+});
+
+// ── F28 · Reparto propio (REAL: contrato admin-deliveries; aquí contra el mock con las reglas del servidor) ──────────────────────
+
+const detail = (page: Page) => page.getByRole('dialog', { name: `#${ORDER.slice(1)}` });
+const toast = (page: Page, text: string | RegExp) => page.locator('.toast', { hasText: text });
+
+/** Pedidos → «Despachar» (crea la entrega, idempotente, y abre su detalle en Entregas). */
+async function dispatchOwn(page: Page) {
+  await page.goto('/backoffice/pedidos');
+  await card(page).getByRole('button', { name: 'Despachar' }).click();
+  await expect(page).toHaveURL(/\/backoffice\/entregas$/); // el id de la entrega no queda en la URL
+  await expect(detail(page)).toBeVisible();
+  return detail(page);
+}
+
+test('F28 · encargado: crear → asignar → recoger → entregar → retorno (el retorno es un paso aparte y libera al motorista)', async ({
+  page,
+}) => {
+  await enterAs(page, /Marco Antonio Gómez/);
+  const drawer = await dispatchOwn(page);
+  await expect(drawer.getByText('Sin motorista').first()).toBeVisible();
+  // Sin PII en la lista; el contacto del cliente solo está en el detalle abierto.
+  await expect(drawer.getByTestId('delivery-contact')).toBeVisible();
+
+  // Asignar: solo motoristas elegibles de la sucursal (Luis Coc está «No disponible»).
+  await drawer.getByRole('button', { name: 'Asignar motorista' }).click();
+  const assign = page.getByRole('dialog', { name: 'Asignar motorista' });
+  const select = assign.getByLabel('Motorista elegible');
+  await expect(select.getByRole('option', { name: /Luis Coc/ })).toHaveCount(0);
+  // Orden por nombre sin acentos: [placeholder, Ángel Morales, Juan Carlos Pérez].
+  await select.selectOption({ index: 1 });
+  await assign.getByRole('button', { name: 'Asignar' }).click();
+  await expect(toast(page, 'Motorista asignado a #MON-307051.')).toBeVisible();
+  await expect(drawer.getByTestId('delivery-rider')).toContainText('Ángel Morales');
+
+  // Reasignar antes de la recogida: el anterior queda libre.
+  await drawer.getByRole('button', { name: 'Reasignar motorista' }).click();
+  const reassign = page.getByRole('dialog', { name: 'Reasignar motorista' });
+  await reassign.getByLabel('Motorista elegible').selectOption({ index: 1 });
+  await reassign.getByRole('button', { name: 'Reasignar' }).click();
+  await expect(toast(page, 'Motorista reasignado en #MON-307051.')).toBeVisible();
+
+  // Recoger → el pedido sale «En camino»; entregar → «Esperando retorno» (el motorista sigue ocupado).
+  await drawer.getByRole('button', { name: 'Marcar recogido' }).click();
+  await expect(toast(page, '#MON-307051 recogido: el pedido va en camino.')).toBeVisible();
+  await drawer.getByRole('button', { name: 'Marcar entregado' }).click();
+  await expect(toast(page, '#MON-307051 entregado al cliente.')).toBeVisible();
+  await expect(drawer.getByText('Esperando retorno').first()).toBeVisible();
+  await expect(drawer.getByText(/Sigue ocupado hasta registrar su retorno/)).toBeVisible();
+  // El contacto deja de verse con la entrega cerrada más adelante; aquí sigue abierta.
+  await drawer.getByRole('button', { name: 'Registrar retorno' }).click();
+  const confirm = page.getByRole('alertdialog', { name: 'Registrar retorno' });
+  await expect(confirm.getByText(/no cambia el pedido ni su pago/)).toBeVisible();
+  await confirm.getByRole('button', { name: 'Registrar retorno' }).click();
+  await expect(toast(page, 'Retorno registrado para #MON-307051.')).toBeVisible();
+  await expect(drawer.getByText('Esperando retorno')).toHaveCount(0);
+  await expect(drawer.getByTestId('delivery-contact-hidden')).toBeVisible();
+  const history = drawer.getByTestId('delivery-history');
+  await expect(history.getByText('Retorno registrado')).toBeVisible();
+  await expect(history.getByText('Pedido entregado')).toBeVisible();
+});
+
+test('F28 · encargado: cancelar la entrega exige motivo y NO cancela el pedido; luego se puede volver a despachar (reapertura)', async ({
+  page,
+}) => {
+  await enterAs(page, /Marco Antonio Gómez/);
+  const drawer = await dispatchOwn(page);
+  await drawer.getByRole('button', { name: 'Cancelar entrega' }).click();
+  const modal = page.getByRole('alertdialog', { name: 'Cancelar entrega' });
+  await expect(modal.getByText(/no escribas datos personales/i)).toBeVisible();
+  await modal.getByRole('button', { name: 'Cancelar entrega' }).click();
+  await expect(modal.getByText('Indica el motivo.')).toBeVisible();
+  await modal.getByLabel('Motivo (obligatorio)').fill('Cliente ausente');
+  await modal.getByRole('button', { name: 'Cancelar entrega' }).click();
+  await expect(toast(page, 'Entrega de #MON-307051 cancelada.')).toBeVisible();
+  await page.keyboard.press('Escape');
+  // El pedido sigue «Listo» y se puede despachar de nuevo: la entrega cancelada se REABRE.
+  await page.goto('/backoffice/pedidos');
+  await expect(column(page, 'Listo').getByText('#MON-307051')).toBeVisible();
+  await card(page).getByRole('button', { name: 'Despachar' }).click();
+  await expect(
+    detail(page).getByTestId('delivery-history').getByText('Entrega reabierta'),
+  ).toBeVisible();
+});
+
+test('F28 · Pedidos: cancelar un pedido con entrega abierta ofrece «Cancelar entrega y luego el pedido» en dos pasos', async ({
+  page,
+}) => {
+  await enterAs(page, /Marco Antonio Gómez/);
+  await dispatchOwn(page);
+  await page.keyboard.press('Escape');
+  await page.goto('/backoffice/pedidos');
+  await card(page).locator('.kcard-main').click();
+  const order = page.getByRole('dialog', { name: /MON-307051/ });
+  await order.getByRole('button', { name: 'Cancelar pedido' }).click();
+  const reason = page.getByRole('dialog', { name: 'Cancelar pedido' });
+  await reason.getByRole('textbox', { name: /Motivo/ }).fill('Cliente no contesta');
+  await reason.getByRole('button', { name: 'Confirmar cancelación' }).click();
+  const blocked = page.getByRole('alertdialog', { name: 'El pedido tiene una entrega abierta' });
+  await expect(blocked.getByRole('button', { name: 'Cancelar pedido' })).toBeDisabled();
+  await blocked.getByRole('button', { name: 'Cancelar entrega' }).click();
+  await expect(blocked.getByText(/Entrega cancelada\./)).toBeVisible();
+  await blocked.getByRole('button', { name: 'Cancelar pedido' }).click();
+  await expect(blocked.getByText(/Pedido cancelado\./)).toBeVisible();
+});
+
+test('F28 · PedidosYa sigue SIMULADO y separado del reparto propio; nunca confirma entregas reales', async ({
+  page,
+}) => {
+  await enterAs(page, /Ana Lucía Pérez/);
+  await page.goto('/backoffice/entregas');
+  await expect(page.getByRole('tab', { name: 'Reparto propio', selected: true })).toBeVisible();
+  await expect(page.getByTestId('own-deliveries')).toBeVisible();
+  await expect(page.getByTestId('simulation-banner')).toHaveCount(0);
+  await openSimulation(page);
+  await expect(page.getByTestId('own-deliveries')).toHaveCount(0);
+  await expect(page.getByText('Simulación', { exact: true }).first()).toBeVisible();
+});
+
+test('F28 · empleado (solo lectura, sucursal 1): ve la pantalla sin entregas abiertas y ningún botón de acción', async ({
+  page,
+}) => {
+  await enterAs(page, /Empleado Zona 4/);
+  await page.goto('/backoffice/entregas');
+  await expect(page.getByRole('heading', { name: 'Entregas', level: 1 })).toBeVisible();
+  await expect(page.getByText('No hay entregas abiertas')).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: /Asignar motorista|Cancelar entrega/ }),
+  ).toHaveCount(0);
 });

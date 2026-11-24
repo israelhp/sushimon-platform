@@ -39,6 +39,8 @@ const openOrder = async (page: Page, code: RegExp) => {
 const toEntregas = async (page: Page) => {
   await login(page);
   await nav(page, 'Entregas');
+  // F28: «Reparto propio» (real) es la pestaña por defecto; el prototipo corresponde a la «Simulación PedidosYa».
+  await page.getByRole('tab', { name: 'Simulación PedidosYa' }).click();
 };
 
 /** Pedidos → detalle del pedido listo SM-7052 → "Despachar pedido" (paso: elegir). */

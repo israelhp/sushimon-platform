@@ -1240,6 +1240,75 @@
       minmax(190px, 1.3fr) 130px minmax(110px, 0.8fr) 100px 210px
       minmax(250px, 1.1fr);
   }
+  /* F28: entregas propias (reparto real) y simulación de PedidosYa separadas. */
+  [data-zone='bo'] .cols-odel {
+    grid-template-columns:
+      minmax(150px, 1fr) minmax(120px, 0.8fr) minmax(170px, 1.1fr) minmax(190px, 1fr)
+      160px 120px;
+  }
+  [data-zone='bo'] .min-odel {
+    min-width: 960px;
+  }
+  [data-zone='bo'] .sim-view {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  [data-zone='bo'] .sim-title {
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.2;
+    font-weight: 800;
+  }
+  [data-zone='bo'] .own-badge {
+    border-style: solid;
+    border-color: var(--bo-green-text);
+    color: var(--bo-green-text);
+  }
+  [data-zone='bo'] .active-steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 12px;
+  }
+  [data-zone='bo'] .active-steps li {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+  }
+  [data-zone='bo'] .dl-timeline {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 14px;
+    border-left: 2px solid var(--bo-line-strong);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  [data-zone='bo'] .dl-timeline li {
+    position: relative;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  [data-zone='bo'] .dl-timeline li::before {
+    content: '';
+    position: absolute;
+    left: -21px;
+    top: 5px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--bo-surface);
+    border: 2px solid var(--bo-primary);
+  }
+  [data-zone='bo'] .dl-tl-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 4px 12px;
+    font-size: 13px;
+  }
   /* F09: zonas propias de entrega (con y sin columna «Sucursal»). */
   [data-zone='bo'] .cols-zones {
     grid-template-columns:
@@ -3404,6 +3473,21 @@
     }
     [data-zone='bo'] .cols-riders .r-avail,
     [data-zone='bo'] .cols-riders .r-act {
+      grid-column: 1/-1;
+      justify-content: flex-start;
+    }
+    /* F28: en móvil cada entrega es una tarjeta: pedido | estado, motorista y acciones a todo el ancho. */
+    [data-zone='bo'] .min-odel {
+      min-width: 0;
+    }
+    [data-zone='bo'] .cols-odel .o-status {
+      grid-column: 2;
+      grid-row: 1;
+      justify-self: end;
+    }
+    [data-zone='bo'] .cols-odel .o-branch,
+    [data-zone='bo'] .cols-odel .o-rider,
+    [data-zone='bo'] .cols-odel .o-act {
       grid-column: 1/-1;
       justify-content: flex-start;
     }

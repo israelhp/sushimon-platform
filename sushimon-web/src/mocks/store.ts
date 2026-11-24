@@ -21,6 +21,7 @@ import type { ClosureRecord } from './fixtures/schedule';
 import type { DeliverySettingsRecord } from './fixtures/delivery';
 import type { BannerRecord } from './fixtures/banners';
 import type { PromotionRecord } from './fixtures/promotions';
+import type { AdminDeliveryRecord } from './fixtures/admin-deliveries';
 import type { AdminRiderRecord } from './fixtures/admin-riders';
 import type { RiderSeed } from './fixtures/staff';
 import type { Clock } from './clock';
@@ -271,6 +272,11 @@ export interface MockStore {
    * Opcional: los stores persistidos antes de F27 no lo traen (el handler lo siembra al primer uso).
    */
   adminRiders?: AdminRiderRecord[];
+  /**
+   * F28 (SIMULADO): entregas PROPIAS (`app.deliveries`, contrato `admin-deliveries`), distintas del despacho simulado de PedidosYa
+   * (`DraftOrder.delivery`). Opcional: los stores persistidos antes de F28 no lo traen (el handler lo siembra al primer uso).
+   */
+  adminDeliveries?: AdminDeliveryRecord[];
   accounts: Record<string, CustomerAccount>;
   jobApplications: JobApplication[];
   /** Pedidos que esta sesión puede ver como invitado (creados aquí o consultados con teléfono). */

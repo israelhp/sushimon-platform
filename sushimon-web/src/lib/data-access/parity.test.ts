@@ -5,6 +5,7 @@ import type { MockScenario } from '@/mocks/scenarios';
 import { createHarness, type TestHarness } from '@/mocks/testing';
 import { validateContract } from '@/test/contract-schema';
 import * as account from '@/services/account';
+import * as adminDeliveries from '@/services/admin-deliveries';
 import * as adminRiders from '@/services/admin-riders';
 import * as adminOrders from '@/services/admin-orders';
 import * as admin from '@/services/backoffice-admin';
@@ -1219,7 +1220,7 @@ describe('paridad mock ↔ http', () => {
           page: 1,
           pageSize: 5,
         }),
-      (c) => adminRiders.listAdminRiders(c, { availability: 'BUSY' }), // vacío: sin F28
+      (c) => adminRiders.listAdminRiders(c, { availability: 'BUSY' }), // F28: ocupados (derivado de las entregas)
       (c) => adminRiders.listAdminRiders(c, { pageSize: 101 }), // 400
       (c) => adminRiders.getAdminRider(c, 'rider-1'),
       (c) => adminRiders.getAdminRider(c, 'rider-999'), // 404 RIDER_NOT_FOUND
@@ -1293,6 +1294,84 @@ describe('paridad mock ↔ http', () => {
       branchId: 'sucursal-2',
       availability: 'UNAVAILABLE',
       version: 3,
+    });
+  });
+
+  it('F28: entregas propias (listar, detalle, crear, asignar, recoger, entregar, retorno, cancelar) producen lo mismo con mock y con http y validan contra el contrato', async () => {
+    const p = pair();
+    p.asStaff('admin');
+    const ORDER = 'MON-307051'; // sucursal 1 · a domicilio · listo · reparto propio
+    const steps: ((c: DataClient) => Promise<unknown>)[] = [
+      (c) => adminDeliveries.listAdminDeliveries(c, {}), // 0: 200 (abiertas por defecto)
+      (c) => adminDeliveries.listAdminDeliveries(c, { status: ['returned'], limit: 1 }), // 1: vacía
+      (c) => adminDeliveries.listAdminDeliveries(c, { limit: 101 }), // 2: 400
+      (c) => adminDeliveries.getAdminDelivery(c, 'delivery-1'), // 3
+      (c) => adminDeliveries.getAdminDelivery(c, 'delivery-999'), // 4: 404 DELIVERY_NOT_FOUND
+      (c) => adminDeliveries.createAdminDelivery(c, ORDER), // 5: crea
+      (c) => adminDeliveries.createAdminDelivery(c, ORDER), // 6: replayed
+      (c) => adminDeliveries.createAdminDelivery(c, 'MON-307057'), // 7: 422 (pedido sin aceptar)
+      (c) => adminDeliveries.createAdminDelivery(c, 'MON-000000'), // 8: 404 ORDER_NOT_FOUND
+      (c) =>
+        adminDeliveries.assignOwnRiderToAdminDelivery(c, 'delivery-3', {
+          riderId: 'rider-1',
+          expectedVersion: 1,
+        }), // 9
+      (c) =>
+        adminDeliveries.assignOwnRiderToAdminDelivery(c, 'delivery-3', {
+          riderId: 'rider-1',
+          expectedVersion: 2,
+        }), // 10: replayed
+      (c) =>
+        adminDeliveries.assignOwnRiderToAdminDelivery(c, 'delivery-3', {
+          riderId: 'rider-2',
+          expectedVersion: 2,
+        }), // 11: 422 RIDER_NOT_ELIGIBLE (UNAVAILABLE)
+      (c) =>
+        adminDeliveries.assignOwnRiderToAdminDelivery(c, 'delivery-3', {
+          riderId: 'rider-4',
+          expectedVersion: 2,
+        }), // 12: 422 (otra sucursal y ocupado)
+      (c) => adminDeliveries.markAdminDeliveryPickedUp(c, 'delivery-3', { expectedVersion: 1 }), // 13: 409
+      (c) => adminDeliveries.markAdminDeliveryPickedUp(c, 'delivery-3', { expectedVersion: 2 }), // 14
+      (c) => adminDeliveries.markAdminDeliveryDelivered(c, 'delivery-3', { expectedVersion: 3 }), // 15
+      (c) => adminDeliveries.returnAdminDeliveryToBranch(c, 'delivery-3', { expectedVersion: 4 }), // 16
+      (c) =>
+        adminDeliveries.cancelAdminDelivery(c, 'delivery-1', { expectedVersion: 1, reason: '' }), // 17: 400
+      (c) =>
+        adminDeliveries.cancelAdminDelivery(c, 'delivery-1', {
+          expectedVersion: 1,
+          reason: 'Cliente cambió de idea',
+        }), // 18
+      (c) => adminDeliveries.listAdminDeliveries(c, { status: ['cancelled', 'returned'] }), // 19
+      (c) => adminRiders.listAdminRiders(c, { availability: 'BUSY' }), // 20: la ocupación sale de las entregas
+    ];
+    const a = await run(steps, p.mock.client);
+    expect(await run(steps, p.http)).toEqual(a);
+    expect(a.map((x) => ('error' in x ? x.error.status : 200))).toEqual([
+      200, 200, 400, 200, 404, 200, 200, 422, 404, 200, 200, 422, 422, 409, 200, 200, 200, 400, 200,
+      200, 200,
+    ]);
+    const ok = (i: number) => (a[i] as { ok: unknown }).ok;
+    const code = (i: number) => (a[i] as { error: { businessCode: string } }).error.businessCode;
+    expect(validateContract('AdminDeliveryPage', ok(0))).toEqual([]);
+    expect(validateContract('AdminDelivery', ok(3))).toEqual([]);
+    for (const i of [5, 6, 9, 10, 14, 15, 16, 18]) {
+      expect(validateContract('AdminDeliveryCommandResult', ok(i))).toEqual([]);
+    }
+    expect(code(4)).toBe('DELIVERY_NOT_FOUND');
+    expect(code(7)).toBe('DELIVERY_ORDER_NOT_ELIGIBLE');
+    expect(code(8)).toBe('ORDER_NOT_FOUND');
+    expect(code(11)).toBe('RIDER_NOT_ELIGIBLE');
+    expect(code(12)).toBe('RIDER_NOT_ELIGIBLE');
+    expect(code(13)).toBe('DELIVERY_STATE_CONFLICT');
+    expect(code(17)).toBe('DELIVERY_REASON_REQUIRED');
+    expect((a[11] as { error: { violations: { code: string }[] } }).error.violations).toEqual([
+      expect.objectContaining({ code: 'UNAVAILABLE' }),
+    ]);
+    expect(ok(6)).toMatchObject({ transition: { replayed: true } });
+    expect(ok(10)).toMatchObject({ transition: { replayed: true } });
+    expect(ok(16)).toMatchObject({
+      delivery: { status: 'returned', riderOccupied: false, awaitingReturn: false },
     });
   });
 

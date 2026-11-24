@@ -5,7 +5,7 @@ import { BackofficeShell } from '@/features/backoffice-shell/BackofficeShell';
 import type { StaffRole } from '@/lib/data-access/models';
 import type { MockStore } from '@/mocks/store';
 import { renderBackoffice } from '@/test/backoffice-providers';
-import { resetNavigationMock } from '@/test/next-navigation-mock';
+import { resetNavigationMock, router } from '@/test/next-navigation-mock';
 import { OrdersScreen } from './components/OrdersScreen';
 
 vi.mock('next/navigation', async () => await import('@/test/next-navigation-mock'));
@@ -258,6 +258,55 @@ describe('rechazar y cancelar con motivo', () => {
   });
 });
 
+describe('F28: cancelar el pedido con una entrega abierta (409 ORDER_HAS_ACTIVE_DELIVERY)', () => {
+  it('ofrece «Cancelar entrega y luego el pedido» en DOS pasos explícitos; el paso 2 solo se habilita tras el 1', async () => {
+    const user = userEvent.setup();
+    const view = await renderOrders('manager');
+    await screen.findByText('#MON-307051');
+    // La entrega abierta existe (la crea otra persona, p. ej. desde Entregas).
+    await view.api().client.post('/v1/admin/deliveries', { orderId: 'MON-307051' });
+    await user.click(screen.getByText('#MON-307051'));
+    const drawer = await screen.findByRole('dialog', { name: /MON-307051/ });
+    await user.click(await within(drawer).findByRole('button', { name: 'Cancelar pedido' }));
+    const reason = await screen.findByRole('dialog', { name: 'Cancelar pedido' });
+    await user.type(within(reason).getByRole('textbox', { name: /Motivo/ }), 'Cliente no contesta');
+    await user.click(within(reason).getByRole('button', { name: 'Confirmar cancelación' }));
+
+    const modal = await screen.findByRole('alertdialog', {
+      name: 'El pedido tiene una entrega abierta',
+    });
+    expect(within(modal).getByText(/dos pasos separados/)).toBeVisible();
+    // Se reutiliza el motivo escrito; el paso 2 espera al 1.
+    expect(within(modal).getByRole('textbox')).toHaveValue('Cliente no contesta');
+    expect(await within(modal).findByRole('button', { name: 'Cancelar entrega' })).toBeEnabled();
+    expect(within(modal).getByRole('button', { name: 'Cancelar pedido' })).toBeDisabled();
+
+    await user.click(within(modal).getByRole('button', { name: 'Cancelar entrega' }));
+    expect(await within(modal).findByText(/Entrega cancelada\./)).toBeVisible();
+    // El pedido NO se canceló todavía (no es atómico).
+    expect(view.api().store.orders.find((o) => o.id === 'MON-307051')?.status).toBe('ready');
+    await user.click(within(modal).getByRole('button', { name: 'Cancelar pedido' }));
+    expect(await within(modal).findByText(/Pedido cancelado\./)).toBeVisible();
+    expect(view.api().store.orders.find((o) => o.id === 'MON-307051')?.status).toBe('cancelled');
+  });
+
+  it('un segundo «Despachar» sobre el mismo pedido es idempotente: avisa «ya estaba así» y abre la misma entrega', async () => {
+    const user = userEvent.setup();
+    const view = await renderOrders('manager');
+    await screen.findByText('#MON-307051');
+    const click = () => user.click(card('#MON-307051').getByRole('button', { name: 'Despachar' }));
+    await click();
+    await waitFor(() => expect(router.push).toHaveBeenCalledTimes(1));
+    await click();
+    expect(await screen.findByText(/ya estaba así: no se hizo ningún cambio/)).toBeVisible();
+    await waitFor(() => expect(router.push).toHaveBeenCalledTimes(2));
+    expect(router.push.mock.calls[1]?.[0]).toBe(router.push.mock.calls[0]?.[0]);
+    expect(
+      view.api().store.adminDeliveries?.filter((d) => d.orderId === 'MON-307051'),
+    ).toHaveLength(1);
+  });
+});
+
 describe('conflictos y errores', () => {
   it('409: si otra persona ya cambió el pedido, avisa el estado actual y refresca sin reintentar', async () => {
     const view = await renderOrders();
@@ -317,16 +366,33 @@ describe('conflictos y errores', () => {
 });
 
 describe('permisos por rol (salen de availableActions del servidor)', () => {
-  it('el despacho aparece DESHABILITADO con la razón de reparto propio', async () => {
-    await renderOrders('manager');
+  it('F28: el despacho de reparto propio está HABILITADO con deliveries.assign, crea la entrega (idempotente) y abre Entregas', async () => {
+    const user = userEvent.setup();
+    const { api } = await renderOrders('manager');
     await screen.findByText('#MON-307051');
     const dispatch = card('#MON-307051').getByRole('button', { name: 'Despachar' });
-    expect(dispatch).toBeDisabled();
+    expect(dispatch).toBeEnabled();
     expect(
-      card('#MON-307051').getByText(
-        'La asignación de repartidor llegará con la gestión de entregas.',
-      ),
+      card('#MON-307051').getByText(/Crea la entrega y abre Entregas para asignar un motorista/),
     ).toBeVisible();
+    await user.click(dispatch);
+    await waitFor(() =>
+      expect(router.push).toHaveBeenCalledWith(
+        expect.stringMatching(/^\/backoffice\/entregas\?entrega=delivery-\d+$/),
+      ),
+    );
+    // La entrega nace `pending` y sin PII en la URL.
+    expect(api().store.adminDeliveries?.find((d) => d.orderId === 'MON-307051')?.status).toBe(
+      'pending',
+    );
+    const url = String(router.push.mock.calls[0]?.[0]);
+    expect(url).not.toMatch(/MON-307051|\+502|Rodrigo/);
+  });
+
+  it('F28: sin deliveries.assign (cocina) no hay botón Despachar (NO_PERMISSION se oculta)', async () => {
+    await renderOrders('kitchen');
+    await screen.findByText('#MON-307051');
+    expect(card('#MON-307051').queryByRole('button', { name: 'Despachar' })).toBeNull();
   });
 
   it('PedidosYa: despacho deshabilitado con «Integración pendiente de documentación del proveedor»', async () => {

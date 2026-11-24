@@ -26,6 +26,7 @@ import {
   toAdminSummary,
   type ViolationCode,
 } from '../admin-orders';
+import { hasBlockingDelivery } from '../admin-deliveries';
 import { paymentRecord } from '../cash-payments';
 import type { MockStore, PlacedOrderRecord } from '../store';
 import {
@@ -381,7 +382,7 @@ function parseCommandBody(req: Req, command: AdminOrderCommand) {
 
 const orderEvents = (draft: DraftOrder) => draft.history.filter((e) => e.kind === 'order');
 
-function apply(
+export function apply(
   req: Req,
   draft: DraftOrder,
   to: OrderLifecycleStatus,
@@ -453,6 +454,20 @@ function runCommand(req: Req, command: AdminOrderCommand): AdminOrderTransitionR
   });
 
   if (current === expected) {
+    // F28 (spec 029 §6.3): cancelar/rechazar con una entrega abierta se RECHAZA (trigger `orders_open_delivery_guard`).
+    if (
+      (command === 'cancel' || command === 'reject') &&
+      hasBlockingDelivery(req.store, draft.id)
+    ) {
+      problem(
+        409,
+        'ORDER_HAS_ACTIVE_DELIVERY',
+        'El pedido tiene una entrega abierta; cancélala primero',
+        {
+          current: snapshot(),
+        },
+      );
+    }
     apply(req, draft, spec.to, actor, reason, at);
     return result(false, true, at.toISOString());
   }

@@ -469,11 +469,15 @@ describe('Disponibilidad', () => {
     );
   });
 
-  it('no existe forma de elegir «Ocupado» (lo deriva el servidor)', async () => {
+  it('no existe forma de FIJAR «Ocupado» (lo deriva el servidor desde las entregas, F28): solo es un filtro de lectura', async () => {
     await renderRiders();
     await screen.findByText('7 motoristas');
-    expect(screen.queryByRole('option', { name: 'Ocupado' })).toBeNull();
     expect(screen.queryByRole('radio', { name: /Ocupado/ })).toBeNull();
+    expect(screen.queryByRole('switch', { name: /Ocupado/ })).toBeNull();
+    // Cada control de disponibilidad solo alterna Disponible / No disponible.
+    for (const control of screen.getAllByRole('switch')) {
+      expect(control.getAttribute('aria-label') ?? '').not.toMatch(/Ocupado/);
+    }
   });
 });
 
@@ -482,13 +486,14 @@ describe('Edición desde el detalle', () => {
     const user = userEvent.setup();
     await renderRiders();
     await screen.findByText('7 motoristas');
-    await user.click(screen.getByRole('button', { name: 'Ver detalle de Marvin Tzoc' }));
-    const drawer = await screen.findByRole('dialog', { name: 'Marvin Tzoc' });
+    // Marvin Tzoc tiene una entrega abierta (F28): no se puede desactivar; se usa un motorista sin entrega.
+    await user.click(screen.getByRole('button', { name: 'Ver detalle de Rosa Elena Xicay' }));
+    const drawer = await screen.findByRole('dialog', { name: 'Rosa Elena Xicay' });
     await within(drawer).findByTestId('rider-detail');
     await user.click(within(drawer).getByRole('button', { name: 'Desactivar' }));
     const dialog = await screen.findByRole('dialog', { name: 'Desactivar motorista' });
     await user.click(within(dialog).getByRole('button', { name: 'Desactivar' }));
-    expect(await notice('Marvin Tzoc desactivado.')).toBeVisible();
+    expect(await notice('Rosa Elena Xicay desactivado.')).toBeVisible();
     // El panel refleja el cambio (misma clave de detalle, invalidada tras la mutación).
     await waitFor(() =>
       expect(within(drawer).getByText('Inactivo', { selector: '.pill' })).toBeVisible(),

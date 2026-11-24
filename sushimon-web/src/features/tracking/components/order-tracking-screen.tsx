@@ -127,6 +127,8 @@ function Loading({ label }: { label: string }) {
   );
 }
 
+const PUBLIC_DELIVERY_STATUSES = ['PENDING', 'ASSIGNED', 'PICKED_UP', 'DELIVERED'] as const;
+
 /** Entrega o retiro: solo datos reales (proveedor). Jamás repartidor, GPS ni ETA; PedidosYa sin tracking externo. */
 function FulfillmentBlock({ tracking }: { tracking: OrderTracking }) {
   const t = useTranslations('tracking');
@@ -138,6 +140,13 @@ function FulfillmentBlock({ tracking }: { tracking: OrderTracking }) {
   else if (tracking.delivery?.provider === 'OWN') note = t('deliveryOwn');
   else if (tracking.delivery?.provider === 'PEDIDOSYA') note = t('deliveryExternal');
   else note = t('deliveryUnknown');
+  // F28 (spec 029 §12): estado público GRUESO de la entrega propia; jamás datos del repartidor. Valores desconocidos se ignoran.
+  const rawStatus = tracking.delivery?.status ?? null;
+  const deliveryStatus = (PUBLIC_DELIVERY_STATUSES as readonly (string | null)[]).includes(
+    rawStatus,
+  )
+    ? (rawStatus as (typeof PUBLIC_DELIVERY_STATUSES)[number])
+    : null;
   return (
     <Card id="trk-fulfillment" title={delivery ? t('deliveryTitle') : t('pickupTitle')}>
       <dl className="m-0 flex flex-col gap-2 text-[15px]">
@@ -171,6 +180,11 @@ function FulfillmentBlock({ tracking }: { tracking: OrderTracking }) {
       </p>
       {delivery && tracking.delivery?.provider === 'OWN' ? (
         <p className="m-0 mt-1 text-[13px] text-muted">{t('deliveryOwnNote')}</p>
+      ) : null}
+      {delivery && tracking.delivery?.provider === 'OWN' && deliveryStatus ? (
+        <p className="m-0 mt-2 text-[14px] font-bold" data-testid="delivery-status">
+          {t('deliveryStatusLabel')}: {t(`deliveryStatus.${deliveryStatus}`)}
+        </p>
       ) : null}
       {delivery && tracking.delivery?.provider === 'PEDIDOSYA' ? (
         <p className="m-0 mt-1 text-[13px] text-muted">{t('deliveryExternalNote')}</p>
