@@ -1,5 +1,4 @@
 import { NotFoundException } from '@nestjs/common';
-import { BannersTimeService } from '../../src/banners/banners-time.service.js';
 import { PublicBannersReader } from '../../src/banners/public-banners.reader.js';
 import { BranchOffersService } from '../../src/branch-products/branch-offers.service.js';
 import type { BranchProductsRepository } from '../../src/branch-products/branch-products.repository.js';
@@ -106,14 +105,9 @@ export function storeHarness(opts: { concurrency?: number } = {}) {
   );
 
   const bannersRepo = new FakeBannersRepo();
-  for (const [id, b] of world.branches) bannersRepo.seedBranch(id, b.name, b.active);
   bannersRepo.seedAsset(1);
   const urls = new MediaUrlService(mediaConfig());
-  const banners = new PublicBannersReader(
-    bannersRepo.asReadRepository(),
-    new BannersTimeService(clock, TZ),
-    urls,
-  );
+  const banners = new PublicBannersReader(bannersRepo.asReadRepository(), urls);
 
   const availability = availabilityStub();
   const modifiersRepo = new FakeModifiersRepo();

@@ -226,7 +226,7 @@ describe('Arquitectura: toda ruta /v1/admin exige StaffGuard y MfaGuard', () => 
     }
   });
 
-  it('las 6 rutas admin de banners (F16) están registradas y protegidas', async () => {
+  it('las 5 rutas admin de banners (F16) están registradas y protegidas', async () => {
     const { moduleRef, controllers, StaffGuard, MfaGuard } = await loadApp();
     try {
       const routes = adminRoutes(controllers).filter((r) =>
@@ -236,9 +236,8 @@ describe('Arquitectura: toda ruta /v1/admin exige StaffGuard y MfaGuard', () => 
         'AdminBannersController.create (/admin/banners)',
         'AdminBannersController.get (/admin/banners/:id)',
         'AdminBannersController.list (/admin/banners)',
-        'AdminBannersController.reorder (/admin/banners/order)',
+        'AdminBannersController.remove (/admin/banners/:id)',
         'AdminBannersController.update (/admin/banners/:id)',
-        'AdminBannersController.updateStatus (/admin/banners/:id/status)',
       ]);
       expect(violations(routes, StaffGuard, MfaGuard)).toEqual([]);
     } finally {

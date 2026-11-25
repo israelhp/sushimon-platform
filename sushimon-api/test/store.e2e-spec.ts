@@ -133,20 +133,30 @@ describe('Agregados públicos de la tienda (e2e, F17)', () => {
         featured: [],
         degraded: [],
         productCount: 2,
-        locale: 'es',
+        banners: [],
       });
+      expect(res.body).not.toHaveProperty('locale');
       expect(res.headers['cache-control']).toBe('public, max-age=5, s-maxage=15');
       expect(res.headers['etag']).toBeUndefined();
     });
 
-    it('con sucursal: nextChangeAt combinado acota la caché (min de promoción, banner y horario)', async () => {
+    it('con sucursal: nextChangeAt combinado acota la caché (min de promoción y horario; los banners no intervienen)', async () => {
       h.promotionsRepo.seed({ endsAt: local('2026-11-16T16:00:09') });
-      h.bannersRepo.seed({ endsAt: local('2026-11-16T16:00:20') });
+      h.bannersRepo.seed();
       h.availability.state.nextTransitionAt = local('2026-11-16T16:00:30').toISOString();
-      const res = await http().get(`/v1/store/bootstrap?branchId=${A}&locale=en`).expect(200);
-      expect(res.body).toMatchObject({ branchId: A, locale: 'en' });
+      const res = await http().get(`/v1/store/bootstrap?branchId=${A}`).expect(200);
+      expect(res.body).toMatchObject({ branchId: A });
       expect(json(res)['nextChangeAt']).toBe(local('2026-11-16T16:00:09').toISOString());
       expect(res.headers['cache-control']).toBe('public, max-age=5, s-maxage=9');
+    });
+
+    it('banners: solo activos, máx. 5, en orden de creación y sin ids de asset ni claves de objeto', async () => {
+      for (let n = 0; n < 7; n += 1) h.bannersRepo.seed({ active: n !== 1 });
+      const res = await http().get('/v1/store/bootstrap').expect(200);
+      const banners = json(res)['banners'] as { id: string; alt: string }[];
+      expect(banners.map((b) => b.alt)).toEqual(['Alt 1', 'Alt 3', 'Alt 4', 'Alt 5', 'Alt 6']);
+      expect(Object.keys(banners[0] as object).sort()).toEqual(['alt', 'id', 'image']);
+      expect(JSON.stringify(res.body)).not.toMatch(/objectKey|assetId/);
     });
 
     it('degraded => 200 con caché acotada (CDN 3 s, navegador 0), no no-store', async () => {
@@ -189,6 +199,7 @@ describe('Agregados públicos de la tienda (e2e, F17)', () => {
       for (const url of [
         '/v1/store/bootstrap?branchId=x',
         '/v1/store/bootstrap?locale=fr',
+        '/v1/store/bootstrap?locale=es',
         '/v1/store/bootstrap?foo=1',
       ]) {
         const res = await http().get(url).expect(400);

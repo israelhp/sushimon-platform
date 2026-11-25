@@ -27,12 +27,11 @@ function world() {
 }
 
 describe('StoreBootstrapService', () => {
-  it('sin sucursal: branch/availability null, promociones vacías, banners solo ALL, featured vacío', async () => {
+  it('sin sucursal: branch/availability null, promociones vacías, banners activos, featured vacío', async () => {
     const h = world();
-    h.bannersRepo.seed({ branchIds: [] });
-    h.bannersRepo.seed({ branchIds: [A] });
+    h.bannersRepo.seed();
     h.promotionsRepo.seed({ value: '10.00' });
-    const r = await h.bootstrap.getBootstrap({ locale: 'es' });
+    const r = await h.bootstrap.getBootstrap({});
     expect(r).toMatchObject({
       branchId: null,
       branch: null,
@@ -41,10 +40,10 @@ describe('StoreBootstrapService', () => {
       featured: [],
       degraded: [],
       productCount: 2,
-      locale: 'es',
       nextChangeAt: null,
     });
     expect(r.banners).toHaveLength(1);
+    expect(r).not.toHaveProperty('locale');
     // raíces visibles del árbol: rolls y bebidas; calientes (inactiva) no está
     expect(r.categories.map((c) => [c.slug, c.hasChildren])).toEqual([
       ['rolls', true],
@@ -58,8 +57,8 @@ describe('StoreBootstrapService', () => {
     h.promotionsRepo.seed({ name: 'Cupón', code: 'SECRETO10' });
     h.promotionsRepo.seed({ name: 'Vencida', endsAt: new Date('2026-11-01T00:00:00Z') });
     h.promotionsRepo.seed({ name: 'Próxima', startsAt: new Date('2026-11-20T00:00:00Z') });
-    h.bannersRepo.seed({ branchIds: [A] });
-    const r = await h.bootstrap.getBootstrap({ branchId: A, locale: 'es' });
+    h.bannersRepo.seed();
+    const r = await h.bootstrap.getBootstrap({ branchId: A });
     expect(r.branch).toMatchObject({ id: A, name: 'Zona 10' });
     expect(r.availability).toMatchObject({ branchId: A, isOpenNow: true });
     expect(r.promotions.map((p) => p.name)).toEqual(['Happy', 'Cupón']);
@@ -76,46 +75,37 @@ describe('StoreBootstrapService', () => {
     expect(r.productCount).toBe(2);
   });
 
-  it('topes: ≤ 5 promociones, ≤ 10 banners, ≤ 30 categorías raíz', async () => {
+  it('topes: ≤ 5 promociones, ≤ 5 banners, ≤ 30 categorías raíz', async () => {
     const h = world();
     for (let n = 0; n < 8; n += 1) h.promotionsRepo.seed({ name: `P${n}` });
-    for (let n = 0; n < 14; n += 1) h.bannersRepo.seed({});
-    const r = await h.bootstrap.getBootstrap({ branchId: A, locale: 'es' });
+    for (let n = 0; n < 14; n += 1) h.bannersRepo.seed();
+    const r = await h.bootstrap.getBootstrap({ branchId: A });
     expect(r.promotions).toHaveLength(5);
-    expect(r.banners).toHaveLength(10);
+    expect(r.banners).toHaveLength(5);
     expect(r.categories.length).toBeLessThanOrEqual(30);
   });
 
-  it('idioma en: banners con respaldo por campo a es', async () => {
+  it('banners: solo activos, en orden de creación; sin título/CTA/idioma (forma {id, image, alt})', async () => {
     const h = world();
-    h.bannersRepo.seed({
-      es: { title: 'Hola', subtitle: 'Sub', ctaLabel: null, imageAlt: 'Alt' },
-      en: { title: 'Hello', subtitle: null, ctaLabel: null, imageAlt: null },
-    });
-    const r = await h.bootstrap.getBootstrap({ locale: 'en' });
-    expect(r.locale).toBe('en');
-    expect(r.banners[0]).toMatchObject({ title: 'Hello', subtitle: 'Sub', imageAlt: 'Alt' });
-  });
-
-  it('banners programados y vencidos no salen; activos sí', async () => {
-    const h = world();
-    h.bannersRepo.seed({ endsAt: new Date('2026-11-01T00:00:00Z') });
-    h.bannersRepo.seed({ startsAt: new Date('2026-11-30T00:00:00Z') });
     h.bannersRepo.seed({ active: false });
-    h.bannersRepo.seed({});
-    expect((await h.bootstrap.getBootstrap({ locale: 'es' })).banners).toHaveLength(1);
+    h.bannersRepo.seed({ imageAlt: 'Primero' });
+    h.bannersRepo.seed({ imageAlt: 'Segundo' });
+    const r = await h.bootstrap.getBootstrap({});
+    expect(r.banners.map((b) => b.alt)).toEqual(['Primero', 'Segundo']);
+    expect(Object.keys(r.banners[0] as object).sort()).toEqual(['alt', 'id', 'image']);
+    expect(r.banners[0]?.image.url).toMatch(/^https:\/\//);
   });
 
-  it('nextChangeAt = mínimo entre promociones, banners y availability.nextTransitionAt', async () => {
+  it('nextChangeAt = mínimo entre promociones y availability.nextTransitionAt (los banners no intervienen)', async () => {
     const h = world();
     h.promotionsRepo.seed({ endsAt: local('2026-11-16T16:00:30') });
-    h.bannersRepo.seed({ endsAt: local('2026-11-16T16:00:20') });
+    h.bannersRepo.seed();
     h.availability.state.nextTransitionAt = local('2026-11-16T16:00:40').toISOString();
-    expect((await h.bootstrap.getBootstrap({ branchId: A, locale: 'es' })).nextChangeAt).toBe(
-      local('2026-11-16T16:00:20').toISOString(),
+    expect((await h.bootstrap.getBootstrap({ branchId: A })).nextChangeAt).toBe(
+      local('2026-11-16T16:00:30').toISOString(),
     );
     h.availability.state.nextTransitionAt = local('2026-11-16T16:00:05').toISOString();
-    const r = await h.bootstrap.getBootstrap({ branchId: A, locale: 'es' });
+    const r = await h.bootstrap.getBootstrap({ branchId: A });
     expect(r.nextChangeAt).toBe(local('2026-11-16T16:00:05').toISOString());
     expect(boundedCacheControl(r, 15)).toBe('public, max-age=5, s-maxage=5');
   });
@@ -124,7 +114,7 @@ describe('StoreBootstrapService', () => {
     const h = world();
     h.bannersRepo.failReadWith = new Error('boom');
     h.availability.state.fail = true;
-    const r = await h.bootstrap.getBootstrap({ branchId: A, locale: 'es' });
+    const r = await h.bootstrap.getBootstrap({ branchId: A });
     expect(r.banners).toEqual([]);
     expect(r.availability).toBeNull();
     expect(r.degraded.sort()).toEqual(['availability', 'banners']);
@@ -139,7 +129,7 @@ describe('StoreBootstrapService', () => {
     vi.spyOn(h.promotions, 'list').mockRejectedValue(
       new Error('relation app.promotions does not exist'),
     );
-    const r = await h.bootstrap.getBootstrap({ branchId: A, locale: 'es' });
+    const r = await h.bootstrap.getBootstrap({ branchId: A });
     expect(r.degraded).toEqual(['promotions']);
     expect(r.promotions).toEqual([]);
   });
@@ -147,40 +137,38 @@ describe('StoreBootstrapService', () => {
   it('sucursal inexistente o inactiva => 404 BRANCH_NOT_FOUND', async () => {
     const h = world();
     for (const id of [MISSING_BRANCH, INACTIVE_BRANCH]) {
-      expect(code(await fail(h.bootstrap.getBootstrap({ branchId: id, locale: 'es' })))).toBe(
-        'BRANCH_NOT_FOUND',
-      );
+      expect(code(await fail(h.bootstrap.getBootstrap({ branchId: id })))).toBe('BRANCH_NOT_FOUND');
     }
   });
 
   it('crítica (productCount) que falla con error reintentable => 503 STORE_BUSY', async () => {
     const h = world();
     h.catalogRepo.failWith = Object.assign(new Error('x'), { code: '40001' });
-    expect(code(await fail(h.bootstrap.getBootstrap({ locale: 'es' })))).toBe('STORE_BUSY');
+    expect(code(await fail(h.bootstrap.getBootstrap({})))).toBe('STORE_BUSY');
   });
 
   it('consultas acotadas y constantes con 2 vs 100 productos (el catálogo no se carga)', async () => {
     const h = world();
     h.promotionsRepo.seed({});
-    h.bannersRepo.seed({});
+    h.bannersRepo.seed();
     h.resetCounts();
-    await h.bootstrap.getBootstrap({ branchId: A, locale: 'es' });
+    await h.bootstrap.getBootstrap({ branchId: A });
     const base = h.queryCount();
     for (let n = 100; n < 200; n += 1) h.addProduct(n, { slug: `p-${n}`, name: `P ${n}` });
     h.resetCounts();
-    const r = await h.bootstrap.getBootstrap({ branchId: A, locale: 'es' });
+    const r = await h.bootstrap.getBootstrap({ branchId: A });
     expect(r.productCount).toBe(102);
     expect(h.queryCount()).toBe(base);
-    // sucursal (1) + categorías (1) + conteo (1) + candidatas de promoción (1) + banners (candidatos: 1; la
-    // sucursal ya validada NO se relee) (la disponibilidad es 1 consulta de F08, aquí simulada)
+    // sucursal (1) + categorías (1) + conteo (1) + candidatas de promoción (1) + banners (1 consulta, sin
+    // sucursal) (la disponibilidad es 1 consulta de F08, aquí simulada)
     expect(base).toBe(5);
   });
 
-  it('banners no revalidan la sucursal (una consulta menos que antes del ajuste)', async () => {
+  it('banners: una sola consulta, sin leer la sucursal', async () => {
     const h = world();
-    await h.bootstrap.getBootstrap({ branchId: A, locale: 'es' });
-    expect(h.bannersRepo.count('findBranchStatus')).toBe(0);
-    expect(h.bannersRepo.count('findStoreCandidates')).toBe(1);
+    await h.bootstrap.getBootstrap({ branchId: A });
+    expect(h.bannersRepo.callCount('findActive')).toBe(1);
+    expect(h.bannersRepo.calls).toEqual(['findActive']);
   });
 
   it('N bootstraps concurrentes: siempre 200 o 503 STORE_BUSY, nunca se cuelga; el semáforo termina libre', async () => {
@@ -192,7 +180,7 @@ describe('StoreBootstrapService', () => {
     });
     const results = await Promise.all(
       Array.from({ length: 40 }, () =>
-        h.bootstrap.getBootstrap({ branchId: A, locale: 'es' }).then(
+        h.bootstrap.getBootstrap({ branchId: A }).then(
           () => 200,
           (e: unknown) => (code(e) === 'STORE_BUSY' ? 503 : 500),
         ),
@@ -203,16 +191,16 @@ describe('StoreBootstrapService', () => {
     expect(results).toContain(503);
     expect([h.gate.inFlight, h.gate.waiting]).toEqual([0, 0]);
     slow.mockRestore();
-    expect((await h.bootstrap.getBootstrap({ locale: 'es' })).productCount).toBe(2);
+    expect((await h.bootstrap.getBootstrap({})).productCount).toBe(2);
   });
 
   it('el semáforo se libera aunque la lectura falle', async () => {
     const h = world();
     h.catalogRepo.failWith = new Error('boom');
-    for (let n = 0; n < 5; n += 1) await fail(h.bootstrap.getBootstrap({ locale: 'es' }));
+    for (let n = 0; n < 5; n += 1) await fail(h.bootstrap.getBootstrap({}));
     expect([h.gate.inFlight, h.gate.waiting]).toEqual([0, 0]);
     h.catalogRepo.failWith = null;
-    expect((await h.bootstrap.getBootstrap({ locale: 'es' })).productCount).toBe(2);
+    expect((await h.bootstrap.getBootstrap({})).productCount).toBe(2);
   });
 
   it('una sección que falla de forma persistente registra una advertencia por minuto, no por solicitud', async () => {
@@ -220,20 +208,20 @@ describe('StoreBootstrapService', () => {
     const warn = vi.spyOn(Logger.prototype, 'warn');
     warn.mockClear();
     h.availability.state.fail = true;
-    for (let n = 0; n < 5; n += 1) await h.bootstrap.getBootstrap({ branchId: A, locale: 'es' });
+    for (let n = 0; n < 5; n += 1) await h.bootstrap.getBootstrap({ branchId: A });
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
   it('sin sucursal: consultas = categorías + conteo + banners', async () => {
     const h = world();
     h.resetCounts();
-    await h.bootstrap.getBootstrap({ locale: 'es' });
+    await h.bootstrap.getBootstrap({});
     expect(h.queryCount()).toBe(3);
   });
 
   it('respuesta sin datos privados: solo claves del contrato', async () => {
     const h = world();
-    const r = await h.bootstrap.getBootstrap({ branchId: A, locale: 'es' });
+    const r = await h.bootstrap.getBootstrap({ branchId: A });
     expect(Object.keys(r).sort()).toEqual(
       [
         'availability',
@@ -244,7 +232,6 @@ describe('StoreBootstrapService', () => {
         'degraded',
         'featured',
         'generatedAt',
-        'locale',
         'nextChangeAt',
         'productCount',
         'promotions',

@@ -12,7 +12,6 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { BANNER_LOCALES } from '../../banners/banners.types.js';
 import { toBoolean, toStrictInt } from '../../products/dto/product-requests.dto.js';
 import { SLUG_MAX, SLUG_PATTERN } from '../../products/product-policy.js';
 import {
@@ -38,11 +37,6 @@ export class StoreBootstrapQuery {
   @Transform(lowerUuid)
   @IsUUID('all')
   branchId?: string;
-
-  @ApiPropertyOptional({ type: String, enum: BANNER_LOCALES, default: 'es' })
-  @IsOptional()
-  @IsIn(BANNER_LOCALES)
-  locale?: 'es' | 'en';
 }
 
 /** `GET /store/products/:slug?branchId=`. */

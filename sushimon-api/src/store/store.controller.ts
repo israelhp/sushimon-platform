@@ -36,17 +36,19 @@ export class StoreController {
   @UseInterceptors(StoreCacheInterceptor)
   @ApiOperation({
     operationId: 'getStoreBootstrap',
-    summary: 'Agregado de arranque del Inicio por sucursal e idioma (público, acotado)',
+    summary: 'Agregado de arranque del Inicio por sucursal (público, acotado)',
   })
   @ApiOkResponse({ type: StoreBootstrapDto })
-  @ApiResponse({ status: 400, description: '`branchId` mal formado o `locale` fuera de `es|en`' })
+  @ApiResponse({
+    status: 400,
+    description: '`branchId` mal formado o parámetros desconocidos (p. ej. `locale`, retirado)',
+  })
   @ApiResponse({ status: 404, description: 'BRANCH_NOT_FOUND: no existe o está inactiva' })
   @ApiResponse({ status: 429, description: 'RATE_LIMITED' })
   @ApiResponse({ status: 503, description: 'STORE_BUSY (reintentable)' })
   getBootstrap(@Query() query: StoreBootstrapQuery): Promise<StoreBootstrapDto> {
     return this.bootstrap.getBootstrap({
       ...(query.branchId !== undefined ? { branchId: query.branchId } : {}),
-      locale: query.locale ?? 'es',
     });
   }
 

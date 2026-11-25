@@ -57,7 +57,6 @@ export class StoreBootstrapCategoryDto {
 export class StoreBootstrapDto {
   @ApiProperty({ type: String, format: 'date-time' }) generatedAt!: string;
   @ApiProperty({ type: String, format: 'date-time', nullable: true }) nextChangeAt!: string | null;
-  @ApiProperty({ type: String, enum: ['es', 'en'] }) locale!: 'es' | 'en';
   @ApiProperty({ type: String, format: 'uuid', nullable: true }) branchId!: string | null;
   @ApiProperty({ type: () => PublicBranchDto, nullable: true }) branch!: PublicBranchDto | null;
   @ApiProperty({ type: () => BranchAvailabilityDto, nullable: true })

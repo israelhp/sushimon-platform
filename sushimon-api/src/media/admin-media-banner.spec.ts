@@ -130,12 +130,12 @@ describe('uso por banners (usageCount, bannerUsages, borrado)', () => {
     const h = mediaHarness();
     h.repo.seed({ id: 'b1', kind: 'BANNER_IMAGE', objectKey: 'banners/2026/b1.png' });
     h.repo.bannerUsageOf = (id) =>
-      id === 'b1' ? [{ bannerId: 'x', bannerCode: 'verano-2026' }] : [];
+      id === 'b1' ? [{ bannerId: 'x', bannerAlt: 'Promoción de verano' }] : [];
     const detail = await h.queries.get('b1');
     expect(detail).toMatchObject({
       usageCount: 1,
       usages: [],
-      bannerUsages: [{ bannerId: 'x', bannerCode: 'verano-2026' }],
+      bannerUsages: [{ bannerId: 'x', bannerAlt: 'Promoción de verano' }],
     });
     const list = await h.queries.list({ page: 1, pageSize: 20, unreferenced: false });
     expect(list.items.map((i) => i.id)).toEqual(['b1']);
@@ -146,14 +146,14 @@ describe('uso por banners (usageCount, bannerUsages, borrado)', () => {
     const h = mediaHarness();
     h.repo.seed({ id: 'mix' });
     h.repo.usageOf = () => [{ productId: 'p', productName: 'P', productMediaId: 'm' }];
-    h.repo.bannerUsageOf = () => [{ bannerId: 'b', bannerCode: 'abc' }];
+    h.repo.bannerUsageOf = () => [{ bannerId: 'b', bannerAlt: 'abc' }];
     expect((await h.queries.get('mix')).usageCount).toBe(2);
   });
 
   it('borrar un asset usado SOLO por un banner => 409 MEDIA_IN_USE sin borrar fila ni objeto', async () => {
     const h = mediaHarness();
     h.repo.seed({ id: 'used-by-banner', kind: 'BANNER_IMAGE', objectKey: 'banners/2026/u.png' });
-    h.repo.bannerUsageOf = () => [{ bannerId: 'b', bannerCode: 'abc' }];
+    h.repo.bannerUsageOf = () => [{ bannerId: 'b', bannerAlt: 'abc' }];
     h.mock.simulateUpload('banners/2026/u.png', bytes, 'image/png');
     const e = await failure(h.service.remove(staff(), 'used-by-banner'));
     expect(status(e)).toBe(409);
@@ -171,5 +171,36 @@ describe('uso por banners (usageCount, bannerUsages, borrado)', () => {
     h.mock.simulateUpload('banners/2026/f.png', bytes, 'image/png');
     await h.service.remove(staff(), 'free');
     expect(h.repo.assets.has('free')).toBe(false);
+  });
+
+  it('removeUnusedAsset (F16, tras borrar un banner): sin exigir catalog.update, borra fila y objeto', async () => {
+    const h = mediaHarness();
+    h.repo.seed({ id: 'freed', kind: 'BANNER_IMAGE', objectKey: 'banners/2026/z.png' });
+    h.mock.simulateUpload('banners/2026/z.png', bytes, 'image/png');
+    const onlyBanners = { ...globalStaff(['banners.update']), staffId: 'staff-1' };
+    await h.service.removeUnusedAsset(onlyBanners, 'freed');
+    expect(h.repo.assets.has('freed')).toBe(false);
+    expect(h.mock.objects.size).toBe(0);
+  });
+
+  it('removeUnusedAsset conserva el asset si otro banner o producto lo usa (409 MEDIA_IN_USE)', async () => {
+    const h = mediaHarness();
+    h.repo.seed({ id: 'shared', kind: 'BANNER_IMAGE', objectKey: 'banners/2026/s.png' });
+    h.repo.bannerUsageOf = () => [{ bannerId: 'b', bannerAlt: 'otro' }];
+    h.mock.simulateUpload('banners/2026/s.png', bytes, 'image/png');
+    const e = await failure(h.service.removeUnusedAsset(staff(), 'shared'));
+    expect(code(e)).toBe('MEDIA_IN_USE');
+    expect(h.repo.assets.has('shared')).toBe(true);
+    expect(h.mock.objects.size).toBe(1);
+  });
+
+  it('removeUnusedAsset nunca borra un asset de producto sin uso (404, no escala catalog.update)', async () => {
+    const h = mediaHarness();
+    h.repo.seed({ id: 'prod', kind: 'PRODUCT_IMAGE', objectKey: 'products/2026/p.png' });
+    h.mock.simulateUpload('products/2026/p.png', bytes, 'image/png');
+    const e = await failure(h.service.removeUnusedAsset(globalStaff(['banners.update']), 'prod'));
+    expect(code(e)).toBe('MEDIA_NOT_FOUND');
+    expect(h.repo.assets.has('prod')).toBe(true);
+    expect(h.mock.objects.size).toBe(1);
   });
 });

@@ -9,7 +9,8 @@ import { BannersRepository } from './banners.repository.js';
 /**
  * F16 · administración de banners (`/v1/admin/banners`). La lectura pública vive en `BannersReadModule` (se re-exporta
  * para que F17 pueda importar solo `PublicBannersReader`). Dependencias en una sola dirección:
- * `banners -> media (MediaUrlService) -> audit`, `banners -> auth`; `media` y `promotions` no importan `banners`.
+ * `banners -> media (MediaUrlService, AdminMediaService.removeUnusedAsset) -> audit`, `banners -> auth`; `media` y
+ * `promotions` no importan `banners`.
  */
 @Module({
   imports: [AuditModule, MediaModule, BannersReadModule],

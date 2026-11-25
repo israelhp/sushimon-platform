@@ -52,7 +52,7 @@ export interface MediaUsageRow {
 /** Banner (F16) que usa el asset como imagen. */
 export interface MediaBannerUsageRow {
   bannerId: string;
-  bannerCode: string;
+  bannerAlt: string;
 }
 
 export interface AdminMediaAssetView {

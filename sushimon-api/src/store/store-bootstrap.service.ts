@@ -30,7 +30,6 @@ export type StoreBootstrapSection = 'availability' | 'featured' | 'promotions' |
 export interface StoreBootstrapView {
   generatedAt: string;
   nextChangeAt: string | null;
-  locale: 'es' | 'en';
   branchId: string | null;
   branch: PublicBranchView | null;
   availability: BranchAvailabilityDto | null;
@@ -79,10 +78,7 @@ export class StoreBootstrapService {
     }
   }
 
-  async getBootstrap(input: {
-    branchId?: string;
-    locale: 'es' | 'en';
-  }): Promise<StoreBootstrapView> {
+  async getBootstrap(input: { branchId?: string }): Promise<StoreBootstrapView> {
     try {
       return await this.build(input);
     } catch (error) {
@@ -90,10 +86,7 @@ export class StoreBootstrapService {
     }
   }
 
-  private async build(input: {
-    branchId?: string;
-    locale: 'es' | 'en';
-  }): Promise<StoreBootstrapView> {
+  private async build(input: { branchId?: string }): Promise<StoreBootstrapView> {
     const branchId = input.branchId ?? null;
     const at = this.clock.now();
     // Etapa 1 (críticas, en paralelo): sucursal y árbol de categorías.
@@ -120,13 +113,7 @@ export class StoreBootstrapService {
               now: at,
             }),
       ),
-      limit(() =>
-        this.banners.findActiveBanners({
-          branchId,
-          locale: input.locale,
-          branchValidated: branchId !== null,
-        }),
-      ),
+      limit(() => this.banners.findActiveBanners()),
     ]);
     if (count.status === 'rejected') throw count.reason;
 
@@ -150,12 +137,8 @@ export class StoreBootstrapService {
 
     return {
       generatedAt: this.clock.now().toISOString(),
-      nextChangeAt: earliestIso([
-        promotionList?.nextChangeAt,
-        bannerList?.nextChangeAt,
-        availabilityView?.nextTransitionAt,
-      ]),
-      locale: input.locale,
+      // Los banners ya no dependen del tiempo (ADR-0033): no intervienen en `nextChangeAt`.
+      nextChangeAt: earliestIso([promotionList?.nextChangeAt, availabilityView?.nextTransitionAt]),
       branchId,
       branch,
       availability: availabilityView,
@@ -169,7 +152,7 @@ export class StoreBootstrapService {
       // P23 (sin decidir): no hay columna ni criterio de destacados; vacío y SIN `degraded` (no es un fallo).
       featured: [],
       promotions: (promotionList?.items ?? []).slice(0, MAX_BOOTSTRAP_PROMOTIONS),
-      banners: (bannerList?.items ?? []).slice(0, MAX_BOOTSTRAP_BANNERS),
+      banners: (bannerList ?? []).slice(0, MAX_BOOTSTRAP_BANNERS),
       productCount: count.value,
       degraded,
     };

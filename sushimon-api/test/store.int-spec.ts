@@ -9,7 +9,6 @@ import { AdminBranchProductsService } from '../src/branch-products/admin-branch-
 import { BranchOffersService } from '../src/branch-products/branch-offers.service.js';
 import { BranchProductsRepository } from '../src/branch-products/branch-products.repository.js';
 import { BannersReadRepository } from '../src/banners/banners-read.repository.js';
-import { BannersTimeService } from '../src/banners/banners-time.service.js';
 import { PublicBannersReader } from '../src/banners/public-banners.reader.js';
 import { BranchAvailabilityService } from '../src/branch-schedule/branch-availability.service.js';
 import { BranchScheduleRepository } from '../src/branch-schedule/branch-schedule.repository.js';
@@ -175,7 +174,6 @@ describe.skipIf(!url || !ready)('Agregados públicos de la tienda contra Postgre
       promotions,
       new PublicBannersReader(
         new BannersReadRepository(prisma),
-        new BannersTimeService(clock, TZ),
         new MediaUrlService(mediaConfig()),
       ),
       clock,
@@ -385,7 +383,7 @@ describe.skipIf(!url || !ready)('Agregados públicos de la tienda contra Postgre
     expect(d.offer).toMatchObject({ branchId: a, price: '50.00', available: true });
     expect(d.promotions).toHaveLength(1);
     expect(p).toBeDefined();
-    const boot = await bootstrap.getBootstrap({ branchId: a, locale: 'es' });
+    const boot = await bootstrap.getBootstrap({ branchId: a });
     expect(boot.promotions.map((x) => x.name)).toEqual(
       expect.arrayContaining([`Vigente ${run}`, `Cupon ${run}`]),
     );
@@ -404,7 +402,7 @@ describe.skipIf(!url || !ready)('Agregados públicos de la tienda contra Postgre
       search: await measure(() =>
         catalog.search({ q: `vol ${run}`, branchId: a, page: 1, pageSize: 50 }),
       ),
-      boot: await measure(() => bootstrap.getBootstrap({ branchId: a, locale: 'es' })),
+      boot: await measure(() => bootstrap.getBootstrap({ branchId: a })),
       detail: await measure(() => detail.getDetail(`vol-${run}-0`, a)),
     };
     await newProducts(cat.id, 100, 'volb');
@@ -417,7 +415,7 @@ describe.skipIf(!url || !ready)('Agregados públicos de la tienda contra Postgre
       search: await measure(() =>
         catalog.search({ q: `vol ${run}`, branchId: a, page: 1, pageSize: 50 }),
       ),
-      boot: await measure(() => bootstrap.getBootstrap({ branchId: a, locale: 'es' })),
+      boot: await measure(() => bootstrap.getBootstrap({ branchId: a })),
       detail: await measure(() => detail.getDetail(`vol-${run}-0`, a)),
     };
     expect(run110.menu.result.total).toBe(110);

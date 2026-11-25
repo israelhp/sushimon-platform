@@ -85,6 +85,6 @@ export async function selectMediaStorage(
       useFactory: selectMediaStorage,
     },
   ],
-  exports: [MediaUrlService, MediaCleanupService, MEDIA_CONFIG],
+  exports: [MediaUrlService, MediaCleanupService, AdminMediaService, MEDIA_CONFIG],
 })
 export class MediaModule {}
