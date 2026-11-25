@@ -82,23 +82,22 @@ src/features/          query-keys · <dominio>/hooks.ts · cart/ · order-mode/ 
 
 ## Escenarios (`NEXT_PUBLIC_MOCK_SCENARIO`)
 
-| Escenario                  | Dónde se aplica | Efecto                                                                                                            |
-| -------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `default`                  | —               | datos cargados                                                                                                    |
-| `loading`                  | mock-client     | ninguna solicitud resuelve                                                                                        |
-| `error`                    | mock-client     | 500 en todo                                                                                                       |
-| `offline`                  | mock-client     | `ApiError` status 0                                                                                               |
-| `forbidden`                | mock-client     | 403 en `/v1/backoffice/*`                                                                                         |
-| `request-rejected`         | mock-client     | 422 en toda escritura                                                                                             |
-| `empty`                    | seed            | sin categorías, productos, promociones, pedidos, historial ni datos de cuenta                                     |
-| `promotion-expired`        | seed            | todas las promociones terminaron ayer (`endsAt` = hoy 00:00 local, exclusivo): ninguna vigente ni próxima         |
-| `banners-empty`            | seed            | F16: sin banners (el Inicio colapsa la sección del carrusel; la lista del backoffice queda vacía)                 |
-| `banner-promotion-expired` | seed            | F16: igual que `promotion-expired` (alias explícito): los banners ligados a una promoción dejan de publicarse     |
-| `branch-closed`            | seed            | F08: cierre extraordinario EN CURSO en cada sucursal activa (`EXCEPTIONAL_CLOSURE`): "ahora" → 409; programado sí |
-| `product-unavailable`      | seed            | Calientito Roll y Platanito Roll no disponibles                                                                   |
-| `order-pending`            | seed + handler  | MON-490217 y los pagos aprobados quedan `review` (no se confirman)                                                |
-| `payment-rejected`         | handler         | toda tarjeta → `declined`                                                                                         |
-| `rider-unavailable`        | handler         | la búsqueda de PedidosYa pasa a `failed`; se puede despachar con repartidor propio                                |
+| Escenario             | Dónde se aplica | Efecto                                                                                                            |
+| --------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `default`             | —               | datos cargados                                                                                                    |
+| `loading`             | mock-client     | ninguna solicitud resuelve                                                                                        |
+| `error`               | mock-client     | 500 en todo                                                                                                       |
+| `offline`             | mock-client     | `ApiError` status 0                                                                                               |
+| `forbidden`           | mock-client     | 403 en `/v1/backoffice/*`                                                                                         |
+| `request-rejected`    | mock-client     | 422 en toda escritura                                                                                             |
+| `empty`               | seed            | sin categorías, productos, promociones, pedidos, historial ni datos de cuenta                                     |
+| `promotion-expired`   | seed            | todas las promociones terminaron ayer (`endsAt` = hoy 00:00 local, exclusivo): ninguna vigente ni próxima         |
+| `banners-empty`       | seed            | F16: sin banners (el Inicio colapsa la sección del carrusel; la lista del backoffice queda vacía)                 |
+| `branch-closed`       | seed            | F08: cierre extraordinario EN CURSO en cada sucursal activa (`EXCEPTIONAL_CLOSURE`): "ahora" → 409; programado sí |
+| `product-unavailable` | seed            | Calientito Roll y Platanito Roll no disponibles                                                                   |
+| `order-pending`       | seed + handler  | MON-490217 y los pagos aprobados quedan `review` (no se confirman)                                                |
+| `payment-rejected`    | handler         | toda tarjeta → `declined`                                                                                         |
+| `rider-unavailable`   | handler         | la búsqueda de PedidosYa pasa a `failed`; se puede despachar con repartidor propio                                |
 
 ## Reglas
 

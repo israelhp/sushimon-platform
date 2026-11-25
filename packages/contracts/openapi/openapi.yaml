@@ -1,6 +1,6 @@
 # Contrato HTTP canónico de Sushi Mon (Contract First).
 # Se diseña ANTES de implementar cada slice y se verifica contra NestJS con `pnpm contracts:check`.
-# Estado: F27 (motoristas propios: /v1/admin/riders[/{id}[/status|/availability]]; CONTRACT_DEFINED, API pendiente) + F17 (agregados públicos y búsqueda: /v1/store/bootstrap, /v1/store/search; ampliaciones ADITIVAS de /v1/store/menu y /v1/store/products/{slug}; CONTRACT_DEFINED, API pendiente) + F16 (banners: /v1/store/banners, /v1/admin/banners) + F15 (promociones: /v1/store/promotions, /v1/admin/promotions) + F14 (medios en Cloudflare R2: /v1/admin/media, /v1/admin/media/upload-intents|complete, /v1/admin/products/{id}/media[/order|/{mediaId}]) + F13 (precio y disponibilidad por sucursal: /v1/store/menu, /v1/admin/branches/{id}/products[/{productId}/pricing], /v1/admin/products/{id}/branches|availability) + F12 (modificadores de producto: /v1/admin/modifier-groups, /v1/admin/modifiers, /v1/admin/products/{id}/modifiers|modifier-groups; modifierGroups en la ficha pública) + F11 (productos y fichas de catálogo: /v1/store/products, /v1/admin/products) + F10 (categorías y jerarquía del menú: /v1/store/categories, /v1/admin/categories, /v1/admin/categories/reorder) + F09 (geografía, cobertura y zonas propias: /v1/locations/*, /v1/admin/delivery-zones, /v1/admin/branches/{id}/delivery-settings, /v1/delivery-coverage/check) + F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
+# Estado: F27 (motoristas propios: /v1/admin/riders[/{id}[/status|/availability]]; CONTRACT_DEFINED, API pendiente) + F17 (agregados públicos y búsqueda: /v1/store/bootstrap, /v1/store/search; ampliaciones ADITIVAS de /v1/store/menu y /v1/store/products/{slug}; CONTRACT_DEFINED, API pendiente) + F16 (banners simplificados, ADR-0033: /v1/store/banners, /v1/admin/banners[/{id}]; CONTRACT_DEFINED, API pendiente) + F15 (promociones: /v1/store/promotions, /v1/admin/promotions) + F14 (medios en Cloudflare R2: /v1/admin/media, /v1/admin/media/upload-intents|complete, /v1/admin/products/{id}/media[/order|/{mediaId}]) + F13 (precio y disponibilidad por sucursal: /v1/store/menu, /v1/admin/branches/{id}/products[/{productId}/pricing], /v1/admin/products/{id}/branches|availability) + F12 (modificadores de producto: /v1/admin/modifier-groups, /v1/admin/modifiers, /v1/admin/products/{id}/modifiers|modifier-groups; modifierGroups en la ficha pública) + F11 (productos y fichas de catálogo: /v1/store/products, /v1/admin/products) + F10 (categorías y jerarquía del menú: /v1/store/categories, /v1/admin/categories, /v1/admin/categories/reorder) + F09 (geografía, cobertura y zonas propias: /v1/locations/*, /v1/admin/delivery-zones, /v1/admin/branches/{id}/delivery-settings, /v1/delivery-coverage/check) + F08 (horarios, cierres y disponibilidad: /v1/branches/{id}/hours|availability, /v1/admin/branches/{id}/hours|closures) + F03 (RBAC granular y gestión de empleados: /v1/admin/staff, /v1/admin/roles, /v1/admin/permissions) + F00 (health y readiness) + F01 (identidad: /v1/auth/context, /v1/me) + F02 (MFA aal2: /v1/admin/me/context). No se agregan endpoints ficticios.
 # Seguridad por defecto: Bearer JWT de Supabase Auth en todo salvo operaciones con `security: []` (health).
 # Transversal a TODAS las respuestas: cabecera `X-Request-Id`; errores con `ErrorResponse`; 429 cuando
 # se excede el rate limit global (no se repite por operación).
@@ -5702,18 +5702,18 @@ paths:
         F17. Sin autenticación. UNA solicitud para pintar el Inicio, en lugar de varias: contexto público de la sucursal, categorías principales, productos destacados,
         promociones vigentes, banners y el contador del menú. NO devuelve el catálogo (tope fijo de elementos por sección) ni datos privados del cliente (favoritos, direcciones,
         pedidos y sesión se piden aparte con rutas autenticadas `/v1/me/...`), ni consulta PedidosYa/Neonet. `branchId` es opcional: sin él `branch`, `availability` son `null`, `promotions`
-        va vacío, los banners son solo los de «todas las sucursales» (como `listStoreBanners`) y los destacados llevan el precio base y `available=null`; con él (inexistente o inactiva =>
-        404 `BRANCH_NOT_FOUND`) todo se calcula para esa sucursal. `locale` (`es` por defecto | `en`) solo afecta a los banners (respaldo POR CAMPO a `es`: `fallbackFields`); los nombres de
+        va vacío, los banners son los mismos con o sin sucursal (como `listStoreBanners`) y los destacados llevan el precio base y `available=null`; con él (inexistente o inactiva =>
+        404 `BRANCH_NOT_FOUND`) todo se calcula para esa sucursal. No hay parámetro `locale` (los banners tienen un solo texto alternativo, ADR-0033); los nombres de
         categorías y productos no tienen traducción en v1.
 
         Composición (sin duplicar reglas): `branch` = campos de `getPublicBranch`; `availability` = `getBranchAvailability` (F08); `categories` = raíces visibles de F10 (máx. 30,
         `hasChildren` para saber si hay subcategorías; el árbol completo sigue en `listStoreCategories`); `featured` = productos destacados VISIBLES (F11/F10) con la misma tarjeta que
         `getStoreBranchMenu` (máx. 8, orden estable: criterio P23); `promotions` = las promociones automáticas y los cupones VIGENTES AHORA de `listStorePromotions` (F15) en su forma pública
-        (nunca `code`; un cupón sale con `requiresCode=true` y sin descuento), máx. 5, SIN `items`; `banners` = `listStoreBanners` (F16), máx. 10; `productCount` = productos visibles de
+        (nunca `code`; un cupón sale con `requiresCode=true` y sin descuento), máx. 5, SIN `items`; `banners` = `listStoreBanners` (F16 simplificado: activos, orden de creación), máx. 5; `productCount` = productos visibles de
         la sucursal (disponibles o no) para el pie del Inicio. Las secciones no críticas (`availability`, `featured`, `promotions`, `banners`) son independientes: si una falla, la respuesta
         sigue siendo 200 con esa sección vacía/`null` y su nombre en `degraded`; categorías, sucursal y `productCount` son críticas (error => 404/5xx).
 
-        Caché compartida acotada por el próximo cambio: `nextChangeAt` = el MENOR no nulo de `promotions` (cambio de vigencia), `banners` (inicio/fin) y `availability.nextTransitionAt`
+        Caché compartida acotada por el próximo cambio: `nextChangeAt` = el MENOR no nulo de `promotions` (cambio de vigencia) y `availability.nextTransitionAt`
         (apertura/cierre), siempre con horizonte de 14 días; `null` si no hay. `Cache-Control: public, max-age=min(N,5), s-maxage=N` con `N = clamp(segundos enteros hasta nextChangeAt
         medidos con generatedAt, 1, 15)` (15 si `nextChangeAt` es `null`), `no-store` si `nextChangeAt` ya pasó; si `degraded` no está vacío, `public, max-age=0, s-maxage=3` (acotado para no anular la CDN ante una sección que falla de forma persistente); sin `stale-while-revalidate` ni `ETag`;
         `Vary: Accept-Encoding` (sucursal e idioma van en la URL, nunca en cabeceras ni cookies; la respuesta no depende de `Authorization`). Una edición del backoffice (producto, precio,
@@ -5726,10 +5726,6 @@ paths:
           required: false
           description: UUID de una sucursal ACTIVA. Sin él, agregado sin sucursal.
           schema: { type: string, format: uuid }
-        - name: locale
-          in: query
-          required: false
-          schema: { $ref: '#/components/schemas/BannerLocale' }
       responses:
         '200':
           description: Agregado del Inicio
@@ -5742,7 +5738,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/StoreBootstrap'
         '400':
-          description: '`branchId` mal formado o `locale` fuera de `es|en`'
+          description: '`branchId` mal formado'
           content:
             application/json:
               schema:
@@ -7146,53 +7142,26 @@ paths:
   /v1/store/banners:
     get:
       operationId: listStoreBanners
-      summary: Banners publicados del Inicio de la tienda (público, solo lectura)
+      summary: Banners activos del Inicio de la tienda (público, solo lectura)
       description: |
-        F16. Sin autenticación. Devuelve SOLO los banners elegibles AHORA, ya ordenados (`sortOrder`, `createdAt`, `id`) y recortados a un máximo de 10, sin datos administrativos (sin `code`, versión, auditoría ni ids de
-        promoción). `branchId` es opcional: sin él solo salen los banners de `branchScope=ALL`; con él, los `ALL` más los `SELECTED` que incluyen esa sucursal (inexistente o inactiva => 404 `BRANCH_NOT_FOUND`). `locale`
-        (`es` por defecto | `en`) elige el idioma de los textos con respaldo POR CAMPO a `es` (`fallbackFields` lista los campos que vinieron en español para que la web marque `lang="es"`); una cadena vacía cuenta como ausente.
-        Un banner es elegible si: `active`; `startsAt <= ahora < endsAt` (cada extremo puede faltar; instantes, `America/Guatemala` solo para mostrar); su imagen es un asset READY de tipo `BANNER_IMAGE` con URL pública
-        disponible; tiene traducción válida (título e imagen alt en `es`); si apunta a producto o categoría, ese destino está activo; y, si está vinculado a una promoción de F15, la promoción está VIGENTE ahora (`active`,
-        vigencia y horario semanal) y aplica a la sucursal consultada (si no, el banner se oculta; no hay error). Un banner vinculado a un cupón NO revela el código ni el descuento: la respuesta nunca incluye datos de la
-        promoción. F16 no calcula precios ni descuentos. Una lista vacía es una respuesta válida (200). `nextChangeAt` = próximo instante (<= 14 días) en que puede cambiar el conjunto publicado por tiempo (inicio/fin de
-        banner o cambio de vigencia de una promoción vinculada); `null` si no hay. Caché compartida acotada igual que `listStorePromotions`: `public, max-age=min(N,5), s-maxage=N` con `N = clamp(segundos enteros hasta
-        nextChangeAt, 1, 30)`, `no-store` si ya pasó; sin `stale-while-revalidate` ni `ETag`; `Vary: Accept-Encoding` (el idioma va en la URL). Una edición del backoffice puede tardar hasta 30 s en verse. Imágenes: URL pública
-        permanente (nunca firmada). Límite de tasa 60/min por IP.
+        F16 (simplificado, ADR-0033). Sin autenticación ni parámetros. Devuelve SOLO los banners `active=true` cuya imagen es un asset `READY` de tipo `BANNER_IMAGE` con URL pública disponible, en orden de creación
+        (`createdAt` ascendente, desempate por `id`; más antiguo primero), como máximo 5 (el tope global de banners). Cada elemento es solo `{id, image, alt}`: sin código, versión, auditoría, ids de asset ni claves
+        de objeto. No hay idioma (`alt` es un único texto), sucursal, vigencia ni destino: el conjunto no depende del reloj ni de la sucursal. Una lista vacía es una respuesta válida (200). Imágenes: URL pública
+        permanente (nunca firmada). Caché compartida simple: `Cache-Control: public, max-age=15, s-maxage=30` (el contenido solo cambia por una edición del backoffice; 30 s acotan cuánto tarda en verse una edición
+        y cuánto puede una CDN seguir sirviendo la URL de una imagen ya borrada); sin `stale-while-revalidate` ni `ETag`; `Vary: Accept-Encoding`. Los errores llevan `no-store`. Límite de tasa 60/min por IP.
       tags: [banners]
       security: []
-      parameters:
-        - name: branchId
-          in: query
-          required: false
-          description: UUID de una sucursal ACTIVA. Sin él, solo banners de todas las sucursales.
-          schema: { type: string, format: uuid }
-        - name: locale
-          in: query
-          required: false
-          schema: { $ref: '#/components/schemas/BannerLocale' }
       responses:
         '200':
-          description: Banners publicados (puede ser una lista vacía)
+          description: Banners activos (puede ser una lista vacía)
           headers:
             Cache-Control:
-              description: public, max-age=min(N,5), s-maxage=N con 1 <= N <= 30 (o no-store)
+              description: 'public, max-age=15, s-maxage=30'
               schema: { type: string }
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/StoreBannerList'
-        '400':
-          description: '`branchId` mal formado o `locale` fuera de `es|en`'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: '`BRANCH_NOT_FOUND`: se envió `branchId` y no existe o está inactiva'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         '429':
           description: '`RATE_LIMITED` (por actor en escrituras; por IP en la ruta pública). `Retry-After`.'
           content:
@@ -7208,42 +7177,16 @@ paths:
   /v1/admin/banners:
     get:
       operationId: listAdminBanners
-      summary: Banners del backoffice (paginado, con filtros)
+      summary: Banners del backoffice (todos, activos e inactivos; máx. 5)
       description: |
-        F16. Exige `banners.read` y `aal2`. Alcance por sucursal (patrón F15): con alcance global ve todos; con alcance acotado solo los que aplican a alguna de sus sucursales (incluidos los de «todas»), con `branches` recortado
-        a su alcance y `editable=false` si no cubre todas las de cada banner. Filtros: `branchId` (banners que aplican a esa sucursal; fuera de alcance o inexistente => 404 `BRANCH_NOT_FOUND`), `lifecycle` (estado derivado:
-        `INACTIVE` = `active=false`; `EXPIRED` = activo con `endsAt <= ahora` (para el tope de 100 y el reordenado «vencido» es `endsAt <= ahora` por fecha, independiente de `active`); `SCHEDULED` = activo con `startsAt > ahora`; `PUBLISHED` = activo y dentro de la vigencia; precedencia INACTIVE > EXPIRED > SCHEDULED > PUBLISHED),
-        `q` (título en cualquier idioma o código; contiene, sin distinguir mayúsculas ni acentos; comodines literales; máx. 80). Orden por defecto `priority` (`sortOrder`, `createdAt`, `id`: es el orden de la tienda); `id` desempata
-        siempre. Una consulta para la página + una para sus sucursales y traducciones (sin N+1). `visibleNow` y `hiddenReason` se calculan con el reloj del servidor. Respuesta `Cache-Control: no-store`.
+        F16 (simplificado, ADR-0033). Exige `banners.read` con alcance GLOBAL y `aal2` (el banner no tiene sucursal; un alcance acotado => 403). Sin filtros ni paginación: existen como máximo 5 banners (activos más
+        inactivos), así que devuelve todos en un envoltorio `{items, limit}`, en orden de creación (`createdAt` ascendente, desempate por `id`; es el orden de la tienda). Una sola consulta. `Cache-Control: no-store`.
       tags: [banners]
       security:
         - bearer: []
-      parameters:
-        - name: branchId
-          in: query
-          schema: { type: string, format: uuid }
-        - name: lifecycle
-          in: query
-          schema: { $ref: '#/components/schemas/BannerLifecycle' }
-        - name: q
-          in: query
-          schema: { type: string, maxLength: 80 }
-        - name: sort
-          in: query
-          schema: { type: string, enum: [priority, startsAt, endsAt, createdAt], default: priority }
-        - name: order
-          in: query
-          description: 'Por defecto `asc`, también con `sort=startsAt|endsAt|createdAt` (los nulos van al final).'
-          schema: { type: string, enum: [asc, desc], default: asc }
-        - name: page
-          in: query
-          schema: { type: integer, minimum: 1, maximum: 200, default: 1 }
-        - name: pageSize
-          in: query
-          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
       responses:
         '200':
-          description: Página de banners
+          description: Todos los banners (de 0 a 5)
           headers:
             Cache-Control:
               description: no-store
@@ -7251,13 +7194,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AdminBannerPage'
-        '400':
-          description: 'Parámetros de consulta inválidos'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/AdminBannerList'
         '401':
           description: 'Token ausente, inválido o expirado'
           content:
@@ -7265,30 +7202,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: 'No es personal activo, falta `banners.read` o la sesión no es aal2'
+          description: 'No es personal activo, falta `banners.read` con alcance global o la sesión no es aal2'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: '`BRANCH_NOT_FOUND` (filtro `branchId` inexistente o fuera de alcance)'
+        '503':
+          description: '`BANNERS_BUSY`: la transacción agotó su tiempo; reintentable'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
     post:
       operationId: createAdminBanner
-      summary: Crea un banner
+      summary: Crea un banner (imagen + texto alternativo)
       description: |
-        F16. Exige `banners.create` y `aal2`. Alcance: `branchScope=ALL` exige alcance GLOBAL del permiso (si no, 403 `BANNER_SCOPE_FORBIDDEN`); `SELECTED` exige que TODAS las `branchIds` estén en el alcance (sucursal
-        inexistente o fuera de alcance => 404 `BRANCH_NOT_FOUND`); `SELECTED` vacío o `ALL` con `branchIds` => 422 `BANNER_SCOPE_INVALID`. `code` (obligatorio, minúsculas `^[a-z0-9][a-z0-9-]{2,63}$`, se normaliza recortando y
-        pasando a minúsculas; INMUTABLE después) único => 409 `BANNER_CODE_TAKEN`. `imageAssetId`: asset existente, `READY` y de tipo `BANNER_IMAGE`; si no => 422 `BANNER_IMAGE_INVALID` (violations `ASSET_UNKNOWN`,
-        `ASSET_NOT_READY`, `ASSET_KIND_MISMATCH`). `translations.es` es obligatoria (`title` 1..80 y `imageAlt` 1..200 tras recortar; si no => 422 `BANNER_TRANSLATION_INVALID`); `translations.en` es opcional y, vacía, se
-        ignora; un campo en blanco se guarda como ausente. `cta` (destino estructurado; sin rutas ni URL de texto libre): `NONE`, `MENU`, `PROMOTIONS`, `CATEGORY` (`categoryId` activo), `PRODUCT` (`productId` activo) o `PAGE`
-        (`page` de la lista blanca); datos incoherentes con el tipo o destino inexistente/inactivo => 422 `BANNER_CTA_INVALID`. Los enlaces externos NO se permiten en v1. `startsAt`/`endsAt` son instantes con zona, ambos
-        opcionales (sin `endsAt` = sin fin); `endsAt > startsAt` (si no, 422 `BANNER_PERIOD_INVALID`). `promotionId` (opcional): promoción existente cuyo alcance de sucursales cubre el del banner (si no, 422
-        `BANNER_PROMOTION_INVALID`); el banner solo se publica mientras esa promoción esté vigente. `sortOrder` (opcional, 0..9999; por defecto = último + 1). `active` por defecto `true`. Más de 100 banners no vencidos => 422
-        `BANNER_LIMIT_REACHED`. Nace con `version=1`. Audita `banner.created` en la misma transacción (sin PII). Respuesta `no-store`.
+        F16 (simplificado, ADR-0033). Exige `banners.create` con alcance GLOBAL y `aal2`. `imageAssetId`: asset existente, `READY` y de tipo `BANNER_IMAGE`; si no => 422 `BANNER_IMAGE_INVALID` (violations
+        `ASSET_UNKNOWN`, `ASSET_NOT_READY`, `ASSET_KIND_MISMATCH`). `imageAlt`: texto alternativo (accesibilidad) en un solo idioma, 1..120 caracteres tras recortar; longitud fuera de rango => 400, en blanco tras
+        recortar => 422 `BANNER_ALT_INVALID`. `active` por defecto `true`. Tope de 5 banners en total (activos más inactivos): si ya existen 5 => 409 `BANNER_LIMIT_REACHED` sin escribir (se serializa con un bloqueo
+        y un trigger en BD; dos creaciones simultáneas nunca superan 5). El `code` interno lo genera la API y no forma parte del contrato. Nace con `version=1`. Audita `banner.created` en la misma transacción (sin PII).
+        Respuesta `no-store`.
       tags: [banners]
       security:
         - bearer: []
@@ -7310,7 +7243,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AdminBanner'
         '400':
-          description: 'Forma inválida, campos desconocidos o faltantes (incluye `ALL` con `branchIds` mal formados)'
+          description: 'Forma inválida, campos desconocidos o faltantes, `imageAlt` fuera de 1..120 caracteres'
           content:
             application/json:
               schema:
@@ -7322,90 +7255,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: 'Falta `banners.create`, la sesión no es aal2 o `BANNER_SCOPE_FORBIDDEN`'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: '`BRANCH_NOT_FOUND` (alguna sucursal no existe o está fuera de alcance)'
+          description: 'Falta `banners.create` con alcance global o la sesión no es aal2'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: '`BANNER_CODE_TAKEN`'
+          description: '`BANNER_LIMIT_REACHED`: ya existen 5 banners (borre uno antes de crear otro)'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: '`BANNER_IMAGE_INVALID`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID` o `BANNER_LIMIT_REACHED` (ver `code` y `violations`)'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`RATE_LIMITED` (por actor en escrituras; por IP en la ruta pública). `Retry-After`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '503':
-          description: '`BANNERS_BUSY`: la transacción agotó su tiempo; reintentable'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /v1/admin/banners/order:
-    put:
-      operationId: reorderAdminBanners
-      summary: Reordena los banners no vencidos (prioridad atómica)
-      description: |
-        F16. Exige `banners.update` con alcance GLOBAL (el orden es único para toda la cadena) y `aal2`; un alcance acotado => 403 `BANNER_SCOPE_FORBIDDEN`. `orderedIds` debe contener EXACTAMENTE los banners NO vencidos
-        (activos o no, programados o publicados; los vencidos quedan fuera), sin duplicados ni ajenos; si no => 422 `BANNER_REORDER_MISMATCH` sin escribir (recarga la lista y reintenta). Asigna `sortOrder` 0..n-1 en una
-        transacción bajo bloqueo (el resultado concurrente es uno de los órdenes enviados, nunca mezclado) y sube `version` solo de los banners cuyo `sortOrder` cambia. Idempotente: repetir el mismo orden responde 200 sin
-        escribir ni auditar. Un cambio real audita `banner.reordered`. Respuesta `no-store`. Para mover UN banner basta `PATCH` de `sortOrder` (la prioridad no es única: el empate se resuelve por `createdAt` e `id`).
-      tags: [banners]
-      security:
-        - bearer: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReorderBannersRequest'
-      responses:
-        '200':
-          description: Orden resultante de los banners reordenados
-          headers:
-            Cache-Control:
-              description: no-store
-              schema: { type: string }
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AdminBannerOrder'
-        '400':
-          description: 'Forma inválida (UUID mal formado, más de 100 elementos, propiedades desconocidas)'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: 'Token ausente, inválido o expirado'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: 'Falta `banners.update` con alcance global, la sesión no es aal2 o `BANNER_SCOPE_FORBIDDEN`'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '422':
-          description: '`BANNER_REORDER_MISMATCH`'
+          description: '`BANNER_IMAGE_INVALID` o `BANNER_ALT_INVALID` (ver `code` y `violations`)'
           content:
             application/json:
               schema:
@@ -7427,8 +7289,7 @@ paths:
       operationId: getAdminBanner
       summary: Detalle administrativo de un banner
       description: |
-        F16. Exige `banners.read` y `aal2`. Inexistente o que no aplica a ninguna sucursal del alcance del actor => 404 `BANNER_NOT_FOUND` (no se distingue). Incluye ambas traducciones tal como se guardaron (sin respaldo) y
-        el estado derivado. `Cache-Control: no-store`.
+        F16 (simplificado, ADR-0033). Exige `banners.read` con alcance GLOBAL y `aal2`. Inexistente => 404 `BANNER_NOT_FOUND`. `Cache-Control: no-store`.
       tags: [banners]
       security:
         - bearer: []
@@ -7458,7 +7319,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: 'No es personal activo, falta `banners.read` o la sesión no es aal2'
+          description: 'No es personal activo, falta `banners.read` con alcance global o la sesión no es aal2'
           content:
             application/json:
               schema:
@@ -7471,15 +7332,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
     patch:
       operationId: updateAdminBanner
-      summary: Edita un banner (parcial, con concurrencia optimista)
+      summary: Edita un banner (imagen, texto alternativo, activo; concurrencia optimista)
       description: |
-        F16. Exige `banners.update` y `aal2`. `expectedVersion` es OBLIGATORIO y debe coincidir con `version`; si no, 409 `BANNER_VERSION_CONFLICT` sin guardar. Parcial: los campos omitidos NO se tocan (no se reemplazan).
-        Admite `imageAssetId`, `translations` (por idioma y por campo: omitir = sin cambio; `null` en un campo opcional lo borra; `translations.en: null` elimina la traducción al inglés; `es.title` y `es.imageAlt` no pueden
-        quedar vacíos), `cta`, `startsAt`/`endsAt` (`null` = sin extremo), `branchScope`/`branchIds` (reemplaza TODAS las sucursales), `promotionId` (`null` lo desvincula) y `sortOrder`; `code` e `active` NO se aceptan
-        (`active` usa `PATCH .../status`). Las reglas de `POST` se validan sobre el estado RESULTANTE. Alcance: el actor debe cubrir TODAS las sucursales del banner, las actuales y las nuevas (`ALL` exige alcance global);
-        un banner que no toca su alcance => 404 `BANNER_NOT_FOUND`; que lo toca pero no lo cubre entero => 403 `BANNER_SCOPE_FORBIDDEN`. Reemplazar la imagen NO borra el asset anterior (queda en la biblioteca de medios de F14).
-        Si ningún valor cambia responde 200 sin escribir, sin subir `version` y sin auditar. Un cambio real sube `version` en 1 y audita `banner.updated` (old/new solo de lo cambiado: ids de asset, CTA, fechas, ids de sucursal,
-        prioridad y claves de texto cambiadas; sin PII) en la misma transacción. Respuesta `no-store`.
+        F16 (simplificado, ADR-0033). Exige `banners.update` con alcance GLOBAL y `aal2`. `expectedVersion` es OBLIGATORIO y debe coincidir con `version`; si no, 409 `BANNER_VERSION_CONFLICT` sin guardar. Parcial: los
+        campos omitidos NO se tocan. Admite `imageAssetId` (mismas reglas que en `POST`; 422 `BANNER_IMAGE_INVALID`), `imageAlt` (mismas reglas; 422 `BANNER_ALT_INVALID`) y `active` (activar/desactivar; reemplaza
+        al antiguo `PATCH .../status`). Reemplazar la imagen NO borra el asset anterior (queda libre en la biblioteca de medios de F14; la API no lo borra aquí). Si ningún valor cambia responde 200 sin escribir, sin
+        subir `version` y sin auditar. Un cambio real sube `version` en 1 y audita `banner.updated` (old/new solo de lo cambiado: ids de asset y `active`; sin PII ni texto) en la misma transacción. Respuesta `no-store`.
       tags: [banners]
       security:
         - bearer: []
@@ -7503,7 +7361,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AdminBanner'
         '400':
-          description: 'Forma inválida, campos desconocidos (`code`, `active`) o `expectedVersion` ausente'
+          description: 'Forma inválida, campos desconocidos o `expectedVersion` ausente, `imageAlt` fuera de 1..120 caracteres'
           content:
             application/json:
               schema:
@@ -7515,13 +7373,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: 'Falta `banners.update`, la sesión no es aal2 o `BANNER_SCOPE_FORBIDDEN`'
+          description: 'Falta `banners.update` con alcance global o la sesión no es aal2'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: '`BANNER_NOT_FOUND` o `BRANCH_NOT_FOUND`'
+          description: '`BANNER_NOT_FOUND`'
           content:
             application/json:
               schema:
@@ -7533,7 +7391,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: '`BANNER_IMAGE_INVALID`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID` o `BANNER_PROMOTION_INVALID`'
+          description: '`BANNER_IMAGE_INVALID` o `BANNER_ALT_INVALID`'
           content:
             application/json:
               schema:
@@ -7550,38 +7408,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /v1/admin/banners/{id}/status:
-    patch:
-      operationId: updateAdminBannerStatus
-      summary: Activa o desactiva un banner (idempotente, sin versión)
+    delete:
+      operationId: deleteAdminBanner
+      summary: Elimina un banner (borrado físico) y libera su imagen
       description: |
-        F16. Exige `banners.update` con las mismas reglas de alcance que `PATCH /v1/admin/banners/{id}` (404 `BANNER_NOT_FOUND` si no lo toca; 403 `BANNER_SCOPE_FORBIDDEN` si no lo cubre entero). Idempotente: sin
-        `expectedVersion` (el último valor gana); si `active` ya tiene ese valor responde 200 sin escribir ni auditar. Un cambio real sube `version` en 1 y audita `banner.status_changed` (`oldActive`, `newActive`, `reason`).
-        Desactivar NO borra el banner ni su imagen. Respuesta `no-store`.
+        F16 (simplificado, ADR-0033). Exige `banners.update` con alcance GLOBAL (no existe `banners.delete`; el catálogo de permisos no cambia) y `aal2`. Concurrencia optimista: `expectedVersion` (query, OBLIGATORIO) debe
+        coincidir con `version`; si no, 409 `BANNER_VERSION_CONFLICT` sin borrar (el mismo patrón de versión que `PATCH`, llevado a la query porque `DELETE` no lleva cuerpo). Borrado FÍSICO de la fila (y de sus filas
+        dependientes) en una transacción con auditoría `banner.deleted` (sin PII). DESPUÉS, y con el mismo criterio que `deleteAdminMedia` (F14), la API intenta borrar el asset de imagen (fila y objeto en R2) SOLO si
+        ningún otro banner ni producto lo usa; ese borrado es de mejor esfuerzo: si falla o el almacenamiento no está configurado, el banner YA está eliminado, el endpoint responde igualmente 204 y se registra una
+        advertencia (sin secretos) para limpieza; el asset queda libre en la biblioteca de medios. No idempotente: repetir la llamada tras el éxito responde 404 `BANNER_NOT_FOUND`. Respuesta `no-store`.
       tags: [banners]
       security:
         - bearer: []
       parameters:
         - $ref: '#/components/parameters/BannerId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateBannerStatusRequest'
+        - name: expectedVersion
+          in: query
+          required: true
+          description: 'Versión que el cliente vio (`AdminBanner.version`).'
+          schema: { type: integer, minimum: 1 }
       responses:
-        '200':
-          description: Banner con su estado
+        '204':
+          description: 'Banner eliminado. Sin cuerpo (aunque el borrado de su imagen haya fallado).'
           headers:
             Cache-Control:
               description: no-store
               schema: { type: string }
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AdminBanner'
         '400':
-          description: 'Forma inválida'
+          description: 'UUID mal formado o `expectedVersion` ausente/no entero'
           content:
             application/json:
               schema:
@@ -7593,13 +7447,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: 'Falta `banners.update`, la sesión no es aal2 o `BANNER_SCOPE_FORBIDDEN`'
+          description: 'Falta `banners.update` con alcance global o la sesión no es aal2'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: '`BANNER_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`BANNER_VERSION_CONFLICT`'
           content:
             application/json:
               schema:
@@ -9078,7 +8938,7 @@ components:
           type: string
           description: |
             Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16: `BANNER_NOT_FOUND`, `BANNER_CODE_TAKEN`, `BANNER_VERSION_CONFLICT`, `BANNER_IMAGE_INVALID`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_LIMIT_REACHED`, `BANNER_SCOPE_FORBIDDEN` (403), `BANNERS_BUSY` (503 reintentable); F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); F20: `IDEMPOTENCY_KEY_INVALID` (400), `QUOTE_CHANGED` (409), `QUOTE_EXPIRED` (409), `IDEMPOTENCY_KEY_REUSED` (409), `IDEMPOTENCY_IN_PROGRESS` (409), `QUOTE_INVALID` (422), `CHECKOUT_BLOCKED` (422), `DELIVERY_PROVIDER_NOT_SELECTABLE` (422), `CONTACT_INCOMPLETE` (422), `PENDING_ORDERS_LIMIT` (429), `ORDERS_BUSY` (503 reintentable), `ORDERS_UNAVAILABLE` (503); 404 de dirección ajena sin código; F22: `ORDER_NOT_FOUND` (404), `ORDER_REASON_REQUIRED` (400), `ORDER_CURSOR_INVALID` (400), `ORDER_ACTION_FORBIDDEN` (403), `ORDER_STATE_CONFLICT` (409), `ORDER_TRANSITION_INVALID` (422; `violations[].code`: `ORDER_TERMINAL`, `ORDER_FULFILLMENT_MISMATCH`, `ORDER_SOURCE_INVALID`, `ORDER_DISPATCH_NOT_AVAILABLE`, `ORDER_PROVIDER_BLOCKED_EXTERNAL`, `ORDER_CANCEL_NOT_ALLOWED`); 503 reintentable: `ORDERS_BUSY`; F24 (pagos en efectivo; `PAYMENT_METHOD_UNAVAILABLE` de F20 queda RETIRADO: ahora cualquier método distinto de `cash` es 400): `PAYMENT_AMOUNT_INVALID` (400), `PAYMENT_CONFIRMATION_REQUIRED` (400), `PAYMENT_ACTION_FORBIDDEN` (403), `PAYMENT_ALREADY_REGISTERED` (409), `ORDER_NOT_PAYABLE` (409), `CASH_AMOUNT_INSUFFICIENT` (422), `CASH_TENDERED_TOO_LARGE` (422), `PAYMENT_NOT_COLLECTABLE` (422; `violations[].code`: `PROVIDER_BLOCKED_EXTERNAL`, `LEGACY_PAYMENT_METHOD`, `AMOUNT_ZERO`); reutiliza `ORDER_NOT_FOUND`, `IDEMPOTENCY_KEY_INVALID`, `IDEMPOTENCY_KEY_REUSED`, `ORDERS_BUSY`); F27 (motoristas propios): `RIDER_NOT_FOUND` (404), `RIDER_ACTION_FORBIDDEN` (403), `RIDER_PHONE_TAKEN` (409), `RIDER_VERSION_CONFLICT` (409; `current` = versión vigente), `RIDER_HAS_ACTIVE_DELIVERY` (409), `RIDER_INACTIVE` (409), `BRANCH_NOT_AVAILABLE` (422, reutilizado), `RIDERS_BUSY` (503 reintentable); F28 (entregas propias): `DELIVERY_NOT_FOUND` (404), `DELIVERY_ACTION_FORBIDDEN` (403), `DELIVERY_CURSOR_INVALID` (400), `DELIVERY_REASON_REQUIRED` (400), `DELIVERY_STATE_CONFLICT` (409; `current` = `{status, version}` de la entrega), `ORDER_HAS_ACTIVE_DELIVERY` (409; `current` del pedido; al cancelar un pedido con entrega abierta), `DELIVERY_ORDER_NOT_ELIGIBLE` (422; `violations[].code`: `ORDER_STATUS_NOT_DISPATCHABLE`, `ORDER_NOT_DELIVERY`, `ORDER_PROVIDER_NOT_OWN`), `RIDER_NOT_ELIGIBLE` (422; `violations[].code`: `INACTIVE`, `WRONG_BRANCH`, `UNAVAILABLE`, `BUSY`, `OWN_DELIVERY_DISABLED`), `DELIVERIES_BUSY` (503 reintentable); reutiliza `ORDER_NOT_FOUND`, `ORDER_STATE_CONFLICT`, `ORDER_TRANSITION_INVALID`, `RIDER_NOT_FOUND`, `BRANCH_NOT_FOUND`. Los clientes deben ramificar por `code`, nunca por `message`.
+            `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16 (simplificado, ADR-0033): `BANNER_NOT_FOUND` (404), `BANNER_VERSION_CONFLICT` (409), `BANNER_LIMIT_REACHED` (409; ya hay 5 banners), `BANNER_IMAGE_INVALID` (422), `BANNER_ALT_INVALID` (422), `BANNERS_BUSY` (503 reintentable); retirados: `BANNER_CODE_TAKEN`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_SCOPE_FORBIDDEN`; F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); F20: `IDEMPOTENCY_KEY_INVALID` (400), `QUOTE_CHANGED` (409), `QUOTE_EXPIRED` (409), `IDEMPOTENCY_KEY_REUSED` (409), `IDEMPOTENCY_IN_PROGRESS` (409), `QUOTE_INVALID` (422), `CHECKOUT_BLOCKED` (422), `DELIVERY_PROVIDER_NOT_SELECTABLE` (422), `CONTACT_INCOMPLETE` (422), `PENDING_ORDERS_LIMIT` (429), `ORDERS_BUSY` (503 reintentable), `ORDERS_UNAVAILABLE` (503); 404 de dirección ajena sin código; F22: `ORDER_NOT_FOUND` (404), `ORDER_REASON_REQUIRED` (400), `ORDER_CURSOR_INVALID` (400), `ORDER_ACTION_FORBIDDEN` (403), `ORDER_STATE_CONFLICT` (409), `ORDER_TRANSITION_INVALID` (422; `violations[].code`: `ORDER_TERMINAL`, `ORDER_FULFILLMENT_MISMATCH`, `ORDER_SOURCE_INVALID`, `ORDER_DISPATCH_NOT_AVAILABLE`, `ORDER_PROVIDER_BLOCKED_EXTERNAL`, `ORDER_CANCEL_NOT_ALLOWED`); 503 reintentable: `ORDERS_BUSY`; F24 (pagos en efectivo; `PAYMENT_METHOD_UNAVAILABLE` de F20 queda RETIRADO: ahora cualquier método distinto de `cash` es 400): `PAYMENT_AMOUNT_INVALID` (400), `PAYMENT_CONFIRMATION_REQUIRED` (400), `PAYMENT_ACTION_FORBIDDEN` (403), `PAYMENT_ALREADY_REGISTERED` (409), `ORDER_NOT_PAYABLE` (409), `CASH_AMOUNT_INSUFFICIENT` (422), `CASH_TENDERED_TOO_LARGE` (422), `PAYMENT_NOT_COLLECTABLE` (422; `violations[].code`: `PROVIDER_BLOCKED_EXTERNAL`, `LEGACY_PAYMENT_METHOD`, `AMOUNT_ZERO`); reutiliza `ORDER_NOT_FOUND`, `IDEMPOTENCY_KEY_INVALID`, `IDEMPOTENCY_KEY_REUSED`, `ORDERS_BUSY`); F27 (motoristas propios): `RIDER_NOT_FOUND` (404), `RIDER_ACTION_FORBIDDEN` (403), `RIDER_PHONE_TAKEN` (409), `RIDER_VERSION_CONFLICT` (409; `current` = versión vigente), `RIDER_HAS_ACTIVE_DELIVERY` (409), `RIDER_INACTIVE` (409), `BRANCH_NOT_AVAILABLE` (422, reutilizado), `RIDERS_BUSY` (503 reintentable); F28 (entregas propias): `DELIVERY_NOT_FOUND` (404), `DELIVERY_ACTION_FORBIDDEN` (403), `DELIVERY_CURSOR_INVALID` (400), `DELIVERY_REASON_REQUIRED` (400), `DELIVERY_STATE_CONFLICT` (409; `current` = `{status, version}` de la entrega), `ORDER_HAS_ACTIVE_DELIVERY` (409; `current` del pedido; al cancelar un pedido con entrega abierta), `DELIVERY_ORDER_NOT_ELIGIBLE` (422; `violations[].code`: `ORDER_STATUS_NOT_DISPATCHABLE`, `ORDER_NOT_DELIVERY`, `ORDER_PROVIDER_NOT_OWN`), `RIDER_NOT_ELIGIBLE` (422; `violations[].code`: `INACTIVE`, `WRONG_BRANCH`, `UNAVAILABLE`, `BUSY`, `OWN_DELIVERY_DISABLED`), `DELIVERIES_BUSY` (503 reintentable); reutiliza `ORDER_NOT_FOUND`, `ORDER_STATE_CONFLICT`, `ORDER_TRANSITION_INVALID`, `RIDER_NOT_FOUND`, `BRANCH_NOT_FOUND`. Los clientes deben ramificar por `code`, nunca por `message`.
         violations:
           type: array
           description: Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09).
@@ -12292,7 +12152,6 @@ components:
       required:
         - generatedAt
         - nextChangeAt
-        - locale
         - branchId
         - branch
         - availability
@@ -12311,8 +12170,7 @@ components:
           type: string
           format: date-time
           nullable: true
-          description: 'El MENOR no nulo entre `promotions` (cambio de vigencia), `banners` (inicio/fin) y `availability.nextTransitionAt`, con horizonte de 14 días; `null` si no hay. Acota `max-age`/`s-maxage`.'
-        locale: { $ref: '#/components/schemas/BannerLocale' }
+          description: 'El MENOR no nulo entre `promotions` (cambio de vigencia), y `availability.nextTransitionAt` (los banners ya no dependen del tiempo, ADR-0033), con horizonte de 14 días; `null` si no hay. Acota `max-age`/`s-maxage`.'
         branchId: { type: string, format: uuid, nullable: true }
         branch:
           allOf:
@@ -12341,8 +12199,8 @@ components:
           items: { $ref: '#/components/schemas/StorePromotion' }
         banners:
           type: array
-          maxItems: 10
-          description: 'Banners elegibles ahora (forma de `listStoreBanners`), ya ordenados. Vacío si ninguno aplica o la sección falló.'
+          maxItems: 5
+          description: 'Banners activos (forma de `listStoreBanners`), en orden de creación. Vacío si ninguno aplica o la sección falló.'
           items: { $ref: '#/components/schemas/StoreBanner' }
         productCount:
           type: integer
@@ -12536,10 +12394,14 @@ components:
         productMediaId: { type: string, format: uuid }
     AdminMediaBannerUsage:
       type: object
-      required: [bannerId, bannerCode]
+      required: [bannerId, bannerAlt]
       properties:
         bannerId: { type: string, format: uuid }
-        bannerCode: { type: string }
+        bannerAlt:
+          {
+            type: string,
+            description: 'Texto alternativo del banner (ya no hay código en el contrato, ADR-0033).',
+          }
     AdminMediaAssetDetail:
       allOf:
         - $ref: '#/components/schemas/AdminMediaAsset'
@@ -12957,86 +12819,6 @@ components:
       properties:
         active: { type: boolean }
         reason: { type: string, maxLength: 200, description: 'Opcional; sin datos personales. ' }
-    BannerLocale:
-      type: string
-      enum: [es, en]
-      default: es
-      description: Idioma de los textos. `es` es el idioma de respaldo y el único obligatorio al crear.
-    BannerLifecycle:
-      type: string
-      enum: [INACTIVE, SCHEDULED, PUBLISHED, EXPIRED]
-      description: 'Estado derivado (no es columna). Precedencia INACTIVE > EXPIRED > SCHEDULED > PUBLISHED; solo mira `active` y la vigencia `[startsAt, endsAt)`. Que además se muestre depende de `visibleNow`.'
-    BannerHiddenReason:
-      type: string
-      enum: [PROMOTION_NOT_LIVE, CTA_TARGET_INACTIVE, IMAGE_UNAVAILABLE]
-      description: 'Precedencia cuando hay varios motivos: `PROMOTION_NOT_LIVE` > `CTA_TARGET_INACTIVE` > `IMAGE_UNAVAILABLE`. Por qué un banner `PUBLISHED` no se muestra ahora: su promoción vinculada no está vigente o no aplica a su alcance, su producto/categoría destino está inactivo, o la imagen no tiene URL pública. `null` si se muestra o si no está `PUBLISHED`.'
-    BannerCtaType:
-      type: string
-      enum: [NONE, MENU, PROMOTIONS, CATEGORY, PRODUCT, PAGE]
-      description: 'Destino estructurado. Los enlaces externos (`EXTERNAL`) NO existen en v1: incorporarlos exige migración, ADR y decisión P19.'
-    BannerPage:
-      type: string
-      enum: [CAREERS, TRACK_ORDER, INCIDENTS]
-      description: 'Lista blanca de páginas públicas de la tienda (`/trabaja-con-nosotros`, `/consultar`, `/incidencias`); la ruta la resuelve la web, nunca se guarda texto libre.'
-    BannerCtaInput:
-      type: object
-      required: [type]
-      additionalProperties: false
-      description: 'Solo el campo que corresponde al tipo: `CATEGORY` => `categoryId`; `PRODUCT` => `productId`; `PAGE` => `page`; el resto sin campos. Otra combinación => 422 `BANNER_CTA_INVALID`.'
-      properties:
-        type: { $ref: '#/components/schemas/BannerCtaType' }
-        categoryId: { type: string, format: uuid, nullable: true }
-        productId: { type: string, format: uuid, nullable: true }
-        page:
-          type: string
-          nullable: true
-          maxLength: 40
-          description: 'Solo con `type=PAGE`. Valores permitidos: `CAREERS`, `TRACK_ORDER`, `INCIDENTS` (ver `BannerPage`). Se declara `string` a propósito: cualquier otro valor es una regla de negocio y responde 422 `BANNER_CTA_INVALID` (violation `TARGET_UNKNOWN`), no 400. Nunca se guardan rutas ni URL de texto libre.'
-    BannerTranslationInput:
-      type: object
-      additionalProperties: false
-      description: 'Textos de un idioma. Cadenas recortadas; en blanco = ausente. Longitudes en caracteres.'
-      properties:
-        title: { type: string, nullable: true, maxLength: 80 }
-        subtitle: { type: string, nullable: true, maxLength: 160 }
-        ctaLabel:
-          {
-            type: string,
-            nullable: true,
-            maxLength: 40,
-            description: 'Texto del botón; ausente => la web usa su etiqueta genérica localizada.',
-          }
-        imageAlt:
-          {
-            type: string,
-            nullable: true,
-            maxLength: 200,
-            description: 'Texto alternativo de la imagen en este idioma.',
-          }
-    BannerTranslationsInput:
-      type: object
-      required: [es]
-      additionalProperties: false
-      properties:
-        es: { $ref: '#/components/schemas/BannerTranslationInput' }
-        en: { allOf: [{ $ref: '#/components/schemas/BannerTranslationInput' }], nullable: true }
-    BannerTranslationsPatch:
-      type: object
-      additionalProperties: false
-      properties:
-        es: { $ref: '#/components/schemas/BannerTranslationInput' }
-        en:
-          {
-            allOf: [{ $ref: '#/components/schemas/BannerTranslationInput' }],
-            nullable: true,
-            description: '`null` elimina la traducción al inglés.',
-          }
-    BannerTranslationsView:
-      type: object
-      required: [es, en]
-      properties:
-        es: { $ref: '#/components/schemas/BannerTranslationInput' }
-        en: { allOf: [{ $ref: '#/components/schemas/BannerTranslationInput' }], nullable: true }
     StoreBannerImage:
       type: object
       required: [url, mimeType]
@@ -13049,67 +12831,29 @@ components:
             description: 'URL pública HTTPS permanente (`MediaUrlService`); nunca firmada.',
           }
         mimeType: { type: string }
-      description: 'Imagen principal (escritorio). Ampliable con una imagen móvil sin romper clientes (campo opcional nuevo); no existe en v1.'
-    StoreBannerCta:
-      type: object
-      required: [type]
-      properties:
-        type: { $ref: '#/components/schemas/BannerCtaType' }
-        categorySlug: { type: string, nullable: true, description: 'Solo `CATEGORY`.' }
-        productId: { type: string, format: uuid, nullable: true, description: 'Solo `PRODUCT`.' }
-        page: { allOf: [{ $ref: '#/components/schemas/BannerPage' }], nullable: true }
+      description: 'Imagen del banner (recorte 3:1, WebP <= 1920 px, <= 1 MiB; se prepara en el cliente). Nunca incluye el id del asset ni la clave del objeto.'
     StoreBanner:
       type: object
-      required: [id, title, subtitle, ctaLabel, imageAlt, image, cta, fallbackFields]
+      required: [id, image, alt]
       properties:
         id: { type: string, format: uuid }
-        title: { type: string, minLength: 1, maxLength: 80 }
-        subtitle: { type: string, nullable: true, maxLength: 160 }
-        ctaLabel: { type: string, nullable: true, maxLength: 40 }
-        imageAlt: { type: string, minLength: 1, maxLength: 200 }
         image: { $ref: '#/components/schemas/StoreBannerImage' }
-        cta: { $ref: '#/components/schemas/StoreBannerCta' }
-        fallbackFields:
-          type: array
-          description: 'Campos cuyo texto vino en español porque faltaba en el idioma pedido.'
-          items: { type: string, enum: [title, subtitle, ctaLabel, imageAlt] }
-    StoreBannerList:
-      type: object
-      required: [branchId, locale, generatedAt, nextChangeAt, items]
-      properties:
-        branchId: { type: string, format: uuid, nullable: true }
-        locale: { $ref: '#/components/schemas/BannerLocale' }
-        generatedAt:
+        alt:
           {
             type: string,
-            format: date-time,
-            description: 'Hora del servidor al generar la respuesta (puede estar en caché hasta 30 s).',
+            minLength: 1,
+            maxLength: 120,
+            description: 'Texto alternativo de la imagen (un solo idioma).',
           }
-        nextChangeAt:
-          type: string
-          format: date-time
-          nullable: true
-          description: 'Próximo instante (en 14 días) en que puede cambiar el conjunto publicado por tiempo; `null` si no hay. Acota `max-age`.'
+    StoreBannerList:
+      type: object
+      required: [items]
+      properties:
         items:
           type: array
-          maxItems: 10
+          maxItems: 5
+          description: 'Banners activos en orden de creación (más antiguo primero).'
           items: { $ref: '#/components/schemas/StoreBanner' }
-    AdminBannerBranchRef:
-      type: object
-      required: [id, name]
-      properties:
-        id: { type: string, format: uuid }
-        name: { type: string }
-    AdminBannerPromotionRef:
-      type: object
-      required: [id, name, lifecycle]
-      description: 'Referencia mínima; NUNCA incluye el código ni el descuento de un cupón.'
-      properties:
-        id: { type: string, format: uuid }
-        name: { type: string }
-        lifecycle:
-          type: string
-          enum: [INACTIVE, SCHEDULED, RUNNING, EXPIRED]
     AdminBannerImage:
       type: object
       required: [assetId, url, mimeType, sizeBytes]
@@ -13118,145 +12862,54 @@ components:
         url: { type: string, format: uri, nullable: true, maxLength: 2048 }
         mimeType: { type: string }
         sizeBytes: { type: integer, format: int64, minimum: 1 }
-    AdminBannerCta:
+    AdminBanner:
       type: object
-      required: [type, categoryId, productId, page, targetLabel, targetActive]
-      properties:
-        type: { $ref: '#/components/schemas/BannerCtaType' }
-        categoryId: { type: string, format: uuid, nullable: true }
-        productId: { type: string, format: uuid, nullable: true }
-        page: { allOf: [{ $ref: '#/components/schemas/BannerPage' }], nullable: true }
-        targetLabel:
-          {
-            type: string,
-            nullable: true,
-            description: 'Nombre de la categoría o del producto destino (solo lectura).',
-          }
-        targetActive:
-          {
-            type: boolean,
-            nullable: true,
-            description: '`null` si el tipo no tiene destino de catálogo.',
-          }
-    AdminBannerSummary:
-      type: object
-      required:
-        - id
-        - code
-        - title
-        - image
-        - cta
-        - branchScope
-        - branches
-        - promotion
-        - startsAt
-        - endsAt
-        - active
-        - sortOrder
-        - lifecycle
-        - visibleNow
-        - hiddenReason
-        - hasEnglish
-        - editable
-        - version
-        - createdAt
-        - updatedAt
+      required: [id, image, imageAlt, active, version, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
-        code:
-          {
-            type: string,
-            pattern: '^[a-z0-9][a-z0-9-]{2,63}$',
-            description: 'Identificador estable, único e inmutable.',
-          }
-        title: { type: string, description: 'Título en español (idioma de respaldo).' }
         image: { $ref: '#/components/schemas/AdminBannerImage' }
-        cta: { $ref: '#/components/schemas/AdminBannerCta' }
-        branchScope: { $ref: '#/components/schemas/PromotionScope' }
-        branches:
-          type: array
-          description: 'Sucursales seleccionadas, recortadas al alcance del actor; vacío si `branchScope=ALL`.'
-          items: { $ref: '#/components/schemas/AdminBannerBranchRef' }
-        promotion:
-          allOf: [{ $ref: '#/components/schemas/AdminBannerPromotionRef' }]
-          nullable: true
-        startsAt:
+        imageAlt:
           {
             type: string,
-            format: date-time,
-            nullable: true,
-            description: 'Inclusivo; `null` = ya vigente.',
+            minLength: 1,
+            maxLength: 120,
+            description: 'Texto alternativo de la imagen (accesibilidad), un solo idioma.',
           }
-        endsAt:
-          {
-            type: string,
-            format: date-time,
-            nullable: true,
-            description: 'Exclusivo; `null` = sin fin.',
-          }
-        active: { type: boolean }
-        sortOrder:
-          {
-            type: integer,
-            minimum: 0,
-            maximum: 9999,
-            description: 'Prioridad: menor sale primero; no es única (empate por `createdAt`, `id`).',
-          }
-        lifecycle: { $ref: '#/components/schemas/BannerLifecycle' }
-        visibleNow:
+        active:
           {
             type: boolean,
-            description: '`PUBLISHED` Y sin motivo para ocultarse (ver `hiddenReason`) con el reloj del servidor.',
-          }
-        hiddenReason:
-          allOf: [{ $ref: '#/components/schemas/BannerHiddenReason' }]
-          nullable: true
-        hasEnglish: { type: boolean, description: 'Existe una traducción al inglés con título.' }
-        editable:
-          {
-            type: boolean,
-            description: 'El actor cubre TODAS las sucursales del banner con `banners.update`.',
+            description: 'Único estado: `true` = se muestra en la tienda (si su imagen tiene URL pública).',
           }
         version: { type: integer, minimum: 1 }
-        createdAt: { type: string, format: date-time }
+        createdAt:
+          {
+            type: string,
+            format: date-time,
+            description: 'Define el orden de aparición (más antiguo primero).',
+          }
         updatedAt: { type: string, format: date-time }
-    AdminBanner:
-      allOf:
-        - $ref: '#/components/schemas/AdminBannerSummary'
-        - type: object
-          required: [translations]
-          properties:
-            translations: { $ref: '#/components/schemas/BannerTranslationsView' }
-    AdminBannerPage:
+    AdminBannerList:
       type: object
-      required: [items, page, pageSize, total]
+      required: [items, limit]
       properties:
         items:
           type: array
-          items: { $ref: '#/components/schemas/AdminBannerSummary' }
-        page: { type: integer, minimum: 1 }
-        pageSize: { type: integer, minimum: 1, maximum: 100 }
-        total: { type: integer, minimum: 0 }
+          maxItems: 5
+          description: 'Todos los banners (activos e inactivos) en orden de creación.'
+          items: { $ref: '#/components/schemas/AdminBanner' }
+        limit:
+          {
+            type: integer,
+            enum: [5],
+            description: 'Tope global de banners; crear uno más => 409 `BANNER_LIMIT_REACHED`.',
+          }
     CreateBannerRequest:
       type: object
-      required: [code, imageAssetId, translations, cta, branchScope]
+      required: [imageAssetId, imageAlt]
       additionalProperties: false
       properties:
-        code:
-          { type: string, minLength: 3, maxLength: 64, pattern: '^[A-Za-z0-9][A-Za-z0-9-]{2,63}$' }
         imageAssetId: { type: string, format: uuid }
-        translations: { $ref: '#/components/schemas/BannerTranslationsInput' }
-        cta: { $ref: '#/components/schemas/BannerCtaInput' }
-        branchScope: { $ref: '#/components/schemas/PromotionScope' }
-        branchIds:
-          type: array
-          maxItems: 20
-          uniqueItems: true
-          items: { type: string, format: uuid }
-        promotionId: { type: string, format: uuid, nullable: true }
-        startsAt: { type: string, format: date-time, nullable: true }
-        endsAt: { type: string, format: date-time, nullable: true }
-        sortOrder: { type: integer, minimum: 0, maximum: 9999 }
+        imageAlt: { type: string, minLength: 1, maxLength: 120 }
         active: { type: boolean, default: true }
     UpdateBannerRequest:
       type: object
@@ -13265,51 +12918,8 @@ components:
       properties:
         expectedVersion: { type: integer, minimum: 1 }
         imageAssetId: { type: string, format: uuid }
-        translations: { $ref: '#/components/schemas/BannerTranslationsPatch' }
-        cta: { $ref: '#/components/schemas/BannerCtaInput' }
-        branchScope: { $ref: '#/components/schemas/PromotionScope' }
-        branchIds:
-          type: array
-          maxItems: 20
-          uniqueItems: true
-          items: { type: string, format: uuid }
-        promotionId: { type: string, format: uuid, nullable: true }
-        startsAt: { type: string, format: date-time, nullable: true }
-        endsAt: { type: string, format: date-time, nullable: true }
-        sortOrder: { type: integer, minimum: 0, maximum: 9999 }
-    UpdateBannerStatusRequest:
-      type: object
-      required: [active]
-      additionalProperties: false
-      properties:
+        imageAlt: { type: string, minLength: 1, maxLength: 120 }
         active: { type: boolean }
-        reason: { type: string, maxLength: 200, description: 'Opcional; sin datos personales.' }
-    ReorderBannersRequest:
-      type: object
-      required: [orderedIds]
-      additionalProperties: false
-      properties:
-        orderedIds:
-          type: array
-          minItems: 1
-          maxItems: 100
-          uniqueItems: true
-          items: { type: string, format: uuid }
-    AdminBannerOrderItem:
-      type: object
-      required: [id, sortOrder, version]
-      properties:
-        id: { type: string, format: uuid }
-        sortOrder: { type: integer, minimum: 0 }
-        version: { type: integer, minimum: 1 }
-    AdminBannerOrder:
-      type: object
-      required: [items]
-      properties:
-        items:
-          type: array
-          maxItems: 100
-          items: { $ref: '#/components/schemas/AdminBannerOrderItem' }
     AdminOrderAction:
       type: string
       description: |

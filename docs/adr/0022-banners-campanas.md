@@ -1,6 +1,6 @@
 # ADR-0022 Banners y campañas del Inicio: tabla nueva con traducciones, CTA estructurado, prioridad no única y publicación ligada a la vigencia de la promoción
 
-**Estado**: **propuesta** (2026-11-16, F16). Se acepta al fusionar `specs/017-banners-campaigns`. La migración `0017_banners` y los permisos `banners.*` requieren aprobación humana antes de aplicarse a cualquier base.
+**Estado**: **parcialmente reemplazado por [ADR-0033](0033-banners-simplificados.md)** (2026-11-25: se retiran traducciones, CTA, vigencia, sucursales, prioridad y promoción vinculada; sigue vigente la tabla `banners`, la imagen `BANNER_IMAGE` y los permisos `banners.*`). Estado original: **propuesta** (2026-11-16, F16). Se acepta al fusionar `specs/017-banners-campaigns`. La migración `0017_banners` y los permisos `banners.*` requieren aprobación humana antes de aplicarse a cualquier base.
 
 **Contexto**: el Inicio de la tienda tiene un carrusel con 4 diapositivas fijas e ilustraciones (`promo-carousel.tsx`). El DBML no contempla banners. F14 ya entrega medios en R2 (solo `PRODUCT_IMAGE`) y F15 las promociones y su vigencia. Negocio quiere gestionar imagen, texto es/en, destino, vigencia, sucursales y prioridad. No existe aún un patrón de contenido localizado persistido, ni permiso de banners en el catálogo sembrado (`0005_staff_rbac`, 43 permisos).
 

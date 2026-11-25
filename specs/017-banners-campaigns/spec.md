@@ -2,8 +2,45 @@
 
 **Rama**: `feature/F16-banners-campaigns` (desde `develop` 344af63)
 **Prioridad**: P1 (backlog oficial) · **Dependencias**: F14 (medios en R2), F15 (promociones, solo lectura), F07 (sucursales), F10/F11 (destinos de catálogo), F03 (RBAC) · **Integración posterior**: F17 (agregados de tienda: consume `PublicBannersReader`), F38 (configuración de contenido)
-**Decisiones**: `docs/adr/0022-banners-campanas.md` · **Pendientes de negocio**: P18–P22 en `docs/business-rules/decisiones-pendientes.md`
+**Decisiones**: `docs/adr/0033-banners-simplificados.md` (vigente) y `docs/adr/0022-banners-campanas.md` (parcialmente reemplazado) · **Pendientes de negocio**: P18–P22 obsoletas por la simplificación (`docs/business-rules/decisiones-pendientes.md`)
 **Estado global**: `IN_PROGRESS` — contrato `CONTRACT_DEFINED`; API `API_IMPLEMENTED` (probada con repositorio en memoria, **SQL real sin verificar**); migración `0017_banners` escrita pero **sin aplicar**; web en paralelo (otro ingeniero). Se reporta por componente. Ninguna otra feature se toca.
+
+## Simplificación (0023) — vigente desde 2026-11-25
+
+> **Esta sección manda.** El dueño pidió simplificar F16 ([ADR-0033](../../docs/adr/0033-banners-simplificados.md), que reemplaza parcialmente a ADR-0022). El resto del documento se conserva como historial; las decisiones marcadas «OBSOLETA» ya no aplican. Contrato: `packages/contracts/openapi/openapi.yaml` (tag `banners`).
+
+**Banner simplificado** = imagen (F14, `BANNER_IMAGE`) + `imageAlt` (un solo idioma, 1–120 caracteres, obligatorio, accesibilidad) + `active`. Orden = creación (más antiguo primero, desempate `id`). Máximo 5 banners en total (activos + inactivos): el 6.º => 409 `BANNER_LIMIT_REACHED`. Sin títulos, subtítulos, CTA/destino, inglés/`locale`, vigencia, sucursales, prioridad/reorden ni promoción vinculada. `code` es interno (la API lo genera; fuera del contrato).
+
+| Componente                                                                   | Estado                                     | Nota                                                                                                                                                                                                |
+| ---------------------------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Contrato OpenAPI (5 operaciones; `StoreBanner`, `AdminBanner`, etc.) + tipos | `CONTRACT_DEFINED`                         | `pnpm contracts:generate` OK. `contracts:check` marca sin implementar `listStoreBanners`, `listAdminBanners`, `createAdminBanner`, `deleteAdminBanner` y la API vieja fuera del contrato (esperado) |
+| Migración `0023_banners_simplify`                                            | pendiente (la escribe `database-engineer`) | Relaja el CHECK de `title` en `es` y añade trigger de tope 5; no borra columnas. Sin aplicar                                                                                                        |
+| API `src/banners/` (simplificar servicio, lector público, DTO, F14 y F17)    | pendiente                                  | La API actual (0017) sigue siendo la completa hasta que se implemente                                                                                                                               |
+| Web: carrusel del Inicio y pantalla «Banners» del backoffice                 | pendiente (`MOCK_ONLY`)                    | Lista de hasta 5 tarjetas: subir imagen, editar alt, activar/desactivar, eliminar                                                                                                                   |
+| Imagen real en R2                                                            | `BLOCKED_EXTERNAL`                         | Hereda el bloqueo de F14                                                                                                                                                                            |
+
+**Contrato vigente (resumen)**: `GET /v1/store/banners` (sin parámetros; `{items:[{id,image:{url,mimeType},alt}]}`; `public, max-age=15, s-maxage=30`) · `GET|POST /v1/admin/banners` (`{items,limit:5}`; crear `{imageAssetId,imageAlt,active?}`) · `GET|PATCH|DELETE /v1/admin/banners/{id}` (`PATCH {expectedVersion,imageAssetId?,imageAlt?,active?}`; `DELETE ?expectedVersion=N` => 204, borrado físico y borrado best effort de la imagen) · permisos `banners.read|create|update` (46 en total; alcance global) · errores `BANNER_NOT_FOUND` 404, `BANNER_VERSION_CONFLICT` 409, `BANNER_LIMIT_REACHED` 409, `BANNER_IMAGE_INVALID` 422, `BANNER_ALT_INVALID` 422, `BANNERS_BUSY` 503. Retirados: `PUT /v1/admin/banners/order`, `PATCH /v1/admin/banners/{id}/status`, `BANNER_CODE_TAKEN`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_SCOPE_FORBIDDEN`. F17: `getStoreBootstrap` pierde `locale`; `banners` máx. 5 y fuera de `nextChangeAt`.
+
+**Estado de las decisiones D1–D12**
+
+| Decisión                                     | Estado                | Nota                                                                                                                                                                                                                     |
+| -------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| D1 Modelo mínimo (0017)                      | parcial               | La tabla `banners` y sus columnas se conservan; la API solo usa imagen, `image_alt` (fila `es`), `active`, `version`. Traducciones `en`, `cta_*`, fechas, `sort_order`, `banner_branches`, `promotion_id` quedan sin uso |
+| D2 `BANNER_IMAGE` (F14)                      | vigente               | Sin cambios; `bannerUsages` expone `bannerAlt` en lugar de `bannerCode`; el borrado de un banner libera su imagen                                                                                                        |
+| D3 CTA estructurado                          | OBSOLETA              | cta_type siempre `NONE`                                                                                                                                                                                                  |
+| D4 Orden y prioridad / reordenado / tope 100 | OBSOLETA              | Orden = creación; tope 5 (409)                                                                                                                                                                                           |
+| D5 Vigencia                                  | OBSOLETA              | Sin fechas ni estados programado/vencido                                                                                                                                                                                 |
+| D6 i18n es/en                                | OBSOLETA              | Un solo `imageAlt`                                                                                                                                                                                                       |
+| D7 Promoción vinculada                       | OBSOLETA              | `promotion_id` NULL                                                                                                                                                                                                      |
+| D8 Contrato (7 operaciones)                  | REEMPLAZADA           | Ver resumen arriba (5 operaciones)                                                                                                                                                                                       |
+| D9 Autorización y seguridad                  | parcial               | Permisos y reparto vigentes; alcance por sucursal OBSOLETO (siempre global); auditoría `banner.deleted` nueva, `status_changed`/`reordered` retiradas                                                                    |
+| D10 `PublicBannersReader`                    | vigente, simplificado | Sin `branchId`/`locale`; lo consume F17                                                                                                                                                                                  |
+| D11 Concurrencia de lectura y rendimiento    | vigente, simplificado | Sin cálculo por tiempo; caché fija 15/30 s                                                                                                                                                                               |
+| D12 Impacto en la web                        | REEMPLAZADA           | Carrusel con `{image, alt}`; pantalla de backoffice mínima                                                                                                                                                               |
+
+**Semántica pública simplificada (casos de prueba)**: solo `active=true`; imagen `READY` `BANNER_IMAGE` con URL pública (si no, se omite); orden `created_at, id`; máx. 5; sin ids de asset ni claves de objeto; ignora cualquier valor residual de `cta_*`, fechas, sucursales, `promotion_id` y traducciones `en`.
+
+**Cambios esperados en pruebas y archivos**: ver la entrega del arquitecto en el PR; la «Semántica del banner público» y las «Pruebas exigidas» antiguas quedan superadas por lo anterior.
 
 ## Alcance
 
@@ -41,7 +78,7 @@ Image Resizing, variantes responsive, procesamiento de imagen en servidor, enlac
 
 ## Decisiones (razones y alternativas en ADR-0022)
 
-### D1 Modelo mínimo (migración `0017_banners`)
+### D1 Modelo mínimo (migración `0017_banners`) — parcial (ADR-0033)
 
 Tres tablas y un cambio en `media_assets`. Estados (`inactivo`, `programado`, `publicado`, `vencido`) **derivados**, nunca columnas.
 
@@ -63,7 +100,7 @@ Tres tablas y un cambio en `media_assets`. Estados (`inactivo`, `programado`, `p
 - **Reemplazar o quitar la imagen**: el banner solo cambia de `image_asset_id` (no puede quedar sin imagen; `NOT NULL`). El asset anterior **no se borra**: queda sin referencias en la biblioteca (`unreferenced=true`) y lo elimina un administrador con `DELETE /v1/admin/media/{id}` (F14). Desactivar o vencer un banner tampoco toca el asset (la purga perezosa de F14 solo trata PENDING caducados). El FK `RESTRICT` impide borrar un asset en uso (`MEDIA_IN_USE`).
 - **Fallo de R2**: (a) sin base pública configurada (`unavailable`) `tryPublicUrl` devuelve `null`: el banner no se publica (`IMAGE_UNAVAILABLE` en el admin) y la lista pública sale vacía o recortada, **nunca 5xx por eso**; (b) la subida sin R2 sigue respondiendo 503 `MEDIA_STORAGE_UNAVAILABLE` (F14) y el formulario conserva los textos; (c) si R2/CDN falla al cargar la imagen en el navegador, la web usa un fondo de marca y conserva texto y CTA (D12); la API no puede saberlo. La URL pública es permanente (`MediaUrlService`), nunca firmada ni persistida.
 
-### D3 CTA estructurado
+### D3 CTA estructurado — OBSOLETA (ADR-0033)
 
 Tipos: `NONE`, `MENU`, `PROMOTIONS`, `CATEGORY` (`cta_category_id`), `PRODUCT` (`cta_product_id`), `PAGE` (`cta_page`).
 
@@ -72,7 +109,7 @@ Tipos: `NONE`, `MENU`, `PROMOTIONS`, `CATEGORY` (`cta_category_id`), `PRODUCT` (
 - **EXTERNAL: NO se permite en v1.** No existe el tipo ni la columna `cta_url`. Motivo: superficie de phishing/redirección abierta/`javascript:` sin necesidad comprobada (el prototipo y el carrusel actual solo enlazan dentro de la tienda). Si negocio lo pide (P19): migración (tipo + `cta_url` con CHECK `^https://`), ADR y política: solo `https`, host exacto en lista blanca de configuración del servidor (`BANNER_EXTERNAL_ALLOWED_HOSTS`, sin comodines), sin credenciales ni puertos distintos, prohibidos `javascript:`, `data:`, `//host` y cualquier `/r?url=` propio, apertura con `rel="noopener noreferrer"` y aviso de salida. Nada de eso se implementa ahora.
 - `ctaLabel` es opcional por idioma; si falta la web usa su etiqueta genérica localizada (`home.banner.cta`, texto de interfaz, no contenido).
 
-### D4 Orden y prioridad
+### D4 Orden y prioridad — OBSOLETA (ADR-0033)
 
 - `sort_order integer NOT NULL DEFAULT 0 CHECK (sort_order BETWEEN 0 AND 9999)`, **no único**. Orden público y de lista admin: `sort_order ASC, created_at ASC, id ASC` (determinista; el empate no depende del orden de inserción de la BD).
 - **Decisión: prioridad NO única con desempate**, en vez de `UNIQUE DEFERRABLE (sort_order)` como en `product_media`. Razones: (1) el orden es **global** y los banners vencidos/inactivos se acumulan; un `UNIQUE` exigiría renumerarlos o excluirlos con un índice parcial y obligaría a reordenar el conjunto completo ante cada alta; (2) un alta concurrente asignaría el mismo «último + 1» y fallaría con `23505` que habría que reintentar: aquí el empate es legal y el desempate lo resuelve; (3) no hay riesgo de huecos o colisiones que bloqueen una escritura. Costo: dos banners pueden tener la misma prioridad (documentado en la UI como «empate: el más antiguo primero»).
@@ -84,14 +121,14 @@ Tipos: `NONE`, `MENU`, `PROMOTIONS`, `CATEGORY` (`cta_category_id`), `PRODUCT` (
   - Tope: **100 banners no vencidos** (422 `BANNER_LIMIT_REACHED` al crear o al reactivar/ampliar que lo supere); acota el cuerpo del reordenado.
 - La tienda devuelve **como máximo 10** banners (un carrusel de más de 10 diapositivas no es accesible ni útil); si hay más elegibles se recortan por el orden anterior.
 
-### D5 Vigencia
+### D5 Vigencia — OBSOLETA (ADR-0033)
 
 - `starts_at` y `ends_at` **nullable** (publicación sin fin permitida: banners permanentes como «Trabaja con nosotros»; sin inicio = vigente desde el alta). Instantes `timestamptz`, intervalo `[starts_at, ends_at)` (fin exclusivo), CHECK `starts_at IS NULL OR ends_at IS NULL OR ends_at > starts_at` (si no, 422 `BANNER_PERIOD_INVALID`). La API acepta y devuelve ISO 8601 con zona; sin zona => 400. `America/Guatemala` (UTC−6, sin horario de verano; helpers de F08) solo interviene al **mostrar** fechas en la UI y en los casos de prueba: no hay horario semanal en un banner.
 - **Vigencia de banner ≠ horario de apertura (F08) ≠ vigencia de promoción (F15)**: son tres conceptos independientes. El banner no consulta F08 (se muestra con la sucursal cerrada) y su vigencia no cambia la de la promoción vinculada (y viceversa: la promoción vigente no publica un banner inactivo o fuera de su propia vigencia).
 - Estados derivados (`BannerLifecycle`): `INACTIVE` (`active=false`) > `EXPIRED` (`ends_at <= ahora`) > `SCHEDULED` (`starts_at > ahora`) > `PUBLISHED`. `visibleNow` = `PUBLISHED` y sin motivo de ocultación (D7, D3, D2).
 - `nextChangeAt` público = menor instante futuro (<= 14 días, `HORIZON_DAYS` de F15) entre: `starts_at`/`ends_at` de los banners activos candidatos y el `nextChangeAt` de la promoción de cada banner candidato vinculado a una (D7). `null` si no hay.
 
-### D6 i18n es/en
+### D6 i18n es/en — OBSOLETA (ADR-0033)
 
 - **Tabla `banner_translations`** (no columnas ni banner duplicado por idioma). Razones: el banner es UNA entidad con una sola imagen, vigencia, prioridad y auditoría; el idioma es una dimensión del texto. Una tabla permite añadir un idioma sin migrar columnas y establece el patrón de contenido localizado que F17/F38 y los textos en inglés pendientes de F15 podrán reutilizar. Alternativa descartada: `title_es/title_en…` (más simple y con `NOT NULL` declarativo para `es`, pero 8 columnas, ceremonia por idioma y sin patrón reusable). Costo aceptado: la obligatoriedad de la fila `es` la impone el servicio dentro de la transacción (no hay forma declarativa sin trigger) y la lectura pública exige `INNER JOIN` con la fila `es`.
 - Idioma de respaldo: **`es`**. `locale` solo admite `es|en` (otro => 400). Cada texto se recorta y una cadena en blanco **se guarda como ausente** (`NULL`; CHECK `btrim <> ''`).
@@ -100,7 +137,7 @@ Tipos: `NONE`, `MENU`, `PROMOTIONS`, `CATEGORY` (`cta_category_id`), `PRODUCT` (
 - Texto plano: sin HTML ni Markdown; se rechazan NUL y controles bidireccionales como en F15 (`name/description`); la web escapa por defecto (React).
 - Caché: el idioma va en la URL (`?locale=`), no en cookie ni cabecera, de modo que la caché compartida lo distingue sin `Vary`.
 
-### D7 Banner enlazado a una promoción (F15)
+### D7 Banner enlazado a una promoción (F15) — OBSOLETA (ADR-0033)
 
 **Política (recomendada y adoptada): el banner enlazado a una promoción solo se publica mientras la promoción esté VIGENTE; si no lo está, se oculta (no hay error ni edición automática).** «Vigente» es exactamente lo que F15 ya llama `live`: `active` Y `starts_at <= t < ends_at` Y dentro del horario semanal, y además la promoción debe **aplicar a la sucursal consultada** (si la promoción es `SELECTED` y el banner `ALL`, el banner no se muestra para sucursales que la promoción no cubre; sin `branchId`, solo si la promoción es `ALL`).
 
@@ -112,7 +149,7 @@ Tipos: `NONE`, `MENU`, `PROMOTIONS`, `CATEGORY` (`cta_category_id`), `PRODUCT` (
 - Coherencia al escribir: la promoción debe existir y su alcance de sucursales debe **cubrir** el del banner (banner `ALL` exige promoción `ALL`; banner `SELECTED` exige promoción `ALL` o que contenga todas sus sucursales); si no, 422 `BANNER_PROMOTION_INVALID` (violations `PROMOTION_UNKNOWN | BRANCH_SCOPE_MISMATCH`). Se puede vincular una promoción inactiva o futura (se publica cuando rija). Si después se edita la promoción (F15) y se rompe la cobertura, el banner simplemente deja de salir donde la promoción no aplica (`PROMOTION_NOT_LIVE` en el admin). `promotion_id` es `ON DELETE RESTRICT` (F15 no borra).
 - Cambiar la política (p. ej. mostrar banners de promociones próximas como «Próximamente») es P22 y solo toca el lector de banners.
 
-### D8 Contrato (7 operaciones)
+### D8 Contrato (7 operaciones) — REEMPLAZADA (ADR-0033)
 
 Tag `banners`. Ya está en `packages/contracts/openapi/openapi.yaml` (generado `src/schema.d.ts`).
 
@@ -132,7 +169,7 @@ Tag `banners`. Ya está en `packages/contracts/openapi/openapi.yaml` (generado `
 - Búsqueda `q`: título (cualquier idioma) y código; contiene, sin distinguir mayúsculas ni acentos; comodines literales (mismo escape que F11/F15). Sin índice (cientos de filas como máximo).
 - Compatibilidad F14 (aditiva): `MediaKind` gana `BANNER_IMAGE`; `AdminMediaAssetDetail.bannerUsages` (opcional) y `usageCount` pasa a contar también banners. No hay cambios incompatibles.
 
-### D9 Autorización y seguridad
+### D9 Autorización y seguridad — parcial (ADR-0033)
 
 - **Permisos nuevos mínimos (cambio de permisos, requiere migración y decisión P18)**: `banners.read`, `banners.create`, `banners.update` (convención `modulo.accion`, ADR-0010; mismo reparto que `promotions.*`). La migración 0017 los siembra (`ON CONFLICT DO NOTHING`) y los asigna **solo a `admin`** (mantiene el invariante «admin tiene todo el catálogo»). No hay RBAC paralelo ni rol nuevo. Se descartó reutilizar `promotions.*` (mezclaría marketing editorial con descuentos y atraería P16) y `settings.*` (reservado a F38). Efecto colateral que el api/web-engineer debe absorber: el catálogo pasa de **43 a 46** permisos (pruebas listadas en «Hechos verificados») y la web añade el slug `banners` a `SCREEN_PERMISSION` (`banners.read`) y a la navegación.
 - **Alcance** (patrón F15/F13): lectura con alcance global = todos; acotado = los que aplican a alguna de sus sucursales (incluidos `ALL`), con `branches` recortado y `editable=false` si no cubre todas. Escritura: `branchScope=ALL` exige alcance **global** (403 `BANNER_SCOPE_FORBIDDEN`); `SELECTED` exige cubrir **todas** las sucursales del banner (actuales y nuevas en un PATCH); sucursal inexistente o fuera de alcance => 404 `BRANCH_NOT_FOUND`; un banner que no toca su alcance => 404 `BANNER_NOT_FOUND`; que lo toca pero no lo cubre entero => 403. Reordenar exige global.
@@ -152,7 +189,7 @@ Tag `banners`. Ya está en `packages/contracts/openapi/openapi.yaml` (generado `
 
 Una consulta para banners elegibles por tiempo/sucursal/imagen/traducción/destino (un `JOIN` a `banner_translations`, `media_assets`, y `LEFT JOIN` a `categories`/`products`), una para las promociones vinculadas (con tramos y sucursales) y cómputo en memoria: dos consultas, sin N+1. Índices por acceso real: `banners_active_order_idx (sort_order, created_at, id) WHERE active` (lectura pública y lista admin), `banner_branches_branch_idx (branch_id, banner_id)` (banners de una sucursal), `banners_image_asset_idx (image_asset_id)` (FK y «usos del asset»); PK y UNIQUE los crean sus restricciones. Tabla de decenas de filas: el planificador puede preferir un scan; se conservan por claridad y bajo coste (como F15).
 
-### D12 Impacto en la web (`sushimon-web`; lo implementa el `web-engineer`)
+### D12 Impacto en la web (`sushimon-web`; lo implementa el `web-engineer`) — REEMPLAZADA (ADR-0033)
 
 **Reutilizar el carrusel existente** (`features/home/components/promo-carousel.tsx` y su prueba); no se crea otro. Cambios:
 
