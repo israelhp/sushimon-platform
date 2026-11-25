@@ -51,7 +51,7 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'GET /v1/store/bootstrap': storeAggregates.getStoreBootstrap,
   // F15: promociones y Happy Hour de una sucursal (contrato, público)
   'GET /v1/store/promotions': promotions.listStorePromotions,
-  // F16: banners publicados del Inicio por sucursal e idioma (contrato, público)
+  // F16: banners activos del Inicio (contrato, público, sin parámetros)
   'GET /v1/store/banners': banners.listStoreBanners,
   'POST /v1/orders': placement.createPlacedOrder,
   'POST /v1/demo/orders': orders.createDraftOrder,
@@ -189,10 +189,9 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   // F16: banners del Inicio (contrato)
   'GET /v1/admin/banners': banners.listAdminBanners,
   'POST /v1/admin/banners': banners.createAdminBanner,
-  'PUT /v1/admin/banners/order': banners.reorderAdminBanners,
   'GET /v1/admin/banners/:id': banners.getAdminBanner,
   'PATCH /v1/admin/banners/:id': banners.updateAdminBanner,
-  'PATCH /v1/admin/banners/:id/status': banners.updateAdminBannerStatus,
+  'DELETE /v1/admin/banners/:id': banners.deleteAdminBanner,
   // F12: grupos y opciones de modificadores y su asociación a productos (contrato)
   'GET /v1/admin/modifier-groups': modifiers.listAdminModifierGroups,
   'POST /v1/admin/modifier-groups': modifiers.createAdminModifierGroup,

@@ -1,116 +1,71 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { cn } from '@/lib/cn';
-import type { BannerLocale, StoreBanner } from '@/lib/data-access/models';
+import type { StoreBanner } from '@/lib/data-access/models';
 import { displayMediaSrc } from '@/lib/media-simulated';
 
 /** Alturas fijas por punto de corte (se reservan también en el esqueleto de carga: sin desplazamiento de diseño, CLS). */
 export const BANNER_HEIGHT_CLASSES =
   'h-[176px] midh:h-[156px] short:h-[132px] sm:h-[220px] lg:h-[240px]';
 
-export type BannerSlideData = Pick<
-  StoreBanner,
-  'title' | 'subtitle' | 'ctaLabel' | 'imageAlt' | 'image' | 'fallbackFields'
->;
+export type BannerSlideData = Pick<StoreBanner, 'alt'> & { image: { url: string | null } };
 
 /**
- * F16 — Pieza de presentación de UN banner (la misma en la tienda y en la previsualización del backoffice). Imagen por URL
- * pública con `object-cover` (un `<img>` normal: ni `next/image` ni optimización de Vercel/Cloudflare), la primera con prioridad de
- * carga (`fetchpriority=high`, sin `lazy`) y las demás `lazy`; degradado oscuro bajo el texto para el contraste. Si la imagen falta o
- * falla (`onError`, sin reintentos) se muestra el fondo de MARCA conservando texto y CTA. Los textos de respaldo (`fallbackFields`)
- * llevan `lang="es"`. El CTA lo pone quien la usa (`ctaSlot`): enlace real en la tienda, botón inerte en la previsualización.
- * Sin precios ni datos de promoción: el banner es contenido, no motor de descuentos.
+ * F16 (simplificado, ADR-0033) — Pieza de presentación de UN banner (la misma en la tienda y en la previsualización del
+ * backoffice): SOLO la imagen a todo el ancho con `object-cover` (recorte centrado, como el 3:1 que se prepara al subirla) y su
+ * texto alternativo. Sin textos superpuestos ni enlaces. Imagen por URL pública (un `<img>` normal: ni `next/image` ni optimización de
+ * Vercel/Cloudflare; las URLs simuladas `*.invalid` nunca se piden), la primera con prioridad de carga (`fetchpriority=high`, sin
+ * `lazy`) y las demás `lazy`. Si la imagen falta o falla (`onError`, sin reintentos) se muestra el fondo de MARCA y el texto
+ * alternativo queda como nombre accesible (`role="img"`).
  */
 export function BannerSlide({
   banner,
-  locale,
   eager = false,
   imageSrc,
   loadImage = true,
-  ctaSlot,
-  markFallback = false,
   className,
 }: {
   banner: BannerSlideData;
-  locale: BannerLocale;
   /** Primera diapositiva: candidata a LCP (prioridad alta, sin carga diferida). */
   eager?: boolean;
   /** Origen ya resuelto (p. ej. vista previa local); si falta se deriva de `banner.image.url`. */
   imageSrc?: string | null;
   /**
    * `false` = todavía no se pide la imagen (diapositivas lejanas del carrusel: solo la actual y la siguiente llevan `src`). El
-   * texto y el fondo de marca siguen visibles; al pasar a `true` el navegador la descarga.
+   * fondo de marca sigue visible; al pasar a `true` el navegador la descarga.
    */
   loadImage?: boolean;
-  ctaSlot?: ReactNode;
-  /** Previsualización: resalta los textos que salen en español por respaldo. */
-  markFallback?: boolean;
   className?: string;
 }) {
   const resolved = imageSrc !== undefined ? imageSrc : displayMediaSrc(banner.image.url);
   const [failed, setFailed] = useState<string | null>(null);
   const showImage = Boolean(resolved) && failed !== resolved;
-  const langOf = (field: (typeof banner.fallbackFields)[number]) =>
-    locale === 'en' && banner.fallbackFields.includes(field) ? 'es' : undefined;
-  const mark = (field: (typeof banner.fallbackFields)[number]) =>
-    markFallback && banner.fallbackFields.includes(field)
-      ? 'rounded-sm outline outline-2 outline-dashed outline-offset-2 outline-amber-300'
-      : undefined;
 
   return (
     <div
       data-banner-image={showImage ? 'image' : 'fallback'}
+      role={showImage ? undefined : 'img'}
+      aria-label={showImage ? undefined : banner.alt}
       className={cn(
-        'relative flex h-full w-full items-end overflow-hidden sm:items-center',
+        'relative h-full w-full overflow-hidden',
         !showImage && 'seigaiha seigaiha-ink',
         className,
       )}
     >
       {showImage ? (
-        <>
-          {/* eslint-disable-next-line @next/next/no-img-element -- F16: URL pública del CDN; sin next/image ni optimización de proveedor */}
-          <img
-            src={loadImage ? (resolved as string) : undefined}
-            alt={banner.imageAlt}
-            lang={langOf('imageAlt')}
-            loading={eager ? 'eager' : 'lazy'}
-            fetchPriority={eager ? 'high' : undefined}
-            decoding="async"
-            referrerPolicy="no-referrer"
-            onError={() => setFailed(resolved)}
-            className="absolute inset-0 h-full w-full object-cover object-[60%_40%]"
-          />
-          {/* Contraste del texto sobre la imagen: en móvil el texto ocupa todo el ancho, así que el velo es VERTICAL (de abajo arriba); desde `sm` el texto está a la izquierda y el velo es horizontal. */}
-          <div
-            aria-hidden="true"
-            className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/45 to-black/10 sm:bg-gradient-to-r sm:from-black/80 sm:via-black/55 sm:to-black/10"
-          />
-        </>
+        // eslint-disable-next-line @next/next/no-img-element -- F16: URL pública del CDN; sin next/image ni optimización de proveedor
+        <img
+          src={loadImage ? (resolved as string) : undefined}
+          alt={banner.alt}
+          loading={eager ? 'eager' : 'lazy'}
+          fetchPriority={eager ? 'high' : undefined}
+          decoding="async"
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(resolved)}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
       ) : null}
-      <div className="relative z-10 flex max-w-[92%] flex-col gap-1.5 p-4 text-white [text-shadow:0_1px_3px_rgb(0_0_0/0.55)] sm:max-w-[60%] sm:gap-2 sm:px-8 sm:py-5 md:pl-20 lg:max-w-[56%] lg:py-6">
-        <h2
-          lang={langOf('title')}
-          className={cn(
-            'disp text-[clamp(24px,5.5vw,52px)] max-[379px]:text-[20px] max-[359px]:text-[16px] line-clamp-2 sm:text-[24px] md:text-[28px] lg:text-[clamp(34px,3vw,42px)]',
-            mark('title'),
-          )}
-        >
-          {banner.title}
-        </h2>
-        {banner.subtitle ? (
-          <p
-            lang={langOf('subtitle')}
-            className={cn(
-              'm-0 line-clamp-1 text-[13px] font-medium leading-snug opacity-95 short:hidden sm:line-clamp-2 sm:text-[15px]',
-              mark('subtitle'),
-            )}
-          >
-            {banner.subtitle}
-          </p>
-        ) : null}
-        {ctaSlot}
-      </div>
     </div>
   );
 }
@@ -142,7 +97,3 @@ export function BannerSlideSkeleton({
     </div>
   );
 }
-
-/** Texto del CTA: el del banner (en su idioma) o la etiqueta genérica localizada. */
-export const bannerCtaText = (banner: Pick<BannerSlideData, 'ctaLabel'>, fallback: string) =>
-  banner.ctaLabel ?? fallback;

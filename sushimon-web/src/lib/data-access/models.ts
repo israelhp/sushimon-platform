@@ -155,32 +155,16 @@ export type AdminProductBranches = S['AdminProductBranches'];
 export type SetBranchProductPricingRequest = S['SetBranchProductPricingRequest'];
 export type SetProductAvailabilityRequest = S['SetProductAvailabilityRequest'];
 /**
- * F16 (contrato): banners del Inicio. Público = `StoreBanner` (sin `code`, versión ni promoción: solo CTA estructurado, textos por idioma
- * con `fallbackFields` y la URL pública de la imagen). Administración = `AdminBanner*` (estado derivado, `version`, `editable`).
+ * F16 (contrato, ADR-0033): banners simplificados = imagen + texto alternativo (un solo idioma) + activo. Público = `StoreBanner`
+ * (`{id, image, alt}`); administración = `AdminBanner` (con `version` para la concurrencia optimista y `createdAt`, que fija el orden).
  */
-export type BannerLocale = S['BannerLocale'];
-export type BannerLifecycle = S['BannerLifecycle'];
-export type BannerHiddenReason = S['BannerHiddenReason'];
-export type BannerCtaType = S['BannerCtaType'];
-export type BannerPage = S['BannerPage'];
-export type BannerCtaInput = S['BannerCtaInput'];
-export type BannerTranslationInput = S['BannerTranslationInput'];
-export type BannerTranslationsInput = S['BannerTranslationsInput'];
-export type BannerTranslationsPatch = S['BannerTranslationsPatch'];
-export type BannerTranslationsView = S['BannerTranslationsView'];
 export type StoreBanner = S['StoreBanner'];
-export type StoreBannerCta = S['StoreBannerCta'];
 export type StoreBannerList = S['StoreBannerList'];
-export type AdminBannerSummary = S['AdminBannerSummary'];
 export type AdminBanner = S['AdminBanner'];
-export type AdminBannerPage = S['AdminBannerPage'];
-export type AdminBannerCta = S['AdminBannerCta'];
+export type AdminBannerList = S['AdminBannerList'];
 export type AdminBannerImage = S['AdminBannerImage'];
-export type AdminBannerOrder = S['AdminBannerOrder'];
 export type CreateBannerRequest = S['CreateBannerRequest'];
 export type UpdateBannerRequest = S['UpdateBannerRequest'];
-export type UpdateBannerStatusRequest = S['UpdateBannerStatusRequest'];
-export type ReorderBannersRequest = S['ReorderBannersRequest'];
 export type AdminMediaBannerUsage = S['AdminMediaBannerUsage'];
 /**
  * F15 (contrato): promociones, cupones y Happy Hour. Público = solo informativo (`StorePromotion`: nunca `code`; un cupón sale con

@@ -38,17 +38,19 @@ function renderScreen(
   );
 }
 
-const row = (code: string) =>
-  document.querySelector<HTMLElement>(`[data-testid="banner-row"][data-code="${code}"]`)!;
-const codesInOrder = () =>
+const rowIds = () =>
   Array.from(document.querySelectorAll<HTMLElement>('[data-testid="banner-row"]')).map(
-    (el) => el.dataset.code,
+    (el) => el.dataset.id,
   );
+const row = (id: string) =>
+  document.querySelector<HTMLElement>(`[data-testid="banner-row"][data-id="${id}"]`)!;
 const setValue = (el: HTMLElement, value: string) => fireEvent.change(el, { target: { value } });
 
+const FAV = 'Selección de rolls favoritos de Sushi Mon';
+
 async function openCreate() {
-  await userEvent.click(screen.getByRole('button', { name: 'Nuevo banner' }));
-  return await screen.findByRole('dialog', { name: 'Nuevo banner' });
+  await userEvent.click(screen.getByRole('button', { name: 'Agregar banner' }));
+  return await screen.findByRole('dialog', { name: 'Agregar banner' });
 }
 
 async function pickFromLibrary(dialog: HTMLElement) {
@@ -60,86 +62,73 @@ async function pickFromLibrary(dialog: HTMLElement) {
   );
 }
 
-describe('Banners (backoffice)', () => {
-  it('lista los banners en el orden de la tienda con estado derivado, vigencia, destino, alcance y motivo de ocultación', async () => {
+describe('Banners: lista', () => {
+  it('muestra el contador n/5 y los banners en el orden de creación con imagen, texto alternativo y estado', async () => {
     await renderScreen();
-    expect(await screen.findByText('8 banners')).toBeVisible();
-    expect(codesInOrder()).toEqual([
-      'favoritos',
-      'happy-hour',
-      'calientito',
-      'equipo',
-      'fin-de-mes',
-      'navidad-en-rolls',
-      'semana-del-cliente',
-      'bienvenida',
+    expect(await screen.findByText('4/5 banners')).toBeVisible();
+    expect(rowIds()).toEqual([
+      'banner-favoritos',
+      'banner-happy-hour',
+      'banner-calientito',
+      'banner-navidad',
     ]);
-    expect(within(row('favoritos')).getByText('Publicado', { selector: '.pill' })).toBeVisible();
+    expect(within(row('banner-favoritos')).getByText(FAV)).toBeVisible();
     expect(
-      within(row('favoritos')).getByText('Botón a categoría: Sushi Rolls · Todas las sucursales'),
-    ).toBeVisible();
-    expect(within(row('favoritos')).getByText('Sin fechas: siempre vigente')).toBeVisible();
-    expect(
-      within(row('navidad-en-rolls')).getByText('Programado', { selector: '.pill' }),
+      within(row('banner-favoritos')).getByText('Activo', { selector: '.pill' }),
     ).toBeVisible();
     expect(
-      within(row('semana-del-cliente')).getByText('Vencido', { selector: '.pill' }),
+      within(row('banner-navidad')).getByText('Inactivo', { selector: '.pill' }),
     ).toBeVisible();
-    expect(within(row('bienvenida')).getByText('Inactivo', { selector: '.pill' })).toBeVisible();
-    expect(within(row('fin-de-mes')).getByText(/Sucursal 1, Sucursal 2/)).toBeVisible();
-    // Happy Hour: publicado por fechas pero oculto porque su promoción aún no rige (14:25).
-    expect(
-      within(row('happy-hour')).getByText(/Oculto ahora: su promoción vinculada no está vigente/),
-    ).toBeVisible();
-    expect(within(row('happy-hour')).getByText('Activo pero oculto ahora')).toBeVisible();
-    expect(within(row('happy-hour')).getByText(/Promoción: Happy Hour/)).toBeVisible();
-    // Avisos: demora de caché y subida solo para administración.
-    expect(screen.getAllByText(/hasta 30 segundos/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/solo un administrador/)).toBeVisible();
+    expect(within(row('banner-navidad')).getByText('Orden de creación 4')).toBeVisible();
+    // Sin controles de reordenar, filtros ni búsqueda (se quitaron).
+    expect(screen.queryByRole('search')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Subir|Bajar/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Agregar banner' })).toBeEnabled();
   });
 
-  it('filtra por estado derivado, búsqueda y sucursal; limpia los filtros', async () => {
-    await renderScreen();
-    await screen.findByText('8 banners');
-    await userEvent.selectOptions(screen.getByLabelText('Filtrar por estado'), 'EXPIRED');
-    await waitFor(() => expect(codesInOrder()).toEqual(['semana-del-cliente']));
-    await userEvent.selectOptions(screen.getByLabelText('Filtrar por estado'), 'all');
-    await userEvent.type(
-      screen.getByRole('searchbox', { name: 'Buscar por título o código' }),
-      'merecés',
-    );
-    await waitFor(() => expect(codesInOrder()).toEqual(['calientito']));
-    await userEvent.click(screen.getByRole('button', { name: 'Limpiar filtros' }));
-    await waitFor(() => expect(codesInOrder()).toHaveLength(8));
-    await userEvent.selectOptions(screen.getByLabelText('Filtrar por sucursal'), 'sucursal-3');
-    await waitFor(() => expect(codesInOrder()).not.toContain('fin-de-mes'));
-    expect(codesInOrder()).toContain('favoritos');
-    await userEvent.type(
-      screen.getByRole('searchbox', { name: 'Buscar por título o código' }),
-      'zzzz',
-    );
-    expect(await screen.findByText('Ningún banner coincide con los filtros.')).toBeVisible();
+  it('estado vacío (banners-empty)', async () => {
+    await renderScreen(<BannersScreen />, 'admin', 'banners-empty');
+    expect(await screen.findByText('Sin banners')).toBeVisible();
+    expect(screen.getByText('0/5 banners')).toBeVisible();
   });
 
-  it('la fila se apila en pantallas angostas, sin aria-label en el li, y la píldora EN se nombra', async () => {
-    await renderScreen();
-    await screen.findByText('8 banners');
-    const li = row('favoritos');
-    expect(li.className).toMatch(/grid-cols-1/);
-    expect(li.className).toMatch(/min-\[560px\]:grid-cols-/);
-    expect(li).not.toHaveAttribute('aria-label');
-    expect(within(li).getByRole('img', { name: 'Con versión en inglés' })).toHaveTextContent('EN');
-    expect(
-      within(row('fin-de-mes')).queryByRole('img', { name: 'Con versión en inglés' }),
-    ).toBeNull();
+  it('error de carga con reintento', async () => {
+    await renderScreen(<BannersScreen />, 'admin', 'default', (s) => {
+      s.bannersBusy = 1;
+    });
+    expect(await screen.findByText('No se pudieron cargar los banners.')).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(await screen.findByText('4/5 banners')).toBeVisible();
+  });
+
+  it('sin banners.read (cocina) no se muestra la pantalla: la API responde 403', async () => {
+    await renderScreen(<BannersScreen />, 'kitchen');
+    await waitFor(() => expect(screen.queryByText(/\/5 banners/)).toBeNull());
+    expect(screen.queryByRole('button', { name: 'Agregar banner' })).toBeNull();
+  });
+
+  it('activa y desactiva con aviso (PATCH con expectedVersion)', async () => {
+    const { api } = await renderScreen();
+    await screen.findByText('4/5 banners');
+    const sw = () =>
+      screen.getByRole('switch', { name: 'Activar banner: Rolls con decoración navideña' });
+    await userEvent.click(sw());
+    expect(await screen.findByText('Banner activado')).toBeVisible();
+    await waitFor(() => expect(sw()).toHaveAttribute('aria-checked', 'true'));
+    expect(api().store.banners.find((b) => b.id === 'banner-navidad')).toMatchObject({
+      active: true,
+      version: 2,
+    });
+    await userEvent.click(sw());
+    expect(await screen.findByText('Banner desactivado')).toBeVisible();
   });
 
   it('un error persistente al activar (503 BANNERS_BUSY) se muestra con role=alert además del aviso', async () => {
     const { api } = await renderScreen();
-    await screen.findByText('8 banners');
+    await screen.findByText('4/5 banners');
     api().store.bannersBusy = 1;
     await userEvent.click(
-      screen.getByRole('switch', { name: 'Activar Tu primer pedido, con sorpresa' }),
+      screen.getByRole('switch', { name: 'Activar banner: Rolls con decoración navideña' }),
     );
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(/Hay otra edición en curso/);
@@ -147,207 +136,126 @@ describe('Banners (backoffice)', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('estado vacío (banners-empty), con aviso de crear el primero', async () => {
-    await renderScreen(<BannersScreen />, 'admin', 'banners-empty');
-    expect(await screen.findByText('Sin banners')).toBeVisible();
-    expect(screen.getByText(/Crea el primer banner/)).toBeVisible();
-  });
-
-  it('activa y desactiva (PATCH …/status) con aviso', async () => {
-    await renderScreen();
-    await screen.findByText('8 banners');
-    const sw = () => screen.getByRole('switch', { name: 'Activar Tu primer pedido, con sorpresa' });
-    await userEvent.click(sw());
-    expect(await screen.findByText('Tu primer pedido, con sorpresa activado')).toBeVisible();
-    await waitFor(() => expect(sw()).toHaveAttribute('aria-checked', 'true'));
-    await userEvent.click(sw());
-    expect(await screen.findByText('Tu primer pedido, con sorpresa desactivado')).toBeVisible();
-  });
-
-  it('reordena con botones subir/bajar accesibles (PUT /order); los bordes y los vencidos quedan deshabilitados', async () => {
+  it('un cambio ajeno al activar (409 BANNER_VERSION_CONFLICT) refresca la lista y avisa', async () => {
     const { api } = await renderScreen();
-    await screen.findByText('8 banners');
-    await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'Bajar Los favoritos de los MONcheros' }),
-      ).toBeEnabled(),
-    );
-    expect(
-      screen.getByRole('button', { name: 'Subir Los favoritos de los MONcheros' }),
-    ).toBeDisabled();
-    expect(
-      screen.getByRole('button', { name: 'Bajar Tu primer pedido, con sorpresa' }),
-    ).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Subir Semana del cliente' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Bajar Semana del cliente' })).toBeDisabled();
-
-    const down = screen.getByRole('button', { name: 'Bajar Los favoritos de los MONcheros' });
-    down.focus();
-    await userEvent.keyboard('{Enter}');
-    expect(
-      await screen.findByText('Los favoritos de los MONcheros bajó una posición'),
-    ).toBeVisible();
-    await waitFor(() =>
-      expect(codesInOrder().slice(0, 3)).toEqual(['happy-hour', 'favoritos', 'calientito']),
-    );
-    expect(api().store.banners.find((b) => b.code === 'favoritos')).toMatchObject({
-      sortOrder: 1,
-      version: 2,
-    });
-    // El vencido conserva su prioridad.
-    expect(api().store.banners.find((b) => b.code === 'semana-del-cliente')!.sortOrder).toBe(6);
-
+    await screen.findByText('4/5 banners');
+    api().store.banners.find((b) => b.id === 'banner-navidad')!.version = 2;
     await userEvent.click(
-      screen.getByRole('button', { name: 'Subir Los favoritos de los MONcheros' }),
+      screen.getByRole('switch', { name: 'Activar banner: Rolls con decoración navideña' }),
     );
-    await waitFor(() => expect(codesInOrder()[0]).toBe('favoritos'));
-  });
-
-  it('con filtros activos no se puede reordenar y lo explica', async () => {
-    await renderScreen();
-    await screen.findByText('8 banners');
-    await userEvent.selectOptions(screen.getByLabelText('Filtrar por estado'), 'PUBLISHED');
-    await waitFor(() => expect(codesInOrder()).not.toContain('bienvenida'));
-    expect(screen.getByText(/Quita los filtros para reordenar/)).toBeVisible();
-    for (const b of screen.getAllByRole('button', { name: /^Subir / })) expect(b).toBeDisabled();
-    for (const b of screen.getAllByRole('button', { name: /^Bajar / })) expect(b).toBeDisabled();
-  });
-
-  it('un encargado con alcance de una sucursal: ve lo suyo, sin editar ni reordenar lo que no cubre entero', async () => {
-    await renderScreen(<BannersScreen />, 'manager', 'default', (s) =>
-      s.roles
-        .find((r) => r.code === 'manager')!
-        .permissions.push('banners.read', 'banners.create', 'banners.update', 'promotions.read'),
-    );
-    // El contador y el pie de página pueden pintarse en el mismo ciclo: basta con que aparezca alguno.
-    await screen.findAllByText(/banners$/);
-    expect(codesInOrder()).toContain('fin-de-mes');
-    expect(
-      screen.getByRole('switch', { name: 'Activar Los favoritos de los MONcheros' }),
-    ).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Editar Fin de mes: bebidas' })).toBeDisabled();
-    expect(
-      screen.getByRole('button', { name: 'Bajar Los favoritos de los MONcheros' }),
-    ).toBeDisabled();
-    expect(
-      screen.getByText(/Reordenar exige permiso de edición sobre todas las sucursales/),
-    ).toBeVisible();
-  });
-
-  it('sin banners.read (cocina) no se muestra la pantalla: la API responde 403', async () => {
-    await renderScreen(<BannersScreen />, 'kitchen');
-    await waitFor(() => expect(screen.queryByText(/banners$/)).toBeNull());
-    expect(screen.queryByRole('button', { name: 'Nuevo banner' })).toBeNull();
-  });
-
-  it('error de carga con reintento', async () => {
-    const { api } = await renderScreen();
-    await screen.findByText('8 banners');
-    const saved = api().store.banners;
-    // Un fallo inesperado del servidor en la siguiente consulta (otra clave de caché).
-    api().store.banners = null as never;
-    await userEvent.selectOptions(screen.getByLabelText('Filtrar por estado'), 'PUBLISHED');
-    expect(await screen.findByText('No se pudieron cargar los banners.')).toBeVisible();
-    api().store.banners = saved;
-    await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
-    await waitFor(() => expect(codesInOrder()).toContain('favoritos'));
-    expect(screen.queryByText('No se pudieron cargar los banners.')).toBeNull();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Otra persona modificó este banner/);
   });
 });
 
-describe('Banner: alta y edición', () => {
-  it('agrupa el formulario en secciones con título y guía de imagen (zona segura y fotos claras)', async () => {
-    await renderScreen();
-    await screen.findByText('8 banners');
-    const dialog = await openCreate();
-    for (const name of ['Imagen', 'Textos', 'Destino', 'Vigencia y alcance']) {
-      expect(within(dialog).getByRole('region', { name })).toBeVisible();
-    }
-    expect(within(dialog).getByText(/Evita fotos muy claras bajo el texto/)).toBeVisible();
-    expect(within(dialog).getByText(/60 % izquierdo o central/)).toBeVisible();
+describe('Banners: tope de 5', () => {
+  it('con 5 banners «Agregar banner» queda deshabilitado con aviso; al eliminar uno se habilita', async () => {
+    const { api } = await renderScreen(<BannersScreen />, 'admin', 'default', (s) => {
+      s.banners.push({
+        ...s.banners[0]!,
+        id: 'banner-quinto',
+        code: 'quinto',
+        createdAt: '2026-10-30T18:00:00.000Z',
+      });
+    });
+    expect(await screen.findByText('5/5 banners')).toBeVisible();
+    const add = screen.getByRole('button', { name: 'Agregar banner' });
+    expect(add).toBeDisabled();
+    expect(screen.getByText(/Ya hay 5 banners \(el máximo\)/)).toBeVisible();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Eliminar banner: Rolls con decoración navideña' }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Eliminar banner' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Eliminar banner' }));
+    expect(await screen.findByText('4/5 banners')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Agregar banner' })).toBeEnabled();
+    expect(api().store.banners.some((b) => b.id === 'banner-navidad')).toBe(false);
   });
 
-  it('un error de imagen enfoca el botón de subir (el input oculto no es focalizable) y los selects de destino se asocian al error', async () => {
-    await renderScreen();
-    await screen.findByText('8 banners');
-    const dialog = await openCreate();
-    await userEvent.type(within(dialog).getByLabelText('Código'), 'ok-code');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Crear banner' }));
-    // Primer campo con error en orden: la imagen.
-    expect(within(dialog).getByRole('button', { name: 'Subir imagen' })).toHaveFocus();
-    await userEvent.selectOptions(within(dialog).getByLabelText('Destino del botón'), 'CATEGORY');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Crear banner' }));
-    const select = within(dialog).getByLabelText('Categoría de destino');
-    expect(select).toHaveAttribute('aria-invalid', 'true');
-    expect(select.getAttribute('aria-describedby')).toBeTruthy();
-  });
-
-  it('valida el formulario antes de enviar y enfoca el primer campo con error', async () => {
-    await renderScreen();
-    await screen.findByText('8 banners');
-    const dialog = await openCreate();
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Crear banner' }));
-    expect(within(dialog).getByText(/El código admite de 3 a 64 caracteres/)).toBeVisible();
-    expect(within(dialog).getByText('Elige o sube una imagen para el banner.')).toBeVisible();
-    expect(within(dialog).getByText(/El título en español es obligatorio/)).toBeVisible();
-    expect(
-      within(dialog).getByText(/El texto alternativo en español es obligatorio/),
-    ).toBeVisible();
-    expect(within(dialog).getByLabelText('Código')).toHaveFocus();
-    // El CTA es una lista cerrada: no hay campo de URL ni de ruta.
-    expect(within(dialog).queryByLabelText(/url|enlace|ruta/i)).toBeNull();
-  });
-
-  it('crea un banner con imagen de la biblioteca, textos es/en, CTA a categoría y fechas; aparece en la lista', async () => {
+  it('409 BANNER_LIMIT_REACHED (otra persona creó el 5.º): explica el tope, conserva el formulario y recarga la lista', async () => {
     const { api } = await renderScreen();
-    await screen.findByText('8 banners');
+    await screen.findByText('4/5 banners');
     const dialog = await openCreate();
-    await userEvent.type(within(dialog).getByLabelText('Código'), 'Verano-2026');
     await pickFromLibrary(dialog);
-    const es = within(
-      within(dialog).getByRole('group', { name: 'Textos en español (obligatorios)' }),
+    await userEvent.type(within(dialog).getByLabelText(/^Texto alternativo/), 'Mi banner');
+    api().store.banners.push({
+      ...api().store.banners[0]!,
+      id: 'banner-ajeno',
+      code: 'ajeno',
+      createdAt: '2026-10-30T18:00:00.000Z',
+    });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Crear banner' }));
+    expect(await within(dialog).findByText(/Ya hay 5 banners/)).toBeVisible();
+    expect(within(dialog).getByLabelText(/^Texto alternativo/)).toHaveValue('Mi banner');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+    expect(await screen.findByText('5/5 banners')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Agregar banner' })).toBeDisabled();
+  });
+});
+
+describe('Banner: alta', () => {
+  it('el formulario solo pide imagen, texto alternativo y activo, con su ayuda; sin títulos, destino ni fechas', async () => {
+    await renderScreen();
+    await screen.findByText('4/5 banners');
+    const dialog = await openCreate();
+    expect(within(dialog).getByLabelText(/^Texto alternativo/)).toBeVisible();
+    expect(within(dialog).getByText(/Describe lo que se ve/)).toBeVisible();
+    expect(within(dialog).getByRole('switch', { name: 'Activo' })).toHaveAttribute(
+      'aria-checked',
+      'true',
     );
-    await userEvent.type(es.getByLabelText(/^Título/), 'Verano de rolls');
-    await userEvent.type(es.getByLabelText(/^Texto alternativo/), 'Rolls frescos');
-    const en = within(within(dialog).getByRole('group', { name: 'Textos en inglés (opcionales)' }));
-    await userEvent.type(en.getByLabelText('Título'), 'Roll summer');
-    await userEvent.selectOptions(within(dialog).getByLabelText('Destino del botón'), 'CATEGORY');
-    await userEvent.selectOptions(
-      within(dialog).getByLabelText('Categoría de destino'),
-      'cat-rolls',
-    );
-    setValue(within(dialog).getByLabelText('Inicio de la vigencia'), '2026-12-01T08:00');
-    setValue(within(dialog).getByLabelText('Fin de la vigencia'), '2026-12-31T23:59');
-    // El aviso del cupón y la nota de 30 s están en el formulario.
-    expect(within(dialog).getByTestId('coupon-text-warning')).toHaveTextContent(
-      /no escribas su código/,
-    );
-    expect(within(dialog).getByText(/hasta 30 segundos/)).toBeVisible();
+    for (const label of [
+      /Título/,
+      /Subtítulo/,
+      /Destino/,
+      /Vigencia|Inicio/,
+      /Código/,
+      /Prioridad/,
+    ]) {
+      expect(within(dialog).queryByLabelText(label)).toBeNull();
+    }
+    expect(within(dialog).queryByText(/inglés/i)).toBeNull();
+  });
+
+  it('valida antes de enviar y enfoca el primer campo con error (la imagen)', async () => {
+    await renderScreen();
+    await screen.findByText('4/5 banners');
+    const dialog = await openCreate();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Crear banner' }));
+    expect(within(dialog).getByText('Elige o sube una imagen.')).toBeVisible();
+    expect(within(dialog).getByText('Escribe el texto alternativo de la imagen.')).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'Subir imagen' })).toHaveFocus();
+    setValue(within(dialog).getByLabelText(/^Texto alternativo/), 'a'.repeat(125));
+    await pickFromLibrary(dialog);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Crear banner' }));
+    expect(within(dialog).getByText(/admite hasta 120 caracteres/)).toBeVisible();
+    expect(within(dialog).getByLabelText(/^Texto alternativo/)).toHaveFocus();
+  });
+
+  it('crea un banner con una imagen de la biblioteca; aparece al final con la vista previa recortada', async () => {
+    const { api } = await renderScreen();
+    await screen.findByText('4/5 banners');
+    const dialog = await openCreate();
+    expect(within(dialog).getByText(/Elige una imagen para ver la vista previa/)).toBeVisible();
+    await pickFromLibrary(dialog);
+    expect(await within(dialog).findByTestId('banner-preview')).toBeVisible();
+    await userEvent.type(within(dialog).getByLabelText(/^Texto alternativo/), '  Nuevo banner  ');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Crear banner' }));
     expect(await screen.findByText('Banner creado')).toBeVisible();
-    await waitFor(() => expect(screen.getByText('9 banners')).toBeVisible());
-    const created = api().store.banners.find((b) => b.code === 'verano-2026')!;
-    expect(created).toMatchObject({
-      version: 1,
-      active: true,
-      startsAt: '2026-12-01T14:00:00.000Z',
-      endsAt: '2027-01-01T05:59:00.000Z',
-      cta: { type: 'CATEGORY', categoryId: 'cat-rolls' },
-    });
-    expect(created.translations.en?.title).toBe('Roll summer');
-    expect(row('verano-2026')).toBeTruthy();
-    expect(within(row('verano-2026')).getByText('Programado', { selector: '.pill' })).toBeVisible();
+    expect(await screen.findByText('5/5 banners')).toBeVisible();
+    const created = api().store.banners.at(-1)!;
+    expect(created).toMatchObject({ imageAlt: 'Nuevo banner', active: true, version: 1 });
+    expect(rowIds().at(-1)).toBe(created.id);
   });
 
-  it('sube una imagen nueva: optimiza (3:1), pide el intent BANNER_IMAGE, sube al almacén simulado y la usa', async () => {
+  it('sube una imagen nueva: optimiza (3:1), muestra el resultado, pide el intent BANNER_IMAGE y la usa', async () => {
     const { api } = await renderScreen();
-    await screen.findByText('8 banners');
+    await screen.findByText('4/5 banners');
     const dialog = await openCreate();
     await userEvent.upload(
       within(dialog).getByLabelText('Seleccionar la imagen del banner'),
       png(),
     );
-    expect(await within(dialog).findByText('Imagen lista')).toBeVisible();
+    expect(await within(dialog).findByText(/Imagen lista · de .+ a 1 KiB/)).toBeVisible();
     const asset = api()
       .store.mediaAssets.filter((a) => a.kind === 'BANNER_IMAGE')
       .at(-1)!;
@@ -356,50 +264,26 @@ describe('Banner: alta y edición', () => {
     expect(within(dialog).getByText('Almacén simulado')).toBeVisible();
   });
 
-  it('un archivo que no es imagen muestra el error sin borrar el resto del formulario', async () => {
+  it('un archivo que no es imagen muestra el error sin borrar el texto alternativo', async () => {
     await renderScreen();
-    await screen.findByText('8 banners');
+    await screen.findByText('4/5 banners');
     const dialog = await openCreate();
-    await userEvent.type(within(dialog).getByLabelText('Código'), 'sigue-aqui');
+    await userEvent.type(within(dialog).getByLabelText(/^Texto alternativo/), 'Sigue aquí');
     await userEvent.upload(
       within(dialog).getByLabelText('Seleccionar la imagen del banner'),
       new File(['<svg/>'], 'x.svg', { type: 'image/svg+xml' }),
       { applyAccept: false },
     );
     expect(await within(dialog).findByText(/Formato no admitido/)).toBeVisible();
-    expect(within(dialog).getByLabelText('Código')).toHaveValue('sigue-aqui');
-  });
-
-  it('409 BANNER_CODE_TAKEN: el error queda en el campo código y el modal sigue abierto', async () => {
-    await renderScreen();
-    await screen.findByText('8 banners');
-    const dialog = await openCreate();
-    await userEvent.type(within(dialog).getByLabelText('Código'), 'favoritos');
-    await pickFromLibrary(dialog);
-    const es = within(
-      within(dialog).getByRole('group', { name: 'Textos en español (obligatorios)' }),
-    );
-    await userEvent.type(es.getByLabelText(/^Título/), 'Otro');
-    await userEvent.type(es.getByLabelText(/^Texto alternativo/), 'Alt');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Crear banner' }));
-    expect(
-      (await within(dialog).findAllByText('Ya existe un banner con ese código. Elige otro.'))
-        .length,
-    ).toBeGreaterThan(0);
-    expect(dialog).toBeVisible();
+    expect(within(dialog).getByLabelText(/^Texto alternativo/)).toHaveValue('Sigue aquí');
   });
 
   it('503 BANNERS_BUSY: mensaje reintentable y conserva los datos', async () => {
     const { api } = await renderScreen();
-    await screen.findByText('8 banners');
+    await screen.findByText('4/5 banners');
     const dialog = await openCreate();
-    await userEvent.type(within(dialog).getByLabelText('Código'), 'ocupado');
     await pickFromLibrary(dialog);
-    const es = within(
-      within(dialog).getByRole('group', { name: 'Textos en español (obligatorios)' }),
-    );
-    await userEvent.type(es.getByLabelText(/^Título/), 'Ocupado');
-    await userEvent.type(es.getByLabelText(/^Texto alternativo/), 'Alt');
+    await userEvent.type(within(dialog).getByLabelText(/^Texto alternativo/), 'Ocupado');
     api().store.bannersBusy = 1;
     await userEvent.click(within(dialog).getByRole('button', { name: 'Crear banner' }));
     expect(await within(dialog).findByText(/Hay otra edición en curso/)).toBeVisible();
@@ -407,128 +291,144 @@ describe('Banner: alta y edición', () => {
     expect(await screen.findByText('Banner creado')).toBeVisible();
   });
 
-  it('edita con expectedVersion, carga ambas traducciones y solo envía lo que cambió', async () => {
+  it('422 BANNER_ALT_INVALID del servidor queda en el campo', async () => {
+    await renderScreen();
+    await screen.findByText('4/5 banners');
+    const dialog = await openCreate();
+    await pickFromLibrary(dialog);
+    // El cliente deja pasar caracteres que el servidor rechaza (p. ej. una regla futura): se simula con un invisible.
+    setValue(within(dialog).getByLabelText(/^Texto alternativo/), 'ok​ok');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Crear banner' }));
+    expect(await within(dialog).findByText(/no admite caracteres de control/)).toBeVisible();
+  });
+});
+
+describe('Banner: edición', () => {
+  const openEdit = async () => {
+    await userEvent.click(screen.getByRole('button', { name: `Editar banner: ${FAV}` }));
+    return await screen.findByRole('dialog', { name: 'Editar banner' });
+  };
+
+  it('carga el detalle, cambia el texto alternativo y solo envía lo que cambió con expectedVersion', async () => {
     const { api } = await renderScreen();
-    await screen.findByText('8 banners');
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Editar Los favoritos de los MONcheros' }),
-    );
-    const dialog = await screen.findByRole('dialog', { name: 'Editar banner' });
-    const es = within(
-      await within(dialog).findByRole('group', { name: 'Textos en español (obligatorios)' }),
-    );
-    expect(es.getByLabelText(/^Título/)).toHaveValue('Los favoritos de los MONcheros');
-    const en = within(within(dialog).getByRole('group', { name: 'Textos en inglés (opcionales)' }));
-    expect(en.getByLabelText('Título')).toHaveValue("MONcheros' favorites");
-    // El código no se puede cambiar.
-    expect(within(dialog).getByLabelText('Código')).toBeDisabled();
-    await userEvent.clear(es.getByLabelText(/^Título/));
-    await userEvent.type(es.getByLabelText(/^Título/), 'Favoritos');
+    await screen.findByText('4/5 banners');
+    const dialog = await openEdit();
+    const alt = await within(dialog).findByLabelText(/^Texto alternativo/);
+    expect(alt).toHaveValue(FAV);
+    await userEvent.clear(alt);
+    await userEvent.type(alt, 'Favoritos');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Guardar cambios' }));
-    expect(await screen.findByText('Favoritos actualizado')).toBeVisible();
-    const b = api().store.banners.find((x) => x.code === 'favoritos')!;
-    expect(b.version).toBe(2);
-    expect(b.translations.es.title).toBe('Favoritos');
-    expect(b.translations.es.subtitle).toBe('Platanito, California y Calientito Roll.');
+    expect(await screen.findByText('Banner actualizado')).toBeVisible();
+    const b = api().store.banners.find((x) => x.id === 'banner-favoritos')!;
+    expect(b).toMatchObject({ version: 2, imageAlt: 'Favoritos', active: true });
+    expect(b.imageAssetId).toBe('media-seed-banner-favoritos');
+  });
+
+  it('cambia la imagen y el estado desde el formulario', async () => {
+    const { api } = await renderScreen();
+    await screen.findByText('4/5 banners');
+    const dialog = await openEdit();
+    await within(dialog).findByLabelText(/^Texto alternativo/);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Elegir de la biblioteca' }));
+    const lib = await screen.findByRole('dialog', { name: 'Imágenes de banner' });
+    await within(lib).findByRole('button', { name: 'Usar la imagen 1' });
+    const other = within(lib)
+      .getAllByRole('button', { name: /^Usar la imagen/ })
+      .find((b) => !(b as HTMLButtonElement).disabled)!;
+    await userEvent.click(other);
+    await userEvent.click(within(dialog).getByRole('switch', { name: 'Activo' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Guardar cambios' }));
+    expect(await screen.findByText('Banner actualizado')).toBeVisible();
+    const b = api().store.banners.find((x) => x.id === 'banner-favoritos')!;
+    expect(b.active).toBe(false);
+    expect(b.imageAssetId).not.toBe('media-seed-banner-favoritos');
   });
 
   it('sin cambios no envía nada', async () => {
     const { api } = await renderScreen();
-    await screen.findByText('8 banners');
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Editar Los favoritos de los MONcheros' }),
-    );
-    const dialog = await screen.findByRole('dialog', { name: 'Editar banner' });
-    await within(dialog).findByRole('group', { name: 'Textos en español (obligatorios)' });
+    await screen.findByText('4/5 banners');
+    const dialog = await openEdit();
+    await within(dialog).findByLabelText(/^Texto alternativo/);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Guardar cambios' }));
     expect(await screen.findByText('Sin cambios que guardar')).toBeVisible();
-    expect(api().store.banners.find((x) => x.code === 'favoritos')!.version).toBe(1);
+    expect(api().store.banners.find((x) => x.id === 'banner-favoritos')!.version).toBe(1);
   });
 
   it('409 BANNER_VERSION_CONFLICT: ofrece cargar la versión actual y no pisa los cambios ajenos', async () => {
     const { api } = await renderScreen();
-    await screen.findByText('8 banners');
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Editar Los favoritos de los MONcheros' }),
-    );
-    const dialog = await screen.findByRole('dialog', { name: 'Editar banner' });
-    const es = within(
-      await within(dialog).findByRole('group', { name: 'Textos en español (obligatorios)' }),
-    );
-    // Otra persona edita mientras tanto.
-    const stored = api().store.banners.find((x) => x.code === 'favoritos')!;
-    stored.translations.es.subtitle = 'Cambio ajeno';
+    await screen.findByText('4/5 banners');
+    const dialog = await openEdit();
+    const alt = await within(dialog).findByLabelText(/^Texto alternativo/);
+    const stored = api().store.banners.find((x) => x.id === 'banner-favoritos')!;
+    stored.imageAlt = 'Cambio ajeno';
     stored.version = 2;
-    await userEvent.clear(es.getByLabelText(/^Título/));
-    await userEvent.type(es.getByLabelText(/^Título/), 'Mi título');
+    await userEvent.clear(alt);
+    await userEvent.type(alt, 'Mi texto');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Guardar cambios' }));
     expect(await within(dialog).findByText(/Otra persona modificó este banner/)).toBeVisible();
-    expect(stored.translations.es.title).toBe('Los favoritos de los MONcheros');
+    expect(stored.imageAlt).toBe('Cambio ajeno');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cargar la versión actual' }));
-    // El formulario se reinicia (nuevo diálogo) con la versión actual.
     expect(await screen.findByDisplayValue('Cambio ajeno')).toBeVisible();
-    // La edición pendiente se descartó: el título vuelve al guardado.
-    expect(screen.queryByDisplayValue('Mi título')).toBeNull();
-  });
-
-  it('422 BANNER_CTA_INVALID: el destino quedó inactivo mientras se editaba', async () => {
-    const { api } = await renderScreen();
-    await screen.findByText('8 banners');
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Editar Los favoritos de los MONcheros' }),
-    );
-    const dialog = await screen.findByRole('dialog', { name: 'Editar banner' });
-    const es = within(
-      await within(dialog).findByRole('group', { name: 'Textos en español (obligatorios)' }),
-    );
-    api().store.menuCategories.find((c) => c.id === 'cat-rolls')!.active = false;
-    await userEvent.type(es.getByLabelText(/^Título/), '!');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Guardar cambios' }));
-    expect(
-      (await within(dialog).findAllByText(/El destino del botón no es válido/)).length,
-    ).toBeGreaterThan(0);
   });
 
   it('404: si el banner ya no existe al abrirlo lo dice', async () => {
     const { api } = await renderScreen();
-    await screen.findByText('8 banners');
-    const editButton = screen.getByRole('button', {
-      name: 'Editar Los favoritos de los MONcheros',
-    });
-    api().store.banners = api().store.banners.filter((b) => b.code !== 'favoritos');
-    await userEvent.click(editButton);
+    await screen.findByText('4/5 banners');
+    api().store.banners = api().store.banners.filter((b) => b.id !== 'banner-favoritos');
+    await userEvent.click(screen.getByRole('button', { name: `Editar banner: ${FAV}` }));
     expect(await screen.findByText('El banner ya no existe.')).toBeVisible();
   });
+});
 
-  it('vista previa SIN publicar: escritorio/móvil e idioma con el respaldo a español resaltado', async () => {
+describe('Banner: eliminar', () => {
+  const openDelete = async () => {
+    await userEvent.click(screen.getByRole('button', { name: `Eliminar banner: ${FAV}` }));
+    return await screen.findByRole('dialog', { name: 'Eliminar banner' });
+  };
+
+  it('pide confirmación y no borra si se cancela', async () => {
     const { api } = await renderScreen();
-    await screen.findByText('8 banners');
-    await userEvent.click(screen.getByRole('button', { name: 'Editar Fin de mes: bebidas' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Editar banner' });
-    const preview = await within(dialog).findByTestId('banner-preview');
-    expect(preview).toHaveAttribute('data-device', 'desktop');
-    expect(preview).toHaveTextContent('Fin de mes: bebidas');
-    expect(preview).toHaveAttribute('inert');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Móvil' }));
-    expect(within(dialog).getByTestId('banner-preview')).toHaveAttribute('data-device', 'mobile');
-    await userEvent.click(within(dialog).getByRole('button', { name: /Móvil pequeño/ }));
-    expect(within(dialog).getByTestId('banner-preview')).toHaveAttribute(
-      'data-device',
-      'mobileSmall',
-    );
-    expect(within(dialog).getByTestId('banner-preview').className).toMatch(/w-\[320px\]/);
-    await userEvent.click(within(dialog).getByRole('button', { name: 'EN' }));
-    // Sin inglés: todo sale en español y se indica qué campos.
-    expect(
-      within(dialog).getByText(
-        /Saldrán en español \(sin traducción\): título, subtítulo, texto del botón, texto alternativo/,
-      ),
-    ).toBeVisible();
-    expect(within(dialog).getByTestId('banner-preview').querySelector('h2')).toHaveAttribute(
-      'lang',
-      'es',
-    );
-    // No cambió nada publicado.
-    expect(api().store.banners.find((b) => b.code === 'fin-de-mes')!.version).toBe(1);
+    await screen.findByText('4/5 banners');
+    const dialog = await openDelete();
+    expect(within(dialog).getByText(/no se puede deshacer/)).toBeVisible();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByRole('dialog', { name: 'Eliminar banner' })).toBeNull();
+    expect(api().store.banners).toHaveLength(4);
+  });
+
+  it('elimina con expectedVersion, avisa y actualiza el contador', async () => {
+    const { api } = await renderScreen();
+    await screen.findByText('4/5 banners');
+    const dialog = await openDelete();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Eliminar banner' }));
+    expect(await screen.findByText('Banner eliminado')).toBeVisible();
+    expect(await screen.findByText('3/5 banners')).toBeVisible();
+    expect(rowIds()).not.toContain('banner-favoritos');
+    expect(api().store.banners.some((b) => b.id === 'banner-favoritos')).toBe(false);
+  });
+
+  it('409 BANNER_VERSION_CONFLICT: el diálogo sigue abierto con el aviso y la lista se refresca', async () => {
+    const { api } = await renderScreen();
+    await screen.findByText('4/5 banners');
+    const dialog = await openDelete();
+    api().store.banners.find((b) => b.id === 'banner-favoritos')!.version = 2;
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Eliminar banner' }));
+    expect(await within(dialog).findByText(/Otra persona modificó este banner/)).toBeVisible();
+    expect(api().store.banners).toHaveLength(4);
+    // Con la versión nueva, reintentar funciona.
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Eliminar banner' }));
+    expect(await screen.findByText('Banner eliminado')).toBeVisible();
+  });
+});
+
+describe('Banners: permisos', () => {
+  it('con alcance acotado (una sola sucursal) la API responde 403 y la pantalla lo dice', async () => {
+    await renderScreen(<BannersScreen />, 'manager', 'default', (s) => {
+      s.roles
+        .find((r) => r.code === 'manager')
+        ?.permissions.push('banners.read', 'banners.create', 'banners.update');
+    });
+    await waitFor(() => expect(screen.queryByText(/\/5 banners/)).toBeNull());
+    expect(screen.queryByRole('button', { name: 'Agregar banner' })).toBeNull();
   });
 });

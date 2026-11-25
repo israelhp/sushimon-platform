@@ -11,26 +11,22 @@ import { queryKeys } from '../query-keys';
 import { invalidateStoreAggregates } from './invalidate';
 import { sameSearchScope, useStoreBootstrap, useStoreConfig, useStoreSearch } from './hooks';
 
-function BootstrapProbe({ branchId, locale }: { branchId: string | null; locale: 'es' | 'en' }) {
-  const q = useStoreBootstrap(branchId, locale);
+function BootstrapProbe({ branchId }: { branchId: string | null }) {
+  const q = useStoreBootstrap(branchId);
   return (
     <p data-testid="out">
-      {q.isPending
-        ? 'cargando'
-        : q.isError
-          ? 'error'
-          : `${q.data.branchId ?? 'none'}|${q.data.locale}`}
+      {q.isPending ? 'cargando' : q.isError ? 'error' : `${q.data.branchId ?? 'none'}`}
     </p>
   );
 }
 
 describe('useStoreBootstrap (F17)', () => {
-  it('una sola solicitud al agregado; la clave lleva sucursal e idioma (otra clave = otra respuesta)', async () => {
+  it('una sola solicitud al agregado; la clave lleva la sucursal (otra clave = otra respuesta)', async () => {
     const spy = createSpyClient();
-    const view = await renderStore(<BootstrapProbe branchId="sucursal-1" locale="es" />, {
+    const view = await renderStore(<BootstrapProbe branchId="sucursal-1" />, {
       wrapClient: spy.wrap,
     });
-    await waitFor(() => expect(screen.getByTestId('out')).toHaveTextContent('sucursal-1|es'));
+    await waitFor(() => expect(screen.getByTestId('out')).toHaveTextContent('sucursal-1'));
     expect(spy.count('GET', /^\/v1\/store\/bootstrap$/)).toBe(1);
     // Sin pedir por separado lo que el agregado ya trae.
     for (const rx of [
@@ -41,42 +37,30 @@ describe('useStoreBootstrap (F17)', () => {
     ]) {
       expect(spy.count('GET', rx)).toBe(0);
     }
-    expect(
-      view.queryClient.getQueryData(queryKeys.store.bootstrap('sucursal-1', 'es')),
-    ).toBeDefined();
-    expect(
-      view.queryClient.getQueryData(queryKeys.store.bootstrap('sucursal-1', 'en')),
-    ).toBeUndefined();
-    expect(view.queryClient.getQueryData(queryKeys.store.bootstrap(null, 'es'))).toBeUndefined();
+    expect(view.queryClient.getQueryData(queryKeys.store.bootstrap('sucursal-1'))).toBeDefined();
+    expect(view.queryClient.getQueryData(queryKeys.store.bootstrap(null))).toBeUndefined();
   });
 
-  it('el idioma «es» (valor por defecto del servidor) se omite de la URL; «en» se envía', async () => {
+  it('no envía idioma: el agregado no tiene parámetro `locale` (ADR-0033)', async () => {
     const spy = createSpyClient();
-    const view = await renderStore(<BootstrapProbe branchId={null} locale="en" />, {
-      wrapClient: spy.wrap,
-    });
-    await waitFor(() => expect(screen.getByTestId('out')).toHaveTextContent('none|en'));
-    expect(spy.calls.at(-1)?.query).toMatchObject({ locale: 'en' });
-    view.unmount();
-    const spy2 = createSpyClient();
-    await renderStore(<BootstrapProbe branchId={null} locale="es" />, { wrapClient: spy2.wrap });
-    await waitFor(() => expect(spy2.count('GET', /bootstrap/)).toBe(1));
-    expect(spy2.calls.at(-1)?.query?.locale).toBeUndefined();
+    await renderStore(<BootstrapProbe branchId={null} />, { wrapClient: spy.wrap });
+    await waitFor(() => expect(screen.getByTestId('out')).toHaveTextContent('none'));
+    expect(spy.calls.at(-1)?.query?.locale).toBeUndefined();
   });
 
   it('si la sucursal guardada ya no existe (404 BRANCH_NOT_FOUND) reintenta SIN sucursal', async () => {
     const spy = createSpyClient();
-    await renderStore(<BootstrapProbe branchId="sucursal-inexistente" locale="es" />, {
+    await renderStore(<BootstrapProbe branchId="sucursal-inexistente" />, {
       wrapClient: spy.wrap,
     });
-    await waitFor(() => expect(screen.getByTestId('out')).toHaveTextContent('none|es'));
+    await waitFor(() => expect(screen.getByTestId('out')).toHaveTextContent('none'));
     expect(spy.count('GET', /bootstrap/)).toBe(2);
   });
 
   it('un error 503 STORE_BUSY llega como error (la pantalla ofrece reintentar)', async () => {
     const spy = createSpyClient();
     const gate = spy.hold('GET', /bootstrap/);
-    await renderStore(<BootstrapProbe branchId="sucursal-1" locale="es" />, {
+    await renderStore(<BootstrapProbe branchId="sucursal-1" />, {
       wrapClient: spy.wrap,
     });
     await act(async () => gate.fail(new ApiError(503, 'unavailable', 'busy')));
@@ -264,14 +248,14 @@ describe('invalidateStoreAggregates (F17)', () => {
   it('las claves concretas cuelgan de esos prefijos', () => {
     const starts = (key: readonly unknown[], prefix: readonly unknown[]) =>
       prefix.every((p, i) => key[i] === p);
-    expect(starts(queryKeys.store.bootstrap('b', 'es'), queryKeys.store.bootstrapAll)).toBe(true);
+    expect(starts(queryKeys.store.bootstrap('b'), queryKeys.store.bootstrapAll)).toBe(true);
     expect(starts(queryKeys.store.menu('b', { page: 'all' }), queryKeys.store.menuAll)).toBe(true);
     expect(starts(queryKeys.store.search('b', 'q', {}), queryKeys.store.searchAll)).toBe(true);
     expect(starts(queryKeys.products.storeDetail('s', 'b'), queryKeys.products.storeDetails)).toBe(
       true,
     );
     // Sin sucursal se distingue de cualquier sucursal.
-    expect(queryKeys.store.bootstrap(null, 'es')).not.toEqual(queryKeys.store.bootstrap('b', 'es'));
+    expect(queryKeys.store.bootstrap(null)).not.toEqual(queryKeys.store.bootstrap('b'));
   });
 });
 

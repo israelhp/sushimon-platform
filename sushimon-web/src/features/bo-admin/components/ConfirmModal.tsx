@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Banner } from '@/components/ui/Banner';
 import { Modal } from '@/components/ui/Modal';
 
@@ -19,6 +19,7 @@ export function ConfirmModal({
   pending = false,
   error,
   icon,
+  initialFocus,
   onConfirm,
   onClose,
 }: {
@@ -32,9 +33,16 @@ export function ConfirmModal({
   pending?: boolean;
   error?: string;
   icon?: ReactNode;
+  /** `cancel`: el foco inicial va a «Cancelar» (acciones destructivas); por defecto, el contenedor del diálogo. */
+  initialFocus?: 'cancel';
   onConfirm: () => void;
   onClose: () => void;
 }) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    // Corre después del efecto de `Modal` (que enfoca el contenedor): el padre se ejecuta al final.
+    if (initialFocus === 'cancel') cancelRef.current?.focus();
+  }, [initialFocus]);
   return (
     <Modal
       open
@@ -47,7 +55,13 @@ export function ConfirmModal({
       onClose={pending ? () => undefined : onClose}
       footer={
         <>
-          <button type="button" className="btn" onClick={onClose} disabled={pending}>
+          <button
+            ref={cancelRef}
+            type="button"
+            className="btn"
+            onClick={onClose}
+            disabled={pending}
+          >
             {cancelLabel}
           </button>
           <button

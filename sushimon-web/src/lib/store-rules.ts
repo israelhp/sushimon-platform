@@ -23,7 +23,6 @@ export const STORE_SUMMARY_MAX = 160;
 export const STORE_BOOTSTRAP_CATEGORIES_MAX = 30;
 export const STORE_BOOTSTRAP_FEATURED_MAX = 8;
 export const STORE_BOOTSTRAP_PROMOTIONS_MAX = 5;
-export const STORE_BOOTSTRAP_BANNERS_MAX = 10;
 export const STORE_PRODUCT_PROMOTIONS_MAX = 3;
 
 // ── Ventanas de caché del cliente (≤ TTL de la API: respuestas públicas ≤ 15 s en CDN) ───────────

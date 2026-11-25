@@ -43,8 +43,7 @@ import {
  *
  * Escenarios de dominio aplicados aquí:
  * - empty: sin categorías, productos, promociones, pedidos, historial ni datos de cuenta.
- * - promotion-expired: todas las promociones vencieron ayer (los banners vinculados dejan de publicarse).
- * - banner-promotion-expired: igual que promotion-expired (alias explícito de F16 para los banners ligados a promociones).
+ * - promotion-expired: todas las promociones vencieron ayer.
  * - banners-empty: sin banners (el Inicio colapsa la sección del carrusel).
  * - branch-closed: las sucursales activas están "cerradas" (no se pide "ahora"; sí programado).
  * - product-unavailable: Calientito Roll y Platanito Roll no disponibles en ninguna sucursal.
@@ -349,7 +348,7 @@ export function createSeedStore(scenario: MockScenario = 'default'): MockStore {
     ? []
     : structuredClone(PROMOTION_SEEDS).map((p) =>
         // F15: todas terminaron ayer (`endsAt` EXCLUSIVO = hoy 00:00 local) y empezaron hace 40 días.
-        scenario === 'promotion-expired' || scenario === 'banner-promotion-expired'
+        scenario === 'promotion-expired'
           ? {
               ...p,
               startsAt: fromLocal(addDaysISO(today, -40)).toISOString(),

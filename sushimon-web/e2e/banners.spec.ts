@@ -4,9 +4,10 @@ import { deflateSync } from 'node:zlib';
 import { demoStaffFromSeed } from '../src/mocks/fixtures/staff';
 
 /**
- * F16 — Banners con datos SIMULADOS (el mock reproduce la semántica del contrato; nada se probó contra la API real ni contra
- * R2/CDN real). El estado del mock vive en la pestaña (sessionStorage): lo que el administrador cambia lo ve la tienda en la misma
- * sesión. «Ahora» de la demo = miércoles 11 nov 2026, 14:25 en Guatemala (el Happy Hour y su banner empiezan hoy a las 15:00).
+ * F16 (simplificado, ADR-0033) — Banners con datos SIMULADOS (el mock reproduce la semántica del contrato; nada se probó contra la
+ * API real ni contra R2/CDN real). Un banner = imagen + texto alternativo + activo; máximo 5; orden = creación. El estado del mock
+ * vive en la pestaña (sessionStorage): lo que el administrador cambia lo ve la tienda en la misma sesión. La semilla trae 4
+ * banners (3 activos y 1 inactivo).
  */
 
 async function enterAs(page: Page, profile: RegExp) {
@@ -17,10 +18,10 @@ async function enterAs(page: Page, profile: RegExp) {
 }
 
 const nav = (page: Page) => page.getByRole('navigation', { name: 'Menú principal' });
-const bannerRow = (page: Page, code: string) =>
-  page.locator(`[data-testid="banner-row"][data-code="${code}"]`);
+const bannerRow = (page: Page, alt: string) =>
+  page.locator('[data-testid="banner-row"]', { hasText: alt });
 
-async function openBanners(page: Page, count = '8 banners') {
+async function openBanners(page: Page, count = '4/5 banners') {
   await nav(page).getByRole('link', { name: 'Banners' }).click();
   await expect(page.getByRole('heading', { name: 'Banners', level: 1 })).toBeVisible({
     timeout: 90_000,
@@ -68,9 +69,6 @@ function pngBuffer(width: number, height: number): Buffer {
   ]);
 }
 
-const slideTitles = (page: Page) =>
-  page.locator('section[aria-roledescription] article h2').allTextContents();
-
 /** Preferencia de la tienda (solo comodidad, no autenticación): sucursal para recoger. */
 const pickBranch = (page: Page, branchId: string) =>
   page.evaluate((id) => {
@@ -80,145 +78,116 @@ const pickBranch = (page: Page, branchId: string) =>
     );
   }, branchId);
 
-test('administrador: crea, edita, activa y reordena banners; el Inicio lo refleja', async ({
+/** Texto alternativo de cada diapositiva del carrusel (imagen o, si falla, el fondo de marca con su nombre accesible). */
+const slideAlts = (page: Page) =>
+  page
+    .locator('section[aria-roledescription] article')
+    .evaluateAll((els) =>
+      els.map(
+        (el) =>
+          el.querySelector('img')?.getAttribute('alt') ??
+          el.querySelector('[data-banner-image]')?.getAttribute('aria-label') ??
+          '',
+      ),
+    );
+
+const SEED_ALTS = [
+  'Selección de rolls favoritos de Sushi Mon',
+  'Mesa con rolls y bebidas durante el Happy Hour',
+  'Calientito Roll recién salido de la cocina',
+];
+
+test('administrador: agrega, edita, activa, elimina y llega al tope de 5; el Inicio lo refleja', async ({
   page,
 }) => {
   await enterAs(page, /Ana Lucía Pérez/);
   await openBanners(page);
-
-  // Avisos visibles: demora de caché y subida solo para administración.
   await expect(page.getByText(/hasta 30 segundos/).first()).toBeVisible();
-  await expect(page.getByText(/solo un administrador/)).toBeVisible();
 
-  // Alta: validación, imagen REAL optimizada en el navegador (canvas), textos es/en, CTA y vigencia.
-  await page.getByRole('button', { name: 'Nuevo banner' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Nuevo banner' });
+  // Alta: validación, imagen REAL optimizada en el navegador (canvas) y texto alternativo.
+  await page.getByRole('button', { name: 'Agregar banner' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Agregar banner' });
   await dialog.getByRole('button', { name: 'Crear banner' }).click();
-  await expect(dialog.getByText('Elige o sube una imagen para el banner.')).toBeVisible();
-  await expect(dialog.getByText(/El título en español es obligatorio/)).toBeVisible();
+  await expect(dialog.getByText('Elige o sube una imagen.')).toBeVisible();
+  await expect(dialog.getByText('Escribe el texto alternativo de la imagen.')).toBeVisible();
+  await expect(dialog.getByText(/Descripción de la imagen para accesibilidad/)).toBeVisible();
 
-  await dialog.getByLabel('Código').fill('verano-2026');
   await dialog
     .getByLabel('Seleccionar la imagen del banner')
     .setInputFiles({ name: 'portada.png', mimeType: 'image/png', buffer: pngBuffer(900, 600) });
-  await expect(dialog.getByText('Imagen lista')).toBeVisible({ timeout: 30_000 });
-  const es = dialog.getByRole('group', { name: 'Textos en español (obligatorios)' });
-  await es.getByLabel(/^Título/).fill('Verano de rolls');
-  await es.getByLabel(/^Texto alternativo/).fill('Rolls frescos sobre hielo');
-  await es.getByLabel('Texto del botón').fill('Pídelo ya');
-  const en = dialog.getByRole('group', { name: 'Textos en inglés (opcionales)' });
-  await en.getByLabel('Título', { exact: true }).fill('Roll summer');
-  await dialog.getByLabel('Destino del botón').selectOption('CATEGORY');
-  await dialog.getByLabel('Categoría de destino').selectOption({ label: 'Sushi Rolls' });
+  await expect(dialog.getByText(/Imagen lista · de .+ a .+ tras optimizar/)).toBeVisible({
+    timeout: 30_000,
+  });
+  await dialog.getByLabel(/^Texto alternativo/).fill('Rolls frescos sobre hielo');
 
-  // Previsualización SIN publicar: imagen real elegida y el respaldo a español en inglés.
+  // Previsualización SIN publicar: la imagen elegida recortada, en tres tamaños.
   const preview = dialog.getByTestId('banner-preview');
-  await expect(preview).toContainText('Verano de rolls');
   await expect(preview.locator('img')).toBeVisible();
   await dialog.getByRole('button', { name: 'Móvil', exact: true }).click();
   await expect(preview).toHaveAttribute('data-device', 'mobile');
-  await dialog.getByRole('button', { name: 'EN', exact: true }).click();
-  await expect(preview).toContainText('Roll summer');
-  await expect(dialog.getByText(/Saldrán en español \(sin traducción\):/)).toBeVisible();
 
   await dialog.getByRole('button', { name: 'Crear banner' }).click();
   await expect(page.locator('.toast', { hasText: 'Banner creado' })).toBeVisible();
-  await expect(page.getByText('9 banners', { exact: true })).toBeVisible();
-  await expect(bannerRow(page, 'verano-2026')).toContainText('Publicado');
+  await expect(page.getByText('5/5 banners', { exact: true })).toBeVisible();
+  await expect(bannerRow(page, 'Rolls frescos sobre hielo')).toContainText('Activo');
 
-  // Edición: carga el detalle, cambia el título y guarda con `expectedVersion`.
-  await page.getByRole('button', { name: 'Editar Verano de rolls' }).click();
+  // Tope: «Agregar banner» deshabilitado con aviso.
+  await expect(page.getByRole('button', { name: 'Agregar banner' })).toBeDisabled();
+  await expect(page.getByText(/Ya hay 5 banners \(el máximo\)/)).toBeVisible();
+
+  // Edición: carga el detalle, cambia el texto alternativo y guarda con `expectedVersion`.
+  await page.getByRole('button', { name: 'Editar banner: Rolls frescos sobre hielo' }).click();
   const edit = page.getByRole('dialog', { name: 'Editar banner' });
-  const esEdit = edit.getByRole('group', { name: 'Textos en español (obligatorios)' });
-  await expect(esEdit.getByLabel(/^Título/)).toHaveValue('Verano de rolls');
-  await expect(edit.getByLabel('Código')).toBeDisabled();
-  await esEdit.getByLabel(/^Título/).fill('Verano de sushi');
+  await expect(edit.getByLabel(/^Texto alternativo/)).toHaveValue('Rolls frescos sobre hielo');
+  await edit.getByLabel(/^Texto alternativo/).fill('Rolls de verano');
   await edit.getByRole('button', { name: 'Guardar cambios' }).click();
-  await expect(page.locator('.toast', { hasText: 'Verano de sushi actualizado' })).toBeVisible();
-  await expect(bannerRow(page, 'verano-2026')).toContainText('Verano de sushi');
-
-  // Un código repetido da 409 en el campo y no cierra el modal.
-  await page.getByRole('button', { name: 'Nuevo banner' }).click();
-  const dup = page.getByRole('dialog', { name: 'Nuevo banner' });
-  await dup.getByLabel('Código').fill('favoritos');
-  await dup.getByRole('button', { name: 'Elegir de la biblioteca' }).click();
-  await page
-    .getByRole('dialog', { name: 'Imágenes de banner' })
-    .getByRole('button', { name: 'Usar la imagen 1' })
-    .click();
-  const dupEs = dup.getByRole('group', { name: 'Textos en español (obligatorios)' });
-  await dupEs.getByLabel(/^Título/).fill('Repetido');
-  await dupEs.getByLabel(/^Texto alternativo/).fill('Alt');
-  await dup.getByRole('button', { name: 'Crear banner' }).click();
-  await expect(
-    dup.getByText('Ya existe un banner con ese código. Elige otro.').first(),
-  ).toBeVisible();
-  await dup.getByRole('button', { name: 'Cancelar' }).click();
+  await expect(page.locator('.toast', { hasText: 'Banner actualizado' })).toBeVisible();
+  await expect(bannerRow(page, 'Rolls de verano')).toBeVisible();
 
   // Activar / desactivar.
-  const sw = page.getByRole('switch', { name: 'Activar Tu primer pedido, con sorpresa' });
+  const sw = page.getByRole('switch', { name: 'Activar banner: Rolls con decoración navideña' });
+  await expect(sw).toHaveAttribute('aria-checked', 'false');
   await sw.click();
   await expect(sw).toHaveAttribute('aria-checked', 'true');
-  await sw.click();
-  await expect(sw).toHaveAttribute('aria-checked', 'false');
 
-  // Reordenar con el teclado: «calientito» sube dos posiciones y queda sobre «favoritos».
-  const rows = page.locator('[data-testid="banner-row"]');
-  const up = page.getByRole('button', { name: 'Subir Te merecés un calientito' });
-  await expect(up).toBeEnabled();
-  await up.focus();
-  await page.keyboard.press('Enter');
-  await expect(rows.nth(1)).toHaveAttribute('data-code', 'calientito');
-  await expect(up).toBeEnabled();
-  await page.keyboard.press('Enter');
-  await expect(rows.first()).toHaveAttribute('data-code', 'calientito');
-
-  // Filtros: por estado derivado y por búsqueda de título/código.
-  await page.getByLabel('Filtrar por estado').selectOption('SCHEDULED');
-  await expect(page.locator('[data-testid="banner-row"]')).toHaveCount(1);
-  await expect(bannerRow(page, 'navidad-en-rolls')).toBeVisible();
-  await page.getByRole('button', { name: 'Limpiar filtros' }).click();
-  await page.getByRole('searchbox', { name: 'Buscar por título o código' }).fill('verano');
-  await expect(page.locator('[data-testid="banner-row"]')).toHaveCount(1);
-
-  // La tienda lo refleja en la misma sesión: orden nuevo + el banner nuevo (hasta 30 s de caché real en http).
+  // La tienda lo refleja en la misma sesión: los 5 activos en orden de creación.
   await page.goto('/');
   await expect(page.locator('section[aria-roledescription] article').first()).toBeVisible({
     timeout: 60_000,
   });
-  expect(await slideTitles(page)).toEqual([
-    'Te merecés un calientito',
-    'Los favoritos de los MONcheros',
-    '¿Querés ser MONchero?',
-    'Verano de sushi',
+  expect(await slideAlts(page)).toEqual([
+    ...SEED_ALTS,
+    'Rolls con decoración navideña',
+    'Rolls de verano',
   ]);
 
-  // Desactivar el banner nuevo lo retira de la tienda (la sesión de demostración sigue abierta en la pestaña).
+  // Eliminar con confirmación: se libera un lugar y la tienda deja de mostrarlo.
   await page.goto('/backoffice/banners');
-  await expect(page.getByText('9 banners', { exact: true })).toBeVisible({ timeout: 90_000 });
-  await page.getByRole('switch', { name: 'Activar Verano de sushi' }).click();
-  await expect(page.locator('.toast', { hasText: 'Verano de sushi desactivado' })).toBeVisible();
+  await expect(page.getByText('5/5 banners', { exact: true })).toBeVisible({ timeout: 90_000 });
+  await page.getByRole('button', { name: 'Eliminar banner: Rolls de verano' }).click();
+  const confirm = page.getByRole('dialog', { name: 'Eliminar banner' });
+  await expect(confirm.getByText(/no se puede deshacer/)).toBeVisible();
+  await confirm.getByRole('button', { name: 'Eliminar banner' }).click();
+  await expect(page.locator('.toast', { hasText: 'Banner eliminado' })).toBeVisible();
+  await expect(page.getByText('4/5 banners', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Agregar banner' })).toBeEnabled();
   await page.goto('/');
   await expect(page.locator('section[aria-roledescription] article').first()).toBeVisible({
     timeout: 60_000,
   });
-  expect(await slideTitles(page)).toHaveLength(3);
+  expect(await slideAlts(page)).toEqual([...SEED_ALTS, 'Rolls con decoración navideña']);
 });
 
-test('tienda: carrusel con banners por sucursal e idioma, teclado, pausa y destinos cerrados', async ({
+test('tienda: carrusel solo con imágenes de banners activos, teclado, pausa y sin enlaces ni textos', async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
   const slides = page.locator('section[aria-roledescription] article');
   await expect(slides.first()).toBeVisible({ timeout: 90_000 });
-  // Sin sucursal y a las 14:25: favoritos, calientito y equipo (Happy Hour espera a las 15:00).
-  expect(await slideTitles(page)).toEqual([
-    'Los favoritos de los MONcheros',
-    'Te merecés un calientito',
-    '¿Querés ser MONchero?',
-  ]);
-  await expect(page.locator('body')).not.toContainText(/Q\d+\.\d\d.*Happy|BIENVENIDO10/);
+  // Los 3 activos en orden de creación (el inactivo no sale), sin sucursal ni idioma que cambien la lista.
+  expect(await slideAlts(page)).toEqual(SEED_ALTS);
+  await expect(slides.locator('h2, a, button')).toHaveCount(0);
 
   // Teclado: ← / → sobre los indicadores; con movimiento reducido no avanza solo.
   const dot = (n: number) => page.getByRole('button', { name: `Ir a la promoción ${n}` });
@@ -229,30 +198,12 @@ test('tienda: carrusel con banners por sucursal e idioma, teclado, pausa y desti
   await expect(dot(3)).toHaveAttribute('aria-current', 'true');
   await expect(page.getByRole('button', { name: 'Pausar carrusel' })).toHaveCount(0);
 
-  // Destino por función cerrada: la tercera lleva a «Trabaja con nosotros».
-  await page.getByRole('link', { name: /Ver oportunidades/ }).click();
-  await expect(page).toHaveURL(/\/trabaja-con-nosotros$/);
-
-  // Con la sucursal 1 se suma «Fin de mes» (sin inglés).
+  // Con otra sucursal y en inglés la lista de banners es la misma.
   await pickBranch(page, 'sucursal-1');
-  await page.goto('/');
-  await expect(slides.first()).toBeVisible({ timeout: 90_000 });
-  await expect.poll(async () => (await slideTitles(page)).length).toBe(4);
-  expect((await slideTitles(page))[3]).toBe('Fin de mes: bebidas');
-
-  // Inglés: textos en inglés y `lang="es"` solo donde falta la traducción.
   await page.context().addCookies([{ name: 'NEXT_LOCALE', value: 'en', url: page.url() }]);
   await page.goto('/');
   await expect(slides.first()).toBeVisible({ timeout: 90_000 });
-  await expect.poll(async () => (await slideTitles(page)).length).toBe(4);
-  expect(await slideTitles(page)).toEqual([
-    "MONcheros' favorites",
-    'You deserve something hot',
-    'Want to be a MONchero?',
-    'Fin de mes: bebidas',
-  ]);
-  await expect(slides.nth(3).locator('h2')).toHaveAttribute('lang', 'es');
-  await expect(slides.nth(0).locator('h2')).not.toHaveAttribute('lang', /.+/);
+  expect(await slideAlts(page)).toEqual(SEED_ALTS);
 });
 
 test('encargado sin permisos de banners: el menú no ofrece la pantalla', async ({ page }) => {
@@ -263,7 +214,7 @@ test('encargado sin permisos de banners: el menú no ofrece la pantalla', async 
 const ADMIN_SESSION = demoStaffFromSeed('u1');
 
 for (const theme of ['light', 'dark'] as const) {
-  test(`a11y: lista, formulario y vista previa sin violaciones serias o críticas · ${theme}`, async ({
+  test(`a11y: lista, formulario y confirmación sin violaciones serias o críticas · ${theme}`, async ({
     page,
   }) => {
     await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
@@ -281,7 +232,7 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(page.getByRole('heading', { name: 'Banners', level: 1 })).toBeVisible({
       timeout: 90_000,
     });
-    await expect(page.getByText('8 banners', { exact: true })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByText('4/5 banners', { exact: true })).toBeVisible({ timeout: 60_000 });
     await page.waitForTimeout(300);
     const audit = async (label: string) => {
       const results = await new AxeBuilder({ page })
@@ -293,18 +244,29 @@ for (const theme of ['light', 'dark'] as const) {
       expect(blocking, `${label}: ${JSON.stringify(blocking.map((v) => v.id))}`).toEqual([]);
     };
     await audit('lista');
-    await page.getByRole('button', { name: 'Editar Fin de mes: bebidas' }).click();
+    await page
+      .getByRole('button', { name: 'Editar banner: Rolls con decoración navideña' })
+      .click();
     const dialog = page.getByRole('dialog', { name: 'Editar banner' });
     await expect(dialog.getByTestId('banner-preview')).toBeVisible();
     await audit('editar');
     await dialog.getByRole('button', { name: 'Cancelar' }).click();
-    await page.getByRole('button', { name: 'Nuevo banner' }).click();
+    await page.getByRole('button', { name: 'Agregar banner' }).click();
     await page
-      .getByRole('dialog', { name: 'Nuevo banner' })
+      .getByRole('dialog', { name: 'Agregar banner' })
       .getByRole('button', { name: 'Crear banner' })
       .click();
-    await expect(page.getByText('Elige o sube una imagen para el banner.')).toBeVisible();
-    await audit('nuevo con errores');
+    await expect(page.getByText('Elige o sube una imagen.')).toBeVisible();
+    await audit('agregar con errores');
+    await page
+      .getByRole('dialog', { name: 'Agregar banner' })
+      .getByRole('button', { name: 'Cancelar' })
+      .click();
+    await page
+      .getByRole('button', { name: 'Eliminar banner: Rolls con decoración navideña' })
+      .click();
+    await expect(page.getByRole('dialog', { name: 'Eliminar banner' })).toBeVisible();
+    await audit('eliminar');
   });
 }
 

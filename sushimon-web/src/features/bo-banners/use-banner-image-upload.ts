@@ -19,6 +19,9 @@ export interface UploadState {
   progress: number;
   error?: MediaErrorKind;
   fileName?: string;
+  /** Resultado de la optimización (solo `done`): tamaño original y optimizado, en bytes. */
+  before?: number;
+  after?: number;
 }
 
 const IDLE: UploadState = { status: 'idle', progress: 0 };
@@ -33,10 +36,10 @@ function previewOf(blob: Blob): string | null {
 }
 
 /**
- * F16 — Subida de la imagen de UN banner con el gestor de medios de F14: optimizar en el navegador (perfil `banner`: recorte
+ * F16 (simplificado) — Subida de la imagen de UN banner con el gestor de medios de F14: optimizar en el navegador (perfil `banner`: recorte
  * centrado 3:1, ancho ≤ 1920 px, ≤ 1 MiB) → pedir intent `BANNER_IMAGE` → PUT directo (almacén SIMULADO en el mock; R2 en http,
  * sin probar) → confirmar. Devuelve la imagen lista para el formulario. Un fallo deja el estado `error` con su clase de mensaje y NO
- * toca el resto del formulario (los textos se conservan, p. ej. con `MEDIA_STORAGE_UNAVAILABLE`).
+ * toca el resto del formulario (el texto alternativo se conserva, p. ej. con `MEDIA_STORAGE_UNAVAILABLE`).
  */
 export function useBannerImageUpload() {
   const client = useDataClient();
@@ -97,7 +100,7 @@ export function useBannerImageUpload() {
         }
         const previewSrc = previewOf(optimized.blob);
         if (previewSrc) previews.current.push(previewSrc);
-        patch({ status: 'done', progress: 1 });
+        patch({ status: 'done', progress: 1, before: file.size, after: optimized.sizeBytes });
         await invalidate();
         return {
           assetId: asset.id,
