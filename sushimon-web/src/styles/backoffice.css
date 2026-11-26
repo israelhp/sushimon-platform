@@ -40,30 +40,33 @@
     --bo-band-amber-2: #f7a823;
     --bo-band-amber-dark: #d9970b;
     --bo-band-amber-dark-2: #e0a01a;
-    --bo-band-coral-2: #e13434;
-    --bo-band-coral-dark: #b91c1c;
-    --bo-band-coral-dark-2: #c42424;
-    --bo-band-navy: #1f2937;
-    --bo-band-navy-2: #273445;
-    --bo-band-navy-2b: #283548;
-    --bo-band-navy-dark: #0f172a;
-    --bo-band-navy-dark-2: #162038;
-    --bo-brand-red: #ef4444;
+    /* Marca 2026: rojo #e94a3f y azul #283479 exactos en bandas (también en oscuro). */
+    --bo-band-coral-2: #dd4439; /* onda más oscura: el texto blanco queda >= 3,81:1 en ambas */
+    --bo-band-coral-dark: #e94a3f;
+    --bo-band-coral-dark-2: #dd4439;
+    --bo-band-navy: #283479;
+    --bo-band-navy-2: #303f8c;
+    --bo-band-navy-2b: #303f8c;
+    --bo-band-navy-dark: #283479;
+    --bo-band-navy-dark-2: #303f8c;
+    --bo-brand-red: #e94a3f;
+    --bo-brand-blue: #283479;
     --bo-ink: #111827;
     --bo-ink-deep: #0b0b0f;
-    --bo-red: #dc2626;
+    --bo-red: #e94a3f;
     --bo-snow: #f9fafb;
     --bo-tile-beige-dark: #e9edf3;
-    --bo-tile-blue-dark: #dce5ff;
-    --bo-tile-coral-dark: #ffd9db;
+    --bo-tile-blue-dark: #dde1f6;
+    --bo-tile-coral-dark: #ffd9d6;
     --bo-tile-navy-dark: #ffefc2;
     --bo-white: #ffffff;
-    --bo-primary: #dc2626;
-    --bo-primary-strong: #b91c1c;
-    --bo-primary-soft: #fdecec;
+    /* Blanco sobre #e94a3f = 3,81:1: texto y botones usan el derivado #d22418 (5,24:1); hover #b01d12 (6,93:1). */
+    --bo-primary: #d22418;
+    --bo-primary-strong: #b01d12;
+    --bo-primary-soft: #feeeec;
     --bo-on-primary: #ffffff;
-    --bo-secondary: #1f2937;
-    --bo-secondary-soft: #eceef2;
+    --bo-secondary: #283479;
+    --bo-secondary-soft: #e8eaf6;
     --bo-on-secondary: #ffffff;
     --bo-bg: #faf7f2;
     --bo-surface: #ffffff;
@@ -78,8 +81,9 @@
     --bo-green: #15803d;
     --bo-green-soft: #e3f3e8;
     --bo-green-text: #166534;
-    --bo-red-text: #b91c1c;
-    --bo-blue-text: #1f2937;
+    --bo-red-text: #b91c1c; /* PELIGRO/error (semántico, distinto del rojo de marca) */
+    --bo-brand-text: #d22418; /* texto de marca (rojo derivado AA) */
+    --bo-blue-text: #283479;
     --bo-amber-text: #92400e;
     --bo-shadow: 0 1px 2px rgba(17, 24, 39, 0.05), 0 4px 14px rgba(17, 24, 39, 0.06);
     --bo-shadow-lg: 0 18px 44px rgba(17, 24, 39, 0.18);
@@ -88,12 +92,12 @@
     --bo-kcol: #f1ece3;
     --bo-dots: rgba(17, 24, 39, 0.08);
     --bo-knob: #ffffff;
-    --bo-sidebar: #1f2937;
+    --bo-sidebar: #283479;
     --bo-sidebar-text: #f9fafb;
-    --bo-sidebar-muted: #9ca3af;
-    --bo-sidebar-hover: rgba(255, 255, 255, 0.07);
-    --bo-sidebar-line: rgba(255, 255, 255, 0.1);
-    --bo-sidebar-active: rgba(220, 38, 38, 0.22);
+    --bo-sidebar-muted: #c3c9ec; /* #9ca3af daba 4,45:1 sobre #283479; este 7,8:1 */
+    --bo-sidebar-hover: rgba(255, 255, 255, 0.08);
+    --bo-sidebar-line: rgba(255, 255, 255, 0.14);
+    --bo-sidebar-active: rgba(233, 74, 63, 0.3);
     color-scheme: light;
     min-height: 100vh;
     background: var(--bo-bg);
@@ -102,12 +106,13 @@
   }
   /* ===== Paleta · tema oscuro ===== */
   .dark [data-zone='bo'] {
-    --bo-primary: #ef4444;
-    --bo-primary-strong: #f87171;
-    --bo-primary-soft: rgba(239, 68, 68, 0.16);
+    /* Tintes claros (AA sobre superficies oscuras): rojo #eb5b51 y azul #a0abee. */
+    --bo-primary: #eb5b51;
+    --bo-primary-strong: #f1766d;
+    --bo-primary-soft: rgba(235, 91, 81, 0.16);
     --bo-on-primary: #0b0b0f;
-    --bo-secondary: #e5e7eb;
-    --bo-secondary-soft: rgba(229, 231, 235, 0.1);
+    --bo-secondary: #a0abee;
+    --bo-secondary-soft: rgba(160, 171, 238, 0.14);
     --bo-on-secondary: #0b0b0f;
     --bo-bg: #0b0b0f;
     --bo-surface: #0f172a;
@@ -123,7 +128,8 @@
     --bo-green-soft: rgba(74, 222, 128, 0.14);
     --bo-green-text: #86efac;
     --bo-red-text: #fca5a5;
-    --bo-blue-text: #e5e7eb;
+    --bo-brand-text: #f58b83;
+    --bo-blue-text: #a0abee;
     --bo-amber-text: #fbbf24;
     --bo-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.3);
     --bo-shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.6);
@@ -132,12 +138,12 @@
     --bo-kcol: #0d1322;
     --bo-dots: rgba(255, 255, 255, 0.07);
     --bo-knob: #ffffff;
-    --bo-sidebar: #0f172a;
+    --bo-sidebar: #283479;
     --bo-sidebar-text: #f9fafb;
-    --bo-sidebar-muted: #9ca3af;
-    --bo-sidebar-hover: rgba(255, 255, 255, 0.06);
-    --bo-sidebar-line: #232c3f;
-    --bo-sidebar-active: rgba(239, 68, 68, 0.18);
+    --bo-sidebar-muted: #c3c9ec;
+    --bo-sidebar-hover: rgba(255, 255, 255, 0.08);
+    --bo-sidebar-line: rgba(255, 255, 255, 0.14);
+    --bo-sidebar-active: rgba(233, 74, 63, 0.3);
     color-scheme: dark;
   }
   [data-zone='bo'] a {
@@ -476,7 +482,7 @@
     bottom: 10px;
     width: 4px;
     border-radius: 0 4px 4px 0;
-    background: var(--bo-primary);
+    background: var(--bo-brand-red);
   }
   [data-zone='bo'] .nav-badge {
     margin-left: auto;
@@ -849,10 +855,10 @@
   }
   @keyframes bo-pulseRing {
     0% {
-      box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.45);
+      box-shadow: 0 0 0 0 rgba(233, 74, 63, 0.45);
     }
     100% {
-      box-shadow: 0 0 0 14px rgba(220, 38, 38, 0);
+      box-shadow: 0 0 0 14px rgba(233, 74, 63, 0);
     }
   }
   @keyframes bo-spin {
@@ -1037,7 +1043,7 @@
   }
   [data-zone='bo'] .st-listo {
     background: var(--bo-primary-soft);
-    color: var(--bo-red-text);
+    color: var(--bo-brand-text);
   }
   [data-zone='bo'] .st-conf {
     background: var(--bo-surface-2);
@@ -1957,7 +1963,7 @@
   }
   [data-zone='bo'] .b-pink {
     background: var(--bo-primary-soft);
-    color: var(--bo-red-text);
+    color: var(--bo-brand-text);
     border-color: var(--bo-primary);
   }
   [data-zone='bo'] .items {
@@ -1986,7 +1992,7 @@
     height: 24px;
     border-radius: 7px;
     background: var(--bo-primary-soft);
-    color: var(--bo-red-text);
+    color: var(--bo-brand-text);
     display: grid;
     place-items: center;
     font-size: 12px;
@@ -2223,7 +2229,7 @@
   [data-zone='bo'] .cmp div:last-child {
     border-right: 0;
     background: var(--bo-primary-soft);
-    color: var(--bo-red-text);
+    color: var(--bo-brand-text);
   }
   [data-zone='bo'] .cmp b {
     font-family: var(--font-display);
@@ -3259,7 +3265,7 @@
   }
   [data-zone='bo'] .menu-item.on {
     background: var(--bo-primary-soft);
-    color: var(--bo-red-text);
+    color: var(--bo-brand-text);
     font-weight: 800;
   }
   [data-zone='bo'] .menu-head {

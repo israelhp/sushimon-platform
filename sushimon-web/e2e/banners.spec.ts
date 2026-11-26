@@ -110,7 +110,7 @@ test('administrador: agrega, edita, activa, elimina y llega al tope de 5; el Ini
   await dialog.getByRole('button', { name: 'Crear banner' }).click();
   await expect(dialog.getByText('Elige o sube una imagen.')).toBeVisible();
   await expect(dialog.getByText('Escribe el texto alternativo de la imagen.')).toBeVisible();
-  await expect(dialog.getByText(/Descripción de la imagen para accesibilidad/)).toBeVisible();
+  await expect(dialog.getByText(/Describe lo que se ve, sin empezar con/)).toBeVisible();
 
   await dialog
     .getByLabel('Seleccionar la imagen del banner')

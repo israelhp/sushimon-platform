@@ -128,7 +128,7 @@ export function MenuSearchResults({
         {stale ? t('searchUpdating') : t('searchCount', { shown: products.length, total })}
       </p>
       {stale ? (
-        <div aria-hidden="true" className="mb-3 h-0.5 w-full animate-pulse rounded bg-primary" />
+        <div aria-hidden="true" className="mb-3 h-0.5 w-full animate-pulse rounded bg-brand-red" />
       ) : null}
       {/* `inert` mientras los datos están desfasados: nada interactuable de una consulta anterior. */}
       <div

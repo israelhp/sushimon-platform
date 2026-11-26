@@ -9,7 +9,7 @@ import { cn } from '@/lib/cn';
 const A = {
   ink: '#141414',
   rice: '#FAF8F0',
-  salmon: '#F05249',
+  salmon: '#E94A3F',
   leaf: '#7CC36A',
   egg: '#F2B33D',
   dough: '#F1E2C4',
@@ -17,7 +17,7 @@ const A = {
   ribLight: '#C8642D',
   crisp: '#F2A65A',
   crispLight: '#F7B96B',
-  navy: '#2D408A',
+  navy: '#283479',
   crust: '#E89A4B',
   cheese: '#F2C14E',
   sky: '#068DDD',

@@ -48,7 +48,7 @@ export function PublicStatusChip({
         <Check className="h-3.5 w-3.5 flex-none" aria-hidden="true" />
       ) : (
         <span
-          className="h-2 w-2 flex-none animate-pulse rounded-full bg-primary"
+          className="h-2 w-2 flex-none animate-pulse rounded-full bg-brand-red"
           aria-hidden="true"
         />
       )}
