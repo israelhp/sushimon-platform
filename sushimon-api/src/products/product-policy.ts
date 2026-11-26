@@ -1,4 +1,4 @@
-import { BadRequestException, HttpStatus } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
 import type { AuditValues } from '../audit/audit.service.js';
 import type { PublicCategoryView } from '../categories/categories.types.js';
 import { codedException } from '../common/errors/coded-exception.js';
@@ -10,6 +10,7 @@ import type {
   MediaInput,
   MediaRow,
   ProductRow,
+  ProductUsage,
   PublicProductDetailView,
   PublicProductView,
 } from './products.types.js';
@@ -40,6 +41,36 @@ export const categoryInvalid = (message: string) =>
   codedException(HttpStatus.UNPROCESSABLE_ENTITY, 'PRODUCT_CATEGORY_INVALID', message);
 export const notFound = () =>
   codedException(HttpStatus.NOT_FOUND, 'PRODUCT_NOT_FOUND', 'Producto no encontrado');
+
+// ---------- borrado (ADR-0035) ----------
+
+export const isUnused = (u: ProductUsage): boolean => u.orders + u.promotions + u.banners === 0;
+
+const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * 409 `PRODUCT_IN_USE` (`ProductInUseError`): mensaje con conteos, sin nombres ni ids; `usage` siempre presente. Con
+ * pedidos sugiere desactivar (el historial no se borra); si no, quitarlo de promociones/banners.
+ */
+export function productInUse(usage: ProductUsage): HttpException {
+  const parts = [
+    usage.orders > 0 ? plural(usage.orders, 'pedido', 'pedidos') : null,
+    usage.promotions > 0 ? plural(usage.promotions, 'promoción', 'promociones') : null,
+    usage.banners > 0 ? plural(usage.banners, 'banner', 'banners') : null,
+  ].filter((p): p is string => p !== null);
+  const advice =
+    usage.orders > 0
+      ? 'El historial de pedidos se conserva: desactívalo en su lugar'
+      : 'Quítalo de esas promociones o banners, o desactívalo en su lugar';
+  return new HttpException(
+    {
+      message: `El producto está en uso (${parts.join(', ')}). ${advice}`,
+      code: 'PRODUCT_IN_USE',
+      extra: { usage: { ...usage } },
+    },
+    HttpStatus.CONFLICT,
+  );
+}
 
 export const mediaInvalid = (path: string, message: string) =>
   codedException(HttpStatus.UNPROCESSABLE_ENTITY, 'PRODUCT_MEDIA_INVALID', message, [

@@ -2,7 +2,8 @@ import { BadRequestException, HttpStatus } from '@nestjs/common';
 import { dbErrorCodes as codes, uniqueTarget } from '../common/db/db-error-codes.js';
 import { codedException } from '../common/errors/coded-exception.js';
 import { mediaNotFound } from '../media/media-policy.js';
-import { categoryInvalid, skuTaken, slugTaken } from './product-policy.js';
+import { categoryInvalid, isUnused, productInUse, skuTaken, slugTaken } from './product-policy.js';
+import type { ProductUsage } from './products.types.js';
 
 const messageOf = (error: unknown): string => {
   const parts: string[] = [];
@@ -64,4 +65,32 @@ export function translateProductDbError(error: unknown): unknown {
     return new BadRequestException(['Datos inválidos']);
   }
   return error;
+}
+
+const BUSY_RETRY = () =>
+  codedException(
+    HttpStatus.SERVICE_UNAVAILABLE,
+    'PRODUCTS_BUSY',
+    'El catálogo se está modificando; reintenta en unos segundos',
+  );
+
+/**
+ * Borrado (ADR-0035). Un FK RESTRICT violado (P2003/23503) es una carrera (un pedido, una promoción, un banner o una
+ * oferta de sucursal nuevos). La transacción abortada ya no sirve para leer, así que RECUENTA fuera de ella
+ * (`recount`) para devolver el `usage` real en 409 `PRODUCT_IN_USE`. Si el recuento falla o sale en cero (p. ej. una
+ * fila de `branch_products` nueva, que no cuenta como uso) NO se inventan ceros: 503 `PRODUCTS_BUSY`, reintentable.
+ * El resto de errores sigue el camino de `translateProductDbError`.
+ */
+export async function translateProductDeleteError(
+  error: unknown,
+  recount: () => Promise<ProductUsage>,
+): Promise<unknown> {
+  const found = typeof error === 'object' && error !== null ? codes(error) : [];
+  if (!found.includes('P2003') && !found.includes('23503')) return translateProductDbError(error);
+  try {
+    const usage = await recount();
+    return isUnused(usage) ? BUSY_RETRY() : productInUse(usage);
+  } catch {
+    return BUSY_RETRY();
+  }
 }

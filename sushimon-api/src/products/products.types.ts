@@ -148,3 +148,17 @@ export interface ProductPatch {
   active?: boolean;
   updatedAt: Date;
 }
+
+/** Usos que impiden el borrado (ADR-0035): pedidos DISTINTOS, promociones (activas o no) y banners residuales. */
+export interface ProductUsage {
+  orders: number;
+  promotions: number;
+  banners: number;
+}
+
+/** Oferta por sucursal retirada al borrar el producto (auditoría `product.deleted`). */
+export interface BranchOfferRow {
+  branchId: string;
+  priceOverride: string | null;
+  available: boolean;
+}

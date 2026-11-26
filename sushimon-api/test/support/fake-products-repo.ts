@@ -1,12 +1,14 @@
 import { fold } from '../../src/products/product-policy.js';
 import type { ProductTx } from '../../src/products/products.repository.js';
 import type {
+  BranchOfferRow,
   MediaInput,
   MediaRow,
   NewProductData,
   ProductPageFilter,
   ProductPatch,
   ProductRow,
+  ProductUsage,
 } from '../../src/products/products.types.js';
 
 /** Convierte un patrón LIKE (con `\` como escape) en una RegExp equivalente. */
@@ -48,6 +50,15 @@ export class FakeProductsRepo {
   /** F14: assets (`media_assets`) visibles para adjuntar y para enlazar URL de R2. */
   assetSource: () => Iterable<{ id: string; status: string; objectKey: string; kind?: string }> =
     () => [];
+  /** ADR-0035: usos que bloquean el borrado (`id -> conteos`; ausente = sin usos) y ofertas por sucursal. */
+  usage = new Map<string, ProductUsage>();
+  branchOffers = new Map<string, BranchOfferRow[]>();
+  /** Si se define, el siguiente `delete` lanza este error (p. ej. 23503 de una carrera). */
+  failNextDeleteWith: unknown = null;
+  /** Si se define, el recuento FUERA de la transacción (`countUsage` sin `tx`) falla. */
+  failRecount = false;
+  /** Se ejecuta justo antes de borrar (para simular el escritor concurrente que ganó la carrera). */
+  beforeDelete: (() => void) | null = null;
   private counter = 1000;
 
   /** Ids con forma de UUID: las rutas de F14 validan `:mediaId` con ParseUUIDPipe. */
@@ -80,6 +91,9 @@ export class FakeProductsRepo {
     if (this.failTransactionWith) throw this.failTransactionWith as Error;
     const snapshot = new Map([...this.products].map(([k, v]) => [k, { ...v }]));
     const mediaSnapshot = new Map([...this.media].map(([k, v]) => [k, v.map((m) => ({ ...m }))]));
+    const offersSnapshot = new Map(
+      [...this.branchOffers].map(([k, v]) => [k, v.map((o) => ({ ...o }))]),
+    );
     const auditLength = this.audit.length;
     const tx = {
       auditEvent: {
@@ -95,6 +109,7 @@ export class FakeProductsRepo {
       this.audit.length = auditLength;
       this.products = snapshot;
       this.media = mediaSnapshot;
+      this.branchOffers = offersSnapshot;
       throw error;
     }
   }
@@ -258,6 +273,39 @@ export class FakeProductsRepo {
     }));
     this.media.set(productId, rows);
     return Promise.resolve(rows.map((r) => ({ ...r })));
+  }
+
+  // ---------- borrado (ADR-0035) ----------
+
+  countUsage(id: string, tx?: ProductTx): Promise<ProductUsage> {
+    this.calls.push(tx ? 'countUsage' : 'recount');
+    if (!tx && this.failRecount) return Promise.reject(new Error('db down'));
+    return Promise.resolve({ ...(this.usage.get(id) ?? { orders: 0, promotions: 0, banners: 0 }) });
+  }
+
+  findBranchOffers(_tx: ProductTx, productId: string): Promise<BranchOfferRow[]> {
+    this.calls.push('findBranchOffers');
+    return Promise.resolve((this.branchOffers.get(productId) ?? []).map((o) => ({ ...o })));
+  }
+
+  deleteBranchOffers(_tx: ProductTx, productId: string): Promise<number> {
+    this.calls.push('deleteBranchOffers');
+    const count = this.branchOffers.get(productId)?.length ?? 0;
+    this.branchOffers.delete(productId);
+    return Promise.resolve(count);
+  }
+
+  delete(_tx: ProductTx, id: string): Promise<void> {
+    this.calls.push('delete');
+    this.beforeDelete?.();
+    if (this.failNextDeleteWith) {
+      const error = this.failNextDeleteWith;
+      this.failNextDeleteWith = null;
+      throw error as Error;
+    }
+    this.products.delete(id);
+    this.media.delete(id); // cascada de BD
+    return Promise.resolve();
   }
 
   // ---------- F14 ----------

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Inject,
@@ -13,6 +14,7 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiResponse,
@@ -37,7 +39,7 @@ const BUSY = { status: 503, description: 'PRODUCTS_BUSY (reintentable)' } as con
 /**
  * Backoffice de productos: JWT → personal activo con el permiso de CADA operación → aal2. Lectura: `catalog.read`
  * (cualquier alcance). Escrituras: `catalog.create`/`catalog.update` con alcance GLOBAL (se comprueba en el servicio).
- * Sin DELETE: se desactiva. La respuesta lleva `no-store` (middleware de `/v1/admin`).
+ * Borrado físico solo sin usos (ADR-0035); desactivar sigue siendo la alternativa. La respuesta lleva `no-store` (middleware de `/v1/admin`).
  */
 @ApiTags('products')
 @ApiBearerAuth()
@@ -125,5 +127,28 @@ export class AdminProductsController {
     @Body() body: UpdateProductRequest,
   ): Promise<AdminProductDto> {
     return this.commands.update(staff, id, body);
+  }
+
+  @Delete(':id')
+  @RequireStaff('catalog.update')
+  @HttpCode(204)
+  @ApiOperation({
+    operationId: 'deleteAdminProduct',
+    summary: 'Elimina físicamente un producto que no tiene pedidos, promociones ni banners',
+  })
+  @ApiNoContentResponse({ description: 'Producto eliminado. Sin cuerpo' })
+  @ApiResponse({ status: 400, description: 'id no es un UUID' })
+  @ApiResponse(UNAUTHORIZED)
+  @ApiResponse({ status: 404, description: 'PRODUCT_NOT_FOUND' })
+  @ApiResponse({
+    status: 409,
+    description: 'PRODUCT_IN_USE (usage: orders, promotions, banners)',
+  })
+  @ApiResponse(BUSY)
+  async remove(
+    @CurrentStaff() staff: StaffContext,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.commands.remove(staff, id);
   }
 }

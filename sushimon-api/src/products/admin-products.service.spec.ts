@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { ForbiddenException, Logger } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type { Env } from '../config/env.js';
 import { AuthorizationService } from '../auth/authorization.service.js';
@@ -28,7 +28,16 @@ interface AuditEvent {
   newValues?: unknown;
 }
 
-function setup(allowedHosts: string[] = []) {
+function setup(
+  allowedHosts: string[] = [],
+  releaser?: {
+    removeUnusedAsset: (
+      staff: StaffContext,
+      assetId: string,
+      kind: 'PRODUCT_IMAGE',
+    ) => Promise<void>;
+  },
+) {
   const h = productsHarness();
   const audit: AuditEvent[] = [];
   const auditService = {
@@ -44,6 +53,8 @@ function setup(allowedHosts: string[] = []) {
     new AuthorizationService({} as IdentityService),
     h.categoriesQuery,
     { get: () => allowedHosts } as unknown as ConfigService<Env, true>,
+    undefined,
+    releaser,
   );
   return { service, audit, auditService, ...h };
 }
@@ -436,5 +447,214 @@ describe('AdminProductsService · reintento del slug autogenerado', () => {
     h3.repo.failNextWriteWith = uniqueViolation('products_sku_key');
     expect(code(await failure(h3.service.create(staff(), create)))).toBe('PRODUCT_SKU_TAKEN');
     expect(h3.repo.count('transaction')).toBe(1);
+  });
+});
+
+describe('AdminProductsService.remove (ADR-0035)', () => {
+  const ID = pid(1);
+  const free = () => {
+    const releaser = {
+      removeUnusedAsset: vi
+        .fn<(staff: StaffContext, assetId: string, kind: 'PRODUCT_IMAGE') => Promise<void>>()
+        .mockResolvedValue(undefined),
+    };
+    const ctx = setup([], releaser);
+    ctx.repo.seed(
+      productRow(ID, {
+        slug: 'roll',
+        sku: 'RC-1',
+        name: 'Roll',
+        categoryId: CAT.frios,
+        basePrice: '85.00',
+      }),
+      [
+        { url: 'https://cdn.x.io/a.jpg', assetId: 'asset-a' },
+        { url: 'https://cdn.x.io/b.jpg', assetId: 'asset-a' },
+        { url: 'https://cdn.x.io/c.jpg', assetId: 'asset-c' },
+        { url: 'https://ext.io/d.jpg' },
+      ],
+    );
+    return { ...ctx, releaser };
+  };
+
+  it('libre: lock -> lee -> cuenta -> ofertas -> borra ofertas -> borra -> audita; luego libera assets distintos', async () => {
+    const { service, repo, audit, releaser } = free();
+    repo.branchOffers.set(ID, [
+      { branchId: 'b1', priceOverride: '90.00', available: true },
+      { branchId: 'b2', priceOverride: null, available: false },
+    ]);
+    await expect(service.remove(staff(), ID)).resolves.toBeUndefined();
+    expect(repo.calls.filter((c) => c !== 'transaction')).toEqual([
+      'lock',
+      'findById',
+      'countUsage',
+      'findMediaInTx',
+      'findBranchOffers',
+      'deleteBranchOffers',
+      'delete',
+      'audit',
+    ]);
+    expect(repo.products.has(ID)).toBe(false);
+    expect(repo.branchOffers.has(ID)).toBe(false);
+    expect(audit).toEqual([
+      {
+        actorId: 'staff-1',
+        entityType: 'product',
+        entityId: ID,
+        action: 'product.deleted',
+        oldValues: {
+          id: ID,
+          slug: 'roll',
+          sku: 'RC-1',
+          name: 'Roll',
+          categoryId: CAT.frios,
+          active: true,
+          basePrice: '85.00',
+          branchOffers: ['b1|90.00|available', 'b2|base|unavailable'],
+        },
+      },
+    ]);
+    expect(releaser.removeUnusedAsset.mock.calls).toEqual([
+      [staff(), 'asset-a', 'PRODUCT_IMAGE'],
+      [staff(), 'asset-c', 'PRODUCT_IMAGE'],
+    ]);
+  });
+
+  it('alcance acotado => 403 antes de abrir la transacción', async () => {
+    const { service, repo } = free();
+    await expect(service.remove(staff(true), ID)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(repo.calls).toEqual([]);
+  });
+
+  it('inexistente => 404 PRODUCT_NOT_FOUND sin contar, borrar ni auditar', async () => {
+    const { service, repo, audit, releaser } = free();
+    const e = await failure(service.remove(staff(), pid(999)));
+    expect(code(e)).toBe('PRODUCT_NOT_FOUND');
+    expect(repo.count('countUsage')).toBe(0);
+    expect(repo.count('delete')).toBe(0);
+    expect(audit).toHaveLength(0);
+    expect(releaser.removeUnusedAsset).not.toHaveBeenCalled();
+  });
+
+  it('con pedidos => 409 PRODUCT_IN_USE con usage; sugiere desactivar; no borra, no audita ni libera', async () => {
+    const { service, repo, audit, releaser } = free();
+    repo.usage.set(ID, { orders: 1, promotions: 0, banners: 0 });
+    await expect(service.remove(staff(), ID)).rejects.toMatchObject({
+      status: 409,
+      response: {
+        code: 'PRODUCT_IN_USE',
+        message:
+          'El producto está en uso (1 pedido). El historial de pedidos se conserva: desactívalo en su lugar',
+        extra: { usage: { orders: 1, promotions: 0, banners: 0 } },
+      },
+    });
+    expect(repo.products.has(ID)).toBe(true);
+    expect(repo.count('deleteBranchOffers')).toBe(0);
+    expect(audit).toHaveLength(0);
+    expect(releaser.removeUnusedAsset).not.toHaveBeenCalled();
+  });
+
+  it('con promociones y banners (sin pedidos) => 409 plural/singular, sugiere quitarlo', async () => {
+    const { service, repo } = free();
+    repo.usage.set(ID, { orders: 0, promotions: 3, banners: 1 });
+    await expect(service.remove(staff(), ID)).rejects.toMatchObject({
+      status: 409,
+      response: {
+        message:
+          'El producto está en uso (3 promociones, 1 banner). Quítalo de esas promociones o banners, o desactívalo en su lugar',
+        extra: { usage: { orders: 0, promotions: 3, banners: 1 } },
+      },
+    });
+  });
+
+  it('combinado: los tres conteos en el mensaje y en usage', async () => {
+    const { service, repo } = free();
+    repo.usage.set(ID, { orders: 12, promotions: 1, banners: 2 });
+    await expect(service.remove(staff(), ID)).rejects.toMatchObject({
+      response: {
+        message: expect.stringContaining('12 pedidos, 1 promoción, 2 banners') as unknown,
+        extra: { usage: { orders: 12, promotions: 1, banners: 2 } },
+      },
+    });
+  });
+
+  it('23503 (carrera) => recuenta FUERA de la transacción y responde 409 con el usage real', async () => {
+    const { service, repo, audit } = free();
+    repo.beforeDelete = () => repo.usage.set(ID, { orders: 2, promotions: 0, banners: 0 });
+    repo.failNextDeleteWith = Object.assign(new Error('fk'), { code: 'P2003' });
+    await expect(service.remove(staff(), ID)).rejects.toMatchObject({
+      status: 409,
+      response: {
+        code: 'PRODUCT_IN_USE',
+        extra: { usage: { orders: 2, promotions: 0, banners: 0 } },
+      },
+    });
+    expect(repo.count('recount')).toBe(1);
+    expect(repo.products.has(ID)).toBe(true);
+    expect(audit).toHaveLength(0);
+  });
+
+  it('23503 sin uso al recontar (p. ej. oferta de sucursal nueva) o recuento fallido => 503 PRODUCTS_BUSY, sin ceros inventados', async () => {
+    const { service, repo } = free();
+    repo.failNextDeleteWith = { cause: { code: '23503' } };
+    await expect(service.remove(staff(), ID)).rejects.toMatchObject({
+      status: 503,
+      response: { code: 'PRODUCTS_BUSY' },
+    });
+    repo.failNextDeleteWith = { code: 'P2003' };
+    repo.failRecount = true;
+    await expect(service.remove(staff(), ID)).rejects.toMatchObject({
+      status: 503,
+      response: { code: 'PRODUCTS_BUSY' },
+    });
+    expect(repo.products.has(ID)).toBe(true);
+  });
+
+  it('lock_timeout (55P03) y P2028 => 503 PRODUCTS_BUSY', async () => {
+    const { service, repo } = free();
+    repo.failTransactionWith = { cause: { code: '55P03' } };
+    await expect(service.remove(staff(), ID)).rejects.toMatchObject({
+      status: 503,
+      response: { code: 'PRODUCTS_BUSY' },
+    });
+    repo.failTransactionWith = { code: 'P2028' };
+    await expect(service.remove(staff(), ID)).rejects.toMatchObject({ status: 503 });
+  });
+
+  it('si la auditoría falla se revierte todo (producto, ofertas) y no se libera ningún asset', async () => {
+    const { service, repo, auditService, releaser } = free();
+    repo.branchOffers.set(ID, [{ branchId: 'b1', priceOverride: null, available: true }]);
+    auditService.record.mockRejectedValueOnce(new Error('audit down'));
+    await expect(service.remove(staff(), ID)).rejects.toThrow('audit down');
+    expect(repo.products.has(ID)).toBe(true);
+    expect(repo.branchOffers.get(ID)).toHaveLength(1);
+    expect(releaser.removeUnusedAsset).not.toHaveBeenCalled();
+  });
+
+  it('liberación best-effort: MEDIA_IN_USE se ignora; otro fallo (storage) solo avisa sin datos sensibles; la respuesta sigue siendo éxito', async () => {
+    const { service, releaser } = free();
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    releaser.removeUnusedAsset
+      .mockRejectedValueOnce(Object.assign(new Error('x'), { response: { code: 'MEDIA_IN_USE' } }))
+      .mockRejectedValueOnce(
+        Object.assign(new Error('https://secret.r2/key?X-Amz-Signature=abc'), {
+          response: { code: 'MEDIA_STORAGE_UNAVAILABLE' },
+        }),
+      );
+    await expect(service.remove(staff(), ID)).resolves.toBeUndefined();
+    expect(releaser.removeUnusedAsset).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledTimes(1);
+    const text = String(warn.mock.calls[0]?.[0]);
+    expect(text).toContain('MEDIA_STORAGE_UNAVAILABLE');
+    expect(text).not.toContain('Signature');
+    warn.mockRestore();
+  });
+
+  it('un error no HttpException del liberador tampoco falla el borrado', async () => {
+    const { service, releaser } = free();
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    releaser.removeUnusedAsset.mockRejectedValue(new Error('boom'));
+    await expect(service.remove(staff(), ID)).resolves.toBeUndefined();
+    warn.mockRestore();
   });
 });

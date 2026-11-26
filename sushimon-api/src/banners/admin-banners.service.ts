@@ -168,7 +168,7 @@ export class AdminBannersService {
   /** Mejor esfuerzo: el banner YA no existe; cualquier fallo solo deja un asset libre en la biblioteca de medios. */
   private async releaseImage(staff: StaffContext, assetId: string): Promise<void> {
     try {
-      await this.media.removeUnusedAsset(staff, assetId);
+      await this.media.removeUnusedAsset(staff, assetId, 'BANNER_IMAGE');
     } catch (error) {
       const code = (error as { response?: { code?: unknown } } | null)?.response?.code;
       if (code === 'MEDIA_IN_USE') return; // otro banner o producto la usa: se conserva (esperado)

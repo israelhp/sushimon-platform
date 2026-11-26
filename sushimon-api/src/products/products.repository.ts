@@ -3,12 +3,14 @@ import { PrismaService } from '../database/prisma.service.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { SQL_ACCENTS_FROM, SQL_ACCENTS_TO } from './product-policy.js';
 import type {
+  BranchOfferRow,
   MediaInput,
   MediaRow,
   NewProductData,
   ProductPageFilter,
   ProductPatch,
   ProductRow,
+  ProductUsage,
 } from './products.types.js';
 
 export type ProductTx = Prisma.TransactionClient;
@@ -304,5 +306,47 @@ export class ProductsRepository {
     for (const [index, id] of orderedIds.entries()) {
       await tx.productMedia.updateMany({ where: { id, productId }, data: { sortOrder: index } });
     }
+  }
+
+  // ---------- borrado (ADR-0035) ----------
+
+  /**
+   * Usos que impiden el borrado: pedidos DISTINTOS con alguna línea del producto (cualquier estado), promociones con el
+   * producto en su alcance (activas o no) y banners con `cta_product_id` (residuo previo a 0023). Con `tx` cuenta bajo
+   * el bloqueo de fila; sin `tx`, fuera de cualquier transacción (recuento tras un 23503).
+   */
+  async countUsage(id: string, tx?: ProductTx): Promise<ProductUsage> {
+    const db = tx ?? this.prisma;
+    const [orders, promotions, banners] = await Promise.all([
+      db.$queryRaw<{ total: number }[]>`
+        SELECT count(DISTINCT order_id)::int AS total FROM app.order_items WHERE product_id = ${id}::uuid`,
+      db.promotionProduct.count({ where: { productId: id } }),
+      db.banner.count({ where: { ctaProductId: id } }),
+    ]);
+    return { orders: orders[0]?.total ?? 0, promotions, banners };
+  }
+
+  /** Ofertas por sucursal del producto (para auditar lo que se retira). Orden estable por sucursal. */
+  async findBranchOffers(tx: ProductTx, productId: string): Promise<BranchOfferRow[]> {
+    const rows = await tx.branchProduct.findMany({
+      where: { productId },
+      select: { branchId: true, priceOverride: true, available: true },
+      orderBy: { branchId: 'asc' },
+    });
+    return rows.map((r) => ({
+      branchId: r.branchId,
+      priceOverride: r.priceOverride === null ? null : r.priceOverride.toFixed(2),
+      available: r.available,
+    }));
+  }
+
+  /** Borra las filas de `branch_products` del producto (FK RESTRICT: antes que el producto). Devuelve cuántas. */
+  async deleteBranchOffers(tx: ProductTx, productId: string): Promise<number> {
+    return (await tx.branchProduct.deleteMany({ where: { productId } })).count;
+  }
+
+  /** Borrado físico. Cascada de BD: `product_media`, `product_modifier_groups`, `customer_favorites`. Las FK RESTRICT son la red de seguridad. */
+  async delete(tx: ProductTx, id: string): Promise<void> {
+    await tx.product.delete({ where: { id }, select: { id: true } });
   }
 }
