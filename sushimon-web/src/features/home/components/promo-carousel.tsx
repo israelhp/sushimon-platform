@@ -248,7 +248,7 @@ export function PromoCarousel() {
               <span
                 className={cn(
                   'block h-2.5 rounded-full transition-all',
-                  i === current ? 'w-7 bg-primary' : 'w-2.5 bg-line',
+                  i === current ? 'w-7 bg-brand-red' : 'w-2.5 bg-line',
                 )}
               />
             </button>

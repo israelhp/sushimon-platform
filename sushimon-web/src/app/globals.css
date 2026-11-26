@@ -54,6 +54,8 @@
   --color-fg: rgb(var(--fg));
   --color-muted: rgb(var(--muted));
   --color-line: rgb(var(--line));
+  --color-brand-red: rgb(var(--brand-red));
+  --color-brand-blue: rgb(var(--brand-blue));
   --color-primary: rgb(var(--primary));
   --color-primary-soft: rgb(var(--primary-soft));
   --color-onprimary: rgb(var(--onprimary));

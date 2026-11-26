@@ -14,15 +14,22 @@
   --fg: 17 24 39;
   --muted: 107 114 128;
   --line: 231 225 216;
-  --primary: 220 38 38;
-  --primary-soft: 254 236 236;
+  /*
+   * Marca (feature de marca 2026): rojo #E94A3F y azul #283479. Exactos en superficies (bandas, tiles, íconos,
+   * detalles decorativos: --brand-red / --brand-blue). Blanco sobre #E94A3F da 3,81:1 (AA exige 4,5), por eso
+   * --primary (texto y botones con texto pequeño) es el derivado #D22418 (mismo matiz, 5,24:1 con blanco).
+   */
+  --brand-red: 233 74 63;
+  --brand-blue: 40 52 121;
+  --primary: 210 36 24;
+  --primary-soft: 254 238 236;
   --onprimary: 255 255 255;
-  --secondary: 31 41 55;
-  --secondary-soft: 236 234 229;
+  --secondary: 40 52 121;
+  --secondary-soft: 232 234 246;
   --onsecondary: 255 255 255;
   --accent: 245 158 11;
   --accent-soft: 254 243 219;
-  --deep: 31 41 55;
+  --deep: 40 52 121;
   --ondeep: 255 255 255;
   --success: 21 128 61;
   --success-soft: 220 252 231;
@@ -30,10 +37,10 @@
   --danger-soft: 254 236 236;
 
   /* Bandas seigaiha (valores completos, no canales) */
-  --band-red: #dc2626;
-  --band-red-2: #e23c3c;
-  --band-blue: #1f2937;
-  --band-blue-2: #2a3646;
+  --band-red: #e94a3f;
+  --band-red-2: #dd4439; /* segunda onda más oscura: el texto blanco queda sobre >= 3,81:1 en ambas */
+  --band-blue: #283479;
+  --band-blue-2: #303f8c;
   --band-deep: #111827;
   --band-deep-2: #1b2333;
   --band-amber: #f59e0b;
@@ -42,13 +49,13 @@
   --on-band-amber: 17 24 39;
 
   /* Fondos de ilustración (`tile-*`): fijos, no cambian con el tema */
-  --tile-coral: 220 38 38;
-  --tile-blue: 31 41 55;
+  --tile-coral: 233 74 63;
+  --tile-blue: 40 52 121;
   --tile-sky: 245 158 11;
   --tile-cream: 243 238 230;
 
   /* Sello `hanko` y texto contorneado */
-  --hanko: 200 16 46;
+  --hanko: 210 36 24;
   --hanko-paper: 255 255 255;
   --outline-light: 255 255 255;
   --outline-dark: 17 24 39;
@@ -69,24 +76,23 @@
   --fg: 249 250 251;
   --muted: 156 163 175;
   --line: 34 45 66;
-  --primary: 239 68 68;
+  /* Tinte claro del rojo (#EB5B51): >= 4,6:1 como texto sobre bg/surface/subtle/primary-soft oscuros. */
+  --primary: 235 91 81;
   --primary-soft: 60 22 26;
-  /* Tinta oscura: blanco sobre #EF4444 da 3,76:1 (AA exige 4,5). Mismo criterio que el backoffice oscuro. */
+  /* Tinta oscura: blanco sobre el tinte claro no llega a 4,5:1; la tinta #0B0B0F da 5,75:1. */
   --onprimary: 11 11 15;
-  --secondary: 203 213 225;
-  --secondary-soft: 30 41 59;
+  /* Tinte claro del azul (#A0ABEE): texto/borde AA sobre las superficies oscuras (el #283479 exacto da 1,7:1). */
+  --secondary: 160 171 238;
+  --secondary-soft: 33 40 84;
   --onsecondary: 11 11 15;
   --accent: 251 191 36;
   --accent-soft: 58 44 12;
-  --deep: 30 41 59;
+  --deep: 40 52 121;
   --ondeep: 249 250 251;
   --success: 74 222 128;
   --success-soft: 18 52 36;
   --danger: 248 113 113;
   --danger-soft: 66 24 28;
-
-  --band-blue: #0f172a;
-  --band-blue-2: #18223a;
 
   --sh-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 16px rgb(0 0 0 / 0.35);
   --sh-lift: 0 2px 6px rgb(0 0 0 / 0.45), 0 14px 32px rgb(0 0 0 / 0.45);

@@ -164,7 +164,7 @@ export function CareersPage() {
           </p>
           <h1 className="disp mt-3.5 max-w-[14ch] text-[clamp(36px,7.4vw,100px)]">
             {t('heroA')}
-            <span className="text-red-500">{t('heroB')}</span>
+            <span className="text-brand-red">{t('heroB')}</span>
           </h1>
           <p className="my-6 text-[22px] text-white/90">{t('heroSub')}</p>
           <a className="btn btn-primary" href="#vacantes">

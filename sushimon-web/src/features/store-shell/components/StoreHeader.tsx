@@ -24,7 +24,7 @@ import { OrderModeButton } from './OrderModeButton';
 const navItemClass = (active: boolean) =>
   cn(
     'relative inline-flex h-full items-center gap-2 px-3.5 text-[15px] font-bold no-underline transition-colors after:absolute after:inset-x-3 after:bottom-0 after:h-[3px] after:rounded-t-full after:transition-colors xl:px-4',
-    active ? 'text-fg after:bg-primary' : 'text-muted after:bg-transparent hover:text-fg',
+    active ? 'text-fg after:bg-brand-red' : 'text-muted after:bg-transparent hover:text-fg',
   );
 
 /** Encabezado fijo de la tienda: logo, navegación (escritorio), idioma, tema, modo de pedido y cuenta. */
