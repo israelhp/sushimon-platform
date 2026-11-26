@@ -149,6 +149,11 @@ export function PromoCarousel() {
       <div className="relative">
         <div
           ref={scroller}
+          // Con diapositivas solo de imagen (inert salvo la actual) no hay nada enfocable dentro del scroll: la propia región lo es
+          // (axe `scrollable-region-focusable`); las flechas ya las gestiona el `onKeyDown` de la sección.
+          tabIndex={0}
+          role="group"
+          aria-label={t('promosAria')}
           onScroll={(e) => {
             const el = e.currentTarget;
             const pending = pendingScroll.current;
@@ -165,7 +170,7 @@ export function PromoCarousel() {
               );
             }
           }}
-          className="no-scrollbar flex snap-x snap-mandatory overflow-x-auto rounded-3xl shadow-card"
+          className="no-scrollbar flex snap-x snap-mandatory overflow-x-auto rounded-3xl shadow-card focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
         >
           {items.map((banner, i) => {
             // Solo la diapositiva actual y la siguiente piden su imagen; las lejanas esperan (`src` ausente).

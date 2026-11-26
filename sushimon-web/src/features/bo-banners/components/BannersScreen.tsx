@@ -166,7 +166,7 @@ export function BannersScreen() {
                   'card grid grid-cols-1 min-[560px]:grid-cols-[minmax(120px,200px)_1fr_auto]',
                   !b.active && 'off',
                 )}
-                style={{ gap: 12, padding: 14, alignItems: 'start', opacity: b.active ? 1 : 0.85 }}
+                style={{ gap: 12, padding: 14, alignItems: 'start' }}
               >
                 <div
                   style={{
