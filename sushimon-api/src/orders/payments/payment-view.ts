@@ -48,7 +48,7 @@ export const publicPaymentStatus = (status: string | null): 'PENDING' | 'PAID' =
 export const possibleRefundReviewOf = (src: PaymentSummarySource): boolean =>
   isPaid(src.paymentStatus) && CLOSED_ORDER_STATUSES.includes(src.orderStatus);
 
-/** Contexto de cobro DERIVADO del pedido: PICKUP => mostrador; DELIVERY `OWN` => entrega propia; PedidosYa/otro => `null`. */
+/** Contexto de cobro DERIVADO del pedido: PICKUP (solo histórico o en curso, ADR-0036) => mostrador; DELIVERY `OWN` => entrega propia; PedidosYa/otro => `null`. */
 export function collectionContextOf(
   fulfillmentType: string,
   deliveryProvider: string | null,

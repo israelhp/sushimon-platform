@@ -88,7 +88,7 @@ export class FakeAdminOrdersRepo {
       status,
       branchId: o.branchId,
       branchName: o.branchName ?? `Sucursal ${o.branchId.slice(0, 4)}`,
-      fulfillmentType: o.fulfillmentType ?? 'PICKUP',
+      fulfillmentType: o.fulfillmentType ?? 'PICKUP', // ADR-0036: PICKUP aquí modela un pedido HISTÓRICO o en curso (los nuevos son DELIVERY)
       deliveryProvider:
         o.fulfillmentType === 'DELIVERY'
           ? o.deliveryProvider === undefined
@@ -101,7 +101,6 @@ export class FakeAdminOrdersRepo {
       paymentMethodPreference: o.paymentMethodPreference ?? null,
       paymentStatus: o.paymentStatus === undefined ? 'pending' : o.paymentStatus,
       paymentPaidAt: o.paymentPaidAt ?? null,
-      scheduledFor: null,
       placedAt,
       updatedAt: placedAt,
       customerPhone: o.customerPhone ?? '+50255551234',
@@ -152,7 +151,6 @@ export class FakeAdminOrdersRepo {
       .filter((o) => this.inScope(filter.branchIds, o))
       .filter((o) => o.placedAt >= filter.from && (!filter.to || o.placedAt <= filter.to))
       .filter((o) => !filter.status || filter.status.includes(o.status))
-      .filter((o) => !filter.fulfillmentType || o.fulfillmentType === filter.fulfillmentType)
       .filter((o) => filter.orderNumber === null || o.orderNumber === filter.orderNumber)
       .filter(
         (o) =>

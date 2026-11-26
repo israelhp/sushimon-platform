@@ -20,6 +20,7 @@ import {
   TEST_URL,
   withClient,
   deletePaymentsOf,
+  pickupPlacedAt,
 } from './support/db.js';
 
 const url = TEST_URL;
@@ -123,6 +124,8 @@ describe.skipIf(!url || !ready)('Seguimiento de pedidos contra PostgreSQL real (
     const issued = issueGuestToken(new Date());
     const tokenKind = o.token ?? (o.owner ? 'none' : 'valid');
     phoneSeq += 1;
+    // PICKUP = pedido histórico (la 0024 rechaza PICKUP nuevos): placed_at anterior al corte si la 0024 está aplicada.
+    const placed = await pickupPlacedAt(url as string, fulfillment);
     await withClient(url as string, async (c) => {
       await c.query('BEGIN');
       try {
@@ -136,8 +139,8 @@ describe.skipIf(!url || !ready)('Seguimiento de pedidos contra PostgreSQL real (
           : null;
         await c.query(
           `INSERT INTO app.orders (id, customer_id, branch_id, customer_name, customer_phone, customer_email,
-                                   fulfillment_type, delivery_provider, notes, status, subtotal, total)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 100, 100)`,
+                                   fulfillment_type, delivery_provider, notes, status, subtotal, total, placed_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 100, 100, COALESCE($11::timestamptz, now()))`,
           [
             id,
             customer ?? null,
@@ -149,6 +152,7 @@ describe.skipIf(!url || !ready)('Seguimiento de pedidos contra PostgreSQL real (
             provider,
             NOTES,
             o.status ?? 'pending',
+            placed,
           ],
         );
         if (fulfillment === 'DELIVERY') {

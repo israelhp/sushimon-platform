@@ -94,6 +94,7 @@ export interface NewOrder {
   customerName: string;
   customerPhone: string;
   customerEmail: string | null;
+  /** ADR-0036: `OrdersService` solo crea `DELIVERY`/`OWN`; el tipo amplio permite construir pedidos PICKUP históricos en pruebas. */
   fulfillmentType: 'PICKUP' | 'DELIVERY';
   deliveryProvider: 'OWN' | null;
   notes: string | null;

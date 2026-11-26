@@ -58,7 +58,7 @@ export function assertQuoteLimits(lines: readonly LimitedLine[]): void {
 // ---------- forma de `fulfillment` ----------
 
 export interface FulfillmentInput {
-  type: 'PICKUP' | 'DELIVERY';
+  type: 'DELIVERY';
   customerAddressId?: string | undefined;
   municipalityId?: string | undefined;
   zone?: string | null | undefined;
@@ -66,16 +66,13 @@ export interface FulfillmentInput {
 }
 
 /**
- * Combinaciones coherentes (400 si no): `PICKUP` no admite ningún otro campo; `DELIVERY` exige EXACTAMENTE uno de
- * `customerAddressId` o `municipalityId`, y `zone` solo acompaña a `municipalityId`.
+ * Combinaciones coherentes (400 si no; ADR-0036: solo a domicilio): `DELIVERY` exige EXACTAMENTE uno de
+ * `customerAddressId` o `municipalityId`, y `zone` solo acompaña a `municipalityId`. Defensa en profundidad: el DTO ya
+ * rechaza cualquier `type` distinto de `DELIVERY`.
  */
 export function assertFulfillmentShape(f: FulfillmentInput): void {
-  const extras = [f.customerAddressId, f.municipalityId, f.zone, f.deliveryProvider];
-  if (f.type === 'PICKUP') {
-    if (extras.some((v) => v !== undefined)) {
-      throw new BadRequestException(['fulfillment: PICKUP no admite dirección ni proveedor']);
-    }
-    return;
+  if ((f.type as string) !== 'DELIVERY') {
+    throw new BadRequestException(['fulfillment: solo se admite DELIVERY']);
   }
   const hasAddress = f.customerAddressId !== undefined;
   const hasMunicipality = f.municipalityId !== undefined;

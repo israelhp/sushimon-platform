@@ -44,6 +44,7 @@ const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
   'cancelled',
 ]);
 
+/** Solo lectura de pedidos PICKUP históricos o en curso (ADR-0036): los pedidos nuevos son siempre DELIVERY. */
 const PICKUP_FLOW: readonly OrderPublicStatusCode[] = [
   'received',
   'accepted',

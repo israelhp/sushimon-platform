@@ -52,6 +52,7 @@ import {
   TEST_URL,
   withClient,
   deletePaymentsOf,
+  pickupCutoff,
 } from './support/db.js';
 import { globalStaff } from './support/staff-context.js';
 
@@ -128,7 +129,8 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
     `5${String(Math.floor(Math.random() * 900) + 100)}${String(1000 + (phoneSeq += 1)).padStart(4, '0')}`;
   const key = () => randomUUID();
 
-  const newBranch = async () => {
+  /** ADR-0036: todo pedido es a domicilio; por defecto la sucursal nace con zona propia `Zona 10` y tarifa 0.00. */
+  const newBranch = async (opts: { zone?: boolean } = {}) => {
     const b = await prisma.branch.create({
       data: {
         code: `or-${run}-${randomUUID().slice(0, 6)}`,
@@ -137,6 +139,19 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
       },
     });
     branchIds.add(b.id);
+    if (opts.zone !== false) {
+      await prisma.branchDeliverySettings.upsert({
+        where: { branchId: b.id },
+        create: { branchId: b.id, ownDeliveryZonesEnabled: true },
+        update: { ownDeliveryZonesEnabled: true },
+      });
+      await zones.create(staff, {
+        branchId: b.id,
+        municipalityId: city,
+        zoneLabel: 'Zona 10',
+        baseFee: '0',
+      });
+    }
     return b.id;
   };
   const newCategory = async () => {
@@ -197,14 +212,14 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
     quantity,
     selections,
   });
-  const pickup = (
+  const delivery = (
     branchId: string,
     lines: unknown[],
     couponCode?: string,
   ): CheckoutQuoteRequestDto =>
     ({
       cart: { branchId, lines },
-      fulfillment: { type: 'PICKUP' },
+      fulfillment: { type: 'DELIVERY', municipalityId: city, zone: 'Zona 10' },
       ...(couponCode ? { couponCode } : {}),
     }) as CheckoutQuoteRequestDto;
   /** Cotiza como el cliente y arma el cuerpo de `POST /v1/orders`. */
@@ -218,6 +233,9 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
       cart: base.cart,
       fulfillment: base.fulfillment,
       ...(base.couponCode ? { couponCode: base.couponCode } : {}),
+      ...(base.fulfillment.municipalityId
+        ? { deliveryAddress: { addressLine: '6a avenida 12-34', referenceNote: 'Portón' } }
+        : {}),
       quoteToken: quote.quote.token as string,
       contact: { fullName: 'Ana Pérez', phone: phone() },
       ...over,
@@ -377,14 +395,14 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
     }
   });
 
-  it('filas 1, 21, 22, 35: PICKUP persiste pedido, línea, historial NULL->pending, token (solo hash) y auditoría sin PII', async (ctx) => {
+  it('filas 1, 21, 22, 35: pedido a domicilio (zona propia, tarifa 0.00) persiste pedido, dirección, línea, historial NULL->pending, token (solo hash) y auditoría sin PII', async (ctx) => {
     skipUnlessReady(ctx);
     const branch = await newBranch();
     const product = await newProduct((await newCategory()).id, '50.00');
     const res = await orders.create(
       undefined,
       key(),
-      await orderBody(pickup(branch, [line(product.id, 2)])),
+      await orderBody(delivery(branch, [line(product.id, 2)])),
     );
     expect(res.replayed).toBe(false);
     const id = res.body.order.id;
@@ -402,11 +420,11 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
       status: 'pending',
       total: '100.00',
       customer_id: null,
-      delivery_provider: null,
+      delivery_provider: 'OWN',
     });
     expect(Number(row?.order_number)).toBeGreaterThanOrEqual(1001);
     expect(await sql.count('order_items', id)).toBe(1);
-    expect(await sql.count('order_addresses', id)).toBe(0);
+    expect(await sql.count('order_addresses', id)).toBe(1);
     const history = await q<{ old_status: string | null; new_status: string }>(
       'SELECT old_status, new_status FROM app.order_status_history WHERE order_id = $1',
       [id],
@@ -442,7 +460,7 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
 
   it('filas 2, 9, 10, 11, 21: OWN con zona, extras, promoción y snapshots inmutables ante cambios del catálogo', async (ctx) => {
     skipUnlessReady(ctx);
-    const branch = await newBranch();
+    const branch = await newBranch({ zone: false });
     const product = await newProduct((await newCategory()).id, '100.00');
     const group = await newGroup(product.id, [
       ['Aguacate', '5.00'],
@@ -543,7 +561,7 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
     skipUnlessReady(ctx);
     const branch = await newBranch();
     const product = await newProduct((await newCategory()).id, '10.00');
-    const base = pickup(branch, [line(product.id)]);
+    const base = delivery(branch, [line(product.id)]);
     const bodies = await Promise.all(Array.from({ length: 20 }, () => orderBody(base)));
     const created = await Promise.all(bodies.map((b) => orders.create(undefined, key(), b)));
     const numbers = created.map((c) => c.body.order.orderNumber);
@@ -573,7 +591,7 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
     skipUnlessReady(ctx);
     const branch = await newBranch();
     const p1 = await newProduct((await newCategory()).id, '10.00');
-    const body = await orderBody(pickup(branch, [line(p1.id, 2)]));
+    const body = await orderBody(delivery(branch, [line(p1.id, 2)]));
     const k = key();
     const first = await orders.create(undefined, k, body);
     // Todo el estado vive en la BD: la segunda llamada solo depende de la fila de la clave (no de memoria del proceso).
@@ -595,7 +613,10 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
     );
     expect(revoked[0]?.n).toBe(0);
 
-    const other = { ...(await orderBody(pickup(branch, [line(p1.id, 3)]))), contact: body.contact };
+    const other = {
+      ...(await orderBody(delivery(branch, [line(p1.id, 3)]))),
+      contact: body.contact,
+    };
     expect(code(await failure(orders.create(undefined, k, other)))).toBe('IDEMPOTENCY_KEY_REUSED');
 
     // Claves de actores distintos no se cruzan.
@@ -604,14 +625,14 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
     const mine = await orders.create(
       a,
       k,
-      await orderBody(pickup(branch, [line(p1.id)]), a, {
+      await orderBody(delivery(branch, [line(p1.id)]), a, {
         contact: { fullName: 'Cliente A', phone: phone() },
       }),
     );
     const theirs = await orders.create(
       b,
       k,
-      await orderBody(pickup(branch, [line(p1.id)]), b, {
+      await orderBody(delivery(branch, [line(p1.id)]), b, {
         contact: { fullName: 'Cliente B', phone: phone() },
       }),
     );
@@ -623,7 +644,7 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
     skipUnlessReady(ctx);
     const branch = await newBranch();
     const product = await newProduct((await newCategory()).id, '10.00');
-    const body = await orderBody(pickup(branch, [line(product.id)]));
+    const body = await orderBody(delivery(branch, [line(product.id)]));
     const k = key();
     const holder = new pg.Client({ connectionString: url });
     await holder.connect();
@@ -652,7 +673,7 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
     const again = await orders.create(
       undefined,
       k,
-      await orderBody(pickup(branch, [line(product.id)])),
+      await orderBody(delivery(branch, [line(product.id)])),
     );
     expect(again.replayed).toBe(false);
     expect(again.body.order.id).not.toBe(first.body.order.id);
@@ -669,8 +690,8 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
       customerName: 'Ana',
       customerPhone: '+50255550000',
       customerEmail: null,
-      fulfillmentType: 'PICKUP',
-      deliveryProvider: null,
+      fulfillmentType: 'DELIVERY',
+      deliveryProvider: 'OWN',
       notes: null,
       subtotal: '10.00',
       extrasTotal: '0.00',
@@ -678,7 +699,14 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
       deliveryFee: '0.00',
       total: '10.00',
       paymentMethodPreference: null,
-      address: null,
+      address: {
+        municipalityName: 'Guatemala',
+        zone: 'Zona 10',
+        addressLine: '6a avenida 12-34',
+        referenceNote: null,
+        latitude: null,
+        longitude: null,
+      },
       lines: [
         {
           lineNo: 1,
@@ -753,8 +781,8 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
       customerName: 'Ana',
       customerPhone: '+50255550001',
       customerEmail: null,
-      fulfillmentType: 'PICKUP',
-      deliveryProvider: null,
+      fulfillmentType: 'DELIVERY',
+      deliveryProvider: 'OWN',
       notes: null,
       subtotal: '10.00',
       extrasTotal: '0.00',
@@ -762,7 +790,14 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
       deliveryFee: '0.00',
       total: '10.00',
       paymentMethodPreference: null,
-      address: null,
+      address: {
+        municipalityName: 'Guatemala',
+        zone: 'Zona 10',
+        addressLine: '6a avenida 12-34',
+        referenceNote: null,
+        latitude: null,
+        longitude: null,
+      },
       lines: [
         {
           lineNo: 1,
@@ -788,12 +823,16 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
     });
     await expect(repo.createOrder(claim(), mk({ total: '9.99' }))).rejects.toThrow();
     await expect(repo.createOrder(claim(), mk({ customerPhone: '12345' }))).rejects.toThrow();
-    await expect(
-      repo.createOrder(claim(), mk({ fulfillmentType: 'DELIVERY', deliveryProvider: 'OWN' })),
-    ).rejects.toThrow(); // DELIVERY sin dirección
-    await expect(
-      repo.createOrder(claim(), mk({ deliveryFee: '5.00', total: '15.00' })),
-    ).rejects.toThrow(); // PICKUP con tarifa
+    await expect(repo.createOrder(claim(), mk({ address: null }))).rejects.toThrow(); // DELIVERY sin dirección
+    // PICKUP nuevo: la 0024 (`orders_delivery_only_chk`) lo rechaza. Solo se comprueba si la BD de pruebas ya la tiene.
+    if ((await pickupCutoff(url as string)) !== null) {
+      await expect(
+        repo.createOrder(
+          claim(),
+          mk({ fulfillmentType: 'PICKUP', deliveryProvider: null, address: null }),
+        ),
+      ).rejects.toThrow(/orders_delivery_only_chk/);
+    }
     await expect(repo.createOrder(claim(), mk({}))).resolves.toMatchObject({ kind: 'created' });
   });
 
@@ -806,26 +845,26 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
     const mine = await orders.create(
       owner,
       key(),
-      await orderBody(pickup(branch, [line(product.id)]), owner, {
+      await orderBody(delivery(branch, [line(product.id)]), owner, {
         contact: { fullName: 'Dueño', phone: phone() },
       }),
     );
     await orders.create(
       stranger,
       key(),
-      await orderBody(pickup(branch, [line(product.id)]), stranger, {
+      await orderBody(delivery(branch, [line(product.id)]), stranger, {
         contact: { fullName: 'Otro', phone: phone() },
       }),
     );
     const guest = await orders.create(
       undefined,
       key(),
-      await orderBody(pickup(branch, [line(product.id)])),
+      await orderBody(delivery(branch, [line(product.id)])),
     );
     const other = await orders.create(
       undefined,
       key(),
-      await orderBody(pickup(branch, [line(product.id)])),
+      await orderBody(delivery(branch, [line(product.id)])),
     );
     const mineId = mine.body.order.id;
     const gId = guest.body.order.id;
@@ -857,7 +896,7 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
       await orders.create(
         who,
         key(),
-        await orderBody(pickup(branch, [line(product.id)]), who, {
+        await orderBody(delivery(branch, [line(product.id)]), who, {
           contact: { fullName: 'Ana Pérez', phone: phone() },
         }),
       );
@@ -866,7 +905,7 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
       orders.create(
         who,
         key(),
-        await orderBody(pickup(branch, [line(product.id)]), who, {
+        await orderBody(delivery(branch, [line(product.id)]), who, {
           contact: { fullName: 'Ana Pérez', phone: phone() },
         }),
       ),
@@ -878,7 +917,7 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
       await orders.create(
         undefined,
         key(),
-        await orderBody(pickup(branch, [line(product.id)]), undefined, {
+        await orderBody(delivery(branch, [line(product.id)]), undefined, {
           contact: { fullName: 'Ana Pérez', phone: p },
         }),
       );
@@ -925,7 +964,7 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
     ]);
     const sel = [{ groupId: group.groupId, optionId: group.optionIds[0], quantity: 1 }];
     const measure = async (lines: unknown[]) => {
-      const body = await orderBody(pickup(branch, lines));
+      const body = await orderBody(delivery(branch, lines));
       queries.n = 0;
       // Incluye la recotización y las lecturas: el total solo es comparable porque NO crece con las líneas.
       const res = await orders.create(undefined, key(), body);
@@ -956,7 +995,7 @@ describe.skipIf(!url || !ready)('Pedidos contra PostgreSQL real (F20)', () => {
     const created = await orders.create(
       undefined,
       key(),
-      await orderBody(pickup(branch, [line(product.id)])),
+      await orderBody(delivery(branch, [line(product.id)])),
     );
     expect(await counts()).toEqual(before);
     // F24: nace UN pago `pending` por el total (sin efectivo recibido) y UN evento `created`; nada de caja.

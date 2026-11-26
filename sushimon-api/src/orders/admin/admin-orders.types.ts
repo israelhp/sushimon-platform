@@ -20,7 +20,6 @@ export interface AdminOrderRow {
   paymentStatus: string | null;
   /** F24: `payments.received_at` (instante del servidor); `null` si no está pagado. */
   paymentPaidAt: Date | null;
-  scheduledFor: Date | null;
   placedAt: Date;
   updatedAt: Date;
 }
@@ -58,7 +57,6 @@ export interface ListFilter {
   /** Alcance ya resuelto: `null` = todas; lista = solo esas sucursales. */
   branchIds: string[] | null;
   status: string[] | null;
-  fulfillmentType: 'PICKUP' | 'DELIVERY' | null;
   orderNumber: bigint | null;
   nameContains: string | null;
   from: Date;

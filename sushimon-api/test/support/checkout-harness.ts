@@ -150,7 +150,8 @@ export function checkoutHarness(opts: { secret?: string | undefined; gate?: DbGa
     }),
   };
 
-  const cover = { result: coverageResult(), fail: null as unknown };
+  // ADR-0036: toda cotización es a domicilio; por defecto OWN con zona y tarifa 0.00 (los totales no cambian por el envío).
+  const cover = { result: coverageResult({ own: ownZone('0.00') }), fail: null as unknown };
   const coverage = {
     check: vi.fn(() =>
       cover.fail ? Promise.reject(cover.fail as Error) : Promise.resolve(cover.result),
@@ -209,7 +210,7 @@ export function checkoutHarness(opts: { secret?: string | undefined; gate?: DbGa
 
   const body = (over: Partial<CheckoutQuoteRequestDto> = {}): CheckoutQuoteRequestDto => ({
     cart: { branchId: A, lines: [{ productId: P1, quantity: 2, selections: [] }] },
-    fulfillment: { type: 'PICKUP' },
+    fulfillment: { type: 'DELIVERY', municipalityId: MUNI_GUATEMALA, zone: 'Zona 10' },
     ...over,
   });
 

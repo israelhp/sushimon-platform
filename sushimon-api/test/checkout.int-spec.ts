@@ -118,7 +118,11 @@ describe.skipIf(!url || !ready)('Cotización de checkout contra PostgreSQL real'
     return { result, n: queries.n };
   };
 
-  const newBranch = async (active = true) => {
+  /**
+   * ADR-0036: toda cotización es a domicilio. Por defecto una sucursal activa nace con OWN encendido y la zona propia
+   * `Zona 10` de la ciudad con tarifa 0.00 (el `body()` por defecto cotiza ahí); `ownZone = false` la deja sin cobertura.
+   */
+  const newBranch = async (active = true, ownZone = active) => {
     const b = await prisma.branch.create({
       data: {
         code: `ck-${run}-${randomUUID().slice(0, 6)}`,
@@ -128,6 +132,19 @@ describe.skipIf(!url || !ready)('Cotización de checkout contra PostgreSQL real'
       },
     });
     branchIds.add(b.id);
+    if (ownZone) {
+      await prisma.branchDeliverySettings.upsert({
+        where: { branchId: b.id },
+        create: { branchId: b.id, ownDeliveryZonesEnabled: true },
+        update: { ownDeliveryZonesEnabled: true },
+      });
+      await zones.create(staff, {
+        branchId: b.id,
+        municipalityId: city,
+        zoneLabel: 'Zona 10',
+        baseFee: '0',
+      });
+    }
     return b.id;
   };
   const newCategory = async (name: string, active = true) => {
@@ -176,7 +193,7 @@ describe.skipIf(!url || !ready)('Cotización de checkout contra PostgreSQL real'
   const body = (over: Partial<CheckoutQuoteRequestDto> & { branchId: string; lines?: unknown[] }) =>
     ({
       cart: { branchId: over.branchId, lines: over.lines },
-      fulfillment: over.fulfillment ?? { type: 'PICKUP' },
+      fulfillment: over.fulfillment ?? { type: 'DELIVERY', municipalityId: city, zone: 'Zona 10' },
       ...(over.couponCode ? { couponCode: over.couponCode } : {}),
     }) as CheckoutQuoteRequestDto;
   const line = (productId: string, quantity = 1, selections: unknown[] = []) => ({
@@ -431,7 +448,7 @@ describe.skipIf(!url || !ready)('Cotización de checkout contra PostgreSQL real'
 
   it('fila 9: OWN con flag apagado (defecto), encendido sin zona, general vs específica, zona inactiva y tarifa exacta', async (ctx) => {
     skipUnlessReady(ctx);
-    const branch = await newBranch();
+    const branch = await newBranch(true, false);
     const cat = await newCategory('Zonas');
     const p = await newProduct(cat.id, '100.00');
     const delivery = (zone: string | null) =>
@@ -496,7 +513,7 @@ describe.skipIf(!url || !ready)('Cotización de checkout contra PostgreSQL real'
 
   it('fila 8 y 10: ciudad de Guatemala sin zona => ADDRESS_INCOMPLETE; PedidosYa simulado nunca habilita', async (ctx) => {
     skipUnlessReady(ctx);
-    const branch = await newBranch();
+    const branch = await newBranch(true, false);
     const cat = await newCategory('Ciudad');
     const p = await newProduct(cat.id, '10.00');
     await prisma.branchDeliverySettings.upsert({
@@ -548,7 +565,7 @@ describe.skipIf(!url || !ready)('Cotización de checkout contra PostgreSQL real'
 
   it('fila 7: dirección guardada propia, ajena o inexistente (mismo 404), con el SQL real de F05', async (ctx) => {
     skipUnlessReady(ctx);
-    const branch = await newBranch();
+    const branch = await newBranch(true, false);
     const cat = await newCategory('Direcciones');
     const p = await newProduct(cat.id, '10.00');
     await prisma.branchDeliverySettings.upsert({
@@ -666,7 +683,7 @@ describe.skipIf(!url || !ready)('Cotización de checkout contra PostgreSQL real'
 
   it('fila 22: 30 líneas con extras, promoción y dirección no superan el presupuesto de consultas', async (ctx) => {
     skipUnlessReady(ctx);
-    const branch = await newBranch();
+    const branch = await newBranch(true, false);
     const cat = await newCategory('Presupuesto');
     const products = await Promise.all(
       Array.from({ length: 6 }, () => newProduct(cat.id, '25.00')),

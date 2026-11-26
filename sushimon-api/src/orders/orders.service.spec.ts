@@ -69,21 +69,21 @@ describe('OrdersService (F20)', () => {
   };
 
   describe('creación (filas 1, 2, 5, 6, 7, 33-35)', () => {
-    it('PICKUP de invitado: pending, tarifa 0.00, sin dirección, token de invitado y contacto normalizado', async () => {
+    it('a domicilio de invitado (zona propia, tarifa 0.00): pending, snapshot de dirección, token de invitado y contacto normalizado', async () => {
       const result = await h.orders.create(undefined, KEY_A, await h.orderBody());
       expect(result.replayed).toBe(false);
       const { order, access } = result.body;
       expect(order).toMatchObject({
         status: 'pending',
-        fulfillmentType: 'PICKUP',
-        deliveryProvider: null,
+        fulfillmentType: 'DELIVERY',
+        deliveryProvider: 'OWN',
         subtotal: '170.00',
         extrasTotal: '0.00',
         discountTotal: '0.00',
         deliveryFee: '0.00',
         total: '170.00',
         currency: 'GTQ',
-        address: null,
+        address: { addressLine: '6a avenida 12-34' },
         orderNumber: 1001,
         displayNumber: 'MON-001001',
         contact: { fullName: 'Ana Pérez', phoneMasked: '****1234' },
@@ -205,14 +205,16 @@ describe('OrdersService (F20)', () => {
       expect(statusOf(anon)).toBe(401);
     });
 
-    it('invitado sin nombre o teléfono válido => 400; PICKUP con deliveryAddress => 400; DELIVERY sin texto => 400', async () => {
+    it('invitado sin nombre o teléfono válido => 400; DELIVERY sin texto => 400; PICKUP => 400 (ADR-0036)', async () => {
       const base = await h.orderBody();
       for (const bad of [
         { ...base, contact: { fullName: 'Ana Pérez' } },
         { ...base, contact: { fullName: 'Ana Pérez', phone: '12345' } },
         { ...base, contact: undefined },
-        { ...base, deliveryAddress: { addressLine: 'Calle falsa 123' } },
-      ]) {
+        { ...base, fulfillment: { type: 'PICKUP' } },
+        { ...base, fulfillment: { type: 'PICKUP' }, deliveryAddress: undefined },
+        { ...base, fulfillment: { type: 'PICKUP', municipalityId: MUNI_GUATEMALA } },
+      ] as unknown as Parameters<typeof h.orders.create>[2][]) {
         expect(statusOf(await err(h.orders.create(undefined, KEY_A, bad)))).toBe(400);
       }
       const noText = await ownDelivery();

@@ -36,6 +36,7 @@ import {
   deleteDeliveriesOf,
   deleteRidersOf,
   ensureAuthStub,
+  pickupPlacedAt,
   TEST_URL,
   withClient,
 } from './support/db.js';
@@ -147,13 +148,15 @@ describe.skipIf(!url || !ready)('Entregas propias contra PostgreSQL real (F28)',
     const provider = fulfillment === 'DELIVERY' ? (o.provider ?? 'OWN') : null;
     const id = randomUUID();
     orderSeq += 1;
+    // PICKUP = pedido histórico (la 0024 rechaza PICKUP nuevos): placed_at anterior al corte si la 0024 está aplicada.
+    const placed = await pickupPlacedAt(url as string, fulfillment);
     await withClient(url as string, async (c) => {
       await c.query('BEGIN');
       try {
         await c.query(
           `INSERT INTO app.orders (id, branch_id, customer_name, customer_phone, customer_email, fulfillment_type,
                                    delivery_provider, notes, status, subtotal, total, payment_method_preference, placed_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'NOTA', $8, 100, 100, NULL, now())`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'NOTA', $8, 100, 100, NULL, COALESCE($9::timestamptz, now()))`,
           [
             id,
             o.branch ?? branchA,
@@ -163,6 +166,7 @@ describe.skipIf(!url || !ready)('Entregas propias contra PostgreSQL real (F28)',
             fulfillment,
             provider,
             o.status ?? 'ready',
+            placed,
           ],
         );
         if (fulfillment === 'DELIVERY') {

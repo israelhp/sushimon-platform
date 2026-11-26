@@ -242,7 +242,6 @@ describe('Gestión de pedidos del backoffice (e2e, F22)', () => {
           'paymentMethodPreference',
           'paymentStatus',
           'placedAt',
-          'scheduledFor',
           'status',
           'total',
           'updatedAt',
@@ -277,10 +276,15 @@ describe('Gestión de pedidos del backoffice (e2e, F22)', () => {
       expect(json(await get('/v1/admin/orders?cursor=AAAA', auth)).code).toBe(
         'ORDER_CURSOR_INVALID',
       );
-      expect(
-        (await get('/v1/admin/orders?status=pending,accepted&fulfillmentType=PICKUP&limit=5', auth))
-          .status,
-      ).toBe(200);
+      expect((await get('/v1/admin/orders?status=pending,accepted&limit=5', auth)).status).toBe(
+        200,
+      );
+      // ADR-0036: el filtro `fulfillmentType` se retiró => 400 como cualquier parámetro desconocido.
+      for (const q of ['fulfillmentType=PICKUP', 'fulfillmentType=DELIVERY']) {
+        const res = await get(`/v1/admin/orders?${q}`, auth);
+        expect(res.status, q).toBe(400);
+        expect(res.headers['cache-control']).toBe('no-store');
+      }
       expect((await get('/v1/admin/orders/board?limit=0', auth)).status).toBe(400);
     });
 

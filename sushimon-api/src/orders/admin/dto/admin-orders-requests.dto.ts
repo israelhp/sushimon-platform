@@ -50,11 +50,6 @@ export class ListAdminOrdersQuery {
   @IsIn(ORDER_STATUSES, { each: true })
   status?: string[];
 
-  @ApiPropertyOptional({ type: String, enum: ['PICKUP', 'DELIVERY'] })
-  @IsOptional()
-  @IsIn(['PICKUP', 'DELIVERY'])
-  fulfillmentType?: 'PICKUP' | 'DELIVERY';
-
   @ApiPropertyOptional({ type: String, minLength: 2, maxLength: 40 })
   @IsOptional()
   @Transform(trim)

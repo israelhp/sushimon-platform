@@ -34,6 +34,7 @@ import {
   TEST_URL,
   withClient,
   deletePaymentsOf,
+  pickupPlacedAt,
 } from './support/db.js';
 
 const url = TEST_URL;
@@ -227,6 +228,12 @@ describe.skipIf(!url || !ready)('Historial, recibo y reorden contra PostgreSQL r
     const extrasTotal = lines.reduce((s, l) => s + cents(l.extras ?? '0.00') * l.quantity, 0);
     const fee = o.delivery ? cents(o.fee ?? '15.00') : 0;
     const dec = (c: number) => (c / 100).toFixed(2);
+    // PICKUP = pedido histórico (la 0024 rechaza PICKUP nuevos): placed_at anterior al corte si la 0024 está aplicada.
+    const placed = await pickupPlacedAt(
+      url as string,
+      o.delivery ? 'DELIVERY' : 'PICKUP',
+      o.placedAt,
+    );
     await withClient(url as string, async (c) => {
       await c.query('BEGIN');
       try {
@@ -250,7 +257,7 @@ describe.skipIf(!url || !ready)('Historial, recibo y reorden contra PostgreSQL r
             dec(discount),
             dec(fee),
             dec(subtotal - discount + fee),
-            o.placedAt ?? null,
+            placed,
           ],
         );
         if (o.delivery) {
@@ -287,7 +294,7 @@ describe.skipIf(!url || !ready)('Historial, recibo y reorden contra PostgreSQL r
         await c.query(
           `INSERT INTO app.order_status_history (order_id, old_status, new_status, changed_at, reason)
            VALUES ($1, NULL, 'pending', COALESCE($2::timestamptz, now()), NULL)`,
-          [id, o.placedAt ?? null],
+          [id, placed],
         );
         if (o.reason) {
           await c.query(
@@ -915,6 +922,8 @@ describe.skipIf(!url || !ready)('Historial, recibo y reorden contra PostgreSQL r
   it('fila 67: EXPLAIN del listado con volumen sembrado usa orders_customer_placed_idx y no ordena todo el historial', async (ctx) => {
     skipUnlessReady(ctx);
     // Ruido: pedidos de clientes sin cuenta (auth_user_id NULL) en UNA sentencia set-based, y un cliente con cientos de pedidos.
+    // PICKUP histórico: con la 0024 aplicada el ruido parte de un instante anterior al corte (si no, de ahora).
+    const base = (await pickupPlacedAt(url as string, 'PICKUP', new Date())) ?? new Date();
     await q(`INSERT INTO app.customers (full_name) SELECT $1 FROM generate_series(1, 200)`, [
       `zz-Ruido ${run}`,
     ]);
@@ -922,15 +931,15 @@ describe.skipIf(!url || !ready)('Historial, recibo y reorden contra PostgreSQL r
       `INSERT INTO app.orders (branch_id, customer_id, customer_name, customer_phone, fulfillment_type, status, subtotal, total, placed_at)
        WITH noise AS (SELECT array_agg(id ORDER BY id) AS ids FROM app.customers WHERE full_name = $2)
        SELECT $1::uuid, noise.ids[1 + (g % 200)], 'zz-ruido', '+50255550000',
-              'PICKUP', 'delivered', 10, 10, now() - (g * interval '1 minute')
+              'PICKUP', 'delivered', 10, 10, $4::timestamptz - (g * interval '1 minute')
          FROM generate_series(1, $3::int) g, noise`,
-      [branchA, `zz-Ruido ${run}`, NOISE],
+      [branchA, `zz-Ruido ${run}`, NOISE, base],
     );
     await q(
       `INSERT INTO app.orders (branch_id, customer_id, customer_name, customer_phone, fulfillment_type, status, subtotal, total, placed_at)
-       SELECT $1::uuid, $2::uuid, 'zz-ruido', '+50255550001', 'PICKUP', 'delivered', 10, 10, now() - (g * interval '7 minute')
+       SELECT $1::uuid, $2::uuid, 'zz-ruido', '+50255550001', 'PICKUP', 'delivered', 10, 10, $3::timestamptz - (g * interval '7 minute')
          FROM generate_series(1, 400) g`,
-      [branchA, customer1],
+      [branchA, customer1, base],
     );
     await q('ANALYZE app.orders');
     capture = null;

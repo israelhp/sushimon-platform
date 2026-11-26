@@ -28,7 +28,7 @@ const principal = {
 
 const evidence = (over: Partial<QuoteEvidence> = {}): QuoteEvidence => ({
   branchId: U,
-  type: 'PICKUP',
+  type: 'DELIVERY',
   provider: null,
   subtotal: '170.00',
   discountTotal: '0.00',
@@ -53,7 +53,7 @@ const quoteDto = (over: Partial<CheckoutQuoteDto> = {}): CheckoutQuoteDto =>
   ({
     quote: { generatedAt: NOW.toISOString(), expiresAt: NOW.toISOString(), token: 'nuevo' },
     currency: 'GTQ',
-    fulfillment: { type: 'PICKUP', delivery: null },
+    fulfillment: { type: 'DELIVERY', delivery: null },
     canProceed: true,
     blockers: [],
     lines: [],
@@ -62,7 +62,7 @@ const quoteDto = (over: Partial<CheckoutQuoteDto> = {}): CheckoutQuoteDto =>
 
 const body: OrderQuoteBody = {
   cart: { branchId: U, lines: [{ productId: U, quantity: 1, selections: [] }] },
-  fulfillment: { type: 'PICKUP' },
+  fulfillment: { type: 'DELIVERY', municipalityId: U },
 };
 
 function setup(current: QuoteWithEvidence | Error, secret: string | undefined = SECRET) {

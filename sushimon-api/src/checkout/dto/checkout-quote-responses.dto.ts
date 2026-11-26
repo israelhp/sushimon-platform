@@ -111,8 +111,8 @@ export class CheckoutDeliveryDto {
 }
 
 export class CheckoutFulfillmentDto {
-  @ApiProperty({ type: String, enum: ['PICKUP', 'DELIVERY'] })
-  type!: 'PICKUP' | 'DELIVERY';
+  @ApiProperty({ type: String, enum: ['DELIVERY'] })
+  type!: 'DELIVERY';
 
   @ApiProperty({ type: CheckoutDeliveryDto, nullable: true })
   delivery!: CheckoutDeliveryDto | null;

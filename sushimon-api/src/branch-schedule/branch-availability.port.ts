@@ -30,7 +30,7 @@ export interface AvailabilityInput {
 /**
  * Único lugar donde se decide si una sucursal acepta pedidos en un instante (spec F08 D9/D11). Lee SIEMPRE de la
  * BD (una sola consulta por llamada). `at` lo fija el llamador: para «pedir ahora» use `canAcceptOrderNow`
- * (reloj del servidor); `at` solo para pedidos PROGRAMADOS.
+ * (reloj del servidor); `at` solo para consultas informativas (ADR-0036: ya no hay pedidos programados).
  */
 export interface BranchAvailabilityPort {
   /** Lanza `NotFoundException` si la sucursal no existe; una inactiva devuelve `INACTIVE`. */

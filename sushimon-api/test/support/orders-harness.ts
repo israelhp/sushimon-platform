@@ -412,6 +412,10 @@ export function ordersHarness(
     return {
       cart: base.cart,
       fulfillment: base.fulfillment,
+      // ADR-0036: todo pedido es a domicilio; con `municipalityId` la dirección es obligatoria.
+      ...(base.fulfillment.municipalityId !== undefined
+        ? { deliveryAddress: { addressLine: '6a avenida 12-34', referenceNote: 'Portón negro' } }
+        : {}),
       ...(base.couponCode !== undefined ? { couponCode: base.couponCode } : {}),
       quoteToken: quote.quote.token ?? 'sin-token',
       ...(who ? {} : { contact: GUEST_CONTACT }),

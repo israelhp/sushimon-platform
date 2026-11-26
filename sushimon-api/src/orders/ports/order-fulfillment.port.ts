@@ -10,7 +10,7 @@ export interface FulfillmentInspection {
 
 /**
  * F22 CONSUME este puerto en SOLO LECTURA, tras el commit de `reject`/`cancel`. F22 no escribe entregas ni llama a
- * proveedores; F28 aportará la implementación real (entrega propia) y F29 PedidosYa (`BLOCKED_EXTERNAL`).
+ * proveedores. Un pedido PICKUP histórico (ADR-0036) nunca tiene entrega; F28 aportará la implementación real (entrega propia) y F29 PedidosYa (`BLOCKED_EXTERNAL`).
  */
 export interface OrderFulfillmentPort {
   inspect(order: {

@@ -383,6 +383,20 @@ describe('OrderDocumentsService.previewReorder (spec 024 §8)', () => {
     }
   });
 
+  it('ADR-0036: reordenar un pedido PICKUP histórico responde 200 informativo (la modalidad no se copia; el checkout cotiza a domicilio)', async () => {
+    const { service } = setup({
+      src: source({ fulfillmentType: 'PICKUP', deliveryProvider: null, status: 'picked_up' }),
+    });
+    const p = await service.previewReorder(principal(), ORDER_ID, undefined, undefined);
+    expect(p.source).toMatchObject({
+      fulfillmentType: 'PICKUP',
+      deliveryProvider: null,
+      status: 'picked_up',
+    });
+    expect(p.lines.length).toBeGreaterThan(0);
+    expect(JSON.stringify(p)).not.toContain('municipality');
+  });
+
   it('#47 sin fuga: ni ids de pedido/líneas ni datos del cliente', async () => {
     const { service } = setup();
     const json = JSON.stringify(

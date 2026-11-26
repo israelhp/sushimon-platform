@@ -78,9 +78,6 @@ export class AdminOrderSummaryDto {
   })
   paymentStatus!: 'PENDING' | 'PAID';
 
-  @ApiProperty({ type: String, format: 'date-time', nullable: true })
-  scheduledFor!: string | null;
-
   @ApiProperty({ type: String, format: 'date-time' })
   placedAt!: string;
 
