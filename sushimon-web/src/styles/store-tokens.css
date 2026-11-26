@@ -16,13 +16,13 @@
   --line: 231 225 216;
   /*
    * Marca (feature de marca 2026): rojo #E94A3F y azul #283479. Exactos en superficies (bandas, tiles, íconos,
-   * detalles decorativos: --brand-red / --brand-blue). Blanco sobre #E94A3F da 3,81:1 (AA exige 4,5), por eso
-   * --primary (texto y botones con texto pequeño) es el derivado #D22418 (mismo matiz, 5,24:1 con blanco).
+   * detalles decorativos: --brand-red / --brand-blue). Por decisión del dueño TODO el rojo de marca (botones, texto,
+   * bordes, sello) es exactamente #E94A3F. Blanco sobre #E94A3F = 3,81:1 (< AA 4,5): excepción aceptada por el dueño.
    */
   --brand-red: 233 74 63;
   --brand-blue: 40 52 121;
-  --primary: 210 36 24;
-  --primary-soft: 254 238 236;
+  --primary: 233 74 63;
+  --primary-soft: 253 237 236;
   --onprimary: 255 255 255;
   --secondary: 40 52 121;
   --secondary-soft: 232 234 246;
@@ -55,7 +55,7 @@
   --tile-cream: 243 238 230;
 
   /* Sello `hanko` y texto contorneado */
-  --hanko: 210 36 24;
+  --hanko: 233 74 63;
   --hanko-paper: 255 255 255;
   --outline-light: 255 255 255;
   --outline-dark: 17 24 39;
@@ -76,10 +76,10 @@
   --fg: 249 250 251;
   --muted: 156 163 175;
   --line: 34 45 66;
-  /* Tinte claro del rojo (#EB5B51): >= 4,6:1 como texto sobre bg/surface/subtle/primary-soft oscuros. */
-  --primary: 235 91 81;
-  --primary-soft: 60 22 26;
-  /* Tinta oscura: blanco sobre el tinte claro no llega a 4,5:1; la tinta #0B0B0F da 5,75:1. */
+  /* Rojo de marca exacto también en oscuro (#E94A3F). */
+  --primary: 233 74 63;
+  --primary-soft: 55 24 25;
+  /* Tinta oscura sobre #E94A3F: 5,15:1 (blanco daría 3,81:1), gana el mayor contraste. */
   --onprimary: 11 11 15;
   /* Tinte claro del azul (#A0ABEE): texto/borde AA sobre las superficies oscuras (el #283479 exacto da 1,7:1). */
   --secondary: 160 171 238;
