@@ -177,6 +177,46 @@ export function ProductsScreen() {
     </>
   );
 
+  /** Acciones de la tarjeta (cuadrícula): en su propia fila y con «Editar» visible con texto; la tabla usa `actions`. */
+  const gridActions = (p: AdminProduct) => (
+    <div className="pactions">
+      <button
+        type="button"
+        className="btn sm btn-primary"
+        disabled={!canUpdate}
+        aria-label={t('editLabel', { name: p.name })}
+        onClick={() => setDialog({ kind: 'edit', id: p.id })}
+      >
+        <IconPencil size="sm" />
+        {t('edit')}
+      </button>
+      <button
+        type="button"
+        className="btn sm"
+        aria-label={t('branchesLabel', { name: p.name })}
+        onClick={() => setDialog({ kind: 'branches', id: p.id })}
+      >
+        {t('branches')}
+      </button>
+      <button
+        type="button"
+        className="btn sm"
+        disabled={!canUpdate}
+        aria-label={t(p.active ? 'deactivateLabel' : 'activateLabel', { name: p.name })}
+        onClick={() => setDialog({ kind: 'status', id: p.id })}
+      >
+        {t(p.active ? 'deactivate' : 'activate')}
+      </button>
+    </div>
+  );
+
+  /** Clic en la tarjeta (comodidad con ratón): abre la edición salvo que el clic sea sobre un botón; el teclado usa «Editar». */
+  const openFromCard = (p: AdminProduct, target: EventTarget) => {
+    if (!canUpdate) return;
+    if (target instanceof Element && target.closest('button, a, input, select, textarea')) return;
+    setDialog({ kind: 'edit', id: p.id });
+  };
+
   const look = (p: AdminProduct) => categoryLook(categorySlugChain(p, categories));
   const photo = (p: AdminProduct, variant?: 'thumb') => {
     const image = firstProductImage(p);
@@ -315,7 +355,8 @@ export function ProductsScreen() {
                 <div
                   key={p.id}
                   role="listitem"
-                  className={cn('pcard', !p.publiclyVisible && 'off')}
+                  className={cn('pcard', !p.publiclyVisible && 'off', canUpdate && 'clickable')}
+                  onClick={(e) => openFromCard(p, e.target)}
                 >
                   <div className={cn('pimg', look(p).tile)}>
                     {visibilityPill(p)}
@@ -331,9 +372,8 @@ export function ProductsScreen() {
                     </div>
                     <div className="pfoot">
                       <span className="price">{formatMoney(priceToNumber(p.basePrice))}</span>
-                      <span className="spacer" />
-                      {actions(p)}
                     </div>
+                    {gridActions(p)}
                   </div>
                 </div>
               ))}

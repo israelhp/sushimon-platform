@@ -221,6 +221,18 @@ describe('Productos F11: crear y editar', () => {
     ).toBeVisible();
   });
 
+  it('cuadrícula: la tarjeta muestra «Editar» con texto y al hacer clic en ella abre la edición', async () => {
+    await renderScreen(<ProductsScreen />, 'admin');
+    await screen.findByText('Dumplings');
+    const c = card('Dumplings');
+    expect(within(c).getByRole('button', { name: 'Editar Dumplings' })).toHaveTextContent('Editar');
+    expect(
+      within(c).getByRole('button', { name: 'Sucursales de Dumplings: precio y disponibilidad' }),
+    ).toBeVisible();
+    await userEvent.click(within(c).getByText('Dumplings'));
+    expect(await screen.findByRole('dialog', { name: 'Editar producto' })).toBeVisible();
+  });
+
   it('503 PRODUCTS_BUSY: mensaje fijo reintentable; el segundo intento guarda', async () => {
     await renderScreen(<ProductsScreen />, 'admin', 'default', (store) => {
       store.productsBusy = 1;
