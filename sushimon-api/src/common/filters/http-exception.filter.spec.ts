@@ -413,6 +413,31 @@ describe('AllExceptionsFilter', () => {
       expect(body).not.toHaveProperty('extra');
     });
 
+    it('F10: propaga `usage` en 409 (solo esa clave de extra); en 5xx no', () => {
+      const res = fakeRes();
+      new AllExceptionsFilter().catch(
+        new HttpException(
+          {
+            message: 'x',
+            code: 'CATEGORY_IN_USE',
+            extra: { usage: { children: 1, products: 0, banners: 0 }, otra: 1 },
+          },
+          HttpStatus.CONFLICT,
+        ),
+        hostWith(res),
+      );
+      const body = res.json.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(body['usage']).toEqual({ children: 1, products: 0, banners: 0 });
+      expect(body['code']).toBe('CATEGORY_IN_USE');
+      expect(body).not.toHaveProperty('otra');
+      const busy = fakeRes();
+      new AllExceptionsFilter().catch(
+        new HttpException({ message: 'x', code: 'CATEGORIES_BUSY', extra: { usage: {} } }, 503),
+        hostWith(busy),
+      );
+      expect(busy.json.mock.calls[0]?.[0]).not.toHaveProperty('usage');
+    });
+
     it('F22: propaga `current` en 409 y 422 junto a `violations`, sin otras claves; en 5xx no', () => {
       for (const status of [HttpStatus.CONFLICT, HttpStatus.UNPROCESSABLE_ENTITY]) {
         const res = fakeRes();

@@ -48,6 +48,9 @@ const row = (rid: string, parentId: string | null, name: string, over: Partial<R
 
 /** Doble de PrismaService en memoria: solo lo que usa el módulo de categorías. */
 function fakeDb(seed: Row[]) {
+  /** Productos y banners que referencian categorías (ADR-0034): `categoryId` → conteo. */
+  const productsByCategory = new Map<string, number>();
+  const bannersByCategory = new Map<string, number>();
   const categories = new Map(seed.map((r) => [r.id, { ...r }]));
   const audit: Record<string, unknown>[] = [];
   const events: string[] = [];
@@ -85,12 +88,34 @@ function fakeDb(seed: Row[]) {
       categories.set(next.id, next);
       return Promise.resolve({ ...next });
     }),
+    count: vi.fn((a: { where: { parentId: string } }) =>
+      Promise.resolve(
+        [...categories.values()].filter((r) => r.parentId === a.where.parentId).length,
+      ),
+    ),
+    delete: vi.fn((a: { where: { id: string } }) => {
+      events.push('delete');
+      categories.delete(a.where.id);
+      return Promise.resolve({ id: a.where.id });
+    }),
   };
   const db = {
     categories,
     audit,
     events,
     category,
+    productsByCategory,
+    bannersByCategory,
+    product: {
+      count: vi.fn((a: { where: { categoryId: string } }) =>
+        Promise.resolve(productsByCategory.get(a.where.categoryId) ?? 0),
+      ),
+    },
+    banner: {
+      count: vi.fn((a: { where: { ctaCategoryId: string } }) =>
+        Promise.resolve(bannersByCategory.get(a.where.ctaCategoryId) ?? 0),
+      ),
+    },
     auditEvent: {
       create: vi.fn((a: { data: Record<string, unknown> }) => {
         audit.push(a.data);
@@ -251,6 +276,7 @@ describe('Categorías (e2e)', () => {
       await http().post('/v1/admin/categories').send({ name: 'X' }).expect(401);
       await http().patch(`/v1/admin/categories/${A}`).send({ name: 'X' }).expect(401);
       await http().put('/v1/admin/categories/reorder').send({}).expect(401);
+      await http().delete(`/v1/admin/categories/${A}`).expect(401);
       await http()
         .get('/v1/admin/categories')
         .set('Authorization', `Bearer ${await keys.signWithForeignKey()}`)
@@ -296,8 +322,10 @@ describe('Categorías (e2e)', () => {
         .set('Authorization', auth)
         .send({ parentId: null, orderedIds: [E, A] })
         .expect(403);
+      await http().delete(`/v1/admin/categories/${E}`).set('Authorization', auth).expect(403);
       expect(db.category.create).not.toHaveBeenCalled();
       expect(db.category.update).not.toHaveBeenCalled();
+      expect(db.category.delete).not.toHaveBeenCalled();
     });
 
     it('permisos separados: catalog.read no escribe; create no edita; update no crea', async () => {
@@ -348,9 +376,107 @@ describe('Categorías (e2e)', () => {
         .set('Authorization', auth)
         .send({ parentId: MISSING, orderedIds: [] })
         .expect(403);
+      await http().delete(`/v1/admin/categories/${E}`).set('Authorization', auth).expect(403);
+      await http().delete(`/v1/admin/categories/${MISSING}`).set('Authorization', auth).expect(403);
       expect(db.category.create).not.toHaveBeenCalled();
       expect(db.category.update).not.toHaveBeenCalled();
+      expect(db.category.delete).not.toHaveBeenCalled();
       expect(db.audit).toHaveLength(0);
+    });
+  });
+
+  describe('DELETE /v1/admin/categories/:id (ADR-0034)', () => {
+    const del = async (target: string, status: number, perms?: string[]) =>
+      http()
+        .delete(`/v1/admin/categories/${target}`)
+        .set('Authorization', await asStaff(perms ? { permissions: perms } : {}))
+        .expect(status);
+
+    it('categoría libre => 204 sin cuerpo, no-store, bajo el lock, audita y no toca hermanas', async () => {
+      const res = await del(E, 204);
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.text).toBe('');
+      expect(db.categories.has(E)).toBe(false);
+      expect(db.categories.get(A)?.sortOrder).toBe(0);
+      expect(db.events.slice(0, 3)).toEqual([
+        "raw:SET LOCAL lock_timeout = '3s'",
+        'raw:SELECT pg_advisory_xact_lock(1100110)',
+        'read',
+      ]);
+      expect(db.audit).toHaveLength(1);
+      expect(db.audit[0]).toMatchObject({
+        action: 'category.deleted',
+        entityId: E,
+        actorId: STAFF_ID,
+        oldValues: { id: E, slug: 'bebidas', name: 'Bebidas', parentId: null, active: true },
+      });
+      await del(E, 404);
+    });
+
+    it('con hijas => 409 CATEGORY_IN_USE con usage, sin borrar ni auditar ni tocar hijas', async () => {
+      const res = await del(A, 409);
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.body).toMatchObject({
+        statusCode: 409,
+        code: 'CATEGORY_IN_USE',
+        usage: { children: 2, products: 0, banners: 0 },
+      });
+      expect((res.body as { message: string }).message).toContain('2 subcategorías');
+      expect(JSON.stringify(res.body)).not.toContain('Frios');
+      expect(db.categories.size).toBe(5);
+      expect(db.audit).toHaveLength(0);
+      expect(db.category.delete).not.toHaveBeenCalled();
+    });
+
+    it('con productos (activos o inactivos) o banners residuales => 409 con todos los conteos', async () => {
+      db.productsByCategory.set(E, 14);
+      db.bannersByCategory.set(E, 1);
+      const res = await del(E, 409);
+      expect((res.body as { usage: unknown }).usage).toEqual({
+        children: 0,
+        products: 14,
+        banners: 1,
+      });
+      expect(db.categories.has(E)).toBe(true);
+    });
+
+    it('inexistente => 404 (mismo cuerpo que PATCH); id no UUID => 400', async () => {
+      const gone = await del(MISSING, 404);
+      const patched = await http()
+        .patch(`/v1/admin/categories/${MISSING}`)
+        .set('Authorization', await asStaff())
+        .send({ name: 'X' })
+        .expect(404);
+      const strip = (b: Record<string, unknown>) => ({ ...b, requestId: undefined });
+      expect(strip(gone.body as Record<string, unknown>)).toEqual(
+        strip(patched.body as Record<string, unknown>),
+      );
+      await del('no-uuid', 400);
+    });
+
+    it('permisos: catalog.read o create no borran; aal1 => 403 MFA_REQUIRED', async () => {
+      await del(E, 403, ['catalog.read', 'catalog.create']);
+      const aal1 = await http()
+        .delete(`/v1/admin/categories/${E}`)
+        .set('Authorization', await asStaff({}, {}))
+        .expect(403);
+      expect((aal1.body as { message: string }).message).toBe('MFA_REQUIRED');
+      expect(db.categories.has(E)).toBe(true);
+    });
+
+    it('una FK que falla (carrera) se recuenta fuera de la transacción => 409 con usage real', async () => {
+      db.category.delete.mockImplementationOnce(() => {
+        db.productsByCategory.set(E, 2);
+        return Promise.reject(Object.assign(new Error('fk'), { code: 'P2003' }));
+      });
+      const res = await del(E, 409);
+      expect(res.body).toMatchObject({ code: 'CATEGORY_IN_USE', usage: { products: 2 } });
+    });
+
+    it('lock_timeout => 503 CATEGORIES_BUSY', async () => {
+      db.$executeRaw.mockRejectedValueOnce({ code: '55P03' });
+      const res = await del(E, 503);
+      expect((res.body as { code: string }).code).toBe('CATEGORIES_BUSY');
     });
   });
 
@@ -784,12 +910,5 @@ describe('Categorías (e2e)', () => {
         'read',
       ]);
     });
-  });
-
-  it('no existe DELETE de categorías', async () => {
-    await http()
-      .delete(`/v1/admin/categories/${A}`)
-      .set('Authorization', await asStaff())
-      .expect(404);
   });
 });

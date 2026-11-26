@@ -55,6 +55,7 @@ function setup(initial: CategoryRow[] = seed()) {
   const audit: { action: string; entityId: string; oldValues?: unknown; newValues?: unknown }[] =
     [];
   let counter = 100;
+  const usage = new Map<string, { products: number; banners: number }>();
   const tx = {};
   const repo = {
     // Simula COMMIT/ROLLBACK: si la función falla, se restaura el estado y la auditoría.
@@ -92,6 +93,16 @@ function setup(initial: CategoryRow[] = seed()) {
       store.set(id, next);
       return Promise.resolve({ ...next });
     }),
+    countUsage: vi.fn((id: string, _tx?: unknown) => {
+      calls.push(_tx ? 'count' : 'recount');
+      const children = [...store.values()].filter((r) => r.parentId === id).length;
+      return Promise.resolve({ children, ...(usage.get(id) ?? { products: 0, banners: 0 }) });
+    }),
+    delete: vi.fn((_tx: unknown, id: string) => {
+      calls.push('delete');
+      store.delete(id);
+      return Promise.resolve();
+    }),
   };
   const auditService = {
     record: vi.fn((_tx: unknown, event: (typeof audit)[number]) => {
@@ -105,7 +116,7 @@ function setup(initial: CategoryRow[] = seed()) {
     auditService,
     new AuthorizationService({} as IdentityService),
   );
-  return { service, repo, store, calls, audit, auditService };
+  return { service, repo, store, calls, audit, auditService, usage };
 }
 
 describe('AdminCategoriesService.create', () => {
@@ -429,5 +440,121 @@ describe('AdminCategoriesService: atomicidad y escala', () => {
     expect(res.items[0]?.id).toBe(ids[499]);
     expect(repo.update).toHaveBeenCalledTimes(500);
     expect(audit).toHaveLength(1);
+  });
+});
+
+describe('AdminCategoriesService.remove (ADR-0034)', () => {
+  it('categoría libre: lock → lee → cuenta → borra → audita; hermanos intactos', async () => {
+    const { service, calls, audit, store } = setup();
+    await expect(service.remove(staff(), E)).resolves.toBeUndefined();
+    expect(calls).toEqual(['begin', 'lock', 'read', 'count', 'delete', 'audit']);
+    expect(store.has(E)).toBe(false);
+    expect(store.get(A)?.sortOrder).toBe(0);
+    expect(audit).toEqual([
+      {
+        actorId: 'staff-1',
+        entityType: 'category',
+        entityId: E,
+        action: 'category.deleted',
+        oldValues: { id: E, slug: 'slug-5', name: 'Cat 5', parentId: null, active: true },
+      },
+    ]);
+  });
+
+  it('no renumera a los hermanos (puede quedar un hueco)', async () => {
+    const { service, store, repo } = setup();
+    // B tenía una hija (C): se quita primero C.
+    await service.remove(staff(), C);
+    await service.remove(staff(), B);
+    expect(store.has(B)).toBe(false);
+    expect(store.get(D)?.sortOrder).toBe(1);
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+
+  it('con hijas => 409 CATEGORY_IN_USE con usage; no borra ni audita', async () => {
+    const { service, repo, audit, store } = setup();
+    await expect(service.remove(staff(), A)).rejects.toMatchObject({
+      status: 409,
+      response: {
+        code: 'CATEGORY_IN_USE',
+        message: expect.stringContaining('2 subcategorías') as unknown,
+        extra: { usage: { children: 2, products: 0, banners: 0 } },
+      },
+    });
+    expect(repo.delete).not.toHaveBeenCalled();
+    expect(audit).toHaveLength(0);
+    expect(store.has(A)).toBe(true);
+  });
+
+  it('con productos y banners residuales => 409 con los tres conteos, plural/singular correcto', async () => {
+    const { service, usage } = setup();
+    usage.set(E, { products: 1, banners: 3 });
+    await expect(service.remove(staff(), E)).rejects.toMatchObject({
+      status: 409,
+      response: {
+        message:
+          'La categoría está en uso (1 producto, 3 banners). Mueve o elimina esos elementos, o desactívala en su lugar',
+        extra: { usage: { children: 0, products: 1, banners: 3 } },
+      },
+    });
+  });
+
+  it('inexistente => 404 sin contar ni borrar', async () => {
+    const { service, repo } = setup();
+    await expect(service.remove(staff(), ID(99))).rejects.toBeInstanceOf(NotFoundException);
+    expect(repo.countUsage).not.toHaveBeenCalled();
+    expect(repo.delete).not.toHaveBeenCalled();
+  });
+
+  it('alcance acotado => 403 antes de abrir la transacción', async () => {
+    const { service, repo } = setup();
+    await expect(service.remove(staff({ scoped: true }), E)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(repo.transaction).not.toHaveBeenCalled();
+  });
+
+  it('23503 en el borrado (carrera sin lock) => recuenta fuera de la transacción y responde 409', async () => {
+    const { service, repo, usage, calls } = setup();
+    repo.delete.mockImplementationOnce(() => {
+      usage.set(E, { products: 4, banners: 0 });
+      return Promise.reject(Object.assign(new Error('fk'), { code: 'P2003' }));
+    });
+    await expect(service.remove(staff(), E)).rejects.toMatchObject({
+      status: 409,
+      response: {
+        code: 'CATEGORY_IN_USE',
+        extra: { usage: { children: 0, products: 4, banners: 0 } },
+      },
+    });
+    expect(calls).toContain('recount');
+  });
+
+  it('23503 sin uso al recontar (o recuento fallido) => 503 CATEGORIES_BUSY, nunca ceros inventados', async () => {
+    const { service, repo } = setup();
+    repo.delete.mockRejectedValueOnce({ cause: { code: '23503' } });
+    await expect(service.remove(staff(), E)).rejects.toMatchObject({
+      status: 503,
+      response: { code: 'CATEGORIES_BUSY' },
+    });
+    repo.delete.mockRejectedValueOnce({ code: 'P2003' });
+    repo.countUsage.mockImplementation((_id: string, tx?: unknown) =>
+      tx
+        ? Promise.resolve({ children: 0, products: 0, banners: 0 })
+        : Promise.reject(new Error('db')),
+    );
+    await expect(service.remove(staff(), E)).rejects.toMatchObject({ status: 503 });
+  });
+
+  it('lock_timeout => 503 CATEGORIES_BUSY; si la auditoría falla el borrado se revierte', async () => {
+    const { service, repo, auditService, store } = setup();
+    repo.lockHierarchy.mockRejectedValueOnce({ cause: { code: '55P03' } });
+    await expect(service.remove(staff(), E)).rejects.toMatchObject({
+      status: 503,
+      response: { code: 'CATEGORIES_BUSY' },
+    });
+    auditService.record.mockRejectedValueOnce(new Error('audit down'));
+    await expect(service.remove(staff(), E)).rejects.toThrow('audit down');
+    expect(store.has(E)).toBe(true);
   });
 });

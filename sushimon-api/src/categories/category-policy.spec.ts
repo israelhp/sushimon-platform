@@ -7,6 +7,8 @@ import {
   assertSlugFree,
   buildAdminViews,
   buildVisibleTree,
+  categoryInUse,
+  isUnused,
   childrenIndex,
   compareSiblings,
   depthOf,
@@ -261,5 +263,27 @@ describe('actualización', () => {
       oldValues: { name: 'B' },
       newValues: { name: 'Nuevo' },
     });
+  });
+});
+
+describe('categoryInUse / isUnused (ADR-0034)', () => {
+  it('isUnused solo con los tres conteos en cero', () => {
+    expect(isUnused({ children: 0, products: 0, banners: 0 })).toBe(true);
+    expect(isUnused({ children: 0, products: 0, banners: 1 })).toBe(false);
+  });
+  it('mensaje con singular/plural, omite ceros y no lleva nombres ni ids', () => {
+    const body = (u: { children: number; products: number; banners: number }) =>
+      categoryInUse(u).getResponse() as { message: string; code: string; extra: unknown };
+    expect(body({ children: 2, products: 14, banners: 0 }).message).toBe(
+      'La categoría está en uso (2 subcategorías, 14 productos). Mueve o elimina esos elementos, o desactívala en su lugar',
+    );
+    expect(body({ children: 1, products: 0, banners: 1 }).message).toContain(
+      '(1 subcategoría, 1 banner)',
+    );
+    expect(body({ children: 0, products: 1, banners: 0 })).toMatchObject({
+      code: 'CATEGORY_IN_USE',
+      extra: { usage: { children: 0, products: 1, banners: 0 } },
+    });
+    expect(categoryInUse({ children: 1, products: 0, banners: 0 }).getStatus()).toBe(409);
   });
 });

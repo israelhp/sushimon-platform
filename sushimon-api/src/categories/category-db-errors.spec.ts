@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { translateCategoryDbError } from './category-db-errors.js';
+import { translateCategoryDbError, translateCategoryDeleteError } from './category-db-errors.js';
 
 const payload = (e: unknown) => (e as { getResponse(): Record<string, unknown> }).getResponse();
 const status = (e: unknown) => (e as { getStatus(): number }).getStatus();
@@ -66,5 +66,36 @@ describe('translateCategoryDbError', () => {
     const error = new Error('boom');
     expect(translateCategoryDbError(error)).toBe(error);
     expect(translateCategoryDbError(null)).toBeNull();
+  });
+});
+
+describe('translateCategoryDeleteError (ADR-0034)', () => {
+  const usage = { children: 1, products: 0, banners: 1 };
+  it('P2003/23503 => 409 CATEGORY_IN_USE con el recuento real', async () => {
+    for (const error of [{ code: 'P2003' }, { code: '23503' }, { cause: { code: '23503' } }]) {
+      const out = await translateCategoryDeleteError(error, () => Promise.resolve(usage));
+      expect(status(out)).toBe(409);
+      expect(payload(out)['code']).toBe('CATEGORY_IN_USE');
+      expect(payload(out)['extra']).toEqual({ usage });
+    }
+  });
+  it('recuento en cero o fallido => 503 CATEGORIES_BUSY (no inventa ceros)', async () => {
+    const zero = await translateCategoryDeleteError({ code: 'P2003' }, () =>
+      Promise.resolve({ children: 0, products: 0, banners: 0 }),
+    );
+    expect(status(zero)).toBe(503);
+    const failed = await translateCategoryDeleteError({ code: '23503' }, () =>
+      Promise.reject(new Error('db')),
+    );
+    expect(status(failed)).toBe(503);
+    expect(payload(failed)['code']).toBe('CATEGORIES_BUSY');
+  });
+  it('otros errores siguen el camino normal', async () => {
+    const error = new Error('boom');
+    expect(await translateCategoryDeleteError(error, () => Promise.resolve(usage))).toBe(error);
+    const busy = await translateCategoryDeleteError({ code: '55P03' }, () =>
+      Promise.resolve(usage),
+    );
+    expect(payload(busy)['code']).toBe('CATEGORIES_BUSY');
   });
 });

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Inject,
@@ -14,6 +15,7 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiResponse,
@@ -38,7 +40,7 @@ const BUSY = { status: 503, description: 'CATEGORIES_BUSY (reintentable)' } as c
 /**
  * Backoffice de categorías: JWT → personal activo con el permiso de CADA operación → aal2. Lectura: `catalog.read`
  * (cualquier alcance). Escrituras: `catalog.create`/`catalog.update` con alcance GLOBAL (se comprueba en el servicio).
- * Sin DELETE: se desactiva. La respuesta lleva `no-store` (middleware de `/v1/admin`).
+ * DELETE (ADR-0034): borrado físico solo si no está en uso. La respuesta lleva `no-store` (middleware de `/v1/admin`).
  */
 @ApiTags('categories')
 @ApiBearerAuth()
@@ -125,5 +127,28 @@ export class AdminCategoriesController {
     @Body() body: UpdateCategoryRequest,
   ): Promise<AdminCategoryDto> {
     return this.commands.update(staff, id, body);
+  }
+
+  @Delete(':id')
+  @RequireStaff('catalog.update')
+  @HttpCode(204)
+  @ApiOperation({
+    operationId: 'deleteAdminCategory',
+    summary: 'Elimina físicamente una categoría que no está en uso',
+  })
+  @ApiNoContentResponse({ description: 'Categoría eliminada. Sin cuerpo' })
+  @ApiResponse({ status: 400, description: 'id no es un UUID' })
+  @ApiResponse(UNAUTHORIZED)
+  @ApiResponse({ status: 404, description: 'La categoría no existe' })
+  @ApiResponse({
+    status: 409,
+    description: 'CATEGORY_IN_USE (usage: children, products, banners)',
+  })
+  @ApiResponse(BUSY)
+  async remove(
+    @CurrentStaff() staff: StaffContext,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.commands.remove(staff, id);
   }
 }
