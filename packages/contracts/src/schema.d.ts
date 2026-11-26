@@ -1745,14 +1745,28 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Elimina físicamente una categoría que no está en uso
+         * @description ADR-0034 (revierte parcialmente ADR-0016). Exige `catalog.update` con alcance GLOBAL y `aal2` (sin permiso nuevo). Sin cuerpo ni `expectedVersion` (las categorías no tienen
+         *     columna de versión). Borrado FÍSICO. Solo se elimina si la categoría NO está en uso: sin subcategorías (`children`), sin productos activos ni inactivos (`products`) y sin banners
+         *     que la usen como destino (`banners`; residuo de F16 previo a la migración 0023). Si lo está => 409 `CATEGORY_IN_USE` con `usage` (conteos) para que la UI indique qué mover antes; el mensaje sugiere
+         *     desactivarla (`updateAdminCategory`, `active=false`) como alternativa. Nunca se borran en cascada hijas ni productos. La API toma el mismo bloqueo de jerarquía que `update`/`reorder`
+         *     y valida bajo él; las FK `ON DELETE RESTRICT` (`categories.parent_id`, `products.category_id`, `banners.cta_category_id`) son la red de seguridad ante carreras (23503 => 409 `CATEGORY_IN_USE`).
+         *     Los hermanos restantes conservan su `sortOrder` (puede quedar un hueco; el orden sigue siendo estable por `sortOrder, name, id`). No existe otra referencia a categorías (favoritos, carrito, pedidos,
+         *     promociones y fichas de pedido no las referencian ni las copian). Se audita `category.deleted` (old: `id`, `slug`, `name`, `parentId`, `active`). Repetir la llamada responde 404 sin efectos.
+         *     Respuesta `no-store`. Efecto en caché pública: `GET /v1/store/categories` y `GET /v1/store/menu` sin `branchId` usan `public, max-age=60, stale-while-revalidate=300` (la categoría puede seguir
+         *     visible hasta ~6 min en clientes/CDN); `getStoreBootstrap` y `GET /v1/store/menu?branchId=` usan `max-age=min(N,5), s-maxage=N` con N <= 15 s. Ninguna lleva `ETag` y `nextChangeAt` depende solo de
+         *     horarios y promociones, no de categorías: el borrado no los altera. Una categoría con productos no puede borrarse, por lo que nunca desaparece un plato del menú por esta operación.
+         */
+        delete: operations["deleteAdminCategory"];
         options?: never;
         head?: never;
         /**
          * Edita una categoría (incluye mover y activar/desactivar)
          * @description F10. Exige `catalog.update` con alcance GLOBAL y `aal2`. Acepta `name`, `slug`, `description` (`null` la borra),
-         *     `parentId` (`null` = pasa a raíz) y `active`; al menos un campo (si no, 400); cualquier otro => 400. No existe
-         *     borrado físico: se desactiva con `active=false`. Desactivar un padre NO modifica a sus hijos (quedan con
+         *     `parentId` (`null` = pasa a raíz) y `active`; al menos un campo (si no, 400); cualquier otro => 400. Para dejar de
+         *     mostrarla se desactiva con `active=false`; el borrado físico (solo si no está en uso) es `deleteAdminCategory`
+         *     (ADR-0034). Desactivar un padre NO modifica a sus hijos (quedan con
          *     `active=true` pero `effectivelyVisible=false`). Mover: destino inexistente o inactivo => 422
          *     `CATEGORY_PARENT_INVALID`; destino ella misma o un descendiente => 422 `CATEGORY_CYCLE`; si el subárbol resultante
          *     pasa de 3 niveles => 422 `CATEGORY_DEPTH_EXCEEDED`. Al cambiar de padre pasa al final de sus nuevos hermanos.
@@ -3263,7 +3277,7 @@ export interface components {
             details?: string[];
             /**
              * @description Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`; F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16 (simplificado, ADR-0033): `BANNER_NOT_FOUND` (404), `BANNER_VERSION_CONFLICT` (409), `BANNER_LIMIT_REACHED` (409; ya hay 5 banners), `BANNER_IMAGE_INVALID` (422), `BANNER_ALT_INVALID` (422), `BANNERS_BUSY` (503 reintentable); retirados: `BANNER_CODE_TAKEN`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_SCOPE_FORBIDDEN`; F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); F20: `IDEMPOTENCY_KEY_INVALID` (400), `QUOTE_CHANGED` (409), `QUOTE_EXPIRED` (409), `IDEMPOTENCY_KEY_REUSED` (409), `IDEMPOTENCY_IN_PROGRESS` (409), `QUOTE_INVALID` (422), `CHECKOUT_BLOCKED` (422), `DELIVERY_PROVIDER_NOT_SELECTABLE` (422), `CONTACT_INCOMPLETE` (422), `PENDING_ORDERS_LIMIT` (429), `ORDERS_BUSY` (503 reintentable), `ORDERS_UNAVAILABLE` (503); 404 de dirección ajena sin código; F22: `ORDER_NOT_FOUND` (404), `ORDER_REASON_REQUIRED` (400), `ORDER_CURSOR_INVALID` (400), `ORDER_ACTION_FORBIDDEN` (403), `ORDER_STATE_CONFLICT` (409), `ORDER_TRANSITION_INVALID` (422; `violations[].code`: `ORDER_TERMINAL`, `ORDER_FULFILLMENT_MISMATCH`, `ORDER_SOURCE_INVALID`, `ORDER_DISPATCH_NOT_AVAILABLE`, `ORDER_PROVIDER_BLOCKED_EXTERNAL`, `ORDER_CANCEL_NOT_ALLOWED`); 503 reintentable: `ORDERS_BUSY`; F24 (pagos en efectivo; `PAYMENT_METHOD_UNAVAILABLE` de F20 queda RETIRADO: ahora cualquier método distinto de `cash` es 400): `PAYMENT_AMOUNT_INVALID` (400), `PAYMENT_CONFIRMATION_REQUIRED` (400), `PAYMENT_ACTION_FORBIDDEN` (403), `PAYMENT_ALREADY_REGISTERED` (409), `ORDER_NOT_PAYABLE` (409), `CASH_AMOUNT_INSUFFICIENT` (422), `CASH_TENDERED_TOO_LARGE` (422), `PAYMENT_NOT_COLLECTABLE` (422; `violations[].code`: `PROVIDER_BLOCKED_EXTERNAL`, `LEGACY_PAYMENT_METHOD`, `AMOUNT_ZERO`); reutiliza `ORDER_NOT_FOUND`, `IDEMPOTENCY_KEY_INVALID`, `IDEMPOTENCY_KEY_REUSED`, `ORDERS_BUSY`); F27 (motoristas propios): `RIDER_NOT_FOUND` (404), `RIDER_ACTION_FORBIDDEN` (403), `RIDER_PHONE_TAKEN` (409), `RIDER_VERSION_CONFLICT` (409; `current` = versión vigente), `RIDER_HAS_ACTIVE_DELIVERY` (409), `RIDER_INACTIVE` (409), `BRANCH_NOT_AVAILABLE` (422, reutilizado), `RIDERS_BUSY` (503 reintentable); F28 (entregas propias): `DELIVERY_NOT_FOUND` (404), `DELIVERY_ACTION_FORBIDDEN` (403), `DELIVERY_CURSOR_INVALID` (400), `DELIVERY_REASON_REQUIRED` (400), `DELIVERY_STATE_CONFLICT` (409; `current` = `{status, version}` de la entrega), `ORDER_HAS_ACTIVE_DELIVERY` (409; `current` del pedido; al cancelar un pedido con entrega abierta), `DELIVERY_ORDER_NOT_ELIGIBLE` (422; `violations[].code`: `ORDER_STATUS_NOT_DISPATCHABLE`, `ORDER_NOT_DELIVERY`, `ORDER_PROVIDER_NOT_OWN`), `RIDER_NOT_ELIGIBLE` (422; `violations[].code`: `INACTIVE`, `WRONG_BRANCH`, `UNAVAILABLE`, `BUSY`, `OWN_DELIVERY_DISABLED`), `DELIVERIES_BUSY` (503 reintentable); reutiliza `ORDER_NOT_FOUND`, `ORDER_STATE_CONFLICT`, `ORDER_TRANSITION_INVALID`, `RIDER_NOT_FOUND`, `BRANCH_NOT_FOUND`. Los clientes deben ramificar por `code`, nunca por `message`.
+             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`, `CATEGORY_IN_USE` (409; ADR-0034, `usage` con conteos); F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`; F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16 (simplificado, ADR-0033): `BANNER_NOT_FOUND` (404), `BANNER_VERSION_CONFLICT` (409), `BANNER_LIMIT_REACHED` (409; ya hay 5 banners), `BANNER_IMAGE_INVALID` (422), `BANNER_ALT_INVALID` (422), `BANNERS_BUSY` (503 reintentable); retirados: `BANNER_CODE_TAKEN`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_SCOPE_FORBIDDEN`; F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); F20: `IDEMPOTENCY_KEY_INVALID` (400), `QUOTE_CHANGED` (409), `QUOTE_EXPIRED` (409), `IDEMPOTENCY_KEY_REUSED` (409), `IDEMPOTENCY_IN_PROGRESS` (409), `QUOTE_INVALID` (422), `CHECKOUT_BLOCKED` (422), `DELIVERY_PROVIDER_NOT_SELECTABLE` (422), `CONTACT_INCOMPLETE` (422), `PENDING_ORDERS_LIMIT` (429), `ORDERS_BUSY` (503 reintentable), `ORDERS_UNAVAILABLE` (503); 404 de dirección ajena sin código; F22: `ORDER_NOT_FOUND` (404), `ORDER_REASON_REQUIRED` (400), `ORDER_CURSOR_INVALID` (400), `ORDER_ACTION_FORBIDDEN` (403), `ORDER_STATE_CONFLICT` (409), `ORDER_TRANSITION_INVALID` (422; `violations[].code`: `ORDER_TERMINAL`, `ORDER_FULFILLMENT_MISMATCH`, `ORDER_SOURCE_INVALID`, `ORDER_DISPATCH_NOT_AVAILABLE`, `ORDER_PROVIDER_BLOCKED_EXTERNAL`, `ORDER_CANCEL_NOT_ALLOWED`); 503 reintentable: `ORDERS_BUSY`; F24 (pagos en efectivo; `PAYMENT_METHOD_UNAVAILABLE` de F20 queda RETIRADO: ahora cualquier método distinto de `cash` es 400): `PAYMENT_AMOUNT_INVALID` (400), `PAYMENT_CONFIRMATION_REQUIRED` (400), `PAYMENT_ACTION_FORBIDDEN` (403), `PAYMENT_ALREADY_REGISTERED` (409), `ORDER_NOT_PAYABLE` (409), `CASH_AMOUNT_INSUFFICIENT` (422), `CASH_TENDERED_TOO_LARGE` (422), `PAYMENT_NOT_COLLECTABLE` (422; `violations[].code`: `PROVIDER_BLOCKED_EXTERNAL`, `LEGACY_PAYMENT_METHOD`, `AMOUNT_ZERO`); reutiliza `ORDER_NOT_FOUND`, `IDEMPOTENCY_KEY_INVALID`, `IDEMPOTENCY_KEY_REUSED`, `ORDERS_BUSY`); F27 (motoristas propios): `RIDER_NOT_FOUND` (404), `RIDER_ACTION_FORBIDDEN` (403), `RIDER_PHONE_TAKEN` (409), `RIDER_VERSION_CONFLICT` (409; `current` = versión vigente), `RIDER_HAS_ACTIVE_DELIVERY` (409), `RIDER_INACTIVE` (409), `BRANCH_NOT_AVAILABLE` (422, reutilizado), `RIDERS_BUSY` (503 reintentable); F28 (entregas propias): `DELIVERY_NOT_FOUND` (404), `DELIVERY_ACTION_FORBIDDEN` (403), `DELIVERY_CURSOR_INVALID` (400), `DELIVERY_REASON_REQUIRED` (400), `DELIVERY_STATE_CONFLICT` (409; `current` = `{status, version}` de la entrega), `ORDER_HAS_ACTIVE_DELIVERY` (409; `current` del pedido; al cancelar un pedido con entrega abierta), `DELIVERY_ORDER_NOT_ELIGIBLE` (422; `violations[].code`: `ORDER_STATUS_NOT_DISPATCHABLE`, `ORDER_NOT_DELIVERY`, `ORDER_PROVIDER_NOT_OWN`), `RIDER_NOT_ELIGIBLE` (422; `violations[].code`: `INACTIVE`, `WRONG_BRANCH`, `UNAVAILABLE`, `BUSY`, `OWN_DELIVERY_DISABLED`), `DELIVERIES_BUSY` (503 reintentable); reutiliza `ORDER_NOT_FOUND`, `ORDER_STATE_CONFLICT`, `ORDER_TRANSITION_INVALID`, `RIDER_NOT_FOUND`, `BRANCH_NOT_FOUND`. Los clientes deben ramificar por `code`, nunca por `message`.
              */
             code?: string;
             /** @description Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09). */
@@ -6122,6 +6136,31 @@ export interface components {
             status: components["schemas"]["OrderLifecycleStatus"];
             /** Format: date-time */
             updatedAt: string;
+        };
+        /**
+         * @description 409 `CATEGORY_IN_USE` de `deleteAdminCategory` (ADR-0034). Hereda `ErrorResponse` y añade `usage` con los conteos de lo que impide el borrado, para que la UI explique qué mover o eliminar primero.
+         *     `usage` solo trae conteos (sin nombres ni ids de productos) y siempre está presente, también cuando el conflicto lo detecta la FK (23503).
+         * @example {
+         *       "statusCode": 409,
+         *       "error": "CONFLICT",
+         *       "message": "La categoría está en uso (2 subcategorías, 14 productos). Mueve o elimina esos elementos, o desactívala en su lugar",
+         *       "code": "CATEGORY_IN_USE",
+         *       "usage": {
+         *         "children": 2,
+         *         "products": 14,
+         *         "banners": 0
+         *       }
+         *     }
+         */
+        CategoryInUseError: components["schemas"]["ErrorResponse"] & {
+            usage: {
+                /** @description Subcategorías directas. */
+                children: number;
+                /** @description Productos activos e inactivos con `category_id` = esta categoría. */
+                products: number;
+                /** @description Banners con `cta_category_id` = esta categoría (residuos previos a la migración 0023). */
+                banners: number;
+            };
         };
         /**
          * @description 409 `ORDER_STATE_CONFLICT` (el pedido ya no está en `expectedStatus`) y 422 `ORDER_TRANSITION_INVALID` (transición imposible). Hereda `ErrorResponse` y añade el estado ACTUAL para que la web
@@ -11938,6 +11977,83 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `CATEGORIES_BUSY`: otra modificación de categorías está en curso o la transacción agotó su tiempo; reintentable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAdminCategory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID de la categoría (`categories.id`). */
+                id: components["parameters"]["CategoryId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Categoría eliminada. Sin cuerpo. */
+            204: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `id` no es un UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Token ausente, inválido o expirado */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta `catalog.update` con alcance global o la sesión no es aal2 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description La categoría no existe (mismo cuerpo que `updateAdminCategory`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `CATEGORY_IN_USE`: tiene subcategorías, productos o banners; `usage` trae los conteos */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryInUseError"];
                 };
             };
             /** @description `CATEGORIES_BUSY`: otra modificación de categorías está en curso o la transacción agotó su tiempo; reintentable */

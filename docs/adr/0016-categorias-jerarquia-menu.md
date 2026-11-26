@@ -1,6 +1,6 @@
 # ADR-0016 Categorías: jerarquía de 3 niveles, visibilidad efectiva y administración global
 
-**Estado**: **propuesta** (2026-11-15, F10). Se acepta al fusionar `specs/011-categories-menu-hierarchy`.
+**Estado**: **propuesta** (2026-11-15, F10). Se acepta al fusionar `specs/011-categories-menu-hierarchy`. **Parcialmente reemplazado por ADR-0034** (borrado de categorías): lo dicho abajo sobre «sin borrado físico» queda superado; el resto sigue vigente.
 
 **Contexto**: el DBML define `app.categories (id, parent_id, slug, name, description, sort_order, active)` sin FK declarada ni restricciones. F10 debe ofrecer
 jerarquía, orden estable, visibilidad y administración, y dejar a F11 (productos) y F17 (agregados) un punto de lectura estable. Las categorías son del menú global
@@ -49,7 +49,7 @@ del restaurante, no de una sucursal (la disponibilidad por sucursal es de F13).
 - Un único bloqueo global de jerarquía serializa escrituras de categorías: aceptable (backoffice, pocas escrituras), simple y sin Redis ni colas.
 - Cambiar un slug rompe URLs públicas previas (sin historial en F10).
 - El tope de 500 categorías es una restricción del contrato; si se supera hará falta paginar (cambio de contrato).
-- Sin DELETE, las categorías obsoletas permanecen inactivas; F11 decide cómo tratar productos asociados.
+- (Superado por ADR-0034: ahora se puede borrar una categoría sin uso.) Sin DELETE, las categorías obsoletas permanecían inactivas; F11 decide cómo tratar productos asociados.
 - El DBML de `docs/references` no se edita; la evolución queda en la migración y este ADR.
 
 ## Alternativas descartadas
