@@ -213,3 +213,42 @@ export async function deleteDeliveriesOf(c: pg.Client, branchIds: string[]): Pro
     throw error;
   }
 }
+
+const pickupCutoffCache = new Map<string, Date | null>();
+
+/**
+ * Corte de la migración 0024 (`orders_delivery_only_chk`): instante a partir del cual `app.orders` ya no admite pedidos
+ * PICKUP nuevos. Se lee del propio CONSTRAINT de la base de pruebas; `null` si la 0024 aún no está aplicada en ella
+ * (entonces los pedidos PICKUP sembrados no necesitan fecha histórica). Se cachea por URL durante el proceso.
+ */
+export async function pickupCutoff(url: string): Promise<Date | null> {
+  if (pickupCutoffCache.has(url)) return pickupCutoffCache.get(url) ?? null;
+  const res = await withClient(url, (c) =>
+    c.query<{ cutoff: Date | null }>(
+      `SELECT substring(pg_get_constraintdef(oid) FROM 'placed_at < ''([^'']+)''')::timestamptz AS cutoff
+         FROM pg_constraint
+        WHERE conrelid = 'app.orders'::regclass AND conname = 'orders_delivery_only_chk'`,
+    ),
+  );
+  const cutoff = res.rows[0]?.cutoff ?? null;
+  pickupCutoffCache.set(url, cutoff);
+  return cutoff;
+}
+
+/**
+ * `placed_at` para sembrar un pedido por SQL. DELIVERY, o PICKUP sin 0024 aplicada: se devuelve `requested` tal cual
+ * (`null` = que la BD use `now()`). PICKUP con 0024: el pedido modela un PICKUP HISTÓRICO, así que su `placed_at` se
+ * desplaza hacia atrás (conservando el orden y las distancias entre pedidos) hasta quedar al menos un día antes del corte.
+ * Los pedidos NUEVOS de las pruebas deben ser DELIVERY: la 0024 rechaza cualquier PICKUP nuevo (23514).
+ */
+export async function pickupPlacedAt(
+  url: string,
+  fulfillment: string,
+  requested?: Date | null,
+): Promise<Date | null> {
+  if (fulfillment !== 'PICKUP') return requested ?? null;
+  const cutoff = await pickupCutoff(url);
+  if (!cutoff) return requested ?? null;
+  const shift = Math.max(0, Date.now() - cutoff.getTime()) + 86_400_000;
+  return new Date((requested ?? new Date()).getTime() - shift);
+}
