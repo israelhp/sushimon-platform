@@ -32,35 +32,18 @@ describe('borrador del modo de pedido', () => {
     expect(checkZone('10', NONEXISTENT)).toBe('ok');
   });
 
-  it('exige el tipo, la sucursal al recoger y dirección + zona a domicilio', () => {
-    const base = { branchId: null, delivery: delivery() };
-    expect(validateDraft({ ...base, type: null }, NONEXISTENT).type).toBe('mode.errType');
-    expect(validateDraft({ ...base, type: 'pickup' }, NONEXISTENT).branch).toBe(
-      'validation.branch',
-    );
-    expect(hasErrors(validateDraft({ ...base, type: 'pickup', branchId: 's' }, NONEXISTENT))).toBe(
-      false,
-    );
-
-    expect(validateDraft({ ...base, type: 'delivery' }, NONEXISTENT)).toEqual({
+  it('exige dirección y zona (solo a domicilio, ADR-0036)', () => {
+    expect(validateDraft({ delivery: delivery() }, NONEXISTENT)).toEqual({
       zone: 'mode.errZone',
     });
+    expect(validateDraft({ delivery: delivery({ zone: '23' }) }, NONEXISTENT)).toEqual({
+      zone: 'mode.errZoneInvalid',
+    });
     expect(
-      validateDraft({ ...base, type: 'delivery', delivery: delivery({ zone: '23' }) }, NONEXISTENT),
-    ).toEqual({ zone: 'mode.errZoneInvalid' });
-    expect(
-      validateDraft(
-        { ...base, type: 'delivery', delivery: delivery({ zone: '10', line: 'abc' }) },
-        NONEXISTENT,
-      ).line,
+      validateDraft({ delivery: delivery({ zone: '10', line: 'abc' }) }, NONEXISTENT).line,
     ).toBe('mode.errAddress');
     expect(
-      hasErrors(
-        validateDraft(
-          { ...base, type: 'delivery', delivery: delivery({ municipality: 'Mixco' }) },
-          NONEXISTENT,
-        ),
-      ),
+      hasErrors(validateDraft({ delivery: delivery({ municipality: 'Mixco' }) }, NONEXISTENT)),
     ).toBe(false);
   });
 

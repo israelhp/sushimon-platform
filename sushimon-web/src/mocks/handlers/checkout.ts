@@ -68,15 +68,14 @@ interface ParsedLine {
 interface ParsedRequest {
   branchId: string;
   lines: ParsedLine[];
-  fulfillment:
-    | { type: 'PICKUP' }
-    | {
-        type: 'DELIVERY';
-        customerAddressId?: string;
-        municipalityId?: string;
-        zone: string | null;
-        deliveryProvider?: 'OWN' | 'PEDIDOSYA';
-      };
+  /** ADR-0036: solo a domicilio e inmediato (PICKUP => 400). */
+  fulfillment: {
+    type: 'DELIVERY';
+    customerAddressId?: string;
+    municipalityId?: string;
+    zone: string | null;
+    deliveryProvider?: 'OWN' | 'PEDIDOSYA';
+  };
   couponCode: string;
   clientView: { lines: Map<number, string>; total: string | null };
 }
@@ -141,7 +140,7 @@ function parse(req: Req): ParsedRequest {
   }
 
   const fulfillment = isObj(raw.fulfillment) ? raw.fulfillment : null;
-  let parsedFulfillment: ParsedRequest['fulfillment'] = { type: 'PICKUP' };
+  let parsedFulfillment: ParsedRequest['fulfillment'] = { type: 'DELIVERY', zone: null };
   if (!fulfillment) problems.push('fulfillment: obligatorio');
   else {
     strictKeys(
@@ -150,11 +149,7 @@ function parse(req: Req): ParsedRequest {
       'fulfillment.',
       problems,
     );
-    if (fulfillment.type === 'PICKUP') {
-      if (Object.keys(fulfillment).some((k) => k !== 'type')) {
-        problems.push('fulfillment: PICKUP no admite otros campos');
-      }
-    } else if (fulfillment.type === 'DELIVERY') {
+    if (fulfillment.type === 'DELIVERY') {
       const hasAddress = fulfillment.customerAddressId !== undefined;
       const hasMunicipality = fulfillment.municipalityId !== undefined;
       if (hasAddress === hasMunicipality) {
@@ -182,7 +177,7 @@ function parse(req: Req): ParsedRequest {
         zone: typeof zone === 'string' ? zone : null,
         deliveryProvider: provider === 'OWN' || provider === 'PEDIDOSYA' ? provider : undefined,
       };
-    } else problems.push('fulfillment.type: PICKUP o DELIVERY');
+    } else problems.push('fulfillment.type: solo DELIVERY (no hay recogida en sucursal)');
   }
 
   let couponCode = '';
@@ -336,10 +331,7 @@ function savedAddressTarget(req: Req, addressId: string) {
   return { municipalityId: municipality?.id ?? null, zone: coverageZoneOf(stored.zone) };
 }
 
-function evaluateDelivery(
-  req: Req,
-  parsed: ParsedRequest & { fulfillment: { type: 'DELIVERY' } },
-): DeliveryResult {
+function evaluateDelivery(req: Req, parsed: ParsedRequest): DeliveryResult {
   const { store } = req;
   const { branchId } = parsed;
   const f = parsed.fulfillment;
@@ -519,14 +511,10 @@ export const quoteCheckout: Handler = (req): CheckoutQuote => {
   });
 
   // Entrega
-  let delivery: CheckoutQuote['fulfillment']['delivery'] = null;
-  let feeCents: number | null = 0;
-  if (parsed.fulfillment.type === 'DELIVERY') {
-    const result = evaluateDelivery(req, { ...parsed, fulfillment: parsed.fulfillment });
-    delivery = result.delivery;
-    feeCents = result.feeCents;
-    blockers.push(...result.blockers);
-  }
+  const deliveryResult = evaluateDelivery(req, parsed);
+  const delivery: CheckoutQuote['fulfillment']['delivery'] = deliveryResult.delivery;
+  const feeCents: number | null = deliveryResult.feeCents;
+  blockers.push(...deliveryResult.blockers);
   if (!availability.isAcceptingOrders) blockers.push({ code: 'BRANCH_CLOSED', scope: 'BRANCH' });
 
   const total = allPurchasable && feeCents !== null ? subtotal - discountTotal + feeCents : null;
@@ -546,7 +534,7 @@ export const quoteCheckout: Handler = (req): CheckoutQuote => {
       reason: availability.reason,
       nextOpensAt: availability.nextOpensAt ?? null,
     },
-    fulfillment: { type: parsed.fulfillment.type, delivery },
+    fulfillment: { type: 'DELIVERY', delivery },
     lines,
     subtotal: money(subtotal),
     extrasTotal: money(extrasTotal),

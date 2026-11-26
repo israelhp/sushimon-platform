@@ -53,9 +53,12 @@ describe('checkout-policy (F19)', () => {
   });
 
   describe('assertFulfillmentShape', () => {
-    it('PICKUP sin extras; DELIVERY con exactamente uno de address/municipio', () => {
-      expect(() => assertFulfillmentShape({ type: 'PICKUP' })).not.toThrow();
-      expect(() => assertFulfillmentShape({ type: 'PICKUP', zone: null })).toThrow();
+    it('ADR-0036: PICKUP (u otro tipo) se rechaza; DELIVERY con exactamente uno de address/municipio', () => {
+      expect(() =>
+        assertFulfillmentShape({ type: 'PICKUP' } as unknown as Parameters<
+          typeof assertFulfillmentShape
+        >[0]),
+      ).toThrow();
       expect(() =>
         assertFulfillmentShape({
           type: 'DELIVERY',

@@ -1,7 +1,5 @@
-import type { FulfillmentType } from '@/lib/data-access/models';
-
 /**
- * Borrador y validación del modo de pedido (hoja "Pedir ahora" / "Programar"). Puras y sin React:
+ * Borrador y validación del modo de pedido (hoja "Pedir ahora"). Puras y sin React:
  * devuelven CLAVES de mensajes (`validation.*` / `mode.*`) que la UI traduce. La validación
  * definitiva (cobertura, horarios, sucursal abierta) la hace siempre el servidor.
  */
@@ -42,8 +40,6 @@ export function checkZone(zone: string, nonexistent: readonly number[]): ZoneChe
 }
 
 export type DraftErrorKey =
-  | 'mode.errType'
-  | 'validation.branch'
   | 'validation.department'
   | 'validation.municipality'
   | 'mode.errAddress'
@@ -51,8 +47,6 @@ export type DraftErrorKey =
   | 'mode.errZoneInvalid';
 
 export interface DraftErrors {
-  type?: DraftErrorKey;
-  branch?: DraftErrorKey;
   department?: DraftErrorKey;
   municipality?: DraftErrorKey;
   line?: DraftErrorKey;
@@ -61,21 +55,11 @@ export interface DraftErrors {
 
 export function validateDraft(
   input: {
-    type: FulfillmentType | null;
-    branchId: string | null;
     delivery: DeliveryDraft;
   },
   nonexistentZones: readonly number[],
 ): DraftErrors {
   const errors: DraftErrors = {};
-  if (!input.type) {
-    errors.type = 'mode.errType';
-    return errors;
-  }
-  if (input.type === 'pickup') {
-    if (!input.branchId) errors.branch = 'validation.branch';
-    return errors;
-  }
   const { department, municipality, zone, line } = input.delivery;
   if (!department) errors.department = 'validation.department';
   if (!municipality) errors.municipality = 'validation.municipality';

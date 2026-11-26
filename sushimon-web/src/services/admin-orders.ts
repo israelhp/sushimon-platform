@@ -30,7 +30,6 @@ export interface AdminOrderListFilters {
   /** `undefined` = todas las sucursales autorizadas. */
   branchId?: string;
   status?: readonly OrderLifecycleStatus[];
-  fulfillmentType?: 'PICKUP' | 'DELIVERY';
   /** Número (`1042`, `MON-001042`) o nombre del cliente (2–40). */
   q?: string;
   /** Instantes ISO 8601 con zona (la web los calcula en America/Guatemala). */
@@ -50,7 +49,6 @@ export const listAdminOrders = (
     query: {
       branchId: filters.branchId,
       status: filters.status?.length ? filters.status.join(',') : undefined,
-      fulfillmentType: filters.fulfillmentType,
       q: filters.q,
       from: filters.from,
       to: filters.to,

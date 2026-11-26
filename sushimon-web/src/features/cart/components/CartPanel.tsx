@@ -131,7 +131,7 @@ export function CartPanelBody({
             <button
               type="button"
               className="min-h-[44px] underline"
-              onClick={() => orderSheet.open('now')}
+              onClick={() => orderSheet.open()}
             >
               {t('cart.chooseBranch')}
             </button>

@@ -119,8 +119,7 @@ describe('carrito: sucursal que no recibe pedidos (solo UI)', () => {
     await act(async () => {
       view.api().cart.add(cartInput('dumplings', 1));
       view.api().mode.setMode({
-        type: 'pickup',
-        when: { kind: 'now' },
+        type: 'delivery',
         branchId: 'sucursal-1',
         address: null,
       });
@@ -139,22 +138,6 @@ describe('carrito: sucursal que no recibe pedidos (solo UI)', () => {
 
   it('no muestra aviso si la sucursal recibe pedidos', async () => {
     await openCart('default');
-    await screen.findByText('Dumplings');
-    expect(screen.queryByText(/no recibe pedidos/)).toBeNull();
-  });
-
-  it('un pedido programado no muestra el aviso de «ahora»', async () => {
-    const view = await renderStore(<CartDrawer />, { scenario: 'branch-closed' });
-    await act(async () => {
-      view.api().cart.add(cartInput('dumplings', 1));
-      view.api().mode.setMode({
-        type: 'pickup',
-        when: { kind: 'scheduled', date: '2026-11-13', time: '15:00' },
-        branchId: 'sucursal-1',
-        address: null,
-      });
-      view.api().shell.openCart();
-    });
     await screen.findByText('Dumplings');
     expect(screen.queryByText(/no recibe pedidos/)).toBeNull();
   });

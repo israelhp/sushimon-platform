@@ -42,7 +42,7 @@ export interface CanonicalOrderBodyInput {
   body: Pick<CheckoutQuoteRequestDto, 'cart' | 'fulfillment' | 'couponCode'>;
   /** Contacto YA resuelto (normalizado; con el perfil si es autenticado). */
   contact: OrderContact;
-  /** Texto de dirección normalizado (`null` en PICKUP o con dirección guardada). */
+  /** Texto de dirección normalizado (`null` con dirección guardada). */
   address: AddressText | null;
   notes: string | null;
   paymentMethodPreference: string | null;

@@ -620,7 +620,6 @@ export class FakeDeliveriesRepo {
       paymentMethodPreference: null,
       paymentStatus: 'pending',
       paymentPaidAt: null,
-      scheduledFor: null,
       placedAt: o.updatedAt,
       updatedAt: o.updatedAt,
     });

@@ -309,7 +309,6 @@ export function buildSeedOrder(seed: OrderSeed, base: Date, scenario: MockScenar
     updatedAt: history[history.length - 1]?.at ?? created.toISOString(),
     branchId: seed.branchId,
     fulfillment: seed.fulfillment,
-    schedule: { kind: 'now' },
     customer: seed.customer,
     address: seed.address,
     lines,

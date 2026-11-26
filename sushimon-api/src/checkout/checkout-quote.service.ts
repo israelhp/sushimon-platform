@@ -270,7 +270,6 @@ export class CheckoutQuoteService {
     fulfillment: QuoteBody['fulfillment'],
     zoneLabel: string | null,
   ): Promise<Place | null> {
-    if (fulfillment.type === 'PICKUP') return null;
     if (fulfillment.customerAddressId !== undefined) {
       if (!principal) throw new UnauthorizedException('No autenticado');
       const address: CustomerAddressDto = await this.addresses.get(
@@ -314,7 +313,6 @@ export class CheckoutQuoteService {
     at: Date,
   ): QuoteWithEvidence {
     const { cart, fulfillment } = body;
-    const isDelivery = fulfillment.type === 'DELIVERY';
 
     // Lo que el cliente VIO: solo para avisos; nunca entra en un cálculo.
     const seen = new Map<number, number>();
@@ -356,7 +354,7 @@ export class CheckoutQuoteService {
     const evaluation = evaluateDiscounts(this.evaluator, {
       at,
       branchId: cart.branchId,
-      mode: isDelivery ? 'delivery' : 'pickup',
+      mode: 'delivery',
       couponCode: coupon,
       promotions: loaded.promotions,
       lines,
@@ -365,20 +363,18 @@ export class CheckoutQuoteService {
     if (evaluation.internalCouponUnknown) this.logger.debug('cupón no vigente o desconocido');
 
     // Entrega.
-    let delivery: CheckoutDeliveryDto | null = null;
-    let feeCents: number | null = 0;
-    let fulfillmentCodes: string[] = [];
-    if (isDelivery) {
-      if (loaded.place?.incomplete || !loaded.coverage) {
-        delivery = { selectedProvider: null, options: [] };
-        feeCents = null;
-        fulfillmentCodes = ['ADDRESS_INCOMPLETE'];
-      } else {
-        const decision = decideDelivery(loaded.coverage, fulfillment.deliveryProvider);
-        delivery = { selectedProvider: decision.selectedProvider, options: decision.options };
-        feeCents = decision.feeCents;
-        fulfillmentCodes = decision.blockers;
-      }
+    let delivery: CheckoutDeliveryDto;
+    let feeCents: number | null;
+    let fulfillmentCodes: string[];
+    if (loaded.place?.incomplete || !loaded.coverage) {
+      delivery = { selectedProvider: null, options: [] };
+      feeCents = null;
+      fulfillmentCodes = ['ADDRESS_INCOMPLETE'];
+    } else {
+      const decision = decideDelivery(loaded.coverage, fulfillment.deliveryProvider);
+      delivery = { selectedProvider: decision.selectedProvider, options: decision.options };
+      feeCents = decision.feeCents;
+      fulfillmentCodes = decision.blockers;
     }
 
     const amounts = priceQuote(lines, evaluation.discounts, feeCents);

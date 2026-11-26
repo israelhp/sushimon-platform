@@ -116,9 +116,12 @@ const cartOf = (over: Body = {}) => ({
   lines: [{ productId: P1, quantity: 2, selections: [] }],
   ...over,
 });
+// ADR-0036: todo pedido es a domicilio e inmediato (`PICKUP` => 400).
+const deliveryTo = { type: 'DELIVERY', municipalityId: MUNI_GUATEMALA, zone: 'Zona 10' };
+const addressText = { addressLine: '6a avenida 12-34', referenceNote: 'Portón negro' };
 const quoteBody = (over: Body = {}) => ({
   cart: cartOf(),
-  fulfillment: { type: 'PICKUP' },
+  fulfillment: deliveryTo,
   ...over,
 });
 const ownBody = (over: Body = {}) =>
@@ -165,7 +168,8 @@ describe('POST /v1/orders y GET /v1/orders/{id} (e2e, F20)', () => {
     const token = await quote({ ...quoteBody(), ...q, ...quoteOver }, jwt);
     return {
       cart: cartOf(),
-      fulfillment: { type: 'PICKUP' },
+      fulfillment: deliveryTo,
+      deliveryAddress: addressText,
       quoteToken: token,
       ...(jwt ? {} : { contact: GUEST }),
       ...over,
@@ -201,7 +205,7 @@ describe('POST /v1/orders y GET /v1/orders/{id} (e2e, F20)', () => {
   });
 
   describe('creación y acceso', () => {
-    it('PICKUP de invitado: 201, Location, `private, no-store`, sin ETag, forma del contrato y token de invitado', async () => {
+    it('a domicilio de invitado (zona propia, tarifa 0.00): 201, Location, `private, no-store`, sin ETag, forma del contrato y token de invitado', async () => {
       const res = await post(await orderOf()).expect(201);
       expect(res.headers['cache-control']).toBe('private, no-store');
       expect(res.headers['etag']).toBeUndefined();
@@ -215,11 +219,11 @@ describe('POST /v1/orders y GET /v1/orders/{id} (e2e, F20)', () => {
       expect(created.access?.guestToken).toMatch(/^smo_[A-Za-z0-9_-]{43}$/);
       expect(created.order).toMatchObject({
         status: 'pending',
-        fulfillmentType: 'PICKUP',
-        deliveryProvider: null,
+        fulfillmentType: 'DELIVERY',
+        deliveryProvider: 'OWN',
         total: '170.00',
         deliveryFee: '0.00',
-        address: null,
+        address: { addressLine: '6a avenida 12-34' },
         displayNumber: 'MON-001001',
         contact: { fullName: 'Ana Pérez', phoneMasked: '****1234' },
         payment: { method: 'CASH', status: 'PENDING', paidAt: null },
@@ -249,6 +253,21 @@ describe('POST /v1/orders y GET /v1/orders/{id} (e2e, F20)', () => {
           'updatedAt',
         ].sort(),
       );
+    });
+
+    it('PICKUP => 400 de validación (ADR-0036): ni con token válido ni sin dirección; nada persistido', async () => {
+      const ok = await orderOf();
+      for (const fulfillment of [
+        { type: 'PICKUP' },
+        { type: 'PICKUP', municipalityId: MUNI_GUATEMALA },
+        { type: 'PICKUP', customerAddressId: ADDR_OWN },
+      ]) {
+        const res = await post({ ...ok, fulfillment }).expect(400);
+        expect(res.body).toMatchObject({ statusCode: 400 });
+      }
+      // `deliveryAddress` ausente con `municipalityId` => 400 (sin PICKUP no hay pedido sin dirección).
+      await post({ ...ok, deliveryAddress: undefined }).expect(400);
+      expect(h.ordersRepo.orders.size).toBe(0);
     });
 
     it('DELIVERY OWN con zona: tarifa de la zona y dirección de snapshot', async () => {
@@ -292,7 +311,7 @@ describe('POST /v1/orders y GET /v1/orders/{id} (e2e, F20)', () => {
         customerAddressId: id,
         deliveryProvider: 'OWN',
       });
-      const own = await orderOf({ fulfillment: f(ADDR_OWN) }, jwt);
+      const own = await orderOf({ fulfillment: f(ADDR_OWN), deliveryAddress: undefined }, jwt);
       const ok = await post(own, { jwt }).expect(201);
       expect((ok.body as { order: Body }).order).toMatchObject({
         address: { addressLine: 'Calle 1' },
@@ -463,7 +482,8 @@ describe('POST /v1/orders y GET /v1/orders/{id} (e2e, F20)', () => {
       app = await createApp(keys, h, { secret: null });
       const res = await post({
         cart: cartOf(),
-        fulfillment: { type: 'PICKUP' },
+        fulfillment: deliveryTo,
+        deliveryAddress: addressText,
         quoteToken: 'v1.a.b',
         contact: GUEST,
       }).expect(503);

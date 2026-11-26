@@ -269,7 +269,6 @@ export function toAdminSummary(
     total: money(draft.total),
     paymentMethodPreference: paymentPreferenceOf(draft, placed),
     paymentStatus: paymentRecord(store, draft.id) ? 'PAID' : 'PENDING',
-    scheduledFor: null,
     placedAt: draft.createdAt,
     updatedAt: draft.updatedAt,
     availableActions: availableActionsFor(rule, can),

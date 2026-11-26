@@ -261,12 +261,20 @@ describe('paridad mock ↔ http', () => {
       (c) =>
         checkout.quoteCheckout(c, {
           cart: cart('sucursal-1', 'dumplings'),
-          fulfillment: { type: 'PICKUP' },
+          fulfillment: {
+            type: 'DELIVERY',
+            municipalityId: 'mun-guatemala-guatemala',
+            zone: 'Zona 10',
+          },
         }), // 503
       (c) =>
         checkout.quoteCheckout(c, {
           cart: cart('sucursal-1', 'dumplings'),
-          fulfillment: { type: 'PICKUP' },
+          fulfillment: {
+            type: 'DELIVERY',
+            municipalityId: 'mun-guatemala-guatemala',
+            zone: 'Zona 10',
+          },
         }),
       (c) =>
         checkout.quoteCheckout(c, {
@@ -282,7 +290,11 @@ describe('paridad mock ↔ http', () => {
       (c) =>
         checkout.quoteCheckout(c, {
           cart: cart('sucursal-99', 'dumplings'),
-          fulfillment: { type: 'PICKUP' },
+          fulfillment: {
+            type: 'DELIVERY',
+            municipalityId: 'mun-guatemala-guatemala',
+            zone: 'Zona 10',
+          },
         }), // 422
       (c) =>
         checkout.quoteCheckout(c, {
@@ -294,7 +306,11 @@ describe('paridad mock ↔ http', () => {
           method: 'POST',
           body: {
             cart: cart('sucursal-1', 'dumplings'),
-            fulfillment: { type: 'PICKUP' },
+            fulfillment: {
+              type: 'DELIVERY',
+              municipalityId: 'mun-guatemala-guatemala',
+              zone: 'Zona 10',
+            },
             total: '1.00',
           },
         }), // 400
@@ -1131,7 +1147,12 @@ describe('paridad mock ↔ http', () => {
       branchId: 'sucursal-1',
       lines: [{ productId: 'dumplings', quantity: 2, selections: [] }],
     };
-    const fulfillment = { type: 'PICKUP' as const };
+    const fulfillment = {
+      type: 'DELIVERY' as const,
+      municipalityId: 'mun-guatemala-guatemala',
+      zone: 'Zona 10',
+    };
+    const deliveryAddress = { addressLine: '6a avenida 10-50', referenceNote: '' };
     const KEY = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
     const place = async (c: DataClient, over: Partial<OrderCreateRequest> = {}, key = KEY) => {
       const q = await checkout.quoteCheckout(c, { cart, fulfillment });
@@ -1140,6 +1161,7 @@ describe('paridad mock ↔ http', () => {
         {
           cart,
           fulfillment,
+          deliveryAddress,
           quoteToken: q.quote.token as string,
           contact: { fullName: 'Ana Prueba', phone: '5555-0000' },
           paymentMethodPreference: 'cash',
@@ -1430,7 +1452,12 @@ describe('paridad mock ↔ http', () => {
       branchId: 'sucursal-1',
       lines: [{ productId: 'dumplings', quantity: 1, selections: [] }],
     };
-    const fulfillment = { type: 'PICKUP' as const };
+    const fulfillment = {
+      type: 'DELIVERY' as const,
+      municipalityId: 'mun-guatemala-guatemala',
+      zone: 'Zona 10',
+    };
+    const deliveryAddress = { addressLine: '6a avenida 10-50', referenceNote: '' };
     const place = async (c: DataClient) => {
       const q = await checkout.quoteCheckout(c, { cart, fulfillment });
       return orders.createOrder(
@@ -1438,6 +1465,7 @@ describe('paridad mock ↔ http', () => {
         {
           cart,
           fulfillment,
+          deliveryAddress,
           quoteToken: q.quote.token as string,
           contact: { fullName: 'Ana Prueba', phone: '5555-0000' },
           paymentMethodPreference: 'cash',
@@ -1485,13 +1513,18 @@ describe('paridad mock ↔ http', () => {
     };
     const q = await checkout.quoteCheckout(p.mock.client, {
       cart,
-      fulfillment: { type: 'PICKUP' },
+      fulfillment: { type: 'DELIVERY', municipalityId: 'mun-guatemala-guatemala', zone: 'Zona 10' },
     });
     const created = await orders.createOrder(
       p.mock.client,
       {
         cart,
-        fulfillment: { type: 'PICKUP' },
+        fulfillment: {
+          type: 'DELIVERY',
+          municipalityId: 'mun-guatemala-guatemala',
+          zone: 'Zona 10',
+        },
+        deliveryAddress: { addressLine: '6a avenida 10-50', referenceNote: '' },
         quoteToken: q.quote.token as string,
         contact: { fullName: 'Ana Prueba', phone: '5555-0000' },
         paymentMethodPreference: 'cash',
@@ -1736,7 +1769,12 @@ describe('paridad mock ↔ http', () => {
       branchId: 'sucursal-1',
       lines: [{ productId: 'dumplings', quantity: 1, selections: [] }],
     };
-    const fulfillment = { type: 'PICKUP' as const };
+    const fulfillment = {
+      type: 'DELIVERY' as const,
+      municipalityId: 'mun-guatemala-guatemala',
+      zone: 'Zona 10',
+    };
+    const deliveryAddress = { addressLine: '6a avenida 10-50', referenceNote: '' };
     const attempt = async (c: DataClient, store: TestHarness['store']) => {
       const q = await checkout.quoteCheckout(c, { cart, fulfillment });
       store.branchProducts.push({
@@ -1752,6 +1790,7 @@ describe('paridad mock ↔ http', () => {
           {
             cart,
             fulfillment,
+            deliveryAddress,
             quoteToken: q.quote.token as string,
             contact: { fullName: 'Ana', phone: '5555-0000' },
           },

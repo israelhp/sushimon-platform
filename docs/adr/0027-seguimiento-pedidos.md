@@ -2,6 +2,8 @@
 
 **Estado**: **propuesta** (2026-11-18, F21). Se acepta al fusionar `specs/022-order-tracking`. Sin migración.
 
+> **Reemplazado parcialmente por ADR-0036** (2026-11-26, pedidos solo a domicilio e inmediatos) en lo relativo a seguimiento: el recorrido sin `on_the_way` y `delivery: null` de PICKUP aplican solo a pedidos históricos o en curso; los pedidos nuevos son siempre `DELIVERY`. El texto original se conserva como historial.
+
 **Contexto**: F20 dejó `getOrder` (detalle con snapshot), `order_status_history` (append-only), el token de invitado en `X-Order-Token` y el catálogo cerrado de estados. F21 debe mostrar estado y línea de tiempo al cliente sin exponer PII, sin sobrecargar la BD (~100 pedidos/día, serverless sin memoria compartida, ADR-0006) y sin inventar datos de entrega (no existe `deliveries`; PedidosYa es `BLOCKED_EXTERNAL`). Sin WebSockets/SSE/Redis/colas ni dependencias nuevas.
 
 ## Decisión

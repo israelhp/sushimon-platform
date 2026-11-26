@@ -24,7 +24,7 @@ describe('QuoteTokenVerifier (F20)', () => {
         iat,
         exp: iat + 600,
         branchId: 'b',
-        type: 'PICKUP',
+        type: 'DELIVERY',
         provider: null,
         subtotal: '1.00',
         discountTotal: '0.00',

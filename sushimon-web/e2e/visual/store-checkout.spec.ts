@@ -25,7 +25,6 @@ const DEMO_ADDRESS = {
 
 interface Scenario {
   reference: string;
-  type: 'pickup' | 'delivery';
   step: 1 | 2 | 3 | 4 | 5;
   /** Umbral propio cuando la diferencia con el prototipo es intencional (ver `4-pago`). */
   maxRatio?: number;
@@ -41,12 +40,10 @@ const press = async (page: Page, name: string | RegExp, wait = 500) => {
 };
 
 const SCENARIOS: Record<string, Scenario> = {
-  '1-pedido': { reference: 'store-checkout-1-pedido', type: 'pickup', step: 1 },
-  '2-entrega': { reference: 'store-checkout-2-entrega', type: 'pickup', step: 2 },
-  '3-envio-recoger': { reference: 'store-checkout-3-envio-recoger', type: 'pickup', step: 3 },
+  '1-pedido': { reference: 'store-checkout-1-pedido', step: 1 },
+  '2-entrega': { reference: 'store-checkout-2-entrega', step: 2 },
   '3-envio-domicilio': {
     reference: 'store-checkout-3-envio-domicilio',
-    type: 'delivery',
     step: 3,
     after: async (p) => {
       await p.getByTestId('shipping-fee').waitFor();
@@ -54,11 +51,10 @@ const SCENARIOS: Record<string, Scenario> = {
     },
   },
   // Diferencia INTENCIONAL con el prototipo (F24): el paso Pago es solo efectivo (sin tarjeta Neonet ni transferencia).
-  '4-pago': { reference: 'store-checkout-4-pago', type: 'pickup', step: 4, maxRatio: 0.35 },
-  '5-confirmacion': { reference: 'store-checkout-5-confirmacion', type: 'pickup', step: 5 },
+  '4-pago': { reference: 'store-checkout-4-pago', step: 4, maxRatio: 0.35 },
+  '5-confirmacion': { reference: 'store-checkout-5-confirmacion', step: 5 },
   'pedido-efectivo': {
     reference: 'store-checkout-pedido-efectivo',
-    type: 'pickup',
     step: 5,
     after: async (p) => {
       await press(p, /Realizar pedido/, 600);
@@ -75,16 +71,16 @@ for (const theme of ['light', 'dark'] as const) {
         test.skip(!existsSync(file), `Falta la captura del prototipo: ${file}`);
         await preparePage(page, { theme, viewport, frozenAt: FROZEN_AT }, BASE);
         await page.addInitScript(
-          ([theme, type, step, address, cart]) => {
+          ([theme, step, address, cart]) => {
             localStorage.setItem('monsushi-theme', theme!);
             localStorage.setItem('monsushi-cart-v2', cart!);
             localStorage.setItem(
               'monsushi-order-mode-v1',
+              // ADR-0036: la tienda es solo a domicilio e inmediata.
               JSON.stringify({
-                type,
-                when: { kind: 'now' },
+                type: 'delivery',
                 branchId: 'sucursal-1',
-                address: type === 'delivery' ? JSON.parse(address!) : null,
+                address: JSON.parse(address!),
               }),
             );
             sessionStorage.setItem(
@@ -95,14 +91,12 @@ for (const theme of ['light', 'dark'] as const) {
                 address: JSON.parse(address!),
                 addressId: 'other',
                 notes: '',
-                pickupBranchId: null,
                 deliveryBranchId: null,
               }),
             );
           },
           [
             theme,
-            sc.type,
             String(sc.step),
             JSON.stringify(DEMO_ADDRESS),
             cartV2('sucursal-1', [DUMPLINGS]),

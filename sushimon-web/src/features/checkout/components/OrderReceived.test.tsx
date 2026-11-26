@@ -18,7 +18,11 @@ const asHttp = (backend: DataClient) =>
 
 async function place(
   over: Partial<OrderCreateRequest> = {},
-  fulfillment: OrderCreateRequest['fulfillment'] = { type: 'PICKUP' },
+  fulfillment: OrderCreateRequest['fulfillment'] = {
+    type: 'DELIVERY',
+    municipalityId: 'mun-guatemala-guatemala',
+    zone: 'Zona 10',
+  },
 ): Promise<{ created: OrderCreated; backend: DataClient }> {
   const h = createHarness();
   const cart = {
@@ -31,6 +35,7 @@ async function place(
     {
       cart,
       fulfillment,
+      deliveryAddress: { addressLine: '6a avenida 10-50', referenceNote: '' },
       quoteToken: quote.quote.token as string,
       contact: { fullName: 'Ana López', phone: '5555-1234' },
       paymentMethodPreference: 'cash',

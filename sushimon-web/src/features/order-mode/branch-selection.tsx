@@ -43,7 +43,7 @@ export function BranchSelectionGuard() {
     if (!list || isBranchAvailable(mode.branchId, list)) return;
     reset();
     void invalidateBranchScopedQueries(queryClient);
-    open('now', 'branchRemoved');
+    open('branchRemoved');
   }, [list, mode.branchId, reset, open, queryClient]);
 
   return null;

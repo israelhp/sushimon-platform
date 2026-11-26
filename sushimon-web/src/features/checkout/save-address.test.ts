@@ -31,7 +31,6 @@ const saved = (n: number): Address[] =>
   }));
 
 const base = {
-  delivery: true,
   signedIn: true,
   wantsSave: true,
   isOther: true,
@@ -60,7 +59,6 @@ describe('decideSaveAddress (F05, al continuar desde Entrega)', () => {
   });
 
   it.each([
-    ['recoger en sucursal', { delivery: false }],
     ['invitado', { signedIn: false }],
     ['sin marcar «guardar»', { wantsSave: false }],
   ])('omite: %s', (_name, patch) => {

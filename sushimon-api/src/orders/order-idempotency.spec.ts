@@ -24,7 +24,7 @@ const input = (over: Partial<CanonicalOrderBodyInput['body']> = {}): CanonicalOr
         { productId: U, quantity: 2, selections: [] },
       ],
     },
-    fulfillment: { type: 'PICKUP' as const },
+    fulfillment: { type: 'DELIVERY' as const, municipalityId: V },
     ...over,
   },
   contact,

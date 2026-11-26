@@ -28,6 +28,7 @@ import {
   cleanupTestData,
   deletePaymentsOf,
   ensureAuthStub,
+  pickupPlacedAt,
   TEST_URL,
   withClient,
 } from './support/db.js';
@@ -134,13 +135,15 @@ describe.skipIf(!url || !ready)('Pagos en efectivo contra PostgreSQL real (F24)'
     const total = o.total ?? '185.00';
     const id = randomUUID();
     phoneSeq += 1;
+    // PICKUP = pedido histórico (la 0024 rechaza PICKUP nuevos): placed_at anterior al corte si la 0024 está aplicada.
+    const placed = await pickupPlacedAt(url as string, fulfillment);
     await withClient(url as string, async (c) => {
       await c.query('BEGIN');
       try {
         await c.query(
           `INSERT INTO app.orders (id, branch_id, customer_name, customer_phone, fulfillment_type, delivery_provider, status,
-                                   subtotal, total, payment_method_preference)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, 'cash')`,
+                                   subtotal, total, payment_method_preference, placed_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, 'cash', COALESCE($9::timestamptz, now()))`,
           [
             id,
             o.branch ?? branchA,
@@ -150,6 +153,7 @@ describe.skipIf(!url || !ready)('Pagos en efectivo contra PostgreSQL real (F24)'
             provider,
             o.status ?? 'pending',
             total,
+            placed,
           ],
         );
         if (fulfillment === 'DELIVERY') {

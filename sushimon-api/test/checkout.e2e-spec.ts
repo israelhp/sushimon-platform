@@ -100,7 +100,9 @@ const cart = (over: Body = {}) => ({
   lines: [{ productId: P1, quantity: 2, selections: [] }],
   ...over,
 });
-const quoteBody = (over: Body = {}) => ({ cart: cart(), fulfillment: { type: 'PICKUP' }, ...over });
+// ADR-0036: toda cotización es a domicilio (`PICKUP` => 400).
+const deliveryTo = { type: 'DELIVERY', municipalityId: MUNI_GUATEMALA, zone: 'Zona 10' };
+const quoteBody = (over: Body = {}) => ({ cart: cart(), fulfillment: deliveryTo, ...over });
 const strip = (body: Body) => ({ ...body, requestId: undefined });
 
 describe('POST /v1/checkout/quote (e2e, F19)', () => {
@@ -199,9 +201,7 @@ describe('POST /v1/checkout/quote (e2e, F19)', () => {
     });
 
     it('errores 400, 422 y 429 también llevan `private, no-store`', async () => {
-      const bad = await post({ cart: cart({ lines: [] }), fulfillment: { type: 'PICKUP' } }).expect(
-        400,
-      );
+      const bad = await post({ cart: cart({ lines: [] }), fulfillment: deliveryTo }).expect(400);
       expect(bad.headers['cache-control']).toBe('private, no-store');
       const branch = await post(quoteBody({ cart: cart({ branchId: INACTIVE }) })).expect(422);
       expect(branch.headers['cache-control']).toBe('private, no-store');
@@ -260,7 +260,9 @@ describe('POST /v1/checkout/quote (e2e, F19)', () => {
       for (const fulfillment of [
         { type: 'DELIVERY' },
         { type: 'DELIVERY', customerAddressId: ADDR_OWN, municipalityId: MUNI_MIXCO },
+        { type: 'PICKUP' },
         { type: 'PICKUP', municipalityId: MUNI_MIXCO },
+        { type: 'PICKUP', customerAddressId: ADDR_OWN },
         { type: 'DELIVERY', municipalityId: 'no-uuid' },
         { type: 'TELEPORT' },
         { type: 'DELIVERY', municipalityId: MUNI_MIXCO, deliveryProvider: 'UBER' },
@@ -327,7 +329,11 @@ describe('POST /v1/checkout/quote (e2e, F19)', () => {
     });
 
     it.each([
-      ['sin cart', { fulfillment: { type: 'PICKUP' } }],
+      ['sin cart', { fulfillment: deliveryTo }],
+      [
+        'fulfillment.type = PICKUP (retirado por ADR-0036)',
+        quoteBody({ fulfillment: { type: 'PICKUP' } }),
+      ],
       ['sin fulfillment', { cart: cart() }],
       ['cuerpo vacío', {}],
       ['líneas vacías', quoteBody({ cart: cart({ lines: [] }) })],
@@ -377,7 +383,9 @@ describe('POST /v1/checkout/quote (e2e, F19)', () => {
             A +
             '","lines":[{"productId":"' +
             P1 +
-            '","quantity":1,"selections":[]}]},"fulfillment":{"type":"PICKUP"},"__proto__":{"x":1}}',
+            '","quantity":1,"selections":[]}]},"fulfillment":{"type":"DELIVERY","municipalityId":"' +
+            MUNI_GUATEMALA +
+            '"},"__proto__":{"x":1}}',
         ) as object,
       ],
     ])('%s => 400', async (_name, body) => {
@@ -527,7 +535,8 @@ describe('POST /v1/checkout/quote (e2e, F19)', () => {
     const delivery = (extra: Body = {}) =>
       quoteBody({ fulfillment: { type: 'DELIVERY', municipalityId: MUNI_MIXCO, ...extra } });
 
-    it('por defecto: OWN apagado y PedidosYa UNKNOWN => DELIVERY_UNVERIFIED, sin total', async () => {
+    it('OWN apagado y PedidosYa UNKNOWN => DELIVERY_UNVERIFIED, sin total', async () => {
+      h.cover.result = coverageResult();
       const res = await post(delivery()).expect(200);
       expect(res.body).toMatchObject({
         total: null,

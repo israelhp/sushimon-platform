@@ -205,7 +205,7 @@ describe('Ficha pública F12: selector de extras', () => {
     await waitFor(() => expect(addButton()).toBeEnabled());
     fireEvent.click(addButton());
     expect(view.api().cart.lines).toEqual([]);
-    await waitFor(() => expect(view.api().shell.orderSheet).not.toBeNull());
+    await waitFor(() => expect(view.api().shell.orderSheet).toBe(true));
   });
 
   it('error al cargar la ficha (no 404): avisa, ofrece reintentar y no deja agregar a ciegas', async () => {

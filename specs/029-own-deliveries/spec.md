@@ -6,6 +6,8 @@
 
 > **Nomenclatura oficial** (backlog y DBML): tablas `app.deliveries` y `app.delivery_status_history`, rutas `/v1/admin/deliveries`, permisos `deliveries.read|assign|update` y `riders.assign` (ya sembrados por 0005; no se crea RBAC nuevo). Un «repartidor» y un «motorista» son lo mismo (`app.riders`, F27).
 
+> **Nota ADR-0036 (2026-11-26, pedidos solo a domicilio e inmediatos)**: reemplaza parcialmente lo que esta spec dice sobre PICKUP y pedidos programados en entregas: ya no se crean pedidos PICKUP nuevos; el comportamiento de F28 no cambia. El texto original se conserva como historial; ver `docs/adr/0036-pedidos-solo-a-domicilio-e-inmediatos.md`.
+
 ## 1. Alcance y fuera de alcance
 
 Dentro:

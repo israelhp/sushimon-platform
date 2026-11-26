@@ -177,15 +177,12 @@ describe('F24 · mensajes del pago en efectivo (es/en)', () => {
   });
 
   it('los mensajes fijos del checkout dicen exactamente lo acordado', () => {
-    expect(pick(es, 'payment.cashPickup')).toBe(
-      'Realiza el pago en efectivo cuando recojas tu pedido en la sucursal.',
-    );
     expect(pick(es, 'payment.cashDelivery')).toBe(
       'Realiza el pago en efectivo cuando recibas tu pedido.',
     );
-    expect(pick(en, 'payment.cashPickup')).toBe(
-      'Pay in cash when you pick up your order at the branch.',
-    );
+    // ADR-0036: la tienda es solo a domicilio; ya no existe el mensaje de pago al recoger.
+    expect(pick(es, 'payment.cashPickup')).toBeUndefined();
+    expect(pick(en, 'payment.cashPickup')).toBeUndefined();
     expect(pick(en, 'payment.cashDelivery')).toBe('Pay in cash when you receive your order.');
   });
 

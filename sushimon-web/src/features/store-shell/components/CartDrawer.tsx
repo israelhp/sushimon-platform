@@ -26,9 +26,7 @@ export function CartDrawer() {
   // F08: aviso (solo UI) si la sucursal elegida no recibe pedidos ahora; lo calcula el servidor.
   const { mode } = useOrderMode();
   const publicBranches = usePublicBranches();
-  const branchAvailability = useBranchAvailability(
-    isOpen && mode.when.kind === 'now' ? mode.branchId : null,
-  );
+  const branchAvailability = useBranchAvailability(isOpen ? mode.branchId : null);
   const branchName = publicBranches.data?.find((b) => b.id === mode.branchId)?.name ?? '';
 
   return (

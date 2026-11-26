@@ -35,7 +35,7 @@ async function openTracking(page: Page, options: Parameters<typeof seedCheckout>
   await expect(page.getByTestId('order-tracking')).toBeVisible();
 }
 
-test('confirmar → «Ver estado de mi pedido» → seguimiento con avance simulado hasta «Recogido»', async ({
+test('confirmar → «Ver estado de mi pedido» → seguimiento a domicilio con avance simulado hasta «Entregado»', async ({
   page,
 }) => {
   await openTracking(page);
@@ -45,20 +45,25 @@ test('confirmar → «Ver estado de mi pedido» → seguimiento con avance simul
   // El token nunca viaja en la URL.
   expect(page.url()).not.toContain('smo_');
   const phases = page.getByTestId('phases').getByRole('listitem');
-  await expect(phases).toHaveCount(5);
+  await expect(phases).toHaveCount(6);
   await expect(page.locator('[aria-current="step"]')).toHaveCount(1);
   await expect(page.getByTestId('timeline-event')).toHaveCount(1);
 
   const advance = page.getByRole('button', { name: 'Ver siguiente estado (simulación)' });
-  for (const label of ['Aceptado por la sucursal', 'En preparación', 'Listo para recoger']) {
+  for (const label of [
+    'Aceptado por la sucursal',
+    'En preparación',
+    'Listo, esperando entrega',
+    'En camino',
+  ]) {
     await advance.click();
     await expect(page.getByTestId('status-label')).toHaveText(label);
   }
   await advance.click();
-  await expect(page.getByTestId('status-label')).toHaveText('Recogido');
+  await expect(page.getByTestId('status-label')).toHaveText('Entregado');
   await expect(advance).toHaveCount(0);
-  await expect(page.getByTestId('timeline-event')).toHaveCount(5);
-  await expect(page.getByTestId('phase-time')).toHaveCount(5);
+  await expect(page.getByTestId('timeline-event')).toHaveCount(6);
+  await expect(page.getByTestId('phase-time')).toHaveCount(6);
   // El estado terminal detiene el polling: ninguna solicitud de seguimiento más.
   const count = () =>
     page.evaluate(
@@ -111,8 +116,8 @@ for (const theme of ['light', 'dark'] as const) {
     await openTracking(page, { theme });
     expect(await audit(page)).toEqual([]);
     const advance = page.getByRole('button', { name: 'Ver siguiente estado (simulación)' });
-    for (let i = 0; i < 4; i++) await advance.click();
-    await expect(page.getByTestId('status-label')).toHaveText('Recogido');
+    for (let i = 0; i < 5; i++) await advance.click();
+    await expect(page.getByTestId('status-label')).toHaveText('Entregado');
     expect(await audit(page)).toEqual([]);
   });
 }
@@ -125,7 +130,7 @@ test('en inglés: el seguimiento se traduce', async ({ page }) => {
 });
 
 test('entrega propia: «En camino» sin repartidor ni hora estimada', async ({ page }) => {
-  await openTracking(page, { mode: 'delivery' });
+  await openTracking(page);
   const advance = page.getByRole('button', { name: /siguiente estado|next status/i });
   for (const label of ['Aceptado por la sucursal', 'En preparación', 'Listo, esperando entrega']) {
     await advance.click();

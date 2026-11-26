@@ -21,21 +21,19 @@ beforeEach(() => {
 
 interface OpenOptions {
   lines?: [string, number][];
-  type?: 'pickup' | 'delivery';
   scenario?: MockScenario;
   prepareStore?: (store: MockStore) => void;
 }
 
 async function openCheckout({
   lines = [['dumplings', 1]],
-  type = 'pickup',
   scenario,
   prepareStore,
 }: OpenOptions = {}) {
   const view = await renderStore(<CheckoutPage />, { scenario, prepareStore });
   await act(async () => {
     for (const [id, qty] of lines) view.api().cart.add(cartInput(id, qty));
-    view.api().mode.setMode({ type, when: { kind: 'now' }, branchId: 'sucursal-1', address: null });
+    view.api().mode.setMode({ type: 'delivery', branchId: 'sucursal-1', address: null });
   });
   return view;
 }
@@ -109,10 +107,13 @@ describe('checkout · estados de pantalla', () => {
     const user = userEvent.setup();
     await openCheckout({ lines: [['dumplings', 1]] });
     await screen.findAllByText('Dumplings');
-    expect(screen.getAllByTestId('summary-total')[0]).toHaveTextContent('Q53.00');
+    // El total es el del servidor: producto + tarifa de envío de la zona (todo pedido es a domicilio).
+    await waitFor(() =>
+      expect(screen.getAllByTestId('summary-total')[0]).toHaveTextContent('Q68.00'),
+    );
     await user.click(screen.getByRole('button', { name: 'Agregar uno de Dumplings' }));
     await waitFor(() =>
-      expect(screen.getAllByTestId('summary-total')[0]).toHaveTextContent('Q106.00'),
+      expect(screen.getAllByTestId('summary-total')[0]).toHaveTextContent('Q121.00'),
     );
   });
 });
@@ -173,8 +174,7 @@ describe('checkout · paso 1 explica SIEMPRE el bloqueo (U2)', () => {
         }),
       );
       view.api().mode.setMode({
-        type: 'pickup',
-        when: { kind: 'now' },
+        type: 'delivery',
         branchId: 'sucursal-1',
         address: null,
       });
@@ -192,7 +192,7 @@ describe('checkout · entrega y validaciones', () => {
     const user = userEvent.setup();
     await openCheckout();
     await toStep(user, 'Entrega');
-    await user.click(screen.getByRole('button', { name: 'Cambiar' }));
+    await user.click(screen.getAllByRole('button', { name: 'Cambiar' })[0]!);
     const name = await screen.findByLabelText('Nombre del cliente');
     await user.clear(name);
     await user.clear(screen.getByLabelText('Número de teléfono'));
@@ -223,7 +223,7 @@ describe('checkout · entrega y validaciones', () => {
 
   it('a domicilio exige zona válida (no existen la 20, 22 ni 23)', async () => {
     const user = userEvent.setup();
-    await openCheckout({ type: 'delivery' });
+    await openCheckout();
     await toStep(user, 'Entrega');
     // Hay dos "Cambiar" (datos de contacto y dirección): la dirección es el segundo.
     await user.click(screen.getAllByRole('button', { name: 'Cambiar' })[1]!);
@@ -235,26 +235,23 @@ describe('checkout · entrega y validaciones', () => {
     expect(screen.getAllByText('Indicá la zona.').length).toBeGreaterThan(0);
   });
 
-  it('permite programar el pedido con día y hora disponibles', async () => {
+  it('ADR-0036: la entrega es solo a domicilio e inmediata (no hay recoger ni programar)', async () => {
     const user = userEvent.setup();
-    const view = await openCheckout();
+    await openCheckout();
     await toStep(user, 'Entrega');
-    await user.click(screen.getByRole('button', { name: 'Programar' }));
-    expect(await screen.findByText('Día')).toBeInTheDocument();
-    expect(view.api().mode.mode.when.kind).toBe('scheduled');
-    // Mínimo 45 min de anticipación en pasos de 30: son las 2:25 p. m., el primero es 3:30 p. m.
-    expect(screen.getByRole('button', { name: '3:30 p. m.' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    expect(screen.queryByRole('button', { name: '3:00 p. m.' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Programar' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Recoger' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Día')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Dirección de entrega' }),
+    ).toBeInTheDocument();
   });
 });
 
 describe('checkout · sucursal que no recibe pedidos (F08, solo UI)', () => {
   async function toShipping(user: UserEvent) {
     await toStep(user, 'Entrega');
-    await user.click(screen.getByRole('button', { name: 'Cambiar' }));
+    await user.click(screen.getAllByRole('button', { name: 'Cambiar' })[0]!);
     await user.clear(await screen.findByLabelText('Nombre del cliente'));
     await user.type(screen.getByLabelText('Nombre del cliente'), 'Ana López');
     await user.clear(screen.getByLabelText('Número de teléfono'));
@@ -272,7 +269,7 @@ describe('checkout · sucursal que no recibe pedidos (F08, solo UI)', () => {
     expect(
       await screen.findByText(/No hay sucursales abiertas en este momento/),
     ).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Cambiar' }));
+    await user.click(screen.getAllByRole('button', { name: 'Cambiar' })[0]!);
     await user.clear(await screen.findByLabelText('Nombre del cliente'));
     await user.type(screen.getByLabelText('Nombre del cliente'), 'Ana López');
     await user.clear(screen.getByLabelText('Número de teléfono'));
@@ -293,21 +290,6 @@ describe('checkout · sucursal que no recibe pedidos (F08, solo UI)', () => {
     expect(heading()).toHaveTextContent('Envío');
   });
 
-  it('«Programar» ofrece un horario que respeta el cierre', async () => {
-    const user = userEvent.setup();
-    const view = await openCheckout({ scenario: 'branch-closed' });
-    await toShipping(user);
-    await user.click(await screen.findByRole('button', { name: 'Programar' }));
-    await screen.findByRole('heading', { level: 1, name: 'Entrega' });
-    await waitFor(() =>
-      expect(view.api().mode.mode.when).toEqual({
-        kind: 'scheduled',
-        date: '2026-11-12',
-        time: '13:00',
-      }),
-    );
-  });
-
   it('sin cierre no muestra aviso de sucursal cerrada', async () => {
     const user = userEvent.setup();
     await openCheckout();
@@ -321,7 +303,7 @@ describe('checkout · sucursal que no recibe pedidos (F08, solo UI)', () => {
 describe('checkout · envío y cobertura', () => {
   it('muestra la tarifa propia que devuelve el servidor para la zona (sin niveles ni tiempos inventados)', async () => {
     const user = userEvent.setup();
-    await openCheckout({ type: 'delivery' });
+    await openCheckout();
     await toStep(user, 'Envío');
     expect(await screen.findByTestId('shipping-fee')).toHaveTextContent('Q15.00');
     expect(screen.queryByText(/Tiempo estimado de entrega/)).not.toBeInTheDocument();
@@ -336,9 +318,9 @@ describe('checkout · envío y cobertura', () => {
     );
   });
 
-  it('PedidosYa no verificable y sin zona propia: «no podemos confirmar»; no continúa y recoger sigue disponible', async () => {
+  it('PedidosYa no verificable y sin zona propia: «no podemos confirmar»; no continúa y no ofrece recoger', async () => {
     const user = userEvent.setup();
-    const view = await openCheckout({ type: 'delivery' });
+    const view = await openCheckout();
     await toStep(user, 'Entrega');
     await user.click(screen.getAllByRole('button', { name: 'Cambiar' })[1]!);
     await user.selectOptions(
@@ -347,9 +329,9 @@ describe('checkout · envío y cobertura', () => {
     );
     await next(user, /Continuar a envío/i);
     expect(
-      await screen.findByText(/No pudimos verificar la entrega a domicilio/),
+      await screen.findByText(/Por ahora no podemos confirmar si llegamos a esa dirección/),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/No hay entrega a domicilio disponible/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Por ahora no llegamos a esa dirección\./)).not.toBeInTheDocument();
 
     expect(screen.getAllByRole('button', { name: /Continuar a pago/i })[0]).toHaveAttribute(
       'aria-disabled',
@@ -357,17 +339,15 @@ describe('checkout · envío y cobertura', () => {
     );
     expect(heading()).toHaveTextContent('Envío');
 
-    await user.click(screen.getAllByRole('button', { name: 'Recoger en sucursal' })[0]!);
-    expect(view.api().mode.mode.type).toBe('pickup');
-    expect(await screen.findByText('¿En qué sucursal lo recoges?')).toBeInTheDocument();
-    await next(user, /Continuar a pago/i);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Pago' })).toBeInTheDocument();
+    // Solo se informa: sin ofrecer recoger en sucursal ni programar (ADR-0036).
+    expect(screen.queryByRole('button', { name: /Recoger/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Programar/ })).not.toBeInTheDocument();
+    expect(view.api().mode.mode.type).toBe('delivery');
   });
 
-  it('sin cobertura propia y PedidosYa deshabilitado: «sin cobertura a domicilio» y se ofrece recoger', async () => {
+  it('sin cobertura propia y PedidosYa deshabilitado: «por ahora no llegamos a esa dirección», sin alternativas', async () => {
     const user = userEvent.setup();
     await openCheckout({
-      type: 'delivery',
       prepareStore: (store) => {
         for (const id of ['sucursal-1', 'sucursal-2', 'sucursal-3']) {
           store.deliverySettings[id] = {
@@ -385,9 +365,9 @@ describe('checkout · envío y cobertura', () => {
       await screen.findByRole('option', { name: 'Palencia' }),
     );
     await next(user, /Continuar a envío/i);
-    expect(
-      await screen.findByText(/No hay entrega a domicilio disponible para esta dirección/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Por ahora no llegamos a esa dirección.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Recoger|Programar/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/WhatsApp/i)).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /Continuar a pago/i })[0]).toHaveAttribute(
       'aria-disabled',
       'true',
@@ -397,7 +377,7 @@ describe('checkout · envío y cobertura', () => {
 
   it('un departamento sin municipios cargados avisa y exige elegir un municipio válido', async () => {
     const user = userEvent.setup();
-    await openCheckout({ type: 'delivery' });
+    await openCheckout();
     await toStep(user, 'Entrega');
     await user.click(screen.getAllByRole('button', { name: 'Cambiar' })[1]!);
     await user.selectOptions(await screen.findByLabelText('Departamento'), 'Escuintla');
@@ -413,25 +393,19 @@ describe('checkout · envío y cobertura', () => {
     expect(heading()).toHaveTextContent('Entrega');
   });
 
-  it('con la sucursal cerrada solo se puede programar', async () => {
+  it('con la sucursal cerrada bloquea el pedido y avisa cuándo abre, sin ofrecer programar', async () => {
     const user = userEvent.setup();
-    const view = await openCheckout({ scenario: 'branch-closed' });
+    await openCheckout({ scenario: 'branch-closed' });
     await toStep(user, 'Envío');
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('La sucursal está cerrada en este momento');
+    expect(alert).toHaveTextContent('Abre mañana a las 1:00 p. m.');
+    expect(within(alert).queryByRole('button', { name: 'Programar' })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /Continuar a pago/i })[0]).toHaveAttribute(
       'aria-disabled',
       'true',
     );
     expect(heading()).toHaveTextContent('Envío');
-
-    await user.click(within(alert).getByRole('button', { name: 'Programar' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'Entrega' })).toBeInTheDocument();
-    expect(view.api().mode.mode.when.kind).toBe('scheduled');
-    await next(user, /Continuar a envío/i);
-    await screen.findByRole('heading', { level: 1, name: 'Envío' });
-    await next(user, /Continuar a pago/i);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Pago' })).toBeInTheDocument();
   });
 });
 
@@ -475,7 +449,7 @@ describe('checkout · pedido en efectivo', () => {
     expect(view.api().cart.count).toBe(0);
     expect(window.sessionStorage.getItem('monsushi-checkout-v1')).toBeNull();
     const last = JSON.parse(window.localStorage.getItem('monsushi-last-order-v1')!);
-    expect(last).toMatchObject({ id: number, total: 106 });
+    expect(last).toMatchObject({ id: number, total: 121 });
   });
 
   it('si fallan los datos muestra un aviso con reintento y no pierde el carrito', async () => {
@@ -489,16 +463,16 @@ describe('checkout · pedido en efectivo', () => {
 describe('checkout · pago SOLO en efectivo (F24)', () => {
   const FORBIDDEN = /transferencia|tarjeta|neonet|comprobante|cuenta bancaria|pagar ahora/i;
 
-  it('el paso Pago ofrece únicamente «Efectivo» (sin elegir), con la instrucción del retiro y el total cotizado', async () => {
+  it('el paso Pago ofrece únicamente «Efectivo» (sin elegir), con la instrucción de entrega y el total cotizado', async () => {
     const user = userEvent.setup();
     await openCheckout({ lines: [['dumplings', 2]] });
     await toStep(user, 'Pago');
     const cash = await screen.findByTestId('payment-cash');
     expect(within(cash).getByText('Efectivo')).toBeInTheDocument();
     expect(screen.getByTestId('payment-instructions')).toHaveTextContent(
-      'Realiza el pago en efectivo cuando recojas tu pedido en la sucursal.',
+      'Realiza el pago en efectivo cuando recibas tu pedido.',
     );
-    await waitFor(() => expect(screen.getByTestId('payment-total')).toHaveTextContent('Q106.00'));
+    await waitFor(() => expect(screen.getByTestId('payment-total')).toHaveTextContent('Q121.00'));
     // No hay nada que elegir: sin radios, sin tarjeta, transferencia, Neonet ni comprobantes.
     expect(screen.queryAllByRole('radio')).toHaveLength(0);
     expect(screen.queryByRole('radiogroup')).toBeNull();
@@ -509,7 +483,7 @@ describe('checkout · pago SOLO en efectivo (F24)', () => {
 
   it('a domicilio (entrega propia) la instrucción es «cuando recibas tu pedido» y el total incluye el envío cotizado', async () => {
     const user = userEvent.setup();
-    await openCheckout({ type: 'delivery' });
+    await openCheckout();
     await toStep(user, 'Pago');
     expect(await screen.findByTestId('payment-instructions')).toHaveTextContent(
       'Realiza el pago en efectivo cuando recibas tu pedido.',
@@ -523,7 +497,7 @@ describe('checkout · pago SOLO en efectivo (F24)', () => {
     await openCheckout();
     await toStep(user, 'Confirmación');
     expect(screen.getAllByRole('button', { name: /Realizar pedido/ }).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Realiza el pago en efectivo cuando recojas/)).toBeInTheDocument();
+    expect(screen.getByText(/Realiza el pago en efectivo cuando recibas/)).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(FORBIDDEN);
   });
 
@@ -555,8 +529,7 @@ describe('checkout · persistencia del progreso', () => {
     await act(async () => {
       again.api().cart.add(cartInput('dumplings', 1));
       again.api().mode.setMode({
-        type: 'pickup',
-        when: { kind: 'now' },
+        type: 'delivery',
         branchId: 'sucursal-1',
         address: null,
       });
@@ -572,8 +545,7 @@ describe('checkout · inglés', () => {
     await act(async () => {
       view.api().cart.add(cartInput('dumplings', 1));
       view.api().mode.setMode({
-        type: 'pickup',
-        when: { kind: 'now' },
+        type: 'delivery',
         branchId: 'sucursal-1',
         address: null,
       });

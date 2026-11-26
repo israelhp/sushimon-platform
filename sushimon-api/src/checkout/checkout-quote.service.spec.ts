@@ -59,7 +59,7 @@ describe('CheckoutQuoteService (F19)', () => {
   });
 
   describe('fila 1: totales exactos', () => {
-    it('carrito válido de PICKUP: importes en cadenas, sin tarifa y sin llamar a cobertura (fila 6)', async () => {
+    it('carrito válido a domicilio (ADR-0036): importes en cadenas, zona propia con tarifa 0.00', async () => {
       const q = await h.service.quote(undefined, h.body());
       expect(q).toMatchObject({
         currency: 'GTQ',
@@ -71,7 +71,7 @@ describe('CheckoutQuoteService (F19)', () => {
         canProceed: true,
         blockers: [],
         coupon: null,
-        fulfillment: { type: 'PICKUP', delivery: null },
+        fulfillment: { type: 'DELIVERY', delivery: { selectedProvider: 'OWN' } },
       });
       expect(q.lines[0]).toMatchObject({
         index: 0,
@@ -82,8 +82,7 @@ describe('CheckoutQuoteService (F19)', () => {
         discount: '0.00',
         promotionId: null,
       });
-      expect(h.coverage.check).not.toHaveBeenCalled();
-      expect(h.locations.findMunicipality).not.toHaveBeenCalled();
+      expect(h.coverage.check).toHaveBeenCalledTimes(1);
     });
 
     it('expiresAt = emisión + 10 min; generatedAt viene del reloj del servidor', async () => {
@@ -465,7 +464,8 @@ describe('CheckoutQuoteService (F19)', () => {
         fulfillment: { type: 'DELIVERY', municipalityId: MUNI_MIXCO, ...extra } as never,
       });
 
-    it('flag OWN apagado (defecto) y PedidosYa UNKNOWN => DELIVERY_UNVERIFIED, total null', async () => {
+    it('flag OWN apagado y PedidosYa UNKNOWN => DELIVERY_UNVERIFIED, total null', async () => {
+      h.cover.result = coverageResult();
       const q = await h.service.quote(undefined, delivery());
       expect(q.blockers).toEqual([{ code: 'DELIVERY_UNVERIFIED', scope: 'FULFILLMENT' }]);
       expect(q.total).toBeNull();
@@ -704,14 +704,17 @@ describe('CheckoutQuoteService (F19)', () => {
       expect(applied.coupon).toEqual({ status: 'APPLIED' });
       expect(applied.discountTotal).toBe('17.00');
       const responses = [];
+      const couponJson: string[] = [];
       for (const code of ['NOEXISTE', 'OTRA', 'VENCIDO', 'APAGADO', '!!formato inválido!!']) {
         const q = await h.service.quote(undefined, h.body({ couponCode: code }));
         responses.push(JSON.stringify({ ...q, quote: null }));
+        couponJson.push(JSON.stringify(q.coupon));
         expect(q.coupon).toEqual({ status: 'NOT_APPLIED' });
         expect(q.discountTotal).toBe('0.00');
       }
       expect(new Set(responses).size).toBe(1);
-      expect(responses.join('')).not.toMatch(
+      // Solo el bloque `coupon`: la respuesta completa trae `UNKNOWN` de la cobertura de PedidosYa (ADR-0036: siempre a domicilio).
+      expect(couponJson.join('')).not.toMatch(
         /EXPIRED|NOT_STARTED|OUTSIDE_SCHEDULE|BRANCH_NOT_ELIGIBLE|CODE_REQUIRED|NO_SAVING|UNKNOWN/,
       );
     });
@@ -881,8 +884,8 @@ describe('CheckoutQuoteService (F19)', () => {
         expect(u.payload.sub).not.toBe('guest');
         expect(g.payload).toMatchObject({
           branchId: A,
-          type: 'PICKUP',
-          provider: null,
+          type: 'DELIVERY',
+          provider: 'OWN',
           subtotal: '170.00',
           discountTotal: '0.00',
           deliveryFee: '0.00',
@@ -964,6 +967,7 @@ describe('CheckoutQuoteService (F19)', () => {
 
     it('combinaciones incoherentes de fulfillment => 400', async () => {
       for (const fulfillment of [
+        { type: 'PICKUP' },
         { type: 'PICKUP', municipalityId: MUNI_MIXCO },
         { type: 'PICKUP', deliveryProvider: 'OWN' },
         { type: 'DELIVERY' },
@@ -1017,8 +1021,7 @@ describe('CheckoutQuoteService (F19)', () => {
       expect(changed.evidence?.linesHash).not.toBe(first.evidence?.linesHash);
     });
 
-    it('el lugar resuelto: PICKUP => null; municipio + zona; dirección guardada con su texto', async () => {
-      expect((await h.service.quoteWithEvidence(undefined, h.body())).resolved.place).toBeNull();
+    it('el lugar resuelto: municipio + zona; dirección guardada con su texto', async () => {
       h.cover.result = coverageResult({ own: ownZone('15.00') });
       const byZone = await h.service.quoteWithEvidence(
         undefined,

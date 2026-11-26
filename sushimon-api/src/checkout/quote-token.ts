@@ -16,7 +16,7 @@ export interface QuoteTokenPayload {
   iat: number;
   exp: number;
   branchId: string;
-  type: 'PICKUP' | 'DELIVERY';
+  type: 'DELIVERY';
   provider: 'OWN' | 'PEDIDOSYA' | null;
   subtotal: string;
   discountTotal: string;
@@ -87,7 +87,7 @@ function isPayload(value: unknown): value is QuoteTokenPayload {
     Number.isInteger(p['iat']) &&
     Number.isInteger(p['exp']) &&
     typeof p['branchId'] === 'string' &&
-    (p['type'] === 'PICKUP' || p['type'] === 'DELIVERY') &&
+    p['type'] === 'DELIVERY' &&
     isStringOrNull(p['provider']) &&
     typeof p['subtotal'] === 'string' &&
     typeof p['discountTotal'] === 'string' &&

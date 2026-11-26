@@ -34,7 +34,6 @@ export function toSummary(row: AdminOrderRow, actions: ActionState[]): AdminOrde
     // F24: solo `cash`; un valor histórico retirado (`bank_transfer`) se lee `null`.
     paymentMethodPreference: row.paymentMethodPreference === 'cash' ? 'cash' : null,
     paymentStatus: publicPaymentStatus(row.paymentStatus),
-    scheduledFor: row.scheduledFor ? row.scheduledFor.toISOString() : null,
     placedAt: row.placedAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     availableActions: actions.map((a) => ({ ...a })),

@@ -4,10 +4,8 @@ import {
   Activity,
   Banknote,
   Check,
-  Clock,
   Flag,
   ListOrdered,
-  MapPin,
   Store,
   TriangleAlert,
   Truck,
@@ -23,13 +21,10 @@ import { cn } from '@/lib/cn';
 import type { DraftOrder } from '@/lib/data-access/models';
 import { formatMoney } from '@/lib/format';
 import { toStoreOrderState, toStoreTrackingStep } from '@/lib/order-status';
-import { localDate } from '@/lib/time';
 import { useAdvanceOrderDemo, useIsSimulation } from '@/features/orders/hooks';
-import { formatWhen } from '@/features/order-mode/when';
 import { useDemoSession } from '@/features/session/demo-session';
-import { MapLinks } from '@/features/store-shell/components/StoreFooter';
 import { STORE_ROUTES } from '@/features/store-shell/nav';
-import { useBranches, useStoreConfig } from '@/features/store/hooks';
+import { useBranches } from '@/features/store/hooks';
 import { formatAddress } from '../checkout-model';
 
 const PAYMENT_STATUS_KEYS = [
@@ -75,7 +70,6 @@ export function Confirmation({
   const { customer } = useDemoSession();
   const simulation = useIsSimulation();
   const advance = useAdvanceOrderDemo();
-  const config = useStoreConfig().data;
   const branches = useBranches().data ?? [];
   const money = (v: number) => formatMoney(v, locale);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -93,17 +87,6 @@ export function Confirmation({
     ? t(`status.${state as (typeof PAYMENT_STATUS_KEYS)[number]}`)
     : (labels[Math.min(step.progress, labels.length - 1)] ?? '');
   const branch = branches.find((b) => b.id === order.branchId);
-  const delivery = order.fulfillment === 'delivery';
-  const when = formatWhen(
-    order.schedule,
-    config ? localDate(new Date(config.serverTime)) : null,
-    locale,
-    {
-      asap: t('when.asap'),
-      today: t('when.today'),
-      tomorrow: t('when.tomorrow'),
-    },
-  );
   // F24: solo efectivo (el borrador enlazado nunca es de tarjeta).
   const methodLabel = t('payment.cash');
   const MethodIcon = Banknote;
@@ -222,16 +205,10 @@ export function Confirmation({
           <Fact icon={<Store className="h-4 w-4" />} label={t('confirm.branch')}>
             {branch?.name ?? order.branchId}
           </Fact>
-          <Fact
-            icon={delivery ? <Truck className="h-4 w-4" /> : <MapPin className="h-4 w-4" />}
-            label={delivery ? t('confirm.address') : t('confirm.pickupAt')}
-          >
-            {delivery && order.address
+          <Fact icon={<Truck className="h-4 w-4" />} label={t('confirm.address')}>
+            {order.address
               ? formatAddress(order.address, t('checkoutFlow.zoneInline'))
               : (branch?.name ?? order.branchId)}
-          </Fact>
-          <Fact icon={<Clock className="h-4 w-4" />} label={t('checkout.when')}>
-            {when}
           </Fact>
           <Fact icon={<Flag className="h-4 w-4" />} label={t('confirm.status')}>
             {statusLabel} · {t('delivery.prepTime')}
@@ -264,10 +241,8 @@ export function Confirmation({
               <span>{money(order.subtotal)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted">
-                {delivery ? t('checkout.estimatedShipping') : t('checkout.shipping')}
-              </span>
-              <span>{delivery ? money(order.deliveryFee) : t('checkout.pickupFree')}</span>
+              <span className="text-muted">{t('checkout.estimatedShipping')}</span>
+              <span>{money(order.deliveryFee)}</span>
             </div>
             <div className="mt-1 flex items-baseline justify-between">
               <span className="font-extrabold">
@@ -278,13 +253,6 @@ export function Confirmation({
           </div>
         </div>
       </section>
-
-      {!delivery && config && branches[0] && order.branchId === branches[0].id ? (
-        <div className="mt-5 rounded-2xl border border-dashed border-line p-4">
-          <p className="m-0 text-[14px] font-bold">{t('confirm.pickupDirections')}</p>
-          <MapLinks config={config} className="mt-2" />
-        </div>
-      ) : null}
 
       <div className="mt-5 flex flex-col gap-2.5 sm:flex-row">
         {customer ? (

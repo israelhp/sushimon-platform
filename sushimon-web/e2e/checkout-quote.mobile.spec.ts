@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { DUMPLINGS, cartV2, pickupMode } from './support/cart';
+import { DUMPLINGS, cartV2, deliveryMode } from './support/cart';
 
 /** F19 · Cotización en móvil (Pixel 7, datos SIMULADOS): resumen visible en «Envío», barra inferior con el total del servidor, sin desbordes y objetivos ≥ 44 px. */
 test.skip(({ isMobile }) => !isMobile, 'solo en el proyecto e2e-mobile');
@@ -22,7 +22,7 @@ for (const theme of ['light', 'dark'] as const) {
           localStorage.setItem('monsushi-order-mode-v1', mode!);
         }
       },
-      [cartV2('sucursal-1', [{ ...DUMPLINGS, quantity: 2 }]), pickupMode('sucursal-1'), theme],
+      [cartV2('sucursal-1', [{ ...DUMPLINGS, quantity: 2 }]), deliveryMode('sucursal-1'), theme],
     );
     await page.goto('/checkout');
     await expect(page.getByRole('heading', { level: 1, name: 'Tu pedido' })).toBeVisible({
@@ -41,7 +41,7 @@ for (const theme of ['light', 'dark'] as const) {
     await page.getByRole('heading', { level: 1, name: 'Envío' }).waitFor();
 
     const summary = page.getByRole('region', { name: /Resumen/i }).filter({ visible: true });
-    await expect(summary.getByTestId('summary-total')).toHaveText('Q106.00');
+    await expect(summary.getByTestId('summary-total')).toHaveText('Q121.00');
     await expect(summary.getByText('Simulación').first()).toBeVisible();
     const pay = page.getByRole('button', { name: /Continuar a pago/i }).filter({ visible: true });
     await expect(pay).toBeEnabled();

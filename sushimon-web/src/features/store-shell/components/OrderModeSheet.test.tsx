@@ -23,12 +23,10 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push }),
 }));
 
-async function openSheet(variant: 'now' | 'schedule', scenario?: 'branch-closed' | 'error') {
+async function openSheet(scenario?: 'branch-closed' | 'error') {
   const view = await renderStore(<OrderModeSheet />, { scenario });
-  await act(async () => view.api().shell.openOrderSheet(variant));
-  const dialog = await screen.findByRole('dialog', {
-    name: variant === 'now' ? 'Pedir ahora' : 'Programar pedido',
-  });
+  await act(async () => view.api().shell.openOrderSheet());
+  const dialog = await screen.findByRole('dialog', { name: 'Pedir ahora' });
   // Espera a que lleguen configuración y sucursales (el botón se habilita).
   await waitFor(() =>
     expect(within(dialog).getByRole('button', { name: 'Ver el menú' })).toBeEnabled(),
@@ -41,46 +39,21 @@ beforeEach(() => {
   coverageChecks.mockClear();
 });
 
-describe('OrderModeSheet', () => {
-  it('exige elegir recoger o domicilio', async () => {
-    const user = userEvent.setup();
-    const { dialog } = await openSheet('now');
-    await user.click(within(dialog).getByRole('button', { name: 'Ver el menú' }));
-    expect(within(dialog).getByText('Elegí si lo recogés o te lo llevamos.')).toBeInTheDocument();
-    expect(push).not.toHaveBeenCalled();
-  });
-
-  it('recoger: guarda el modo con la sucursal y lleva al menú', async () => {
-    const user = userEvent.setup();
-    const { view, dialog } = await openSheet('now');
-    await user.click(within(dialog).getByRole('button', { name: 'Recoger' }));
-    expect(within(dialog).getByRole('radiogroup')).toBeInTheDocument();
-    await user.click(within(dialog).getByRole('button', { name: 'Ver el menú' }));
-    expect(view.api().mode.mode).toMatchObject({
-      type: 'pickup',
-      when: { kind: 'now' },
-      branchId: 'sucursal-1',
-      address: null,
-    });
-    expect(push).toHaveBeenCalledWith('/menu');
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-  });
-
-  it('cambiar de modo muestra los campos de domicilio y oculta las sucursales', async () => {
-    const user = userEvent.setup();
-    const { dialog } = await openSheet('now');
-    await user.click(within(dialog).getByRole('button', { name: 'Recoger' }));
-    expect(within(dialog).queryByLabelText('Dirección exacta')).not.toBeInTheDocument();
-    await user.click(within(dialog).getByRole('button', { name: 'A domicilio' }));
+describe('OrderModeSheet (solo a domicilio e inmediato, ADR-0036)', () => {
+  it('no ofrece recoger ni programar: solo dirección de entrega y «Ver el menú»', async () => {
+    const { dialog } = await openSheet();
+    expect(within(dialog).queryByRole('button', { name: 'Recoger' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Programar' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('radiogroup')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/Cuándo/)).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText('Dirección exacta')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('Zona')).toBeInTheDocument();
-    expect(within(dialog).queryByRole('radiogroup')).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Ver el menú' })).toBeInTheDocument();
   });
 
-  it('domicilio: valida dirección y zona con mensajes accesibles; las zonas inexistentes no se ofrecen', async () => {
+  it('valida dirección y zona con mensajes accesibles; las zonas inexistentes no se ofrecen', async () => {
     const user = userEvent.setup();
-    const { dialog } = await openSheet('now');
-    await user.click(within(dialog).getByRole('button', { name: 'A domicilio' }));
+    const { dialog } = await openSheet();
     await user.click(within(dialog).getByRole('button', { name: 'Ver el menú' }));
     expect(within(dialog).getByText('Escribí la dirección de entrega.')).toBeInTheDocument();
     expect(within(dialog).getByText('Indicá la zona.')).toBeInTheDocument();
@@ -97,13 +70,11 @@ describe('OrderModeSheet', () => {
     expect(push).not.toHaveBeenCalled();
   });
 
-  it('domicilio: la cobertura se comprueba UNA vez al completar la selección, no al abrir ni por pulsación', async () => {
+  it('la cobertura se comprueba UNA vez al completar la selección, no al abrir ni por pulsación', async () => {
     const user = userEvent.setup();
-    const { dialog } = await openSheet('now');
-    // Abrir la hoja (y elegir «Recoger») no consulta nada.
-    await user.click(within(dialog).getByRole('button', { name: 'Recoger' }));
+    const { dialog } = await openSheet();
+    // Abrir la hoja no consulta nada.
     expect(coverageChecks).not.toHaveBeenCalled();
-    await user.click(within(dialog).getByRole('button', { name: 'A domicilio' }));
     // Selección incompleta (falta la zona): solo la ayuda, ninguna comprobación, aunque se escriba la dirección.
     expect(within(dialog).getByText(/Elegí departamento, municipio y zona/)).toBeInTheDocument();
     await user.type(within(dialog).getByLabelText('Dirección exacta'), '6a avenida 10-50');
@@ -125,10 +96,9 @@ describe('OrderModeSheet', () => {
     expect(coverageChecks).toHaveBeenCalledTimes(3);
   });
 
-  it('domicilio: asigna la sucursal por cobertura, muestra la tarifa del servidor y guarda', async () => {
+  it('asigna la sucursal por cobertura, muestra la tarifa del servidor y guarda el modo a domicilio', async () => {
     const user = userEvent.setup();
-    const { view, dialog } = await openSheet('now');
-    await user.click(within(dialog).getByRole('button', { name: 'A domicilio' }));
+    const { view, dialog } = await openSheet();
     await user.selectOptions(within(dialog).getByLabelText('Zona'), '10');
     await user.type(within(dialog).getByLabelText('Dirección exacta'), '6a avenida 10-50');
     expect(
@@ -139,7 +109,7 @@ describe('OrderModeSheet', () => {
     expect(within(dialog).queryByText(/Tiempo estimado de entrega/)).not.toBeInTheDocument();
 
     await user.click(within(dialog).getByRole('button', { name: 'Ver el menú' }));
-    expect(view.api().mode.mode).toMatchObject({
+    expect(view.api().mode.mode).toEqual({
       type: 'delivery',
       branchId: 'sucursal-1',
       address: {
@@ -147,15 +117,16 @@ describe('OrderModeSheet', () => {
         municipality: 'Guatemala',
         zone: '10',
         line: '6a avenida 10-50',
+        references: '',
       },
     });
     expect(push).toHaveBeenCalledWith('/menu');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
-  it('domicilio: un departamento sin municipios cargados avisa y no permite continuar', async () => {
+  it('un departamento sin municipios cargados avisa y no permite continuar', async () => {
     const user = userEvent.setup();
-    const { dialog } = await openSheet('now');
-    await user.click(within(dialog).getByRole('button', { name: 'A domicilio' }));
+    const { dialog } = await openSheet();
     await user.selectOptions(await within(dialog).findByLabelText('Departamento'), 'Escuintla');
     expect(
       await within(dialog).findByText(
@@ -167,27 +138,23 @@ describe('OrderModeSheet', () => {
     expect(push).not.toHaveBeenCalled();
   });
 
-  it('domicilio: PedidosYa no verificable => «no podemos confirmar», no «sin cobertura»; no continúa', async () => {
+  it('PedidosYa no verificable => «no pudimos confirmar», sin ofrecer recoger; no continúa', async () => {
     const user = userEvent.setup();
-    const { dialog } = await openSheet('now');
-    await user.click(within(dialog).getByRole('button', { name: 'A domicilio' }));
+    const { dialog } = await openSheet();
     await user.selectOptions(
       within(dialog).getByLabelText('Municipio'),
       await within(dialog).findByRole('option', { name: 'Palencia' }),
     );
     await user.type(within(dialog).getByLabelText('Dirección exacta'), 'Calle principal 123');
-    const message = await within(dialog).findByText(/No podemos confirmar el envío a domicilio/);
-    expect(message).toBeInTheDocument();
-    expect(within(dialog).queryByText(/no tenemos cobertura a domicilio/)).not.toBeInTheDocument();
+    expect(
+      await within(dialog).findByText(/No pudimos confirmar si llegamos a esa dirección/),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByText(/recoger|recogés|Podés recoger/i)).not.toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Ver el menú' }));
     expect(push).not.toHaveBeenCalled();
-    // Recoger NUNCA se bloquea.
-    await user.click(within(dialog).getByRole('button', { name: 'Recoger' }));
-    await user.click(within(dialog).getByRole('button', { name: 'Ver el menú' }));
-    expect(push).toHaveBeenCalledWith('/menu');
   });
 
-  it('domicilio: sin cobertura propia y PedidosYa deshabilitado => «sin cobertura a domicilio»', async () => {
+  it('sin cobertura propia y PedidosYa deshabilitado => «por ahora no llegamos a esa dirección», sin alternativas', async () => {
     const user = userEvent.setup();
     const view = await renderStore(<OrderModeSheet />, {
       prepareStore: (store) => {
@@ -200,123 +167,52 @@ describe('OrderModeSheet', () => {
         }
       },
     });
-    await act(async () => view.api().shell.openOrderSheet('now'));
+    await act(async () => view.api().shell.openOrderSheet());
     const dialog = await screen.findByRole('dialog', { name: 'Pedir ahora' });
     await waitFor(() =>
       expect(within(dialog).getByRole('button', { name: 'Ver el menú' })).toBeEnabled(),
     );
-    await user.click(within(dialog).getByRole('button', { name: 'A domicilio' }));
     await user.selectOptions(
       within(dialog).getByLabelText('Municipio'),
       await within(dialog).findByRole('option', { name: 'Palencia' }),
     );
     await user.type(within(dialog).getByLabelText('Dirección exacta'), 'Calle principal 123');
     expect(
-      await within(dialog).findByText(/Por ahora no tenemos cobertura a domicilio/),
+      await within(dialog).findByText('Por ahora no llegamos a esa dirección.'),
     ).toBeInTheDocument();
+    expect(within(dialog).queryByText(/recoger|WhatsApp|programar/i)).not.toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Ver el menú' }));
     expect(push).not.toHaveBeenCalled();
   });
 
-  it('programar: ofrece días y horas según el horario y guarda la selección', async () => {
+  it('sucursal cerrada: avisa que no recibe pedidos con la próxima apertura, sin ofrecer programar', async () => {
     const user = userEvent.setup();
-    const { view, dialog } = await openSheet('schedule');
-    await user.click(within(dialog).getByRole('button', { name: 'Recoger' }));
-    // Miércoles 11/11 14:25 + 45 min de anticipación → primer horario 3:30 p. m.
-    const today = within(dialog).getByRole('button', { name: /Hoy/ });
-    expect(today).toHaveAttribute('aria-pressed', 'true');
-    expect(within(dialog).getByRole('button', { name: /Mañana/ })).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: '3:30 p. m.' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    expect(within(dialog).queryByRole('button', { name: '3:00 p. m.' })).not.toBeInTheDocument();
-
-    await user.click(within(dialog).getByRole('button', { name: /Mañana/ }));
-    expect(within(dialog).getByRole('button', { name: '12:00 p. m.' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    await user.click(within(dialog).getByRole('button', { name: '7:00 p. m.' }));
-    await user.click(within(dialog).getByRole('button', { name: 'Ver el menú' }));
-    expect(view.api().mode.mode.when).toEqual({
-      kind: 'scheduled',
-      date: '2026-11-12',
-      time: '19:00',
-    });
-  });
-
-  it('sucursal cerrada ahora: avisa y ofrece programar', async () => {
-    const user = userEvent.setup();
-    const { dialog } = await openSheet('now', 'branch-closed');
-    await user.click(within(dialog).getByRole('button', { name: 'Recoger' }));
-    const notice = await within(dialog).findByRole('status');
-    expect(notice).toHaveTextContent('Programá tu pedido para más tarde.');
-    await user.click(within(notice).getByRole('button', { name: 'Programar' }));
-    expect(await screen.findByRole('dialog', { name: 'Programar pedido' })).toBeInTheDocument();
+    const { dialog } = await openSheet('branch-closed');
+    // Aún sin dirección: ninguna sucursal abierta.
+    expect(
+      await within(dialog).findByText(/No hay sucursales abiertas en este momento\./),
+    ).toBeInTheDocument();
+    await user.selectOptions(within(dialog).getByLabelText('Zona'), '10');
+    await user.type(within(dialog).getByLabelText('Dirección exacta'), '6a avenida 10-50');
+    expect(
+      await within(dialog).findByText(/Sucursal 1 no recibe pedidos en este momento\./),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: /Programar/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Programar pedido' })).not.toBeInTheDocument();
   });
 
   it('error de carga: muestra el aviso con reintento', async () => {
     const view = await renderStore(<OrderModeSheet />, { scenario: 'error' });
-    await act(async () => view.api().shell.openOrderSheet('now'));
+    await act(async () => view.api().shell.openOrderSheet());
     const dialog = await screen.findByRole('dialog', { name: 'Pedir ahora' });
     const alert = await within(dialog).findByRole('alert');
     expect(within(alert).getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Ver el menú' })).toBeDisabled();
   });
 
-  it('recoger: el selector muestra solo las sucursales activas del listado público (con su dirección)', async () => {
-    const user = userEvent.setup();
-    const { dialog } = await openSheet('now');
-    await user.click(within(dialog).getByRole('button', { name: 'Recoger' }));
-    const radios = within(within(dialog).getByRole('radiogroup')).getAllByRole('radio');
-    expect(radios).toHaveLength(3);
-    expect(within(dialog).queryByText('Sucursal 4')).not.toBeInTheDocument();
-    expect(
-      within(dialog).getByText('Diagonal 6, Zona 10, Ciudad de Guatemala'),
-    ).toBeInTheDocument();
-  });
-
-  it('recoger: una sucursal desactivada por el administrador no se ofrece', async () => {
-    const user = userEvent.setup();
-    const view = await renderStore(<OrderModeSheet />, {
-      prepareStore: (store) => {
-        store.branches.find((b) => b.id === 'sucursal-2')!.active = false;
-      },
-    });
-    await act(async () => view.api().shell.openOrderSheet('now'));
-    const dialog = await screen.findByRole('dialog', { name: 'Pedir ahora' });
-    await waitFor(() =>
-      expect(within(dialog).getByRole('button', { name: 'Ver el menú' })).toBeEnabled(),
-    );
-    await user.click(within(dialog).getByRole('button', { name: 'Recoger' }));
-    expect(within(dialog).queryByText('Sucursal 2')).not.toBeInTheDocument();
-    expect(within(dialog).getAllByRole('radio')).toHaveLength(2);
-  });
-
-  it('recoger: sin sucursales activas muestra el estado vacío y no permite continuar', async () => {
-    const user = userEvent.setup();
-    const view = await renderStore(<OrderModeSheet />, {
-      prepareStore: (store) => store.branches.forEach((b) => (b.active = false)),
-    });
-    await act(async () => view.api().shell.openOrderSheet('now'));
-    const dialog = await screen.findByRole('dialog', { name: 'Pedir ahora' });
-    await waitFor(() =>
-      expect(within(dialog).getByRole('button', { name: 'Ver el menú' })).toBeEnabled(),
-    );
-    await user.click(within(dialog).getByRole('button', { name: 'Recoger' }));
-    expect(
-      within(dialog).getByText(/no hay sucursales disponibles para recoger/),
-    ).toBeInTheDocument();
-    expect(within(dialog).queryByRole('radio')).not.toBeInTheDocument();
-    await user.click(within(dialog).getByRole('button', { name: 'Ver el menú' }));
-    expect(push).not.toHaveBeenCalled();
-    expect(view.api().mode.mode.branchId).toBeNull();
-  });
-
   it('carga: muestra esqueletos y deshabilita continuar', async () => {
     const view = await renderStore(<OrderModeSheet />, { scenario: 'loading' });
-    await act(async () => view.api().shell.openOrderSheet('now'));
+    await act(async () => view.api().shell.openOrderSheet());
     const dialog = await screen.findByRole('dialog', { name: 'Pedir ahora' });
     expect(within(dialog).getByRole('button', { name: 'Ver el menú' })).toBeDisabled();
     expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument();
@@ -324,22 +220,18 @@ describe('OrderModeSheet', () => {
 
   it('error al cargar las sucursales: aviso específico con reintento', async () => {
     const view = await renderStore(<OrderModeSheet />, { scenario: 'error' });
-    await act(async () => view.api().shell.openOrderSheet('now'));
+    await act(async () => view.api().shell.openOrderSheet());
     const dialog = await screen.findByRole('dialog', { name: 'Pedir ahora' });
     const alert = await within(dialog).findByRole('alert');
     expect(alert).toHaveTextContent('No pudimos cargar las sucursales.');
   });
 
-  it('en inglés el selector usa los textos de i18n', async () => {
-    const view = await renderStore(<OrderModeSheet />, {
-      locale: 'en',
-      prepareStore: (store) => store.branches.forEach((b) => (b.active = false)),
-    });
-    await act(async () => view.api().shell.openOrderSheet('now'));
+  it('en inglés usa los textos de i18n', async () => {
+    const view = await renderStore(<OrderModeSheet />, { locale: 'en' });
+    await act(async () => view.api().shell.openOrderSheet());
     const dialog = await screen.findByRole('dialog');
-    const user = userEvent.setup();
-    await user.click(await within(dialog).findByRole('button', { name: 'Pickup' }));
-    expect(await within(dialog).findByText(/no branches available for pickup/)).toBeInTheDocument();
+    expect(within(dialog).getByText('Where should we deliver?')).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Pickup' })).not.toBeInTheDocument();
   });
 
   it('la sucursal persistida que ya no está activa se limpia y se pide elegir otra', async () => {
@@ -356,8 +248,7 @@ describe('OrderModeSheet', () => {
     );
     await act(async () =>
       view.api().mode.setMode({
-        type: 'pickup',
-        when: { kind: 'now' },
+        type: 'delivery',
         branchId: 'sucursal-2',
         address: null,
       }),
@@ -371,8 +262,7 @@ describe('OrderModeSheet', () => {
     const view = await renderStore(<BranchSelectionGuard />);
     await act(async () =>
       view.api().mode.setMode({
-        type: 'pickup',
-        when: { kind: 'now' },
+        type: 'delivery',
         branchId: 'sucursal-3',
         address: null,
       }),

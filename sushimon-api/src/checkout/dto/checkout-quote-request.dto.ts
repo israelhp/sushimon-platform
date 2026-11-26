@@ -82,9 +82,10 @@ export class CartQuoteInputDto {
 }
 
 export class CheckoutFulfillmentInputDto {
-  @ApiProperty({ type: String, enum: ['PICKUP', 'DELIVERY'] })
-  @IsIn(['PICKUP', 'DELIVERY'], { message: 'type: debe ser PICKUP o DELIVERY' })
-  type!: 'PICKUP' | 'DELIVERY';
+  /** ADR-0036: solo `DELIVERY`; `PICKUP` (u otro valor) => 400 de validación, sin código de error nuevo. */
+  @ApiProperty({ type: String, enum: ['DELIVERY'] })
+  @IsIn(['DELIVERY'], { message: 'type: solo se admite DELIVERY' })
+  type!: 'DELIVERY';
 
   @ApiPropertyOptional({ type: String, format: 'uuid' })
   @OptionalNotNull()

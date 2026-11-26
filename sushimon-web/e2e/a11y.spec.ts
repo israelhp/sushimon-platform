@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { demoStaffFromSeed } from '../src/mocks/fixtures/staff';
-import { CART_KEY, DUMPLINGS, cartV2, pickupMode } from './support/cart';
+import { CART_KEY, DUMPLINGS, cartV2, deliveryMode } from './support/cart';
 
 /**
  * Accesibilidad automática (axe) por ruta y tema. Sin violaciones serias ni críticas.
@@ -25,10 +25,10 @@ interface RouteCase {
   step?: (page: Page) => Promise<void>;
 }
 
-/** Checkout (bloque 4): carrito con un producto, modo "recoger" y el paso pedido (borrador no sensible). */
+/** Checkout (bloque 4): carrito con un producto, modo «a domicilio» y el paso pedido (borrador no sensible). */
 const CHECKOUT_LOCAL = {
   [CART_KEY]: cartV2('sucursal-1', [DUMPLINGS]),
-  'monsushi-order-mode-v1': pickupMode('sucursal-1'),
+  'monsushi-order-mode-v1': deliveryMode('sucursal-1'),
 };
 const checkoutStep = (step: number) => ({
   'monsushi-checkout-v1': JSON.stringify({
@@ -43,7 +43,6 @@ const checkoutStep = (step: number) => ({
     },
     addressId: 'other',
     notes: '',
-    pickupBranchId: null,
     deliveryBranchId: null,
   }),
 });
@@ -468,9 +467,8 @@ export const A11Y_ROUTES: RouteCase[] = [
         .first()
         .click();
       const sheet = page.getByRole('dialog', { name: 'Pedir ahora' });
-      await sheet.getByRole('button', { name: 'A domicilio' }).click();
       await sheet.getByLabel('Municipio').selectOption({ label: 'Palencia' });
-      await sheet.getByText(/No podemos confirmar el envío a domicilio/).waitFor();
+      await sheet.getByText(/No pudimos confirmar si llegamos a esa dirección/).waitFor();
     },
   },
   {
@@ -483,7 +481,6 @@ export const A11Y_ROUTES: RouteCase[] = [
         .first()
         .click();
       const sheet = page.getByRole('dialog', { name: 'Pedir ahora' });
-      await sheet.getByRole('button', { name: 'A domicilio' }).click();
       await sheet.getByLabel('Zona', { exact: true }).selectOption('10');
       await sheet.getByTestId('coverage-fee').waitFor();
     },

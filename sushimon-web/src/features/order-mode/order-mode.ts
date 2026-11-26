@@ -1,16 +1,20 @@
-import type { FulfillmentType, OrderAddress, OrderSchedule } from '@/lib/data-access/models';
+import type { OrderAddress } from '@/lib/data-access/models';
 
 /**
- * Modo de pedido del cliente (preferencia en localStorage `monsushi-order-mode-v1`):
- * recoger/domicilio, ahora/programado, dirección o zona y sucursal elegida.
+ * Modo de pedido del cliente (preferencia en localStorage `monsushi-order-mode-v1`): dirección o zona de entrega y
+ * sucursal que la cubre. Desde ADR-0036 la tienda es SOLO a domicilio e inmediata: no hay recoger ni programar.
+ * Un valor guardado antes (`type: 'pickup'`, o `when` programado) se tolera sin error: `pickup` se descarta (vuelve a
+ * «sin elegir») y `when` se ignora.
  */
 export const ORDER_MODE_STORAGE_KEY = 'monsushi-order-mode-v1';
 
+/** Única modalidad de pedidos nuevos (ADR-0036). */
+export type OrderModeType = 'delivery';
+
 export interface OrderMode {
   /** null = aún no elegido (el prototipo muestra "Empezar pedido"). */
-  type: FulfillmentType | null;
-  when: OrderSchedule;
-  /** Sucursal para recoger (o la que cubre la dirección a domicilio). */
+  type: OrderModeType | null;
+  /** Sucursal que cubre la dirección a domicilio. */
   branchId: string | null;
   /** Dirección a domicilio (al menos departamento/municipio/zona para cotizar). */
   address: OrderAddress | null;
@@ -18,7 +22,6 @@ export interface OrderMode {
 
 export const DEFAULT_ORDER_MODE: OrderMode = {
   type: null,
-  when: { kind: 'now' },
   branchId: null,
   address: null,
 };
@@ -29,12 +32,8 @@ export function parseOrderMode(raw: string | null): OrderMode {
   if (!raw) return DEFAULT_ORDER_MODE;
   try {
     const v: unknown = JSON.parse(raw);
-    if (!isObject(v) || (v.type !== 'pickup' && v.type !== 'delivery')) return DEFAULT_ORDER_MODE;
-    const when = isObject(v.when) ? v.when : null;
-    const schedule: OrderSchedule =
-      when?.kind === 'scheduled' && typeof when.date === 'string' && typeof when.time === 'string'
-        ? { kind: 'scheduled', date: when.date, time: when.time }
-        : { kind: 'now' };
+    // Un modo guardado `pickup` (o cualquier otro valor) ya no existe: se descarta.
+    if (!isObject(v) || v.type !== 'delivery') return DEFAULT_ORDER_MODE;
     const a = isObject(v.address) ? v.address : null;
     const address: OrderAddress | null =
       a && typeof a.department === 'string' && typeof a.municipality === 'string'
@@ -47,25 +46,11 @@ export function parseOrderMode(raw: string | null): OrderMode {
           }
         : null;
     return {
-      type: v.type,
-      when: schedule,
+      type: 'delivery',
       branchId: typeof v.branchId === 'string' ? v.branchId : null,
       address,
     };
   } catch {
     return DEFAULT_ORDER_MODE;
   }
-}
-
-/**
- * Descarta un horario programado que ya no es válido (p. ej., quedó en el pasado). Recibe la
- * función de validación para no depender del reloj aquí.
- */
-export function normalizeSchedule(
-  mode: OrderMode,
-  isValid: (when: OrderSchedule) => boolean,
-): OrderMode {
-  return mode.when.kind === 'scheduled' && !isValid(mode.when)
-    ? { ...mode, when: { kind: 'now' } }
-    : mode;
 }

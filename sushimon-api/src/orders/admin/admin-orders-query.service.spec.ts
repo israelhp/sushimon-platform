@@ -72,7 +72,7 @@ describe('AdminOrdersQueryService (S)', () => {
   });
 
   describe('fila 26: filtros', () => {
-    it('status (csv), fulfillmentType, q por número y por nombre, from/to', async () => {
+    it('status (csv), q por número y por nombre, from/to', async () => {
       const { repo, queries } = adminOrdersHarness();
       const p = repo.seed({ branchId: BRANCH_A, customerName: 'Ana Pérez', placedAt: hoursAgo(1) });
       const d = repo.seed({
@@ -90,7 +90,6 @@ describe('AdminOrdersQueryService (S)', () => {
       const ids = async (q: object) => (await queries.list(staff, q)).items.map((i) => i.id);
       expect(await ids({})).toEqual([p, d]); // ventana por defecto de 7 días
       expect(await ids({ status: ['accepted'] })).toEqual([d]);
-      expect(await ids({ fulfillmentType: 'PICKUP' })).toEqual([p]);
       expect(await ids({ q: 'ana' })).toEqual([p]);
       expect(await ids({ q: '100%' })).toEqual([d]); // comodín literal
       expect(await ids({ q: '%' })).toEqual([d]);

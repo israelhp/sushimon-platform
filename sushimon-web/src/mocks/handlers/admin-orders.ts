@@ -262,9 +262,9 @@ export const listAdminOrders: Handler = (req): AdminOrderPage => {
   if (statuses?.some((s) => !(STATUS_ORDER as readonly string[]).includes(s))) {
     problem(400, undefined, 'status inválido');
   }
-  const fulfillment = req.query.get('fulfillmentType');
-  if (fulfillment && fulfillment !== 'PICKUP' && fulfillment !== 'DELIVERY') {
-    problem(400, undefined, 'fulfillmentType inválido');
+  // ADR-0036: el filtro `fulfillmentType` se retiró; la API lo rechaza como cualquier parámetro desconocido.
+  if (req.query.get('fulfillmentType') !== null) {
+    problem(400, undefined, 'fulfillmentType: parámetro no permitido');
   }
   const q = req.query.get('q')?.trim() ?? '';
   if (q && (q.length < 2 || q.length > 40))
@@ -299,7 +299,6 @@ export const listAdminOrders: Handler = (req): AdminOrderPage => {
       return placed >= fromMs && placed <= toMs;
     })
     .filter((o) => !statuses || statuses.includes(lifecycleOf(o.status, o.fulfillment)))
-    .filter((o) => !fulfillment || (fulfillment === 'PICKUP') === (o.fulfillment === 'pickup'))
     .filter((o) => {
       if (!q) return true;
       if (numeric) return Number(numeric[1]) === Number(o.id.replace(/\D/g, ''));

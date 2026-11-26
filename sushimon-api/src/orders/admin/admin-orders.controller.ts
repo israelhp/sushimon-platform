@@ -247,7 +247,7 @@ export class AdminOrdersController {
   @Throttle(ADMIN_ORDERS_COMMAND_THROTTLE)
   @ApiOperation({
     operationId: 'completeAdminOrder',
-    summary: 'Completa un pedido PICKUP (ready -> picked_up)',
+    summary: 'Completa un pedido PICKUP histórico o en curso (ready -> picked_up; ADR-0036)',
   })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiBody({ type: AdminOrderCommandRequest })

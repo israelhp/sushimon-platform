@@ -46,7 +46,7 @@ export interface QuoteAmounts {
 }
 
 /**
- * `deliveryFeeCents`: `0` en PICKUP; la tarifa verificada en DELIVERY; `null` si no hay tarifa verificable (=> total
+ * `deliveryFeeCents`: la tarifa verificada (solo a domicilio, ADR-0036); `null` si no hay tarifa verificable (=> total
  * `null`). `discounts` se indexa por `EngineLine.index`.
  */
 export function priceQuote(

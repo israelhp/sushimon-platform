@@ -2,6 +2,8 @@
 
 **Estado**: **propuesta** (2026-11-24, F28). Se acepta al fusionar `specs/029-own-deliveries`. Migración 0022 propuesta (DDL de referencia en la spec §3.3; sin aplicar; requiere aprobación humana).
 
+> **Reemplazado parcialmente por ADR-0036** (2026-11-26, pedidos solo a domicilio e inmediatos) en lo relativo a entregas: ya no hay pedidos PICKUP nuevos (la regla «entrega solo para DELIVERY» pasa a ser la norma); se conserva `orders.fulfillment_type`. El texto original se conserva como historial.
+
 **Contexto**: el DBML define `app.deliveries` (`order_id` único, `rider_id`, `status` por defecto `'pending'`, marcas de recogida/entrega, notas) y `app.delivery_status_history`, pero no existen en las migraciones (la última es 0021, F27). F22 dejó a F28 la escritura de `ready → on_the_way → delivered` mediante `OrderTransitionsService.apply(tx, …, allowOwnDispatch: true)` y dos puertos con adaptadores vacíos (`NoDeliveryFulfillment`); F27 dejó `RiderEligibilityService` y el puerto de ocupación con el adaptador «sin entregas» (`known=false`) más cuatro obligaciones. RBAC ya siembra `deliveries.read|assign|update` y `riders.assign` (0005): `admin` y `manager` los tienen, `staff` solo `deliveries.read`. El DBML no modela el retorno del motorista, la reasignación ni la versión. Restricciones: serverless sin memoria compartida (ADR-0006), ~100 pedidos/día, sin Redis, colas, jobs ni dependencias nuevas, el motorista no es usuario, y un mock nunca confirma entregas reales (F29 `BLOCKED_EXTERNAL`).
 
 ## Decisión

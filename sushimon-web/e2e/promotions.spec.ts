@@ -25,12 +25,22 @@ async function openPromotions(page: Page) {
   await expect(page.getByText('6 promociones', { exact: true })).toBeVisible({ timeout: 60_000 });
 }
 
-/** Preferencia de la tienda (solo comodidad, no autenticación): sucursal para recoger. */
+/** Preferencia de la tienda (solo comodidad, no autenticación): sucursal para el pedido a domicilio. */
 const pickBranch = (page: Page, branchId: string) =>
   page.evaluate((id) => {
     localStorage.setItem(
       'monsushi-order-mode-v1',
-      JSON.stringify({ type: 'pickup', when: { kind: 'now' }, branchId: id, address: null }),
+      JSON.stringify({
+        type: 'delivery',
+        branchId: id,
+        address: {
+          department: 'Guatemala',
+          municipality: 'Guatemala',
+          zone: '10',
+          line: '6a avenida 10-50',
+          references: '',
+        },
+      }),
     );
   }, branchId);
 

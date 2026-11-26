@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { CART_KEY, DUMPLINGS, cartV2, pickupMode } from './support/cart';
+import { CART_KEY, DUMPLINGS, cartV2, deliveryMode } from './support/cart';
 
 /**
  * F18 — Carrito en móvil (Pixel 7, datos SIMULADOS): barra «Ver pedido», cajón sin desbordes y objetivos táctiles ≥ 44 px,
@@ -24,7 +24,7 @@ for (const theme of ['light', 'dark'] as const) {
           localStorage.setItem('monsushi-order-mode-v1', mode!);
         }
       },
-      [cartV2('sucursal-1', [{ ...DUMPLINGS, quantity: 2 }]), pickupMode('sucursal-1'), theme],
+      [cartV2('sucursal-1', [{ ...DUMPLINGS, quantity: 2 }]), deliveryMode('sucursal-1'), theme],
     );
     await page.goto('/menu');
     const bar = page.getByRole('button', { name: /Ver pedido/ });
@@ -53,7 +53,7 @@ test('móvil · la tarjeta agrega directo si no hay extras y abre la ficha si lo
 }) => {
   await page.addInitScript(
     ([mode]) => localStorage.setItem('monsushi-order-mode-v1', mode!),
-    [pickupMode('sucursal-1')],
+    [deliveryMode('sucursal-1')],
   );
   await page.goto('/menu');
   await page
@@ -94,7 +94,7 @@ test('móvil · /menu con un carrito persistido de varios productos únicos NO p
         'sucursal-1',
         slugs.map((productId) => ({ productId, unitCents: 5000 })),
       ),
-      pickupMode('sucursal-1'),
+      deliveryMode('sucursal-1'),
     ],
   );
   await page.goto('/menu');

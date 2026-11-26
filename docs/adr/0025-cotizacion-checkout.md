@@ -2,6 +2,8 @@
 
 **Estado**: **propuesta** (2026-11-18, F19). Se acepta al fusionar `specs/020-checkout-quote`. No requiere migración.
 
+> **Reemplazado parcialmente por ADR-0036** (2026-11-26, pedidos solo a domicilio e inmediatos) en lo relativo a modalidad: ya no hay `PICKUP` en `fulfillment.type` (solo `DELIVERY`, PICKUP => 400), ni «recogida en sucursal sin cobertura», ni pedidos programados; sin cobertura o con la sucursal cerrada solo hay mensajes informativos. El texto original se conserva como historial.
+
 **Contexto**: F18 dejó el carrito local y el contrato de entrada `CartQuoteInput`; F08, F09, F12, F13 y F15 exportan servicios de dominio pensados para F19 (`specs/020-checkout-quote/spec.md` §1). Falta el único punto donde se calcula el dinero del pedido y que F20 reutilizará. Restricciones: el cliente nunca es fuente de verdad; PedidosYa real es `BLOCKED_EXTERNAL` (F29); zonas `OWN` apagadas por defecto; serverless sin memoria compartida (ADR-0006); sin Redis, colas ni dependencias nuevas.
 
 ## Decisión

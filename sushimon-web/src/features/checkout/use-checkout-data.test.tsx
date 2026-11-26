@@ -24,7 +24,7 @@ function Probe() {
       {[
         `branches=${data.branches.map((b) => b.id).join(',')}`,
         `availability=${Object.keys(data.availability).length}`,
-        `pickup=${data.pickupBranchId ?? 'none'}`,
+        `branch=${data.branchId ?? 'none'}`,
         `branchesQuery=${data.branchesQuery.status}`,
       ].join(' ')}
     </p>
@@ -32,7 +32,7 @@ function Probe() {
 }
 
 describe('useCheckoutData sin la vista operativa simulada', () => {
-  it('toma sucursales activas, recogida y disponibilidad de la API pública (F07/F08)', async () => {
+  it('toma sucursales activas y disponibilidad de la API pública (F07/F08)', async () => {
     const view = await renderStore(
       <CheckoutProvider>
         <Probe />
@@ -40,16 +40,14 @@ describe('useCheckoutData sin la vista operativa simulada', () => {
       { wrapClient: withoutDemoOperations },
     );
     await act(async () => {
-      view
-        .api()
-        .mode.setMode({ type: 'pickup', when: { kind: 'now' }, branchId: null, address: null });
+      view.api().mode.setMode({ type: 'delivery', branchId: 'sucursal-1', address: null });
     });
     await waitFor(() =>
       expect(screen.getByTestId('probe')).toHaveTextContent(/branchesQuery=success/),
     );
     const text = screen.getByTestId('probe').textContent ?? '';
     expect(text).toMatch(/branches=\S+/);
-    expect(text).not.toMatch(/pickup=none/);
+    expect(text).toMatch(/branch=sucursal-1/);
     await waitFor(() =>
       expect(screen.getByTestId('probe').textContent).not.toMatch(/availability=0/),
     );

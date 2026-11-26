@@ -148,7 +148,6 @@ describe('comando de transición', () => {
         total: '10.00',
         paymentMethodPreference: 'cash',
         paymentStatus: 'PENDING',
-        scheduledFor: null,
         placedAt: '2026-11-11T19:45:00.000Z',
         updatedAt: '2026-11-11T20:25:00.000Z',
         availableActions: [],

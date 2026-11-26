@@ -180,7 +180,6 @@ export function CheckoutFlow() {
    */
   const saveAddressIfWanted = () => {
     const decision = decideSaveAddress({
-      delivery: data.type === 'delivery',
       signedIn,
       wantsSave: extras.saveAddress,
       isOther: draft.addressId === 'other',
@@ -222,10 +221,9 @@ export function CheckoutFlow() {
         email: draft.contact.email,
       },
       // Dirección NUEVA (municipio + zona): el texto va aparte; con dirección guardada se copia en el servidor.
-      deliveryAddress:
-        f.type === 'DELIVERY' && !f.customerAddressId
-          ? { addressLine: draft.address.line, referenceNote: draft.address.references }
-          : null,
+      deliveryAddress: !f.customerAddressId
+        ? { addressLine: draft.address.line, referenceNote: draft.address.references }
+        : null,
       notes: draft.notes,
       // F24: único método = efectivo (el pago nace `PENDING`; nada se cobra aquí). Solo es la preferencia declarada.
       preference: 'cash',
@@ -568,7 +566,7 @@ export function CheckoutFlow() {
           <div className="mb-2 flex items-baseline justify-between gap-3 text-[13px]">
             <span className="min-w-0 truncate font-bold text-muted">
               {data.totalIsEstimate ? t('checkout.estimatedTotal') : t('common.total')}
-              {data.type === 'delivery' && data.shipping == null ? (
+              {data.shipping == null ? (
                 <span className="font-normal">
                   {' · '}
                   {t('checkout.quote.deliveryFee')}: {t('checkout.quote.pending')}

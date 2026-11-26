@@ -31,8 +31,6 @@ export interface CheckoutDraft {
   /** Dirección guardada elegida (id) o `'other'` (escrita a mano). */
   addressId: string;
   notes: string;
-  /** Sucursal para recoger (null = la primera activa / la elegida en el modo de pedido). */
-  pickupBranchId: string | null;
   /** Sucursal de origen elegida a mano a domicilio (null = asignada por cobertura). */
   deliveryBranchId: string | null;
   /** La estimación de envío se pide solo desde el paso Envío (y se invalida al cambiar dirección/sucursal). */
@@ -70,7 +68,6 @@ export function initialDraft(demo: boolean): CheckoutDraft {
     address: demo ? DEMO_ADDRESS : EMPTY_ADDRESS,
     addressId: 'other',
     notes: '',
-    pickupBranchId: null,
     deliveryBranchId: null,
     quoteWanted: false,
   };
@@ -84,7 +81,6 @@ export type CheckoutAction =
   | { type: 'address'; patch: Partial<AddressForm>; addressId?: string }
   | { type: 'fill-address'; address: AddressForm; addressId: string }
   | { type: 'notes'; notes: string }
-  | { type: 'pickup-branch'; branchId: string | null }
   | { type: 'delivery-branch'; branchId: string | null }
   | { type: 'goto'; step: CheckoutStep; showErrors?: boolean }
   | { type: 'show-errors' }
@@ -113,8 +109,6 @@ export function checkoutReducer(state: CheckoutDraft, action: CheckoutAction): C
       };
     case 'notes':
       return { ...state, notes: action.notes };
-    case 'pickup-branch':
-      return { ...state, pickupBranchId: action.branchId };
     case 'delivery-branch':
       return { ...state, deliveryBranchId: action.branchId, quoteWanted: false };
     case 'goto':
@@ -213,6 +207,7 @@ export function serializeDraft(draft: CheckoutDraft): string {
   return JSON.stringify(rest);
 }
 
+/** Tolera borradores guardados con campos retirados (p. ej. `pickupBranchId`, ADR-0036): se ignoran. */
 export function parseDraft(raw: string | null, fallback: CheckoutDraft): CheckoutDraft | null {
   if (!raw) return null;
   try {
@@ -238,7 +233,6 @@ export function parseDraft(raw: string | null, fallback: CheckoutDraft): Checkou
       },
       addressId: str(v.addressId, 'other'),
       notes: str(v.notes).slice(0, 300),
-      pickupBranchId: typeof v.pickupBranchId === 'string' ? v.pickupBranchId : null,
       deliveryBranchId: typeof v.deliveryBranchId === 'string' ? v.deliveryBranchId : null,
       quoteWanted: step === 3,
     };

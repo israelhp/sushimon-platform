@@ -10,7 +10,7 @@ import { seedCheckout, toReview, button } from './support/checkout';
  */
 test.skip(({ isMobile }) => isMobile, 'el móvil tiene su propio archivo');
 
-const ORDER = 'MON-307057'; // PICKUP · sucursal 1 · «Nuevo» · total Q197.00
+const ORDER = 'MON-307057'; // PICKUP histórico (ADR-0036: se conserva en el backoffice) · sucursal 1 · «Nuevo» · total Q197.00
 const ADMIN = /Ana Lucía Pérez/; // administradora: única con payments.read/confirm (P91)
 const MANAGER = /Marco Antonio Gómez/;
 
@@ -258,14 +258,14 @@ test('punta a punta: pedido en efectivo → recibo PENDIENTE → cobro en el bac
   await expect(page.getByTestId('status-label')).toHaveText('Pedido recibido');
 });
 
-test('en inglés: el paso Pago dice «Cash» con la instrucción del retiro', async ({ page }) => {
+test('en inglés: el paso Pago dice «Cash» con la instrucción de entrega', async ({ page }) => {
   await seedCheckout(page, { locale: 'en' });
   for (const step of ['Delivery info', 'Shipping', 'Payment']) {
     await button(page, /Continue to/i).click();
     await expect(page.getByRole('heading', { level: 1, name: step })).toBeVisible();
   }
   await expect(page.getByTestId('payment-instructions')).toHaveText(
-    'Pay in cash when you pick up your order at the branch.',
+    'Pay in cash when you receive your order.',
   );
   await expect(page.locator('body')).not.toContainText(/transfer|card|neonet/i);
 });

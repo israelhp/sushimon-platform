@@ -11,7 +11,6 @@ import { formatAddress, hasAnyError, type AddressForm } from '../checkout-model'
 import { useCheckoutDraft } from '../checkout-context';
 import type { CheckoutData } from '../use-checkout-data';
 import { AddressFields } from './AddressFields';
-import { OrderTypeFields } from './OrderTypeFields';
 import { ChangeButton, ChoiceCard, Field, useCheckoutSteps } from './parts';
 
 /** Opciones del paso Entrega que no forman parte del pedido (guardar dirección: al continuar; perfil/recordar: tras confirmar). */
@@ -39,8 +38,8 @@ function toForm(a: Address): AddressForm {
 }
 
 /**
- * Paso 2 · Entrega: forma (recoger/domicilio), cuándo (ahora/programado), inicio de sesión opcional,
- * datos de contacto y, a domicilio, dirección (guardadas si hay sesión). Los errores se asocian a cada
+ * Paso 2 · Entrega (solo a domicilio e inmediato, ADR-0036): inicio de sesión opcional,
+ * datos de contacto y dirección (guardadas si hay sesión). Los errores se asocian a cada
  * campo con `aria-describedby`; el flujo enfoca el primero.
  */
 export function DeliveryStep({
@@ -59,13 +58,11 @@ export function DeliveryStep({
   const steps = useCheckoutSteps();
   const { draft, dispatch } = useCheckoutDraft();
   const authModal = useAuthModal();
-  const { type, config, contactErrors, addressErrors, addresses, signedIn, identityPending } = data;
+  const { config, contactErrors, addressErrors, addresses, signedIn, identityPending } = data;
   const show = draft.showErrors;
 
   const [editContact, setEditContact] = useState(() => hasAnyError(contactErrors));
-  const [editAddress, setEditAddress] = useState(
-    () => type === 'delivery' && hasAnyError(addressErrors),
-  );
+  const [editAddress, setEditAddress] = useState(() => hasAnyError(addressErrors));
   const contactOpen = editContact || (show && hasAnyError(contactErrors));
   const addressOpen = editAddress || (show && hasAnyError(addressErrors));
   const err = (key?: Parameters<typeof t>[0]) => (key ? t(key) : undefined);
@@ -80,7 +77,7 @@ export function DeliveryStep({
       a.municipality === draft.address.municipality &&
       a.zone === draft.address.zone,
   );
-  const showSaveAddress = type === 'delivery' && signedIn && (!saved || other) && !alreadySaved;
+  const showSaveAddress = signedIn && (!saved || other) && !alreadySaved;
   const labelOf = (a: Address) =>
     (a.label === 'other' && a.customLabel.trim()) || t(`addr.labels.${a.label}`);
 
@@ -100,11 +97,6 @@ export function DeliveryStep({
 
   return (
     <section aria-label={steps[1]} className="flex flex-col gap-6">
-      <OrderTypeFields
-        data={data}
-        typeError={show && !type ? t('validation.type') : undefined}
-        whenError={data.scheduleValid || data.hoursLoading ? undefined : t('mode.whenInvalid')}
-      />
       {data.allClosed ? (
         <p className="notice notice-warn" role="status">
           {t('mode.allClosed')}
@@ -207,120 +199,118 @@ export function DeliveryStep({
         ) : null}
       </div>
 
-      {type === 'delivery' ? (
-        <div>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="disp text-[20px]">
-              {saved ? t('checkout.savedAddresses') : t('checkout.address')}
-            </h2>
-            {!saved && !addressOpen ? (
-              <ChangeButton onClick={() => setEditAddress(true)} label={t('common.change')} />
-            ) : null}
-          </div>
-          {saved ? (
-            <div
-              className="mb-3 flex flex-col gap-2.5"
-              role="radiogroup"
-              aria-label={t('checkout.savedAddresses')}
-            >
-              {addresses.map((a) => {
-                const Icon = LABEL_ICON[a.label];
-                return (
-                  <ChoiceCard
-                    key={a.id}
-                    on={draft.addressId === a.id}
-                    onClick={() => pickAddress(a.id)}
-                    icon={<Icon className="h-5 w-5" aria-hidden="true" />}
-                    title={labelOf(a)}
-                    sub={formatAddress(toForm(a), zoneWord)}
-                    badge={
-                      <>
-                        {data.defaultAddressId === a.id ? (
-                          <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[12px] font-extrabold text-fg">
-                            {t('addr.isDefault')}
-                          </span>
-                        ) : null}
-                      </>
-                    }
-                  />
-                );
-              })}
-              <ChoiceCard
-                on={other}
-                onClick={() => pickAddress('other')}
-                icon={<Plus className="h-5 w-5" aria-hidden="true" />}
-                title={t('checkout.otherAddress')}
-                sub={t('checkout.otherAddressSub')}
-              />
-            </div>
-          ) : null}
-          {!saved || other ? (
-            !saved && !addressOpen ? (
-              <div className="rounded-2xl border border-line bg-surface p-4 text-[14px] shadow-card">
-                <p className="m-0 flex items-start gap-1.5">
-                  <MapPin className="mt-0.5 h-4 w-4 flex-none text-secondary" aria-hidden="true" />{' '}
-                  {formatAddress(draft.address, zoneWord)}
-                </p>
-                {draft.address.references ? (
-                  <p className="m-0 mt-1 pl-[22px] text-muted">{draft.address.references}</p>
-                ) : null}
-              </div>
-            ) : (
-              <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
-                <AddressFields
-                  value={draft.address}
-                  onChange={(patch) => dispatch({ type: 'address', patch })}
-                  errors={addressErr}
-                  config={config as StoreConfig | undefined}
-                />
-                <div className="sm:col-span-2">
-                  <p className="m-0 text-[12px] leading-snug text-muted">
-                    {t('checkout.quote.coverageLater')}
-                  </p>
-                </div>
-              </div>
-            )
-          ) : null}
-          {showSaveAddress ? (
-            <div className="mt-3 rounded-xl bg-subtle px-3.5 py-2.5">
-              <label className="flex min-h-[40px] cursor-pointer items-center gap-3 text-[14px] font-bold">
-                <input
-                  type="checkbox"
-                  className="h-5 w-5 flex-none accent-[rgb(var(--secondary))]"
-                  checked={extras.saveAddress}
-                  onChange={(e) => setExtras((x) => ({ ...x, saveAddress: e.target.checked }))}
-                />
-                {t('checkout.saveThisAddress')}
-              </label>
-              {extras.saveAddress ? (
-                <div
-                  role="radiogroup"
-                  aria-label={t('addr.labelLabel')}
-                  className="mt-1 flex flex-wrap gap-2 pl-8"
-                >
-                  {(['home', 'work', 'other'] as const).map((label) => (
-                    <button
-                      key={label}
-                      type="button"
-                      role="radio"
-                      aria-checked={extras.addressLabel === label}
-                      onClick={() => setExtras((x) => ({ ...x, addressLabel: label }))}
-                      className={cn(
-                        'min-h-[34px] rounded-full border px-3 text-[13px] font-extrabold',
-                        extras.addressLabel === label
-                          ? 'border-secondary bg-secondary text-onsecondary'
-                          : 'border-line bg-surface',
-                      )}
-                    >
-                      {t(`addr.labels.${label}`)}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+      <div>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="disp text-[20px]">
+            {saved ? t('checkout.savedAddresses') : t('checkout.address')}
+          </h2>
+          {!saved && !addressOpen ? (
+            <ChangeButton onClick={() => setEditAddress(true)} label={t('common.change')} />
           ) : null}
         </div>
-      ) : null}
+        {saved ? (
+          <div
+            className="mb-3 flex flex-col gap-2.5"
+            role="radiogroup"
+            aria-label={t('checkout.savedAddresses')}
+          >
+            {addresses.map((a) => {
+              const Icon = LABEL_ICON[a.label];
+              return (
+                <ChoiceCard
+                  key={a.id}
+                  on={draft.addressId === a.id}
+                  onClick={() => pickAddress(a.id)}
+                  icon={<Icon className="h-5 w-5" aria-hidden="true" />}
+                  title={labelOf(a)}
+                  sub={formatAddress(toForm(a), zoneWord)}
+                  badge={
+                    <>
+                      {data.defaultAddressId === a.id ? (
+                        <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[12px] font-extrabold text-fg">
+                          {t('addr.isDefault')}
+                        </span>
+                      ) : null}
+                    </>
+                  }
+                />
+              );
+            })}
+            <ChoiceCard
+              on={other}
+              onClick={() => pickAddress('other')}
+              icon={<Plus className="h-5 w-5" aria-hidden="true" />}
+              title={t('checkout.otherAddress')}
+              sub={t('checkout.otherAddressSub')}
+            />
+          </div>
+        ) : null}
+        {!saved || other ? (
+          !saved && !addressOpen ? (
+            <div className="rounded-2xl border border-line bg-surface p-4 text-[14px] shadow-card">
+              <p className="m-0 flex items-start gap-1.5">
+                <MapPin className="mt-0.5 h-4 w-4 flex-none text-secondary" aria-hidden="true" />{' '}
+                {formatAddress(draft.address, zoneWord)}
+              </p>
+              {draft.address.references ? (
+                <p className="m-0 mt-1 pl-[22px] text-muted">{draft.address.references}</p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
+              <AddressFields
+                value={draft.address}
+                onChange={(patch) => dispatch({ type: 'address', patch })}
+                errors={addressErr}
+                config={config as StoreConfig | undefined}
+              />
+              <div className="sm:col-span-2">
+                <p className="m-0 text-[12px] leading-snug text-muted">
+                  {t('checkout.quote.coverageLater')}
+                </p>
+              </div>
+            </div>
+          )
+        ) : null}
+        {showSaveAddress ? (
+          <div className="mt-3 rounded-xl bg-subtle px-3.5 py-2.5">
+            <label className="flex min-h-[40px] cursor-pointer items-center gap-3 text-[14px] font-bold">
+              <input
+                type="checkbox"
+                className="h-5 w-5 flex-none accent-[rgb(var(--secondary))]"
+                checked={extras.saveAddress}
+                onChange={(e) => setExtras((x) => ({ ...x, saveAddress: e.target.checked }))}
+              />
+              {t('checkout.saveThisAddress')}
+            </label>
+            {extras.saveAddress ? (
+              <div
+                role="radiogroup"
+                aria-label={t('addr.labelLabel')}
+                className="mt-1 flex flex-wrap gap-2 pl-8"
+              >
+                {(['home', 'work', 'other'] as const).map((label) => (
+                  <button
+                    key={label}
+                    type="button"
+                    role="radio"
+                    aria-checked={extras.addressLabel === label}
+                    onClick={() => setExtras((x) => ({ ...x, addressLabel: label }))}
+                    className={cn(
+                      'min-h-[34px] rounded-full border px-3 text-[13px] font-extrabold',
+                      extras.addressLabel === label
+                        ? 'border-secondary bg-secondary text-onsecondary'
+                        : 'border-line bg-surface',
+                    )}
+                  >
+                    {t(`addr.labels.${label}`)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
 
       {!signedIn && !identityPending ? (
         <div className="rounded-xl border border-line bg-surface px-3.5 py-2.5">

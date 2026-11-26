@@ -39,7 +39,7 @@ export function WhatsappReportButton({
     ? buildIncidentWhatsappMessage(order, {
         template: (values) => t('waMsg', values),
         delivery: tm('delivery'),
-        pickup: tm('pickup'),
+        pickup: tt('modePickup'),
         branchName,
         locale,
       })

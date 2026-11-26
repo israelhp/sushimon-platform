@@ -612,10 +612,11 @@ model Order {
   customerName            String                @map("customer_name")
   customerPhone           String                @map("customer_phone")
   customerEmail           String?               @map("customer_email")
-  /// PICKUP | DELIVERY (CHECK).
+  /// PICKUP | DELIVERY (orders_fulfillment_chk). Desde 0024 los pedidos nuevos son solo DELIVERY (orders_delivery_only_chk); PICKUP = histórico.
   fulfillmentType         String                @map("fulfillment_type")
-  /// OWN | PEDIDOSYA; NULL en PICKUP (CHECK de coherencia).
+  /// OWN | PEDIDOSYA; NULL solo en PICKUP histórico (CHECK de coherencia).
   deliveryProvider        String?               @map("delivery_provider")
+  /// OBSOLETA (0024): los pedidos son inmediatos; la API no la escribe ni la lee. Se eliminará en 0025.
   scheduledFor            DateTime?             @map("scheduled_for") @db.Timestamptz(6)
   notes                   String?
   /// Catálogo cerrado por CHECK: pending, accepted, preparing, ready, on_the_way, delivered, picked_up, rejected, cancelled.

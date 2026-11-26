@@ -16,7 +16,7 @@ const quoteReq = (over: Partial<CheckoutQuoteRequest> = {}): CheckoutQuoteReques
     branchId: 'sucursal-1',
     lines: [{ productId: 'dumplings', quantity: 2, selections: [] }],
   },
-  fulfillment: { type: 'PICKUP' },
+  fulfillment: { type: 'DELIVERY', municipalityId: 'mun-guatemala-guatemala', zone: 'Zona 10' },
   ...over,
 });
 const contact = { fullName: 'Ana López', phone: '5555-1234' };
@@ -30,6 +30,9 @@ async function body(
   return {
     cart: q.cart,
     fulfillment: q.fulfillment,
+    ...(q.fulfillment.customerAddressId
+      ? {}
+      : { deliveryAddress: { addressLine: '6a avenida 10-50', referenceNote: '' } }),
     quoteToken: quote.quote.token as string,
     contact,
     paymentMethodPreference: 'cash',
@@ -56,19 +59,19 @@ const faults = (f: Record<string, string[]>) => {
 };
 
 describe('F20 mock · crear pedido', () => {
-  it('recoger como invitado: forma real, estado pending, pago en efectivo PENDIENTE, teléfono enmascarado, credencial ficticia y pedido borrador enlazado', async () => {
+  it('a domicilio como invitado: forma real, estado pending, pago en efectivo PENDIENTE, teléfono enmascarado, credencial ficticia y pedido borrador enlazado', async () => {
     const h = createHarness();
     const created = await createOrder(h.client, await body(h), key(1));
     const { order, access } = created;
     expect(order).toMatchObject({
       status: 'pending',
-      fulfillmentType: 'PICKUP',
-      deliveryProvider: null,
+      fulfillmentType: 'DELIVERY',
+      deliveryProvider: 'OWN',
       currency: 'GTQ',
       subtotal: '106.00',
-      deliveryFee: '0.00',
-      total: '106.00',
-      address: null,
+      deliveryFee: '15.00',
+      total: '121.00',
+      address: { municipalityName: 'Guatemala', addressLine: '6a avenida 10-50' },
       contact: { fullName: 'Ana López', phoneMasked: '****1234' },
       payment: { method: 'CASH', status: 'PENDING', paidAt: null },
     });
@@ -82,7 +85,7 @@ describe('F20 mock · crear pedido', () => {
     expect(access?.guestToken).toMatch(/^smo_[0-9a-f]{43}$/);
     // Borrador enlazado para el seguimiento/backoffice simulados.
     const draft = h.store.orders.find((o) => o.id === order.displayNumber);
-    expect(draft).toMatchObject({ status: 'received', total: 106, fulfillment: 'pickup' });
+    expect(draft).toMatchObject({ status: 'received', total: 121, fulfillment: 'delivery' });
     expect((await getDraftOrder(h.client, order.displayNumber)).id).toBe(order.displayNumber);
   });
 
@@ -135,7 +138,8 @@ describe('F20 mock · crear pedido', () => {
       ['invitado sin contacto', { ...b, contact: undefined }, '400:'],
       ['teléfono inválido', { ...b, contact: { fullName: 'Ana', phone: '123' } }, '400:'],
       ['notas largas', { ...b, notes: 'x'.repeat(281) }, '400:'],
-      ['dirección con recoger', { ...b, deliveryAddress: { addressLine: 'x' } }, '400:'],
+      ['PICKUP (ya no existe, ADR-0036)', { ...b, fulfillment: { type: 'PICKUP' } }, '400:'],
+      ['sin dirección de entrega', { ...b, deliveryAddress: undefined }, '400:'],
       ['tarjeta (solo efectivo)', { ...b, paymentMethodPreference: 'card' }, '400:'],
       ['transferencia (retirada)', { ...b, paymentMethodPreference: 'bank_transfer' }, '400:'],
       ['token ilegible', { ...b, quoteToken: 'basura' }, '422:QUOTE_INVALID'],
@@ -248,17 +252,17 @@ describe('F20 mock · cotización: QUOTE_CHANGED / QUOTE_EXPIRED / CHECKOUT_BLOC
       expect.arrayContaining(['subtotal', 'total', 'lines']),
     );
     expect(conflict.changes.find((c) => c.field === 'total')).toMatchObject({
-      previous: '106.00',
-      current: '100.00',
+      previous: '121.00',
+      current: '115.00',
     });
-    expect(conflict.quote.total).toBe('100.00');
+    expect(conflict.quote.total).toBe('115.00');
     expect(h.store.placedOrders ?? []).toHaveLength(0);
     const ok = await createOrder(
       h.client,
       { ...b, quoteToken: conflict.quote.quote.token },
       key(12),
     );
-    expect(ok.order.total).toBe('100.00');
+    expect(ok.order.total).toBe('115.00');
   });
 
   it('fallo price-change: sube el precio y reproduce QUOTE_CHANGED de forma natural', async () => {
@@ -267,7 +271,7 @@ describe('F20 mock · cotización: QUOTE_CHANGED / QUOTE_EXPIRED / CHECKOUT_BLOC
     faults({ 'POST /v1/orders': ['price-change'] });
     const e = await fail(createOrder(h.client, b, key(13)));
     expect(codeOf(e)).toBe('409:QUOTE_CHANGED');
-    expect((e.body as { quote: { total: string } }).quote.total).toBe('108.00');
+    expect((e.body as { quote: { total: string } }).quote.total).toBe('123.00');
   });
 
   it('cotización vencida (reloj) => 409 QUOTE_EXPIRED con la cotización nueva y sin cambios', async () => {

@@ -48,14 +48,12 @@ export function moneyToCents(value: string | null | undefined): number | null {
 }
 
 const fulfillmentKey = (f: CheckoutFulfillmentInput): string =>
-  f.type === 'PICKUP'
-    ? 'PICKUP'
-    : [
-        'DELIVERY',
-        f.customerAddressId ? `a:${f.customerAddressId}` : `m:${f.municipalityId ?? ''}`,
-        f.customerAddressId ? '' : `z:${(f.zone ?? '').trim().toLowerCase()}`,
-        `p:${f.deliveryProvider ?? ''}`,
-      ].join('|');
+  [
+    'DELIVERY',
+    f.customerAddressId ? `a:${f.customerAddressId}` : `m:${f.municipalityId ?? ''}`,
+    f.customerAddressId ? '' : `z:${(f.zone ?? '').trim().toLowerCase()}`,
+    `p:${f.deliveryProvider ?? ''}`,
+  ].join('|');
 
 /**
  * Huella canónica de las entradas: la MISMA entrada produce la MISMA cadena (las líneas ya vienen ordenadas por `toQuoteInput`) y
@@ -180,19 +178,6 @@ export const reasonMessageKey = (reason: string | undefined) =>
 
 /** ¿El bloqueo es de una línea (se corrige en «Tu pedido»)? */
 export const isLineBlocker = (b: CheckoutBlocker): boolean => b.scope === 'LINE';
-
-/**
- * ¿Se puede continuar? `canProceed` del servidor, salvo el horario cuando el cliente (SOLO con datos simulados) programó el pedido:
- * la cotización siempre es «ahora» y `BRANCH_CLOSED` no aplica a un pedido programado (P42).
- */
-export function canProceedFor(quote: CheckoutQuote, scheduled: boolean): boolean {
-  if (quote.canProceed) return true;
-  return (
-    scheduled &&
-    quote.blockers.length > 0 &&
-    quote.blockers.every((b) => b.code === 'BRANCH_CLOSED')
-  );
-}
 
 // ── Errores ──────────────────────────────────────────────────────────────────────────────────────────────
 

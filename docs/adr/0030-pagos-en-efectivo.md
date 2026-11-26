@@ -2,6 +2,8 @@
 
 **Estado**: **propuesta** (2026-11-19, F24). Se acepta al fusionar `specs/025-cash-payments`. Migración 0019 propuesta (sin SQL en el repo ni aplicada; requiere aprobación humana).
 
+> **Reemplazado parcialmente por ADR-0036** (2026-11-26, pedidos solo a domicilio e inmediatos) en lo relativo a pagos: el cobro en mostrador (`collectionContext = BRANCH`) se conserva solo para PICKUP histórico o en curso; los pedidos nuevos son a domicilio (`OWN_DELIVERY`); P84 queda cerrada. El texto original se conserva como historial.
+
 **Contexto**: F20 persiste pedidos y deja `payment_method_preference` (`cash|bank_transfer`) y `payment.status = NOT_STARTED`; no existen `payments` ni `payment_methods` en las migraciones (la última es 0018). El DBML define `app.payment_methods` y `app.payments`; RBAC ya siembra `payments.read`, `payments.confirm` y `payments.refund`; F22 dejó `OrderPaymentReadPort` con una regla provisional por preferencia (P74) y F23 imprime «Sin pago registrado». El backlog proponía «efectivo y transferencias bancarias» con comprobantes y conciliación. El requerimiento vigente (prioritario sobre backlog, prototipos y mocks) es SOLO EFECTIVO: sin transferencia, tarjetas/Neonet ni reembolsos. Neonet y PedidosYa siguen `BLOCKED_EXTERNAL`.
 
 ## Decisión

@@ -17,7 +17,7 @@ import { ModifiersRepository } from '../src/modifiers/modifiers.repository.js';
 import { ProductsQueryService } from '../src/products/products-query.service.js';
 import { ProductsRepository } from '../src/products/products.repository.js';
 import { globalStaff } from './support/staff-context.js';
-import { cleanupTestData, TEST_URL, withClient } from './support/db.js';
+import { cleanupTestData, pickupPlacedAt, TEST_URL, withClient } from './support/db.js';
 
 const url = TEST_URL;
 
@@ -451,14 +451,16 @@ describe.skipIf(!url || !readyDelete)(
     };
     const newOrder = async (branchId: string, productId: string, status = 'pending') => {
       const id = randomUUID();
+      // Pedido PICKUP histórico (la 0024 rechaza PICKUP nuevos): placed_at anterior al corte si la 0024 está aplicada.
+      const placed = await pickupPlacedAt(url as string, 'PICKUP');
       await withClient(url as string, async (c) => {
         await c.query('BEGIN');
         try {
           await c.query(
             `INSERT INTO app.orders (id, branch_id, customer_name, customer_phone, customer_email, fulfillment_type,
                                    status, subtotal, total, placed_at)
-           VALUES ($1, $2, 'Cliente prueba', '+50255500000', $3, 'PICKUP', $4, 100, 100, now())`,
-            [id, branchId, `pii-${run}@example.com`, status],
+           VALUES ($1, $2, 'Cliente prueba', '+50255500000', $3, 'PICKUP', $4, 100, 100, COALESCE($5::timestamptz, now()))`,
+            [id, branchId, `pii-${run}@example.com`, status, placed],
           );
           await c.query(
             `INSERT INTO app.order_items (order_id, product_id, line_no, product_name, quantity, unit_price)

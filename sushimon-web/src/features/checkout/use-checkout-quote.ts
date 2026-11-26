@@ -7,7 +7,6 @@ import type { CheckoutQuote } from '@/lib/data-access/models';
 import { useDataClient } from '@/lib/data-access/provider';
 import {
   buildQuoteRequest,
-  canProceedFor,
   classifyQuoteError,
   quoteFingerprint,
   quoteTtlMs,
@@ -57,7 +56,7 @@ export interface CheckoutQuoteState {
   retryAfterSec: number | undefined;
   /** Hay una solicitud en vuelo (también al refrescar por foco/vencimiento). Mientras sea `true` el estado no es `ready`. */
   fetching: boolean;
-  /** `ready` + `canProceed` (con la salvedad del pedido programado simulado) + sin recálculo en curso. */
+  /** `ready` + `canProceed` + sin recálculo en curso. */
   canContinue: boolean;
   refetch: () => void;
 }
@@ -75,19 +74,13 @@ export function useCheckoutQuote(
   inputs: QuoteInputs | null,
   options: {
     settling?: boolean;
-    scheduled?: boolean;
     /** Refrescar al volver el foco a la ventana (en Pago/Confirmación no: no debe esconder importes a mitad de pago). */
     refreshOnFocus?: boolean;
     /** El servidor limitó la tasa de una cotización CON cupón (429): el cupón se descarta como error LOCAL del campo. */
     onCouponRateLimited?: () => void;
   } = {},
 ): CheckoutQuoteState {
-  const {
-    settling = false,
-    scheduled = false,
-    refreshOnFocus = true,
-    onCouponRateLimited,
-  } = options;
+  const { settling = false, refreshOnFocus = true, onCouponRateLimited } = options;
   const client = useDataClient();
   const identity = useCustomerScope();
   const scope = identity.state === 'ready' ? identity.scope : null;
@@ -170,7 +163,7 @@ export function useCheckoutQuote(
     errorKind,
     retryAfterSec,
     fetching,
-    canContinue: !!quote && canProceedFor(quote, scheduled),
+    canContinue: !!quote && quote.canProceed,
     refetch,
   };
 }

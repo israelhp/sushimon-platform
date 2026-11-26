@@ -40,7 +40,6 @@ interface SummaryDbRow {
   payment_method_preference: string | null;
   payment_status: string | null;
   payment_received_at: Date | null;
-  scheduled_for: Date | null;
   placed_at: Date;
   updated_at: Date;
   item_count: number;
@@ -51,12 +50,12 @@ interface SummaryDbRow {
 const SUMMARY_COLUMNS = Prisma.sql`o.id, o.order_number, o.status, o.branch_id, b.name AS branch_name,
   o.fulfillment_type, o.delivery_provider, o.customer_name, o.total::text AS total, o.payment_method_preference,
   p.status AS payment_status, p.received_at AS payment_received_at,
-  o.scheduled_for, o.placed_at, o.updated_at,
+  o.placed_at, o.updated_at,
   (SELECT COALESCE(sum(i.quantity), 0)::int FROM app.order_items i WHERE i.order_id = o.id) AS item_count`;
 
 /** Columnas que la tarjeta lee de `orders` (nunca teléfono, correo ni notas). */
 const CARD_COLUMNS = Prisma.sql`o.id, o.order_number, o.status, o.branch_id, o.fulfillment_type, o.delivery_provider,
-  o.customer_name, o.total, o.payment_method_preference, o.scheduled_for, o.placed_at, o.updated_at`;
+  o.customer_name, o.total, o.payment_method_preference, o.placed_at, o.updated_at`;
 
 const PLACED_AT_KEY = Prisma.sql`to_char(o.placed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS placed_at_key`;
 
@@ -74,7 +73,6 @@ const toRow = (r: SummaryDbRow): AdminOrderRow => ({
   paymentMethodPreference: r.payment_method_preference,
   paymentStatus: r.payment_status,
   paymentPaidAt: r.payment_received_at,
-  scheduledFor: r.scheduled_for,
   placedAt: r.placed_at,
   updatedAt: r.updated_at,
 });
@@ -125,9 +123,6 @@ export class AdminOrdersRepository {
     ];
     if (filter.to) where.push(Prisma.sql`o.placed_at <= ${filter.to}`);
     if (filter.status) where.push(Prisma.sql`o.status = ANY(${[...filter.status]}::text[])`);
-    if (filter.fulfillmentType) {
-      where.push(Prisma.sql`o.fulfillment_type = ${filter.fulfillmentType}`);
-    }
     if (filter.orderNumber !== null) {
       where.push(Prisma.sql`o.order_number = ${filter.orderNumber}::bigint`);
     }

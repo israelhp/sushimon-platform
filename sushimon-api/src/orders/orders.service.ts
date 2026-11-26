@@ -310,11 +310,8 @@ export class OrdersService {
       throw new UnauthorizedException('No autenticado');
     }
     const { fulfillment, deliveryAddress } = body;
-    if (fulfillment.type === 'PICKUP') {
-      if (deliveryAddress !== undefined) {
-        throw new BadRequestException(['deliveryAddress: no se admite con PICKUP']);
-      }
-    } else if (fulfillment.customerAddressId !== undefined) {
+    // ADR-0036: todo pedido es a domicilio (el DTO ya rechazó cualquier `type` distinto de `DELIVERY`).
+    if (fulfillment.customerAddressId !== undefined) {
       if (deliveryAddress !== undefined) {
         throw new BadRequestException([
           'deliveryAddress: no se admite con customerAddressId (se copia la dirección guardada)',
@@ -392,23 +389,19 @@ export class OrdersService {
       throw new Error('importes incoherentes en la recotización');
     }
 
-    const isDelivery = body.fulfillment.type === 'DELIVERY';
     const place = guarded.resolved.place;
-    let address: NewOrder['address'] = null;
-    if (isDelivery) {
-      if (!place) throw new Error('entrega sin lugar resuelto');
-      const saved = place.savedAddress;
-      const text = saved ?? input.address;
-      if (!text) throw new Error('entrega sin dirección');
-      address = {
-        municipalityName: place.municipalityName,
-        zone: place.zone,
-        addressLine: text.addressLine,
-        referenceNote: text.referenceNote,
-        latitude: saved?.latitude ?? null,
-        longitude: saved?.longitude ?? null,
-      };
-    }
+    if (!place) throw new Error('entrega sin lugar resuelto');
+    const saved = place.savedAddress;
+    const text = saved ?? input.address;
+    if (!text) throw new Error('entrega sin dirección');
+    const address: NewOrder['address'] = {
+      municipalityName: place.municipalityName,
+      zone: place.zone,
+      addressLine: text.addressLine,
+      referenceNote: text.referenceNote,
+      latitude: saved?.latitude ?? null,
+      longitude: saved?.longitude ?? null,
+    };
 
     return {
       orderId: randomUUID(),
@@ -417,8 +410,9 @@ export class OrdersService {
       customerName: input.contact.fullName,
       customerPhone: input.contact.phone,
       customerEmail: input.contact.email,
-      fulfillmentType: body.fulfillment.type,
-      deliveryProvider: isDelivery ? 'OWN' : null,
+      // ADR-0036: toda fila nueva es DELIVERY (la 0024 lo exige con CHECK); entrega propia (`OWN`) es el único proveedor creable.
+      fulfillmentType: 'DELIVERY',
+      deliveryProvider: 'OWN',
       notes: input.notes,
       subtotal: quote.subtotal,
       extrasTotal: quote.extrasTotal,

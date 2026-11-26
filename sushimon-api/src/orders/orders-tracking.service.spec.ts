@@ -57,8 +57,8 @@ describe('OrdersService.getTracking (F21)', () => {
       status: 'pending',
       publicStatus: 'received',
       terminal: false,
-      fulfillmentType: 'PICKUP',
-      delivery: null,
+      fulfillmentType: 'DELIVERY',
+      delivery: { provider: 'OWN', status: null },
       pollAfterSeconds: 15,
       eventsTruncated: false,
     });
@@ -229,6 +229,17 @@ describe('OrdersService.getTracking (F21)', () => {
     expect(t.delivery).toEqual({ provider: 'OWN', status: null });
     expect(t.steps.map((s) => s.phase)).toContain('on_the_way');
     expect(JSON.stringify(t)).not.toMatch(/6a avenida|5555|Ana|170|15\.00/);
+  });
+
+  it('PICKUP histórico (ADR-0036): el seguimiento sigue respondiendo con el recorrido de recogida, sin entrega', async () => {
+    const { id, token } = await guestOrder();
+    const stored = h.ordersRepo.orders.get(id);
+    if (!stored) throw new Error('sin pedido');
+    stored.record.fulfillmentType = 'PICKUP';
+    stored.record.deliveryProvider = null;
+    const t = await h.orders.getTracking(undefined, id, token);
+    expect(t).toMatchObject({ fulfillmentType: 'PICKUP', delivery: null });
+    expect(t.steps.map((s) => s.phase)).not.toContain('on_the_way');
   });
 
   it('PEDIDOSYA en el registro => {provider:PEDIDOSYA,status:null} sin simulación', async () => {

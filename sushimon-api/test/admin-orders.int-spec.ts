@@ -31,6 +31,7 @@ import {
   TEST_URL,
   withClient,
   deletePaymentsOf,
+  pickupPlacedAt,
 } from './support/db.js';
 import { globalStaff, ROLE_PERMISSIONS, scopedStaff } from './support/staff-context.js';
 
@@ -128,6 +129,8 @@ describe.skipIf(!url || !ready)('Gestión de pedidos contra PostgreSQL real (F22
     const provider = fulfillment === 'DELIVERY' ? (o.provider ?? 'OWN') : null;
     const id = randomUUID();
     phoneSeq += 1;
+    // PICKUP = pedido histórico (la 0024 rechaza PICKUP nuevos): placed_at anterior al corte si la 0024 está aplicada.
+    const placed = await pickupPlacedAt(url as string, fulfillment, o.placedAt);
     await withClient(url as string, async (c) => {
       await c.query('BEGIN');
       try {
@@ -145,7 +148,7 @@ describe.skipIf(!url || !ready)('Gestión de pedidos contra PostgreSQL real (F22
             provider,
             o.status ?? 'pending',
             o.payment ?? null,
-            o.placedAt ?? null,
+            placed,
           ],
         );
         if (fulfillment === 'DELIVERY') {
@@ -163,7 +166,7 @@ describe.skipIf(!url || !ready)('Gestión de pedidos contra PostgreSQL real (F22
         await c.query(
           `INSERT INTO app.order_status_history (order_id, old_status, new_status, changed_at)
            VALUES ($1, NULL, 'pending', COALESCE($2::timestamptz, now()))`,
-          [id, o.placedAt ?? null],
+          [id, placed],
         );
         await c.query('COMMIT');
       } catch (e) {

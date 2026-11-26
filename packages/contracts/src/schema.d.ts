@@ -154,6 +154,7 @@ export interface paths {
          *     sin ellos se pagina todo el historial; con ambos el rango máximo es 366 días, si no 400). Orden FIJO `placedAt` descendente, `id` descendente; paginación por
          *     CURSOR opaco (`nextCursor`; `null` = última página); un cursor alterado => 400 `ORDER_CURSOR_INVALID` (el alcance se aplica SIEMPRE en la consulta, así que
          *     manipularlo no revela nada). Sin conteo total. `Cache-Control: private, no-store`, `Vary: Authorization`, sin `ETag`.
+         *     ADR-0036: los pedidos nuevos son siempre a domicilio (`DELIVERY`); `fulfillmentType=PICKUP` solo aparece en pedidos HISTÓRICOS (anteriores a ADR-0036).
          */
         get: operations["listMyOrders"];
         put?: never;
@@ -1008,7 +1009,7 @@ export interface paths {
          *     una simulación (`eligibility.simulated = true`) y jamás autoriza operaciones reales; el mock no puede activarse
          *     en producción. Un proveedor deshabilitado se indica con `enabled=false` (su `coverageStatus` no es significativo).
          *     Timeout o error del proveedor => `UNKNOWN` con `reason`, nunca UNAVAILABLE ni 5xx. NO considera horarios ni cierres
-         *     (F08 se combina en checkout). La recogida en sucursal no depende de cobertura. Prioridad de zona propia: zona
+         *     (F08 se combina en checkout). Desde ADR-0036 no existe recogida en sucursal: toda compra depende de esta cobertura. Prioridad de zona propia: zona
          *     específica > cobertura general del municipio > sin cobertura. `branchId` inexistente o inactiva => 422
          *     `BRANCH_NOT_AVAILABLE` (no se distingue); `municipalityId` inexistente => 422 `MUNICIPALITY_NOT_FOUND`.
          *     Respuesta `Cache-Control: no-store`.
@@ -1046,13 +1047,15 @@ export interface paths {
          *     extras (F15 D15.6); una promoción por línea (la de mayor ahorro), jamás se apilan.
          *     **`total` es `null`** si no es verificable: alguna línea no comprable, entrega a domicilio sin tarifa verificable
          *     o dirección incompleta. `canProceed` es `true` solo si `blockers` está vacío. `notices` no bloquean.
-         *     **Entrega**: el cliente elige modalidad (`PICKUP`|`DELIVERY`), no proveedor. Cada proveedor se evalúa por separado
+         *     **Entrega** (ADR-0036): la plataforma ofrece SOLO pedidos a domicilio e inmediatos: `fulfillment.type` es siempre `DELIVERY` (enviar `PICKUP` => 400; no hay recogida en sucursal) y no existe
+         *     programación (siempre «ahora»). El cliente elige la dirección, no el proveedor. Cada proveedor se evalúa por separado
          *     (`delivery.options`). PEDIDOSYA es `UNKNOWN` mientras la integración esté `BLOCKED_EXTERNAL` y NUNCA es seleccionable
          *     en esta versión (tarifa al cliente sin política aprobada, P40); un mock aparece con `simulated=true` y tampoco
          *     habilita nada. OWN solo si la sucursal tiene `ownDeliveryZonesEnabled` y hay zona; su tarifa es la del servidor.
          *     Nunca se expone el costo del proveedor. Si el cliente indica `deliveryProvider` y no es seleccionable NO se cambia
          *     de proveedor en silencio (blocker `DELIVERY_PROVIDER_NOT_SELECTABLE`). La cotización usa SIEMPRE la sucursal del
-         *     carrito (no la reasigna por cobertura). Pedidos programados: fuera de alcance (solo «ahora»).
+         *     carrito (no la reasigna por cobertura). Sin cobertura a domicilio para la dirección => blocker `DELIVERY_UNAVAILABLE` (la web solo informa que por ahora no se llega a esa dirección: sin alternativa de recoger ni de programar).
+         *     Sucursal cerrada o fuera de horario => blocker `BRANCH_CLOSED` (la web informa la próxima apertura con `GET /v1/branches/{id}/availability`; no se puede programar).
          *     **Vigencia**: `quote.expiresAt` (10 min) y `quote.token` firmado (HMAC con secreto de servidor; `null` si el
          *     servidor no tiene secreto: F20 debe rechazar cotizaciones sin firma). El token NO reserva nada: F20 revalida todo y
          *     responde conflicto si el resultado difiere. Cupón: ante cualquier cosa distinta de `APPLIED` el cliente solo ve
@@ -1093,7 +1096,7 @@ export interface paths {
          *     cliente lo acepte (nueva petición con el token nuevo y una `Idempotency-Key` nueva). Token vencido => 409 `QUOTE_EXPIRED`;
          *     token ausente de entorno o inválido (firma, sujeto distinto, entrada distinta) => 422 `QUOTE_INVALID`; `canProceed=false`
          *     => 422 `CHECKOUT_BLOCKED` con `blockers`. PedidosYa NUNCA se puede crear (422 `DELIVERY_PROVIDER_NOT_SELECTABLE`, F29);
-         *     PICKUP y OWN elegible sí. Sin `CHECKOUT_QUOTE_SECRET` en el servidor => 503 `ORDERS_UNAVAILABLE` (fail-closed).
+         *     OWN elegible sí. Solo se crean pedidos `DELIVERY` e inmediatos (ADR-0036; `fulfillment.type=PICKUP` => 400). Sin `CHECKOUT_QUOTE_SECRET` en el servidor => 503 `ORDERS_UNAVAILABLE` (fail-closed).
          *     **Idempotencia** (obligatoria): `Idempotency-Key` identifica UN intento lógico (UUID v4 o ≥ 22 caracteres base64url del
          *     cliente). Misma clave + mismo cuerpo canónico (sin `quoteToken`) => se devuelve EL MISMO pedido (200 + `Idempotent-Replayed:
          *     true`) sin recotizar ni validar vigencia del token; misma clave + cuerpo distinto => 409 `IDEMPOTENCY_KEY_REUSED`; solicitud
@@ -1269,10 +1272,12 @@ export interface paths {
          * Pedidos del backoffice (paginado por cursor, ligero)
          * @description F22 (spec 023, ADR-0028). Exige `orders.read` y `aal2`. LISTADO ligero (sin líneas, modificadores, promociones, dirección ni historial: eso es `getAdminOrder`). Alcance por sucursal EN SQL
          *     (`branch_id = ANY(sucursales con orders.read)`; con alcance global, todas): nunca se filtra en la web. `branchId` fuera de alcance o inexistente => 404 `BRANCH_NOT_FOUND`.
-         *     Filtros: `status` (lista separada por comas), `fulfillmentType`, `q` (2..40: número `1042`/`MON-001042` => igualdad por número; otro texto => nombre del cliente, contiene, sin distinguir
+         *     Filtros: `status` (lista separada por comas), `q` (2..40: número `1042`/`MON-001042` => igualdad por número; otro texto => nombre del cliente, contiene, sin distinguir
          *     mayúsculas; NO busca por teléfono ni correo: P70), `from`/`to` (instantes de `placedAt`; por defecto `from = ahora − 7 días`; rango máximo 92 días, si no 400). Orden FIJO `placedAt` descendente, `id`
          *     descendente; paginación por CURSOR opaco (`nextCursor`; `null` = última página); un cursor alterado o de otra consulta => 400 `ORDER_CURSOR_INVALID` (el alcance se aplica SIEMPRE en la consulta, así
          *     que manipularlo no revela nada). Sin conteo total (el tablero trae los conteos). Una consulta para la página con el conteo de unidades agregado (sin N+1). `no-store`.
+         *     ADR-0036: el filtro `fulfillmentType` y el campo `scheduledFor` se ELIMINARON (enviar `fulfillmentType` => 400 como cualquier parámetro desconocido; cambio rompiente aceptado). Las filas siguen trayendo `fulfillmentType`
+         *     (`PICKUP` solo en pedidos históricos o en curso anteriores a ADR-0036; los nuevos son `DELIVERY`).
          */
         get: operations["listAdminOrders"];
         put?: never;
@@ -1452,7 +1457,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Completa la entrega en sucursal de un pedido PICKUP (`ready` → `picked_up`)
+         * Completa la entrega en sucursal de un pedido PICKUP histórico o en curso (`ready` → `picked_up`)
          * @description F22 (spec 023, ADR-0028). Exige `orders.complete` y `aal2`; además el permiso debe cubrir la sucursal DEL PEDIDO (alcance por sucursal: sin él => 403 `ORDER_ACTION_FORBIDDEN`) y el personal debe poder
          *     VER el pedido (`orders.read` en esa sucursal; si no => el mismo 404 `ORDER_NOT_FOUND` que un pedido inexistente). Cuerpo con `expectedStatus` OBLIGATORIO: el estado que la persona vio en pantalla. La
          *     actualización es COMPARE-AND-SET (`UPDATE … WHERE id AND status = expectedStatus`) en una sola transacción con la fila de `order_status_history` (`old_status`, `new_status`, `changed_by`, `reason`)
@@ -1460,7 +1465,7 @@ export interface paths {
          *     (sin escribir nada). REPETICIÓN IDEMPOTENTE: si el estado actual YA es el destino y el último evento del historial es exactamente `expectedStatus` → destino, responde 200 con `transition.replayed=true`
          *     SIN duplicar historial ni auditoría, sea quien sea el actor (`appliedByMe` lo indica). Transición no permitida (terminal, modalidad, salto de estados, estado de origen imposible) => 422
          *     `ORDER_TRANSITION_INVALID`. La respuesta trae `pendingActions` INFORMATIVAS (revisiones que quedan para otra feature; nunca se ejecutan aquí). `no-store`.
-         *     Solo PICKUP desde `ready`. En DELIVERY => 422 (`delivered` lo produce F28 con la entrega propia; con PedidosYa no hay acción: `BLOCKED_EXTERNAL`). No registra cobros (F24).
+         *     Solo pedidos PICKUP HISTÓRICOS o en curso (anteriores a ADR-0036; los pedidos nuevos son siempre DELIVERY y nunca llegan a esta acción; su retiro es una fase posterior, ADR-0036 D1) desde `ready`. En DELIVERY => 422 (`delivered` lo produce F28 con la entrega propia; con PedidosYa no hay acción: `BLOCKED_EXTERNAL`). No registra cobros (F24).
          */
         post: operations["completeAdminOrder"];
         delete?: never;
@@ -1531,7 +1536,7 @@ export interface paths {
         /**
          * Registra la recepción del efectivo de un pedido (`PENDING` → `PAID`)
          * @description F24 (spec 025, ADR-0030). Exige `payments.confirm` y `aal2`; el permiso debe cubrir la sucursal DEL PEDIDO (si no => 403 `PAYMENT_ACTION_FORBIDDEN`) y el personal debe poder VER el pedido (`orders.read`
-         *     en esa sucursal; si no => el mismo 404 `ORDER_NOT_FOUND`). Sirve igual para PICKUP (mostrador) y DELIVERY `OWN` (quien tenga `payments.confirm`); el contexto lo DERIVA el servidor del pedido. NO cambia el estado del pedido y
+         *     en esa sucursal; si no => el mismo 404 `ORDER_NOT_FOUND`). Sirve igual para PICKUP histórico o en curso (mostrador; ADR-0036 D1) y DELIVERY `OWN` (quien tenga `payments.confirm`); el contexto lo DERIVA el servidor del pedido. NO cambia el estado del pedido y
          *     ningún cambio de estado marca `PAID`. El actor sale del JWT, la sucursal es la del pedido, la fecha es el reloj del servidor y la moneda es GTQ.
          *     **Cambio**: `change = tendered − total`, calculado SOLO en el servidor; el ingreso aplicado es el total del pedido (`amountApplied`), nunca `tendered`; el total del pedido no cambia.
          *     **Reglas**: pedido `rejected`/`cancelled` => 409 `ORDER_NOT_PAYABLE` (no se cobra); ya `PAID` => 409 `PAYMENT_ALREADY_REGISTERED` (con el pago actual) SALVO repetición con la MISMA clave y el MISMO cuerpo canónico => 200 con
@@ -3297,7 +3302,7 @@ export interface components {
             details?: string[];
             /**
              * @description Código de negocio estable y legible por máquina (opcional; p. ej. `HOURS_VERSION_CONFLICT`, `CLOSURE_OVERLAP`,
-             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`, `CATEGORY_IN_USE` (409; ADR-0034, `usage` con conteos); F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`, `PRODUCT_IN_USE` (409; ADR-0035, `usage` con conteos); F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16 (simplificado, ADR-0033): `BANNER_NOT_FOUND` (404), `BANNER_VERSION_CONFLICT` (409), `BANNER_LIMIT_REACHED` (409; ya hay 5 banners), `BANNER_IMAGE_INVALID` (422), `BANNER_ALT_INVALID` (422), `BANNERS_BUSY` (503 reintentable); retirados: `BANNER_CODE_TAKEN`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_SCOPE_FORBIDDEN`; F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); F20: `IDEMPOTENCY_KEY_INVALID` (400), `QUOTE_CHANGED` (409), `QUOTE_EXPIRED` (409), `IDEMPOTENCY_KEY_REUSED` (409), `IDEMPOTENCY_IN_PROGRESS` (409), `QUOTE_INVALID` (422), `CHECKOUT_BLOCKED` (422), `DELIVERY_PROVIDER_NOT_SELECTABLE` (422), `CONTACT_INCOMPLETE` (422), `PENDING_ORDERS_LIMIT` (429), `ORDERS_BUSY` (503 reintentable), `ORDERS_UNAVAILABLE` (503); 404 de dirección ajena sin código; F22: `ORDER_NOT_FOUND` (404), `ORDER_REASON_REQUIRED` (400), `ORDER_CURSOR_INVALID` (400), `ORDER_ACTION_FORBIDDEN` (403), `ORDER_STATE_CONFLICT` (409), `ORDER_TRANSITION_INVALID` (422; `violations[].code`: `ORDER_TERMINAL`, `ORDER_FULFILLMENT_MISMATCH`, `ORDER_SOURCE_INVALID`, `ORDER_DISPATCH_NOT_AVAILABLE`, `ORDER_PROVIDER_BLOCKED_EXTERNAL`, `ORDER_CANCEL_NOT_ALLOWED`); 503 reintentable: `ORDERS_BUSY`; F24 (pagos en efectivo; `PAYMENT_METHOD_UNAVAILABLE` de F20 queda RETIRADO: ahora cualquier método distinto de `cash` es 400): `PAYMENT_AMOUNT_INVALID` (400), `PAYMENT_CONFIRMATION_REQUIRED` (400), `PAYMENT_ACTION_FORBIDDEN` (403), `PAYMENT_ALREADY_REGISTERED` (409), `ORDER_NOT_PAYABLE` (409), `CASH_AMOUNT_INSUFFICIENT` (422), `CASH_TENDERED_TOO_LARGE` (422), `PAYMENT_NOT_COLLECTABLE` (422; `violations[].code`: `PROVIDER_BLOCKED_EXTERNAL`, `LEGACY_PAYMENT_METHOD`, `AMOUNT_ZERO`); reutiliza `ORDER_NOT_FOUND`, `IDEMPOTENCY_KEY_INVALID`, `IDEMPOTENCY_KEY_REUSED`, `ORDERS_BUSY`); F27 (motoristas propios): `RIDER_NOT_FOUND` (404), `RIDER_ACTION_FORBIDDEN` (403), `RIDER_PHONE_TAKEN` (409), `RIDER_VERSION_CONFLICT` (409; `current` = versión vigente), `RIDER_HAS_ACTIVE_DELIVERY` (409), `RIDER_INACTIVE` (409), `BRANCH_NOT_AVAILABLE` (422, reutilizado), `RIDERS_BUSY` (503 reintentable); F28 (entregas propias): `DELIVERY_NOT_FOUND` (404), `DELIVERY_ACTION_FORBIDDEN` (403), `DELIVERY_CURSOR_INVALID` (400), `DELIVERY_REASON_REQUIRED` (400), `DELIVERY_STATE_CONFLICT` (409; `current` = `{status, version}` de la entrega), `ORDER_HAS_ACTIVE_DELIVERY` (409; `current` del pedido; al cancelar un pedido con entrega abierta), `DELIVERY_ORDER_NOT_ELIGIBLE` (422; `violations[].code`: `ORDER_STATUS_NOT_DISPATCHABLE`, `ORDER_NOT_DELIVERY`, `ORDER_PROVIDER_NOT_OWN`), `RIDER_NOT_ELIGIBLE` (422; `violations[].code`: `INACTIVE`, `WRONG_BRANCH`, `UNAVAILABLE`, `BUSY`, `OWN_DELIVERY_DISABLED`), `DELIVERIES_BUSY` (503 reintentable); reutiliza `ORDER_NOT_FOUND`, `ORDER_STATE_CONFLICT`, `ORDER_TRANSITION_INVALID`, `RIDER_NOT_FOUND`, `BRANCH_NOT_FOUND`. Los clientes deben ramificar por `code`, nunca por `message`.
+             *     `SCHEDULE_INVALID`, `BRANCH_SCHEDULE_BUSY`, `CLOSURE_LIMIT_REACHED`; F09: `DELIVERY_ZONE_DUPLICATE`, `DELIVERY_ZONE_VERSION_CONFLICT`, `MUNICIPALITY_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `BRANCH_NOT_AVAILABLE`; F10: `CATEGORY_SLUG_TAKEN`, `CATEGORY_CYCLE`, `CATEGORY_DEPTH_EXCEEDED`, `CATEGORY_PARENT_INVALID`, `CATEGORY_REORDER_MISMATCH`, `CATEGORY_LIMIT_REACHED`, `CATEGORY_IN_USE` (409; ADR-0034, `usage` con conteos); F11: `PRODUCT_NOT_FOUND`, `PRODUCT_SLUG_TAKEN`, `PRODUCT_SKU_TAKEN`, `PRODUCT_CATEGORY_INVALID`, `PRODUCT_MEDIA_INVALID`, `PRODUCT_IN_USE` (409; ADR-0035, `usage` con conteos); F12: `MODIFIER_GROUP_NOT_FOUND`, `MODIFIER_NOT_FOUND`, `MODIFIER_GROUP_NAME_TAKEN`, `MODIFIER_NAME_TAKEN`, `MODIFIER_LIMITS_INVALID`, `MODIFIER_GROUP_UNSATISFIABLE`, `MODIFIER_LIMIT_REACHED`, `MODIFIER_REORDER_MISMATCH`, `MODIFIER_GROUP_INVALID`; F13: `BRANCH_NOT_FOUND`, `BRANCH_PRICE_INVALID`, `PRODUCT_NOT_AVAILABLE` (solo servicio, F19), `BRANCH_NOT_AVAILABLE`; 503 reintentable: `CATEGORIES_BUSY`, `PRODUCTS_BUSY`, `MODIFIERS_BUSY`, `BRANCH_PRODUCTS_BUSY`; F14: `MEDIA_NOT_FOUND`, `MEDIA_TYPE_NOT_ALLOWED`, `MEDIA_TOO_LARGE`, `MEDIA_PENDING_LIMIT_REACHED`, `MEDIA_UPLOAD_EXPIRED` (410), `MEDIA_OBJECT_MISSING`, `MEDIA_CONTENT_MISMATCH`, `MEDIA_IN_USE`, `MEDIA_ALREADY_ATTACHED`, `MEDIA_ASSET_NOT_READY`, `MEDIA_REORDER_MISMATCH`, `PRODUCT_MEDIA_NOT_FOUND`, `MEDIA_STORAGE_UNAVAILABLE` (503), `MEDIA_BUSY` (503 reintentable); F15: `PROMOTION_NOT_FOUND`, `PROMOTION_CODE_TAKEN`, `PROMOTION_VERSION_CONFLICT`, `PROMOTION_VALUE_INVALID`, `PROMOTION_PERIOD_INVALID`, `PROMOTION_SCHEDULE_INVALID`, `PROMOTION_SCOPE_INVALID`, `PROMOTION_SCOPE_FORBIDDEN` (403), `PROMOTIONS_BUSY` (503 reintentable); F16 (simplificado, ADR-0033): `BANNER_NOT_FOUND` (404), `BANNER_VERSION_CONFLICT` (409), `BANNER_LIMIT_REACHED` (409; ya hay 5 banners), `BANNER_IMAGE_INVALID` (422), `BANNER_ALT_INVALID` (422), `BANNERS_BUSY` (503 reintentable); retirados: `BANNER_CODE_TAKEN`, `BANNER_TRANSLATION_INVALID`, `BANNER_CTA_INVALID`, `BANNER_PERIOD_INVALID`, `BANNER_SCOPE_INVALID`, `BANNER_PROMOTION_INVALID`, `BANNER_REORDER_MISMATCH`, `BANNER_SCOPE_FORBIDDEN`; F19: `QUOTE_LIMITS_EXCEEDED` (400), `CHECKOUT_BUSY` (503 reintentable); F20: `IDEMPOTENCY_KEY_INVALID` (400), `QUOTE_CHANGED` (409), `QUOTE_EXPIRED` (409), `IDEMPOTENCY_KEY_REUSED` (409), `IDEMPOTENCY_IN_PROGRESS` (409), `QUOTE_INVALID` (422), `CHECKOUT_BLOCKED` (422), `DELIVERY_PROVIDER_NOT_SELECTABLE` (422), `CONTACT_INCOMPLETE` (422), `PENDING_ORDERS_LIMIT` (429), `ORDERS_BUSY` (503 reintentable), `ORDERS_UNAVAILABLE` (503); 404 de dirección ajena sin código; ADR-0036 (solo a domicilio e inmediato): SIN códigos nuevos; `fulfillment.type=PICKUP` en cotización/creación, el parámetro retirado `fulfillmentType` del listado admin y un `deliveryAddress` ausente o prohibido son 400 de validación genérica; F22: `ORDER_NOT_FOUND` (404), `ORDER_REASON_REQUIRED` (400), `ORDER_CURSOR_INVALID` (400), `ORDER_ACTION_FORBIDDEN` (403), `ORDER_STATE_CONFLICT` (409), `ORDER_TRANSITION_INVALID` (422; `violations[].code`: `ORDER_TERMINAL`, `ORDER_FULFILLMENT_MISMATCH`, `ORDER_SOURCE_INVALID`, `ORDER_DISPATCH_NOT_AVAILABLE`, `ORDER_PROVIDER_BLOCKED_EXTERNAL`, `ORDER_CANCEL_NOT_ALLOWED`); 503 reintentable: `ORDERS_BUSY`; F24 (pagos en efectivo; `PAYMENT_METHOD_UNAVAILABLE` de F20 queda RETIRADO: ahora cualquier método distinto de `cash` es 400): `PAYMENT_AMOUNT_INVALID` (400), `PAYMENT_CONFIRMATION_REQUIRED` (400), `PAYMENT_ACTION_FORBIDDEN` (403), `PAYMENT_ALREADY_REGISTERED` (409), `ORDER_NOT_PAYABLE` (409), `CASH_AMOUNT_INSUFFICIENT` (422), `CASH_TENDERED_TOO_LARGE` (422), `PAYMENT_NOT_COLLECTABLE` (422; `violations[].code`: `PROVIDER_BLOCKED_EXTERNAL`, `LEGACY_PAYMENT_METHOD`, `AMOUNT_ZERO`); reutiliza `ORDER_NOT_FOUND`, `IDEMPOTENCY_KEY_INVALID`, `IDEMPOTENCY_KEY_REUSED`, `ORDERS_BUSY`); F27 (motoristas propios): `RIDER_NOT_FOUND` (404), `RIDER_ACTION_FORBIDDEN` (403), `RIDER_PHONE_TAKEN` (409), `RIDER_VERSION_CONFLICT` (409; `current` = versión vigente), `RIDER_HAS_ACTIVE_DELIVERY` (409), `RIDER_INACTIVE` (409), `BRANCH_NOT_AVAILABLE` (422, reutilizado), `RIDERS_BUSY` (503 reintentable); F28 (entregas propias): `DELIVERY_NOT_FOUND` (404), `DELIVERY_ACTION_FORBIDDEN` (403), `DELIVERY_CURSOR_INVALID` (400), `DELIVERY_REASON_REQUIRED` (400), `DELIVERY_STATE_CONFLICT` (409; `current` = `{status, version}` de la entrega), `ORDER_HAS_ACTIVE_DELIVERY` (409; `current` del pedido; al cancelar un pedido con entrega abierta), `DELIVERY_ORDER_NOT_ELIGIBLE` (422; `violations[].code`: `ORDER_STATUS_NOT_DISPATCHABLE`, `ORDER_NOT_DELIVERY`, `ORDER_PROVIDER_NOT_OWN`), `RIDER_NOT_ELIGIBLE` (422; `violations[].code`: `INACTIVE`, `WRONG_BRANCH`, `UNAVAILABLE`, `BUSY`, `OWN_DELIVERY_DISABLED`), `DELIVERIES_BUSY` (503 reintentable); reutiliza `ORDER_NOT_FOUND`, `ORDER_STATE_CONFLICT`, `ORDER_TRANSITION_INVALID`, `RIDER_NOT_FOUND`, `BRANCH_NOT_FOUND`. Los clientes deben ramificar por `code`, nunca por `message`.
              */
             code?: string;
             /** @description Violaciones estructuradas de reglas de negocio (422/409 de F08 y F09). */
@@ -3519,12 +3524,6 @@ export interface components {
                 close: string;
             }[];
             weeklyHours: components["schemas"]["DraftBranchHours"][];
-            schedule: {
-                stepMinutes: number;
-                lastOrderBeforeClose: number;
-                minLeadMinutes: number;
-                days: number;
-            };
             deliveryTiers: components["schemas"]["DeliveryTier"][];
             departments: components["schemas"]["DraftDepartment"][];
             /** @description Zonas de la Ciudad de Guatemala que no existen (20, 22, 23). */
@@ -3612,22 +3611,6 @@ export interface components {
          * @enum {string}
          */
         DeliveryStatus: "searching" | "assigned" | "picking_up" | "picked_up" | "on_the_way" | "delivered" | "failed";
-        /** @enum {string} */
-        FulfillmentType: "pickup" | "delivery";
-        OrderSchedule: {
-            /** @enum {string} */
-            kind: "now" | "scheduled";
-            /**
-             * Format: date
-             * @description Fecha local (YYYY-MM-DD) si es programado.
-             */
-            date?: string;
-            /**
-             * @description Hora local (HH:mm) si es programado.
-             * @example 19:30
-             */
-            time?: string;
-        };
         OrderAddress: {
             department: string;
             municipality: string;
@@ -3700,8 +3683,11 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
             branchId: string;
-            fulfillment: components["schemas"]["FulfillmentType"];
-            schedule: components["schemas"]["OrderSchedule"];
+            /**
+             * @description Borrador MOCK_ONLY. `pickup` solo en pedidos históricos (ADR-0036); los nuevos son `delivery`. Ya no hay programación (`schedule` retirado).
+             * @enum {string}
+             */
+            fulfillment: "pickup" | "delivery";
             customer: components["schemas"]["OrderCustomer"];
             address: components["schemas"]["OrderAddress"] | null;
             lines: components["schemas"]["OrderLine"][];
@@ -3727,12 +3713,15 @@ export interface components {
         };
         /** @description El cliente nunca envía precios ni totales; el servidor los calcula. */
         CreateOrderRequest: {
-            /** @description Obligatorio para recoger; opcional a domicilio. */
+            /** @description Opcional (a domicilio la sucursal se resuelve por cobertura). */
             branchId?: string;
-            fulfillment: components["schemas"]["FulfillmentType"];
-            schedule: components["schemas"]["OrderSchedule"];
+            /**
+             * @description Solo a domicilio e inmediato (ADR-0036). `pickup` y la programación se retiraron.
+             * @enum {string}
+             */
+            fulfillment: "delivery";
             customer: components["schemas"]["OrderCustomer"];
-            address?: components["schemas"]["OrderAddress"];
+            address: components["schemas"]["OrderAddress"];
             lines: components["schemas"]["CreateOrderLine"][];
             paymentMethod: components["schemas"]["PaymentMethod"];
             note?: string;
@@ -4583,15 +4572,15 @@ export interface components {
          */
         CheckoutLineStatus: "OK" | "PRICE_CHANGED" | "UNAVAILABLE" | "INACTIVE" | "NOT_FOUND" | "MODIFIER_INVALID" | "OPTION_UNAVAILABLE";
         /**
-         * @description Modalidad. `PICKUP`: no admite ningún otro campo. `DELIVERY`: exactamente UNO de `customerAddressId` (dirección
-         *     guardada, exige sesión de cliente y propiedad) o `municipalityId` (+ `zone` opcional; invitado o dirección nueva).
+         * @description Modalidad (ADR-0036): SOLO `DELIVERY` (a domicilio e inmediato). `PICKUP` y la programación se RETIRARON: enviar `PICKUP` => 400 (cambio rompiente aceptado).
+         *     Exactamente UNO de `customerAddressId` (dirección guardada, exige sesión de cliente y propiedad) o `municipalityId` (+ `zone` opcional; invitado o dirección nueva); ninguno o ambos => 400.
          *     En el municipio de la ciudad de Guatemala la zona es obligatoria con formato «Zona N» (decisión C2 de F05); si falta
          *     => blocker `ADDRESS_INCOMPLETE`. No hay texto libre de dirección: la cotización solo necesita municipio y zona.
          *     `deliveryProvider` es una preferencia explícita (no se sustituye en silencio). Combinaciones incoherentes => 400.
          */
         CheckoutFulfillmentInput: {
             /** @enum {string} */
-            type: "PICKUP" | "DELIVERY";
+            type: "DELIVERY";
             /** Format: uuid */
             customerAddressId?: string;
             /** Format: uuid */
@@ -4704,8 +4693,8 @@ export interface components {
         };
         /**
          * @description Motivo que impide continuar. `code` estable (los clientes ramifican por él): por línea (`scope=LINE`, `lineIndex`):
-         *     `UNAVAILABLE`, `INACTIVE`, `NOT_FOUND`, `MODIFIER_INVALID`, `OPTION_UNAVAILABLE`; sucursal (`BRANCH`): `BRANCH_CLOSED`;
-         *     modalidad (`FULFILLMENT`): `ADDRESS_INCOMPLETE`, `DELIVERY_UNAVAILABLE` (ningún proveedor cubre), `DELIVERY_UNVERIFIED`
+         *     `UNAVAILABLE`, `INACTIVE`, `NOT_FOUND`, `MODIFIER_INVALID`, `OPTION_UNAVAILABLE`; sucursal (`BRANCH`): `BRANCH_CLOSED` (cerrada o fuera de horario: se informa la apertura, sin programar);
+         *     modalidad (`FULFILLMENT`; ADR-0036, solo a domicilio): `ADDRESS_INCOMPLETE`, `DELIVERY_UNAVAILABLE` (ningún proveedor cubre: la web informa que por ahora no se llega a esa dirección, sin ofrecer recoger ni programar), `DELIVERY_UNVERIFIED`
          *     (no se pudo verificar cobertura), `DELIVERY_PROVIDER_NOT_SELECTABLE` (el proveedor pedido no es seleccionable).
          *     Valores futuros posibles.
          */
@@ -4732,14 +4721,14 @@ export interface components {
             branch: components["schemas"]["CheckoutBranchState"];
             fulfillment: {
                 /** @enum {string} */
-                type: "PICKUP" | "DELIVERY";
+                type: "DELIVERY";
                 delivery: components["schemas"]["CheckoutDelivery"] | null;
             };
             lines: components["schemas"]["CheckoutQuoteLine"][];
             subtotal: components["schemas"]["CheckoutMoney"];
             extrasTotal: components["schemas"]["CheckoutMoney"];
             discountTotal: components["schemas"]["CheckoutMoney"];
-            /** @description `0.00` en PICKUP; `null` si a domicilio no hay tarifa verificable. */
+            /** @description `null` si no hay tarifa verificable para la dirección. */
             deliveryFee: components["schemas"]["CheckoutMoney"] | null;
             total: components["schemas"]["CheckoutMoney"] | null;
             coupon: components["schemas"]["CheckoutCoupon"] | null;
@@ -4750,7 +4739,7 @@ export interface components {
         /**
          * @description Catálogo OFICIAL de estados del pedido (F20 define; F22 gobierna las transiciones). F20 solo escribe `pending`. F21 los presenta como `OrderPublicStatus`.
          *     `pending` recibido; `accepted` aceptado por la sucursal; `preparing` en cocina; `ready` listo; `on_the_way` en camino
-         *     (solo DELIVERY); `delivered` entregado al cliente (DELIVERY); `picked_up` recogido (PICKUP); `rejected` rechazado por
+         *     (solo DELIVERY); `delivered` entregado al cliente (DELIVERY); `picked_up` recogido (PICKUP: SOLO pedidos históricos o en curso anteriores a ADR-0036; ningún pedido nuevo llega aquí); `rejected` rechazado por
          *     la sucursal; `cancelled` cancelado. Es INDEPENDIENTE del pago (F24) y de la entrega (F28/F29). Los clientes deben
          *     tolerar valores futuros. Reemplaza al `OrderStatus` borrador (`received` => `pending`).
          * @enum {string}
@@ -4776,9 +4765,9 @@ export interface components {
             email?: string;
         };
         /**
-         * @description Texto de la dirección de entrega. Obligatorio con `fulfillment.type=DELIVERY` y `municipalityId` (dirección nueva o
-         *     invitado); PROHIBIDO con `customerAddressId` (se copia la dirección guardada) y con PICKUP (=> 400). No afecta al precio
-         *     ni a la huella del token (la cobertura sigue siendo municipio + zona).
+         * @description Texto de la dirección de entrega. Como todo pedido es a domicilio (ADR-0036), es OBLIGATORIO con `fulfillment.municipalityId` (dirección nueva o
+         *     invitado; si falta => 400) y PROHIBIDO con `customerAddressId` (se copia la dirección guardada; => 400). No se puede expresar como `required` del esquema
+         *     porque depende de qué campo de `fulfillment` se envíe. No afecta al precio ni a la huella del token (la cobertura sigue siendo municipio + zona).
          */
         OrderDeliveryAddressInput: {
             addressLine: string;
@@ -4786,7 +4775,8 @@ export interface components {
         };
         /**
          * @description Cuerpo de `POST /v1/orders` (≤ 64 KB). `cart`, `fulfillment` y `couponCode` son EXACTAMENTE los de
-         *     `CheckoutQuoteRequest` (se recotizan en el servidor). Sin `clientView`, sin importes.
+         *     `CheckoutQuoteRequest` (se recotizan en el servidor). Sin `clientView`, sin importes. ADR-0036: `fulfillment.type` es solo `DELIVERY`
+         *     (enviar `PICKUP` => 400) y no hay programación. `deliveryAddress` es obligatorio si `fulfillment` usa `municipalityId` y prohibido con `customerAddressId`.
          */
         OrderCreateRequest: {
             cart: components["schemas"]["CartQuoteInput"];
@@ -4845,7 +4835,7 @@ export interface components {
          */
         OrderPaymentStatus: "PENDING" | "PAID";
         /**
-         * @description Pago del pedido con vocabulario PÚBLICO seguro (F24). Siempre efectivo (`CASH`). `paidAt` solo con `PAID`. NUNCA identifica al empleado que cobró ni trae historial ni auditoría. Un pedido PICKUP se
+         * @description Pago del pedido con vocabulario PÚBLICO seguro (F24). Siempre efectivo (`CASH`). `paidAt` solo con `PAID`. NUNCA identifica al empleado que cobró ni trae historial ni auditoría. Un pedido PICKUP histórico o en curso (ADR-0036) se
          *     paga en mostrador al recoger; un DELIVERY `OWN`, al recibirlo. Reemplaza al `{methodPreference, status: NOT_STARTED}` de F20 (F20 aún no está en producción: cambio incompatible aceptado, sin `/v2`).
          * @example {
          *       "method": "CASH",
@@ -4900,9 +4890,12 @@ export interface components {
             status: components["schemas"]["OrderLifecycleStatus"];
             /** Format: uuid */
             branchId: string;
-            /** @enum {string} */
+            /**
+             * @description Los pedidos nuevos son siempre `DELIVERY` (ADR-0036). `PICKUP` solo en pedidos HISTÓRICOS o en curso anteriores a ADR-0036.
+             * @enum {string}
+             */
             fulfillmentType: "PICKUP" | "DELIVERY";
-            /** @description `OWN` en entrega propia, `null` en PICKUP. `PEDIDOSYA` no es creable en F20. */
+            /** @description `OWN` en entrega propia; `null` en PICKUP histórico. `PEDIDOSYA` no es creable en F20. */
             deliveryProvider: components["schemas"]["CourierProvider"] | null;
             /** @enum {string} */
             currency: "GTQ";
@@ -4954,7 +4947,10 @@ export interface components {
             /** Format: uuid */
             branchId: string;
             branchName: string;
-            /** @enum {string} */
+            /**
+             * @description `PICKUP` solo en pedidos históricos (ADR-0036); los nuevos son `DELIVERY`.
+             * @enum {string}
+             */
             fulfillmentType: "PICKUP" | "DELIVERY";
             deliveryProvider: components["schemas"]["CourierProvider"] | null;
             /** @description Unidades del pedido (suma de cantidades de las líneas), agregadas en SQL. */
@@ -4983,7 +4979,10 @@ export interface components {
             phone: string | null;
         };
         OrderReceiptFulfillment: {
-            /** @enum {string} */
+            /**
+             * @description `PICKUP` solo en pedidos históricos (ADR-0036); los nuevos son `DELIVERY`.
+             * @enum {string}
+             */
             type: "PICKUP" | "DELIVERY";
             /** @description Tal como quedó registrado. Un pedido `PEDIDOSYA` histórico se muestra sin estados externos inventados (`BLOCKED_EXTERNAL`). */
             provider: components["schemas"]["CourierProvider"] | null;
@@ -5156,7 +5155,7 @@ export interface components {
             /** @description `true` si al menos una línea es `AVAILABLE`. */
             canAddAny: boolean;
         };
-        /** @description F23 (spec 024, ADR-0029). Resultado de la vista previa. No crea ni guarda nada. La modalidad (`source.fulfillmentType`) y la dirección NO se copian: se eligen de nuevo en el checkout (F19). */
+        /** @description F23 (spec 024, ADR-0029). Resultado de la vista previa. No crea ni guarda nada. La modalidad (`source.fulfillmentType`) y la dirección NO se copian: la modalidad es siempre a domicilio (ADR-0036) y la dirección se elige de nuevo en el checkout (F19). */
         OrderReorderPreview: {
             /** Format: date-time */
             generatedAt: string;
@@ -5165,7 +5164,10 @@ export interface components {
                 /** @example MON-001042 */
                 displayNumber: string;
                 status: components["schemas"]["OrderLifecycleStatus"];
-                /** @enum {string} */
+                /**
+                 * @description Informativo; `PICKUP` solo en pedidos históricos (ADR-0036). El nuevo pedido siempre será a domicilio.
+                 * @enum {string}
+                 */
                 fulfillmentType: "PICKUP" | "DELIVERY";
                 deliveryProvider: components["schemas"]["CourierProvider"] | null;
                 /** Format: date-time */
@@ -5179,7 +5181,7 @@ export interface components {
          * @description Fase PÚBLICA normalizada del pedido (F21, spec 022 §3). El servidor entrega CÓDIGOS estables; las etiquetas y
          *     descripciones (es/en) las pone la web. Mapeo desde `OrderLifecycleStatus`: `pending`=>`received`, `accepted`=>`accepted`,
          *     `preparing`=>`preparing`, `ready`=>`ready`, `on_the_way`=>`on_the_way`, `delivered`|`picked_up`=>`completed` (la web
-         *     distingue entrega/retiro con `fulfillmentType`), `rejected`=>`rejected`, `cancelled`=>`cancelled`. No existe fase de
+         *     distingue entrega/retiro con `fulfillmentType`; el retiro `picked_up` solo existe en pedidos históricos, ADR-0036), `rejected`=>`rejected`, `cancelled`=>`cancelled`. No existe fase de
          *     «incidencia» ni de «pendiente de pago» (no son estados del pedido). Los clientes deben tolerar valores futuros.
          * @enum {string}
          */
@@ -5229,7 +5231,10 @@ export interface components {
             displayNumber: string;
             /** Format: uuid */
             branchId: string;
-            /** @enum {string} */
+            /**
+             * @description `PICKUP` solo en pedidos históricos o en curso anteriores a ADR-0036; los nuevos son `DELIVERY`.
+             * @enum {string}
+             */
             fulfillmentType: "PICKUP" | "DELIVERY";
             status: components["schemas"]["OrderLifecycleStatus"];
             publicStatus: components["schemas"]["OrderPublicStatus"];
@@ -5248,7 +5253,7 @@ export interface components {
             events: components["schemas"]["OrderTrackingEvent"][];
             /** @description `true` si el historial tiene más de 50 eventos (se devuelven los 50 más recientes, en orden cronológico; faltan los más antiguos). */
             eventsTruncated: boolean;
-            /** @description `null` en PICKUP. */
+            /** @description `null` en PICKUP histórico. */
             delivery: components["schemas"]["OrderTrackingDelivery"] | null;
             /** @description F24: método y estado de pago reales (efectivo `PENDING|PAID`); independiente del estado del pedido y fuera del timeline. */
             payment: components["schemas"]["OrderDetailPayment"];
@@ -5974,9 +5979,12 @@ export interface components {
             /** Format: uuid */
             branchId: string;
             branchName: string;
-            /** @enum {string} */
+            /**
+             * @description `PICKUP` solo en pedidos históricos o en curso anteriores a ADR-0036; los nuevos son `DELIVERY`.
+             * @enum {string}
+             */
             fulfillmentType: "PICKUP" | "DELIVERY";
-            /** @description `null` en PICKUP. */
+            /** @description `null` en PICKUP histórico. */
             deliveryProvider: components["schemas"]["CourierProvider"] | null;
             customerName: string;
             itemCount: number;
@@ -5985,11 +5993,6 @@ export interface components {
             paymentMethodPreference: components["schemas"]["OrderPaymentPreference"] | null;
             /** @description F24: estado de pago real (efectivo). El tablero lo muestra como insignia; es independiente del estado del pedido. */
             paymentStatus: components["schemas"]["OrderPaymentStatus"];
-            /**
-             * Format: date-time
-             * @description Pedido programado (P42: hoy siempre `null`; la programación es `MOCK_ONLY`).
-             */
-            scheduledFor: string | null;
             /** Format: date-time */
             placedAt: string;
             /** Format: date-time */
@@ -6061,7 +6064,7 @@ export interface components {
             currency: "GTQ";
             lines: components["schemas"]["OrderDetailLine"][];
             promotions: components["schemas"]["OrderDetailPromotion"][];
-            /** @description `null` en PICKUP. */
+            /** @description `null` en PICKUP histórico. */
             address: components["schemas"]["OrderDetailAddress"] | null;
             contact: components["schemas"]["AdminOrderContact"];
             notes: string | null;
@@ -6123,14 +6126,13 @@ export interface components {
          *         "status": "cancelled",
          *         "branchId": "0b6f6a52-1c55-4c0e-8f3a-3a5d6a3c2b10",
          *         "branchName": "Sushi Mon Zona 10",
-         *         "fulfillmentType": "PICKUP",
-         *         "deliveryProvider": null,
+         *         "fulfillmentType": "DELIVERY",
+         *         "deliveryProvider": "OWN",
          *         "customerName": "Ana López",
          *         "itemCount": 3,
          *         "total": "185.00",
          *         "paymentMethodPreference": "cash",
          *         "paymentStatus": "PAID",
-         *         "scheduledFor": null,
          *         "placedAt": "2026-11-18T18:02:11.000Z",
          *         "updatedAt": "2026-11-18T18:20:41.512Z",
          *         "availableActions": []
@@ -6231,7 +6233,7 @@ export interface components {
          */
         PaymentCollectorType: "STAFF";
         /**
-         * @description Dónde se cobra, DERIVADO por el servidor del pedido (nunca de la entrada): `BRANCH` = PICKUP, en mostrador de la sucursal; `OWN_DELIVERY` = DELIVERY con reparto propio (`OWN`), efectivo al recibir.
+         * @description Dónde se cobra, DERIVADO por el servidor del pedido (nunca de la entrada): `BRANCH` = PICKUP histórico o en curso (ADR-0036), en mostrador de la sucursal; `OWN_DELIVERY` = DELIVERY con reparto propio (`OWN`), efectivo al recibir.
          *     Un pedido con `delivery_provider = PEDIDOSYA` no tiene contexto de cobro (`null`): no se asume que el proveedor cobre efectivo (F29, `BLOCKED_EXTERNAL`).
          * @enum {string}
          */
@@ -6299,12 +6301,12 @@ export interface components {
          *       },
          *       "orderId": "7b7c3d52-6a0f-4a8e-9a53-0f3a1e0b9c11",
          *       "displayNumber": "MON-001042",
-         *       "orderStatus": "picked_up",
+         *       "orderStatus": "delivered",
          *       "branchId": "0b6f6a52-1c55-4c0e-8f3a-3a5d6a3c2b10",
-         *       "fulfillmentType": "PICKUP",
-         *       "deliveryProvider": null,
+         *       "fulfillmentType": "DELIVERY",
+         *       "deliveryProvider": "OWN",
          *       "currency": "GTQ",
-         *       "collectionContext": "BRANCH",
+         *       "collectionContext": "OWN_DELIVERY",
          *       "reception": {
          *         "amountApplied": "185.00",
          *         "tendered": "200.00",
@@ -6326,7 +6328,10 @@ export interface components {
             orderStatus: components["schemas"]["OrderLifecycleStatus"];
             /** Format: uuid */
             branchId: string;
-            /** @enum {string} */
+            /**
+             * @description `PICKUP` solo en pedidos históricos o en curso anteriores a ADR-0036.
+             * @enum {string}
+             */
             fulfillmentType: "PICKUP" | "DELIVERY";
             deliveryProvider: components["schemas"]["CourierProvider"] | null;
             /** @enum {string} */
@@ -6896,13 +6901,13 @@ export interface operations {
                      *           "id": "7c1f0f52-3b5e-4c63-9a4d-5f6e8f0a1b2c",
                      *           "orderNumber": 1042,
                      *           "displayNumber": "MON-001042",
-                     *           "status": "picked_up",
+                     *           "status": "delivered",
                      *           "publicStatus": "completed",
                      *           "terminal": true,
                      *           "branchId": "0b9d3c1e-8a52-4f0e-9b0a-1c2d3e4f5a6b",
                      *           "branchName": "Sushi Mon Zona 10",
-                     *           "fulfillmentType": "PICKUP",
-                     *           "deliveryProvider": null,
+                     *           "fulfillmentType": "DELIVERY",
+                     *           "deliveryProvider": "OWN",
                      *           "itemCount": 3,
                      *           "total": "165.00",
                      *           "currency": "GTQ",
@@ -9625,7 +9630,7 @@ export interface operations {
                     "application/json": components["schemas"]["CheckoutQuote"];
                 };
             };
-            /** @description Forma inválida (UUID, cantidades, propiedades desconocidas como `price`, `fee` o `total`, combinación incoherente de `fulfillment`) o topes superados (`QUOTE_LIMITS_EXCEEDED`) */
+            /** @description Forma inválida (UUID, cantidades, propiedades desconocidas como `price`, `fee` o `total`, combinación incoherente de `fulfillment`, `fulfillment.type` distinto de `DELIVERY` —p. ej. `PICKUP`, retirado por ADR-0036—) o topes superados (`QUOTE_LIMITS_EXCEEDED`) */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -9723,7 +9728,7 @@ export interface operations {
                     "application/json": components["schemas"]["OrderCreated"];
                 };
             };
-            /** @description Forma inválida, `Idempotency-Key` ausente o malformada (`IDEMPOTENCY_KEY_INVALID`), campos de importe, contacto/teléfono/correo inválido, notas > 280, topes de F19 (`QUOTE_LIMITS_EXCEEDED`) */
+            /** @description Forma inválida, `Idempotency-Key` ausente o malformada (`IDEMPOTENCY_KEY_INVALID`), campos de importe, `fulfillment.type` distinto de `DELIVERY` (p. ej. `PICKUP`, retirado por ADR-0036), falta de `deliveryAddress` cuando no se envía `customerAddressId`, contacto/teléfono/correo inválido, notas > 280, topes de F19 (`QUOTE_LIMITS_EXCEEDED`) */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -10114,7 +10119,6 @@ export interface operations {
                 branchId?: string;
                 /** @description Uno o varios estados separados por comas (p. ej. `pending,accepted`). */
                 status?: components["schemas"]["OrderLifecycleStatus"][];
-                fulfillmentType?: "PICKUP" | "DELIVERY";
                 q?: string;
                 /** @description Instante ISO 8601 con zona. Sin zona => 400. */
                 from?: string;

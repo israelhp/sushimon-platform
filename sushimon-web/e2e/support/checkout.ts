@@ -1,12 +1,9 @@
 import { expect, type Page } from '@playwright/test';
-import { DUMPLINGS, cartV2, pickupMode } from './cart';
+import { DUMPLINGS, cartV2, deliveryMode } from './cart';
 
 /** Ayudas del checkout (datos SIMULADOS) para las pruebas de F20. */
-export const deliveryMode = (branchId: string) =>
-  JSON.stringify({ type: 'delivery', when: { kind: 'now' }, branchId, address: null });
 
 export interface SeedOptions {
-  mode?: 'pickup' | 'delivery';
   theme?: 'light' | 'dark';
   /** Fallos de prueba del mock (`window.__sushimonMockFaults`), p. ej. `{ 'POST /v1/orders': ['lost-response'] }`. */
   faults?: Record<string, string[]>;
@@ -15,7 +12,7 @@ export interface SeedOptions {
 
 /** Siembra el carrito y el modo de pedido una sola vez por pestaña, y registra las solicitudes del adaptador mock. */
 export async function seedCheckout(page: Page, options: SeedOptions = {}) {
-  const { mode = 'pickup', theme = 'light', faults, locale } = options;
+  const { theme = 'light', faults, locale } = options;
   await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
   if (locale === 'en')
     await page
@@ -38,7 +35,7 @@ export async function seedCheckout(page: Page, options: SeedOptions = {}) {
     },
     [
       cartV2('sucursal-1', [{ ...DUMPLINGS, quantity: 2 }]),
-      mode === 'pickup' ? pickupMode('sucursal-1') : deliveryMode('sucursal-1'),
+      deliveryMode('sucursal-1'),
       theme,
       faults ? JSON.stringify(faults) : '',
     ],

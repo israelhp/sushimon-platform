@@ -34,7 +34,6 @@ export type SaveAddressDecision =
   | { action: 'save'; input: AddressInput };
 
 export function decideSaveAddress(args: {
-  delivery: boolean;
   signedIn: boolean;
   wantsSave: boolean;
   /** `draft.addressId === 'other'` (dirección escrita a mano, no una guardada elegida). */
@@ -47,7 +46,7 @@ export function decideSaveAddress(args: {
   alreadySavedSignature: string | null;
 }): SaveAddressDecision {
   const { draft, addresses } = args;
-  if (!args.delivery || !args.signedIn || !args.wantsSave) return { action: 'skip' };
+  if (!args.signedIn || !args.wantsSave) return { action: 'skip' };
   if ((addresses.length > 0 && !args.isOther) || isAddressSaved(draft, addresses)) {
     return { action: 'skip' };
   }

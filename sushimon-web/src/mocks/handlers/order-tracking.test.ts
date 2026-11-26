@@ -15,13 +15,18 @@ async function place(
   h: TestHarness,
   key = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
 ): Promise<OrderCreated> {
-  const fulfillment = { type: 'PICKUP' } as const;
+  const fulfillment = {
+    type: 'DELIVERY',
+    municipalityId: 'mun-guatemala-guatemala',
+    zone: 'Zona 10',
+  } as const;
   const quote = await quoteCheckout(h.client, { cart, fulfillment });
   return createOrder(
     h.client,
     {
       cart,
       fulfillment,
+      deliveryAddress: { addressLine: '6a avenida 10-50', referenceNote: '' },
       quoteToken: quote.quote.token as string,
       contact: { fullName: 'Ana López', phone: '5555-1234' },
       paymentMethodPreference: 'cash',
@@ -41,7 +46,7 @@ async function error(p: Promise<unknown>): Promise<ApiError> {
 }
 
 describe('F21 mock · getOrderTracking', () => {
-  it('pedido recién creado: pending/received, un solo evento real, fases PICKUP sin on_the_way, sin delivery', async () => {
+  it('pedido recién creado: pending/received, un solo evento real, fases a domicilio, entrega propia aún sin estado', async () => {
     const h = createHarness();
     const created = await place(h);
     const t = await getOrderTracking(h.client, created.order.id, {
@@ -51,12 +56,12 @@ describe('F21 mock · getOrderTracking', () => {
       orderId: created.order.id,
       displayNumber: created.order.displayNumber,
       branchId: 'sucursal-1',
-      fulfillmentType: 'PICKUP',
+      fulfillmentType: 'DELIVERY',
       status: 'pending',
       publicStatus: 'received',
       terminal: false,
       eventsTruncated: false,
-      delivery: null,
+      delivery: { provider: 'OWN', status: null },
       pollAfterSeconds: 15,
     });
     expect(t.events).toEqual([
@@ -67,9 +72,17 @@ describe('F21 mock · getOrderTracking', () => {
       'accepted',
       'preparing',
       'ready',
+      'on_the_way',
       'completed',
     ]);
-    expect(t.steps.map((s) => s.reachedAt !== null)).toEqual([true, false, false, false, false]);
+    expect(t.steps.map((s) => s.reachedAt !== null)).toEqual([
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
     // Sin datos de más: ni contacto, importes, líneas, dirección ni notas.
     const json = JSON.stringify(t);
     for (const forbidden of [
@@ -86,16 +99,16 @@ describe('F21 mock · getOrderTracking', () => {
     }
   });
 
-  it('el avance de demostración alimenta el historial real; el estado terminal es picked_up en PICKUP y pollAfterSeconds es null', async () => {
+  it('el avance de demostración alimenta el historial real; el estado terminal es delivered y pollAfterSeconds es null', async () => {
     const h = createHarness();
     const created = await place(h);
     const opts = { guestToken: created.access?.guestToken };
     const seen: string[] = [];
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 5; i++) {
       await advanceOrderDemo(h.client, created.order.displayNumber);
       seen.push((await getOrderTracking(h.client, created.order.id, opts)).status);
     }
-    expect(seen).toEqual(['accepted', 'preparing', 'ready', 'picked_up']);
+    expect(seen).toEqual(['accepted', 'preparing', 'ready', 'on_the_way', 'delivered']);
     const t = await getOrderTracking(h.client, created.order.id, opts);
     expect(t).toMatchObject({ publicStatus: 'completed', terminal: true, pollAfterSeconds: null });
     expect(t.events.map((e) => e.status)).toEqual([
@@ -103,9 +116,10 @@ describe('F21 mock · getOrderTracking', () => {
       'accepted',
       'preparing',
       'ready',
-      'picked_up',
+      'on_the_way',
+      'delivered',
     ]);
-    expect(t.events.map((e) => e.seq)).toEqual([1, 2, 3, 4, 5]);
+    expect(t.events.map((e) => e.seq)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(t.steps.every((s) => s.reachedAt !== null)).toBe(true);
   });
 

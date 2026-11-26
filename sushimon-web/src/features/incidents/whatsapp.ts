@@ -19,7 +19,7 @@ export function whatsappUrl(number: string | null | undefined, message?: string)
 export interface WhatsappMessageLabels {
   /** Plantilla ICU `incidents.waMsg` ({id} {date} {mode} {items} {total} {name}). */
   template: (values: Record<string, string>) => string;
-  /** `mode.delivery` / `mode.pickup`. */
+  /** `mode.delivery` / `tracking.modePickup` (histórico). */
   delivery: string;
   pickup: string;
   /** Nombre de la sucursal del pedido. */

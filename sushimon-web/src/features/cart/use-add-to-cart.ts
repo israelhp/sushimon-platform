@@ -74,7 +74,7 @@ export function useAddToCart() {
       replaceLineId,
     }: AddProductArgs): AddOutcome | null => {
       if (!branchId) {
-        orderSheet.open('now');
+        orderSheet.open();
         notify(t('cart.needBranch'), { tone: 'warn' });
         return null;
       }
@@ -107,7 +107,7 @@ export function useAddToCart() {
   const quickAdd = useCallback(
     async (product: CatalogProduct) => {
       if (!branchId) {
-        orderSheet.open('now');
+        orderSheet.open();
         notify(t('cart.needBranch'), { tone: 'warn' });
         return;
       }

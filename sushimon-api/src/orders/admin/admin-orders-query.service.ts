@@ -121,7 +121,6 @@ export class AdminOrdersQueryService {
     const numeric = q !== null ? ORDER_NUMBER.exec(q) : null;
     return {
       status: query.status ?? null,
-      fulfillmentType: query.fulfillmentType ?? null,
       orderNumber: numeric ? BigInt(numeric[1] as string) : null,
       nameContains: q !== null && !numeric ? q : null,
       from: new Date(from),

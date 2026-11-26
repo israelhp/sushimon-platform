@@ -136,7 +136,12 @@ describe('GET /v1/orders/{id}/tracking (e2e, F21)', () => {
   const place = async (
     opts: { jwt?: string; fulfillment?: Body; extra?: Body; key?: string } = {},
   ): Promise<Created> => {
-    const fulfillment = opts.fulfillment ?? { type: 'PICKUP' };
+    // ADR-0036: por defecto, a domicilio con zona propia (tarifa 0.00 del doble de cobertura).
+    const fulfillment = opts.fulfillment ?? {
+      type: 'DELIVERY',
+      municipalityId: MUNI_GUATEMALA,
+      zone: 'Zona 10',
+    };
     const token = await quote(fulfillment, opts.jwt);
     let req = http()
       .post('/v1/orders')
@@ -147,6 +152,9 @@ describe('GET /v1/orders/{id}/tracking (e2e, F21)', () => {
       .send({
         cart: cartOf(),
         fulfillment,
+        ...(fulfillment['customerAddressId']
+          ? {}
+          : { deliveryAddress: { addressLine: '6a avenida 12-34' } }),
         quoteToken: token,
         ...(opts.jwt ? {} : { contact: GUEST }),
         notes: NOTES,
@@ -226,8 +234,8 @@ describe('GET /v1/orders/{id}/tracking (e2e, F21)', () => {
       status: 'pending',
       publicStatus: 'received',
       terminal: false,
-      fulfillmentType: 'PICKUP',
-      delivery: null,
+      fulfillmentType: 'DELIVERY',
+      delivery: { provider: 'OWN', status: null },
       pollAfterSeconds: 15,
       eventsTruncated: false,
     });
@@ -239,6 +247,7 @@ describe('GET /v1/orders/{id}/tracking (e2e, F21)', () => {
       'accepted',
       'preparing',
       'ready',
+      'on_the_way',
       'completed',
     ]);
   });
@@ -325,10 +334,19 @@ describe('GET /v1/orders/{id}/tracking (e2e, F21)', () => {
     for (const r of [bad1, bad2]) expect(r.headers['cache-control']).toBe('private, no-store');
   });
 
-  it('PICKUP / DELIVERY OWN / DELIVERY PEDIDOSYA (registro): delivery y recorrido según modalidad', async () => {
+  it('DELIVERY OWN / DELIVERY PEDIDOSYA (registro) y PICKUP HISTÓRICO: delivery y recorrido según modalidad', async () => {
+    // PICKUP histórico (ADR-0036): ya no se puede crear; el registro se fabrica y el seguimiento sigue respondiendo.
     const pickup = await place();
+    const legacy = h.ordersRepo.orders.get(pickup.order.id);
+    if (!legacy) throw new Error('sin pedido');
+    legacy.record.fulfillmentType = 'PICKUP';
+    legacy.record.deliveryProvider = null;
     const p = await track(pickup.order.id, { token: pickup.access?.guestToken }).expect(200);
     expect((p.body as Body)['delivery']).toBeNull();
+    expect((p.body as Body)['fulfillmentType']).toBe('PICKUP');
+    expect(((p.body as Body)['steps'] as { phase: string }[]).map((s) => s.phase)).not.toContain(
+      'on_the_way',
+    );
 
     h.cover.result = coverageResult({ own: ownZone('15.00') });
     const own = await place({

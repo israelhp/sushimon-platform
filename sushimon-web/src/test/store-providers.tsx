@@ -57,6 +57,15 @@ export interface RenderStoreOptions {
  * (latencia 0, reloj fijo, sin persistencia ni reintentos), sesión de demostración, carrito, modo de pedido,
  * avisos, overlays y ficha de producto. Limpia el estado persistido del cliente antes de cada render.
  */
+/** Dirección a domicilio de las pruebas (ADR-0036: la tienda es solo a domicilio). */
+const TEST_ADDRESS = {
+  department: 'Guatemala',
+  municipality: 'Guatemala',
+  zone: '10',
+  line: '6a avenida 10-50',
+  references: '',
+};
+
 export async function renderStore(
   ui: ReactElement,
   {
@@ -80,8 +89,8 @@ export async function renderStore(
 
   writeOrderModeForTests(
     branchId
-      ? { type: 'pickup', when: { kind: 'now' }, branchId, address: null }
-      : { type: null, when: { kind: 'now' }, branchId: null, address: null },
+      ? { type: 'delivery', branchId, address: TEST_ADDRESS }
+      : { type: null, branchId: null, address: null },
   );
   const seeded = createSeedStore(scenario);
   prepareStore?.(seeded);
@@ -133,7 +142,7 @@ export async function renderStore(
     api().mode.reset();
     api().session.signOutCustomer();
     if (branchId) {
-      api().mode.setMode({ type: 'pickup', when: { kind: 'now' }, branchId, address: null });
+      api().mode.setMode({ type: 'delivery', branchId, address: TEST_ADDRESS });
     }
   });
   return Object.assign(result, { api, queryClient });

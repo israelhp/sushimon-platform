@@ -4,7 +4,8 @@ import { OrderCreateRequestDto } from './order-create-request.dto.js';
 const U = '00000000-0000-4000-8000-000000000001';
 const valid = () => ({
   cart: { branchId: U, lines: [{ productId: U, quantity: 1, selections: [] }] },
-  fulfillment: { type: 'PICKUP' },
+  fulfillment: { type: 'DELIVERY', municipalityId: U, zone: 'Zona 10' },
+  deliveryAddress: { addressLine: 'Calle 1-23' },
   quoteToken: 'v1.a.b',
   contact: { fullName: 'Ana Pérez', phone: '5555 1234', email: 'ana@example.com' },
   notes: 'sin wasabi',
@@ -50,7 +51,7 @@ describe('OrderCreateRequestDto (lista blanca; contrato OrderCreateRequest)', ()
         cart: { ...v.cart, lines: [{ ...v.cart.lines[0], unitPrice: '1.00' }] },
       }),
     ).toBe(400);
-    expect(await check({ ...v, fulfillment: { type: 'PICKUP', deliveryFee: '0.00' } })).toBe(400);
+    expect(await check({ ...v, fulfillment: { ...v.fulfillment, deliveryFee: '0.00' } })).toBe(400);
     expect(await check({ ...v, contact: { ...v.contact, customerId: U } })).toBe(400);
     expect(await check({ ...v, deliveryAddress: { addressLine: 'Calle 1-23', lat: 1 } })).toBe(400);
   });

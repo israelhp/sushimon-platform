@@ -1,4 +1,4 @@
-import { DUMPLINGS, cartV2, pickupMode } from './support/cart';
+import { DUMPLINGS, cartV2, deliveryMode } from './support/cart';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
@@ -119,7 +119,7 @@ test('cierre de emergencia: la tienda lo refleja y el admin lo termina', async (
       localStorage.setItem('monsushi-cart-v2', cart!);
       localStorage.setItem('monsushi-order-mode-v1', mode!);
     },
-    [cartV2('sucursal-1', [DUMPLINGS]), pickupMode('sucursal-1')],
+    [cartV2('sucursal-1', [DUMPLINGS]), deliveryMode('sucursal-1')],
   );
   await page.goto('/');
   await page.getByRole('heading', { name: /hambre/i }).waitFor();

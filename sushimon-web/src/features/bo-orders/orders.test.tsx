@@ -477,14 +477,16 @@ describe('vista de tabla', () => {
     expect(screen.getByRole('button', { name: 'Ver detalle de #MON-307055' })).toBeVisible();
   });
 
-  it('busca por nombre en el servidor, filtra por tipo y limpia los filtros', async () => {
+  it('busca por nombre en el servidor, no ofrece filtro por tipo (ADR-0036) y limpia los filtros', async () => {
     await openTable();
     await userEvent.type(screen.getByRole('searchbox', { name: 'Buscar pedidos' }), 'diego');
     expect(await screen.findByRole('button', { name: 'Ver detalle de #MON-307055' })).toBeVisible();
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: 'Ver detalle de #MON-307057' })).toBeNull(),
     );
-    await userEvent.click(screen.getByRole('button', { name: 'Delivery' }));
+    expect(screen.queryByRole('group', { name: 'Tipo de pedido' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delivery' })).toBeNull();
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Buscar pedidos' }), 'zzz');
     expect(await screen.findByText('Sin resultados')).toBeVisible();
     await userEvent.click(screen.getByRole('button', { name: 'Limpiar filtros' }));
     expect(await screen.findByRole('button', { name: 'Ver detalle de #MON-307057' })).toBeVisible();
