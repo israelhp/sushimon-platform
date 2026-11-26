@@ -16,7 +16,7 @@ function spy() {
 }
 const body = {
   cart: { branchId: 'b', lines: [] },
-  fulfillment: { type: 'PICKUP' as const },
+  fulfillment: { type: 'DELIVERY' as const, municipalityId: 'm1', zone: null },
   quoteToken: 't',
 };
 

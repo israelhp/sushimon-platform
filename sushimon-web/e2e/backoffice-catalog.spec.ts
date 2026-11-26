@@ -16,12 +16,22 @@ const nav = (page: Page) => page.getByRole('navigation', { name: 'Menú principa
 const card = (page: Page, name: string) =>
   page.locator('.pcard').filter({ has: page.getByText(name, { exact: true }) });
 const editDumplings = (page: Page) => page.getByRole('button', { name: 'Editar Dumplings' });
-/** Preferencia de la tienda (solo comodidad, no autenticación): sucursal para recoger. */
+/** Preferencia de la tienda (solo comodidad, no autenticación): sucursal para el pedido a domicilio. */
 const pickBranch = (page: Page, branchId: string) =>
   page.evaluate((id) => {
     localStorage.setItem(
       'monsushi-order-mode-v1',
-      JSON.stringify({ type: 'pickup', when: { kind: 'now' }, branchId: id, address: null }),
+      JSON.stringify({
+        type: 'delivery',
+        branchId: id,
+        address: {
+          department: 'Guatemala',
+          municipality: 'Guatemala',
+          zone: '10',
+          line: '6a avenida 10-50',
+          references: '',
+        },
+      }),
     );
   }, branchId);
 

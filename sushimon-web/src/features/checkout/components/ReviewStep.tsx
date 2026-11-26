@@ -1,12 +1,10 @@
 'use client';
 
-import { Banknote, Clock, Phone, ShoppingBag, Store, TriangleAlert, Truck } from 'lucide-react';
+import { Banknote, Phone, ShoppingBag, Store, TriangleAlert, Truck } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
 import { moneyToCents } from '@/lib/checkout-quote';
 import { formatMoney } from '@/lib/format';
-import { formatWhen } from '@/features/order-mode/when';
-import { localDate } from '@/lib/time';
 import { formatAddress, type CheckoutStep } from '../checkout-model';
 import { useCheckoutDraft } from '../checkout-context';
 import type { CheckoutData } from '../use-checkout-data';
@@ -32,16 +30,10 @@ export function ReviewStep({
   const locale = useLocale();
   const steps = useCheckoutSteps();
   const { draft } = useCheckoutDraft();
-  const { type, branch, now } = data;
+  const { branch } = data;
   const shown = data.shownQuote;
   const shownFee = moneyToCents(shown?.deliveryFee);
-  const delivery = type === 'delivery';
   const edit = (title: string) => `${t('common.change')} ${title}`;
-  const when = formatWhen(data.when, now ? localDate(now) : null, locale, {
-    asap: t('when.asap'),
-    today: t('when.today'),
-    tomorrow: t('when.tomorrow'),
-  });
   const row = (
     title: string,
     step: CheckoutStep,
@@ -81,22 +73,21 @@ export function ReviewStep({
           'products',
         )}
         {row(
-          delivery ? t('mode.delivery') : t('mode.pickupLong'),
+          t('mode.delivery'),
           2,
-          delivery ? <Truck className="h-5 w-5" /> : <Store className="h-5 w-5" />,
-          delivery ? formatAddress(draft.address, t('checkoutFlow.zoneInline')) : branch?.name,
+          <Truck className="h-5 w-5" />,
+          formatAddress(draft.address, t('checkoutFlow.zoneInline')),
           'where',
         )}
-        {row(t('checkout.when'), 2, <Clock className="h-5 w-5" />, when, 'when')}
         {row(
-          delivery ? t('delivery.title') : t('delivery.branch'),
+          t('delivery.title'),
           3,
           <Store className="h-5 w-5" />,
           <>
-            {delivery && shownFee !== null
+            {shownFee !== null
               ? `${formatMoney(shownFee / 100, locale)} · ${branch?.name ?? ''}`
               : branch?.name}
-            {delivery && shown?.fulfillment.delivery?.selectedProvider ? (
+            {shown?.fulfillment.delivery?.selectedProvider ? (
               <span className="block text-[13px] font-normal text-muted">
                 {t('checkout.quote.provider')}:{' '}
                 {t(`checkout.quote.providers.${shown.fulfillment.delivery.selectedProvider}`)}
@@ -130,7 +121,7 @@ export function ReviewStep({
           <>
             {t('payment.cash')}
             <span className="block text-[13px] font-normal text-muted">
-              {t(delivery ? 'payment.cashDelivery' : 'payment.cashPickup')}
+              {t('payment.cashDelivery')}
             </span>
           </>,
           'pay',

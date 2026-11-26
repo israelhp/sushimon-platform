@@ -49,7 +49,6 @@ export const STORE_CONFIG_SEED: Omit<StoreConfig, 'serverTime'> = {
     { key: 'sun', open: '12:00', close: '18:00' },
   ],
   weeklyHours: STORE_WEEKLY_HOURS,
-  schedule: { stepMinutes: 30, lastOrderBeforeClose: 30, minLeadMinutes: 45, days: 7 },
   // F09: tiers/ETA y la lista de departamentos del borrador se RETIRAN (ADR-0013). El contrato `StoreConfig` aún los exige:
   // se emiten vacíos. Departamentos y municipios: `GET /v1/locations/*`; tarifa y cobertura: `POST /v1/delivery-coverage/check`.
   deliveryTiers: [],

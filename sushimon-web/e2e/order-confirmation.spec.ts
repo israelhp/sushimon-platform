@@ -11,7 +11,7 @@ import {
 } from './support/checkout';
 
 /**
- * F20 · Confirmación del pedido contra el mock RETULADO como simulación (sin red externa): pickup y delivery OWN, doble clic,
+ * F20 · Confirmación del pedido contra el mock RETULADO como simulación (sin red externa): a domicilio (entrega propia), doble clic,
  * error de red con reintento de la MISMA clave, QUOTE_CHANGED, carrito conservado en error y limpio en éxito, recarga de
  * `/pedidos/[id]`, axe claro/oscuro y es/en. (La confirmación REAL contra la API se verifica aparte con la API levantada.)
  *   CI=1 NEXT_PUBLIC_AUTH_SOURCE=mock NEXT_PUBLIC_DATA_SOURCE=mock E2E_PORT=3220 pnpm exec playwright test --project=e2e order-confirmation
@@ -26,7 +26,7 @@ const audit = async (page: Page, scope?: string) => {
 
 const placedHeading = (page: Page) => page.getByRole('heading', { name: '¡Pedido registrado!' });
 
-test('recoger: confirma un pedido SIMULADO, el carrito queda limpio y el número es MON-000000', async ({
+test('a domicilio: confirma un pedido SIMULADO, el carrito queda limpio y el número es MON-000000', async ({
   page,
 }) => {
   await seedCheckout(page);
@@ -42,7 +42,7 @@ test('recoger: confirma un pedido SIMULADO, el carrito queda limpio y el número
 });
 
 test('entrega propia: confirma con la dirección y la tarifa del servidor', async ({ page }) => {
-  await seedCheckout(page, { mode: 'delivery' });
+  await seedCheckout(page);
   await toReview(page);
   await button(page, /Realizar pedido/).click();
   await expect(placedHeading(page)).toBeVisible();

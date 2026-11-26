@@ -397,8 +397,7 @@ function buildDraft(
     createdAt: at.toISOString(),
     updatedAt: at.toISOString(),
     branchId: detail.branchId,
-    fulfillment: detail.fulfillmentType === 'DELIVERY' ? 'delivery' : 'pickup',
-    schedule: { kind: 'now' },
+    fulfillment: 'delivery',
     customer: { name: contact.fullName, phone: contact.phone, email: ownerEmail ?? contact.email },
     address: place,
     lines: detail.lines.map((l, i) => ({
@@ -481,14 +480,19 @@ export const createPlacedOrder: Handler = (req): OrderCreated => {
 
   // Dirección de entrega.
   const f = parsed.fulfillment;
-  const isDelivery = f.type === 'DELIVERY';
-  const saved = isDelivery && typeof f.customerAddressId === 'string';
-  if (parsed.deliveryAddress && (!isDelivery || saved)) {
+  // ADR-0036: solo se crean pedidos a domicilio e inmediatos; PICKUP => 400 como la API real.
+  if (f.type !== 'DELIVERY') {
     problem(400, undefined, 'Datos inválidos', {
-      details: ['deliveryAddress: no se admite con PICKUP ni con una dirección guardada'],
+      details: ['fulfillment.type: solo DELIVERY (no hay recogida en sucursal)'],
     });
   }
-  if (isDelivery && !saved && !parsed.deliveryAddress) {
+  const saved = typeof f.customerAddressId === 'string';
+  if (parsed.deliveryAddress && saved) {
+    problem(400, undefined, 'Datos inválidos', {
+      details: ['deliveryAddress: no se admite con una dirección guardada'],
+    });
+  }
+  if (!saved && !parsed.deliveryAddress) {
     problem(400, undefined, 'Datos inválidos', {
       details: ['deliveryAddress: obligatoria a domicilio'],
     });
@@ -554,41 +558,39 @@ export const createPlacedOrder: Handler = (req): OrderCreated => {
     referenceNote: string;
   } | null = null;
   let draftPlace: Parameters<typeof buildDraft>[4] = null;
-  if (isDelivery) {
-    const zone = typeof f.zone === 'string' ? f.zone : null;
-    if (saved) {
-      const stored = account?.addresses.find((a) => a.id === f.customerAddressId);
-      if (!stored) problem(404, undefined, 'Dirección no encontrada');
-      place = {
-        municipalityName: stored.municipality,
-        zone: stored.zone ? `Zona ${stored.zone.replace(/\D/g, '')}` : null,
-        addressLine: stored.line,
-        referenceNote: stored.references,
-      };
-      draftPlace = {
-        department: stored.department,
-        municipality: stored.municipality,
-        zone: stored.zone,
-        line: stored.line,
-        references: stored.references,
-      };
-    } else {
-      const municipality = MUNICIPALITY_SEEDS.find((m) => m.id === f.municipalityId);
-      const address = parsed.deliveryAddress as NonNullable<ParsedOrder['deliveryAddress']>;
-      place = {
-        municipalityName: municipality?.name ?? '',
-        zone,
-        addressLine: address.addressLine,
-        referenceNote: address.referenceNote,
-      };
-      draftPlace = {
-        department: 'Guatemala',
-        municipality: municipality?.name ?? '',
-        zone: (zone ?? '').replace(/\D/g, ''),
-        line: address.addressLine,
-        references: address.referenceNote,
-      };
-    }
+  const zone = typeof f.zone === 'string' ? f.zone : null;
+  if (saved) {
+    const stored = account?.addresses.find((a) => a.id === f.customerAddressId);
+    if (!stored) problem(404, undefined, 'Dirección no encontrada');
+    place = {
+      municipalityName: stored.municipality,
+      zone: stored.zone ? `Zona ${stored.zone.replace(/\D/g, '')}` : null,
+      addressLine: stored.line,
+      referenceNote: stored.references,
+    };
+    draftPlace = {
+      department: stored.department,
+      municipality: stored.municipality,
+      zone: stored.zone,
+      line: stored.line,
+      references: stored.references,
+    };
+  } else {
+    const municipality = MUNICIPALITY_SEEDS.find((m) => m.id === f.municipalityId);
+    const address = parsed.deliveryAddress as NonNullable<ParsedOrder['deliveryAddress']>;
+    place = {
+      municipalityName: municipality?.name ?? '',
+      zone,
+      addressLine: address.addressLine,
+      referenceNote: address.referenceNote,
+    };
+    draftPlace = {
+      department: 'Guatemala',
+      municipality: municipality?.name ?? '',
+      zone: (zone ?? '').replace(/\D/g, ''),
+      line: address.addressLine,
+      references: address.referenceNote,
+    };
   }
 
   const draftId = `MON-3${String(store.sequences.order++).padStart(5, '0')}`;

@@ -68,22 +68,27 @@ describe('StoreHeader', () => {
       within(nav).getByRole('button', { name: 'Ver tu pedido, 3 productos' }),
     ).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Iniciar pedido/ }));
-    expect(view.api().shell.orderSheet).toBe('now');
+    expect(view.api().shell.orderSheet).toBe(true);
   });
 
-  it('con el modo elegido muestra recoger/domicilio y cuándo', async () => {
+  it('con el modo elegido muestra «A domicilio» y la dirección elegida', async () => {
     const view = await renderStore(<StoreHeader />);
     await act(async () => {
       view.api().mode.setMode({
         type: 'delivery',
-        when: { kind: 'now' },
         branchId: 'sucursal-1',
-        address: null,
+        address: {
+          department: 'Guatemala',
+          municipality: 'Guatemala',
+          zone: '10',
+          line: '6a avenida 10-50',
+          references: '',
+        },
       });
     });
     expect(
       screen.getByRole('button', {
-        name: 'Cambiar forma de pedido: A domicilio Lo antes posible',
+        name: 'Cambiar la dirección de entrega: A domicilio 6a avenida 10-50, Guatemala',
       }),
     ).toBeInTheDocument();
   });

@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { DUMPLINGS, cartV2, pickupMode } from './support/cart';
+import { DUMPLINGS, cartV2, deliveryMode } from './support/cart';
 import { expect, test, type Page } from '@playwright/test';
 
 /**
@@ -9,7 +9,7 @@ import { expect, test, type Page } from '@playwright/test';
  */
 
 /**
- * Modo "recoger" y un Dumplings en el carrito (preferencias del cliente en localStorage, como las deja el
+ * Modo «a domicilio» y un Dumplings en el carrito (preferencias del cliente en localStorage, como las deja el
  * menú), y desde el inicio: carrito → Continuar → checkout.
  */
 async function toCheckout(page: Page) {
@@ -18,7 +18,7 @@ async function toCheckout(page: Page) {
       localStorage.setItem('monsushi-cart-v2', cart!);
       localStorage.setItem('monsushi-order-mode-v1', mode!);
     },
-    [cartV2('sucursal-1', [DUMPLINGS]), pickupMode('sucursal-1')],
+    [cartV2('sucursal-1', [DUMPLINGS]), deliveryMode('sucursal-1')],
   );
   await page.goto('/');
   await page.getByRole('heading', { name: /hambre/i }).waitFor();
@@ -51,13 +51,13 @@ test('pedido en efectivo de punta a punta: confirma, vacía el carrito y recuerd
   await toCheckout(page);
   await expect(page.getByText('Paso 1 de 5', { exact: true })).toBeVisible();
   await toPayment(page);
-  // F24: solo efectivo, sin nada que elegir, con la instrucción del retiro y el total cotizado.
+  // F24: solo efectivo, sin nada que elegir, con la instrucción de entrega y el total cotizado.
   await expect(page.getByTestId('payment-cash')).toBeVisible();
   await expect(page.getByRole('radio')).toHaveCount(0);
   await expect(page.getByTestId('payment-instructions')).toHaveText(
-    'Realiza el pago en efectivo cuando recojas tu pedido en la sucursal.',
+    'Realiza el pago en efectivo cuando recibas tu pedido.',
   );
-  await expect(page.getByTestId('payment-total')).toContainText('Q53.00');
+  await expect(page.getByTestId('payment-total')).toContainText('Q68.00');
   await expect(page.locator('body')).not.toContainText(
     /transferencia|tarjeta|neonet|comprobante|pagar ahora/i,
   );

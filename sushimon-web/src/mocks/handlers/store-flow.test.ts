@@ -12,7 +12,6 @@ const customer = { name: 'Ana Prueba', phone: '5555-0000', email: 'ana@ejemplo.c
 
 const deliveryOrder = (over: Partial<DraftCreateOrderRequest> = {}): DraftCreateOrderRequest => ({
   fulfillment: 'delivery',
-  schedule: { kind: 'now' },
   customer,
   address: {
     department: 'Guatemala',
@@ -40,16 +39,11 @@ async function apiError(p: Promise<unknown>): Promise<ApiError> {
 }
 
 describe('datos públicos', () => {
-  it('config incluye serverTime del reloj y reglas de programación', async () => {
+  it('config incluye serverTime del reloj (sin reglas de programación: ADR-0036)', async () => {
     const { client } = createHarness();
     const config = await store.getStoreConfig(client);
     expect(config.serverTime).toBe('2026-11-11T20:25:00.000Z');
-    expect(config.schedule).toEqual({
-      stepMinutes: 30,
-      lastOrderBeforeClose: 30,
-      minLeadMinutes: 45,
-      days: 7,
-    });
+    expect(config).not.toHaveProperty('schedule');
     // F09: los niveles/ETA del borrador se retiraron; tarifa y cobertura salen de las zonas propias (checkDeliveryCoverage).
     expect(config.deliveryTiers).toEqual([]);
     expect(config.departments).toEqual([]);
@@ -149,9 +143,9 @@ describe('crear pedido', () => {
         },
         422,
       ],
-      [{ fulfillment: 'pickup', address: undefined }, 400],
-      [{ fulfillment: 'pickup', branchId: 'sucursal-4', address: undefined }, 422],
-      [{ schedule: { kind: 'scheduled', date: '2026-11-11', time: '14:30' } }, 422],
+      // ADR-0036: ya no se crean pedidos para recoger.
+      [{ fulfillment: 'pickup' as never, address: undefined }, 400],
+      [{ branchId: 'sucursal-4' }, 422],
     ];
     for (const [over, status] of cases) {
       expect((await apiError(orders.createDraftOrder(client, deliveryOrder(over)))).status).toBe(
@@ -163,9 +157,7 @@ describe('crear pedido', () => {
       orders.createDraftOrder(
         client,
         deliveryOrder({
-          fulfillment: 'pickup',
           branchId: 'sucursal-3',
-          address: undefined,
           lines: [{ productId: 'joselito-roll', quantity: 1 }],
         }),
       ),
@@ -173,23 +165,9 @@ describe('crear pedido', () => {
     expect(e.status).toBe(409);
   });
 
-  it('programado válido (≥45 min, dentro del horario)', async () => {
-    const { client } = createHarness();
-    const order = await orders.createDraftOrder(
-      client,
-      deliveryOrder({ schedule: { kind: 'scheduled', date: '2026-11-11', time: '15:30' } }),
-    );
-    expect(order.schedule).toEqual({ kind: 'scheduled', date: '2026-11-11', time: '15:30' });
-  });
-
-  it('branch-closed: no permite "ahora" pero sí programar', async () => {
+  it('branch-closed: rechaza el pedido (409) y no ofrece programarlo (ADR-0036)', async () => {
     const { client } = createHarness('branch-closed');
     expect((await apiError(orders.createDraftOrder(client, deliveryOrder()))).status).toBe(409);
-    const ok = await orders.createDraftOrder(
-      client,
-      deliveryOrder({ schedule: { kind: 'scheduled', date: '2026-11-12', time: '13:00' } }),
-    );
-    expect(ok.status).toBe('received');
   });
 
   it('product-unavailable: rechaza los productos marcados', async () => {

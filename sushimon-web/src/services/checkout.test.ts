@@ -6,7 +6,7 @@ import { quoteCheckout } from './checkout';
 
 const body = {
   cart: { branchId: 'b', lines: [{ productId: 'p', quantity: 1, selections: [] }] },
-  fulfillment: { type: 'PICKUP' as const },
+  fulfillment: { type: 'DELIVERY' as const, municipalityId: 'm1', zone: null },
 };
 
 describe('services/checkout · quoteCheckout', () => {

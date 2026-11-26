@@ -17,7 +17,7 @@ export function QuoteBreakdown({ data }: { data: CheckoutData }) {
   const t = useTranslations('checkout');
   const locale = useLocale();
   const money = (cents: number) => formatMoney(cents / 100, locale);
-  const { quote: state, shownQuote: quote, type, totalChange } = data;
+  const { quote: state, shownQuote: quote, totalChange } = data;
   const updating = state.updating;
   const waiting = !quote && (state.status === 'loading' || state.status === 'expired');
 
@@ -45,7 +45,7 @@ export function QuoteBreakdown({ data }: { data: CheckoutData }) {
         </div>
         <div className="flex justify-between">
           <span className="text-muted">{t('quote.deliveryFee')}</span>
-          <span>{type === 'pickup' ? t('quote.free') : t('quote.pending')}</span>
+          <span>{t('quote.pending')}</span>
         </div>
         <div className="mt-1.5 flex items-baseline justify-between border-t border-dashed border-line pt-2">
           <span className="font-extrabold">{t('estimatedTotal')}</span>
@@ -69,7 +69,6 @@ export function QuoteBreakdown({ data }: { data: CheckoutData }) {
   const discount = moneyToCents(quote.discountTotal) ?? 0;
   const fee = moneyToCents(quote.deliveryFee);
   const total = moneyToCents(quote.total);
-  const delivery = quote.fulfillment.type === 'DELIVERY';
   return (
     <div
       className={cn(
@@ -104,9 +103,7 @@ export function QuoteBreakdown({ data }: { data: CheckoutData }) {
       ) : null}
       <div className="flex justify-between">
         <span className="text-muted">{t('quote.deliveryFee')}</span>
-        <span data-testid="summary-fee">
-          {!delivery ? t('quote.free') : fee === null ? t('quote.unverified') : money(fee)}
-        </span>
+        <span data-testid="summary-fee">{fee === null ? t('quote.unverified') : money(fee)}</span>
       </div>
       <div className="mt-1.5 flex items-baseline justify-between border-t border-dashed border-line pt-2">
         <span className="font-extrabold">{t('quote.total')}</span>

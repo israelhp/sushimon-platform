@@ -7,6 +7,12 @@ import { createHarness } from '../testing';
 const CITY = 'mun-guatemala-guatemala';
 const MIXCO = 'mun-guatemala-mixco';
 const PALENCIA = 'mun-guatemala-palencia';
+/** ADR-0036: toda cotización es a domicilio; Zona 10 de la Ciudad la cubre la entrega propia de `sucursal-1`. */
+const HOME: CheckoutQuoteRequest['fulfillment'] = {
+  type: 'DELIVERY',
+  municipalityId: CITY,
+  zone: 'Zona 10',
+};
 
 const line = (
   productId: string,
@@ -19,7 +25,7 @@ const line = (
 });
 const request = (
   lines = [line('dumplings')],
-  fulfillment: CheckoutQuoteRequest['fulfillment'] = { type: 'PICKUP' },
+  fulfillment: CheckoutQuoteRequest['fulfillment'] = HOME,
   extra: Partial<CheckoutQuoteRequest> = {},
   branchId = 'sucursal-1',
 ): CheckoutQuoteRequest => ({ cart: { branchId, lines }, fulfillment, ...extra });
@@ -35,7 +41,7 @@ async function fail(p: Promise<unknown>): Promise<ApiError> {
 }
 
 describe('F19 mock · POST /v1/checkout/quote (SIMULADO, paridad de forma con el contrato)', () => {
-  it('recoger: totales exactos en centavos, sin tarifa, token simulado (F20, sin firma) y con vigencia ficticia de 10 min', async () => {
+  it('a domicilio: totales exactos en centavos, con la tarifa de la zona, token simulado (F20, sin firma) y con vigencia ficticia de 10 min', async () => {
     const { client } = createHarness();
     const q = await quoteCheckout(client, request([line('dumplings', 2)]));
     expect(q.currency).toBe('GTQ');
@@ -46,14 +52,28 @@ describe('F19 mock · POST /v1/checkout/quote (SIMULADO, paridad de forma con el
       lineTotal: '106.00',
     });
     expect(q.subtotal).toBe('106.00');
-    expect(q.deliveryFee).toBe('0.00');
-    expect(q.total).toBe('106.00');
-    expect(q.fulfillment).toEqual({ type: 'PICKUP', delivery: null });
+    expect(q.deliveryFee).toBe('15.00');
+    expect(q.total).toBe('121.00');
+    expect(q.fulfillment.type).toBe('DELIVERY');
     expect(q.canProceed).toBe(true);
     expect(q.blockers).toEqual([]);
     expect(q.quote.token).toMatch(/^mockq\./); // doble SIN firma; la API real emite un HMAC
     expect(Date.parse(q.quote.expiresAt) - Date.parse(q.quote.generatedAt)).toBe(600_000);
     expect(q.coupon).toBeNull();
+  });
+
+  it('ADR-0036: PICKUP ya no se cotiza (400) y solo DELIVERY es válido', async () => {
+    const { client } = createHarness();
+    const e = await fail(
+      client.request('/v1/checkout/quote', {
+        method: 'POST',
+        body: {
+          cart: { branchId: 'sucursal-1', lines: [line('dumplings')] },
+          fulfillment: { type: 'PICKUP' },
+        },
+      }),
+    );
+    expect(e.status).toBe(400);
   });
 
   it('extras: se suman por unidad y NO se descuentan; el total es la suma exacta de las líneas', async () => {
@@ -70,7 +90,7 @@ describe('F19 mock · POST /v1/checkout/quote (SIMULADO, paridad de forma con el
       lineSubtotal: '124.00',
     });
     expect(q.extrasTotal).toBe('10.00');
-    expect(q.total).toBe('124.00');
+    expect(q.total).toBe('139.00');
   });
 
   it('estados de línea con la precedencia del contrato y total null si alguna no es comprable', async () => {
@@ -109,7 +129,7 @@ describe('F19 mock · POST /v1/checkout/quote (SIMULADO, paridad de forma con el
       client,
       request(
         [line('dynamita-roll')],
-        { type: 'PICKUP' },
+        HOME,
         {
           clientView: { lines: [{ index: 0, unitPrice: '80.00' }], total: '1.00' },
         },
@@ -123,22 +143,22 @@ describe('F19 mock · POST /v1/checkout/quote (SIMULADO, paridad de forma con el
     });
     expect(q.notices).toEqual([{ code: 'PRICE_CHANGED', lineIndex: 0 }, { code: 'TOTAL_CHANGED' }]);
     expect(q.canProceed).toBe(true);
-    expect(q.total).toBe('86.00');
+    expect(q.total).toBe('101.00');
   });
 
   it('cupón: respuesta única APPLIED/NOT_APPLIED sin motivo (inexistente, vencido o de otra sucursal igual)', async () => {
     const { client } = createHarness();
     const ok = await quoteCheckout(
       client,
-      request([line('dumplings', 2)], { type: 'PICKUP' }, { couponCode: ' bienvenido10 ' }),
+      request([line('dumplings', 2)], HOME, { couponCode: ' bienvenido10 ' }),
     );
     expect(ok.coupon).toEqual({ status: 'APPLIED' });
     expect(ok.discountTotal).toBe('10.60');
-    expect(ok.total).toBe('95.40');
+    expect(ok.total).toBe('110.40');
     for (const code of ['NOEXISTE', 'COMBOMON', 'semana-cliente']) {
       const no = await quoteCheckout(
         client,
-        request([line('dumplings')], { type: 'PICKUP' }, { couponCode: code }),
+        request([line('dumplings')], HOME, { couponCode: code }),
       );
       expect(no.coupon).toEqual({ status: 'NOT_APPLIED' });
       expect(Object.keys(no.coupon ?? {})).toEqual(['status']);
@@ -151,7 +171,7 @@ describe('F19 mock · POST /v1/checkout/quote (SIMULADO, paridad de forma con el
     // california-roll: Navidad en rolls (15 %) aún no vigente; Happy Hour es solo en local; el cupón (10 %) gana.
     const q = await quoteCheckout(
       client,
-      request([line('california-roll')], { type: 'PICKUP' }, { couponCode: 'BIENVENIDO10' }),
+      request([line('california-roll')], HOME, { couponCode: 'BIENVENIDO10' }),
     );
     expect(q.lines[0]?.promotionId).toBe('bienvenida');
     expect(q.lines[0]?.discount).toBe('5.70');
@@ -276,18 +296,18 @@ describe('F19 mock · POST /v1/checkout/quote (SIMULADO, paridad de forma con el
     const q = await quoteCheckout(client, request());
     expect(q.branch.isAcceptingOrders).toBe(false);
     expect(q.blockers).toEqual([{ code: 'BRANCH_CLOSED', scope: 'BRANCH' }]);
-    expect(q.total).toBe('53.00');
+    expect(q.total).toBe('68.00');
     expect(q.canProceed).toBe(false);
   });
 
   it('errores: sucursal inexistente/inactiva 422, municipio 422, dirección sin sesión 401, ajena=inexistente 404, 503 determinista', async () => {
     const h = createHarness();
     const noBranch = await fail(
-      quoteCheckout(h.client, request([line('dumplings')], { type: 'PICKUP' }, {}, 'sucursal-99')),
+      quoteCheckout(h.client, request([line('dumplings')], HOME, {}, 'sucursal-99')),
     );
     expect([noBranch.status, noBranch.businessCode]).toEqual([422, 'BRANCH_NOT_AVAILABLE']);
     const inactive = await fail(
-      quoteCheckout(h.client, request([line('dumplings')], { type: 'PICKUP' }, {}, 'sucursal-4')),
+      quoteCheckout(h.client, request([line('dumplings')], HOME, {}, 'sucursal-4')),
     );
     expect(inactive.businessCode).toBe('BRANCH_NOT_AVAILABLE');
     const muni = await fail(

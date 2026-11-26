@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page } from '@playwright/test';
-import { pickupMode } from './cart';
+import { deliveryMode } from './cart';
 
 /** Ayudas de F23 (historial, recibo y «Volver a pedir») contra el MOCK rotulado como simulación (sin red externa). */
 export const DEMO_ACTIVE = '00000000-0000-4000-8000-000000490217'; // MON-490217 (en curso)
@@ -74,7 +74,7 @@ export async function seedHistory(page: Page, options: HistorySeed = {}) {
           })
         : '',
       cart ?? '',
-      pickupMode(modeBranch),
+      deliveryMode(modeBranch),
       faults ? JSON.stringify(faults) : '',
       stubPrint ? '1' : '',
     ] as const,

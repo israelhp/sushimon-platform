@@ -35,13 +35,18 @@ async function place(
   key = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
 ): Promise<OrderCreated> {
   const cart = { branchId: 'sucursal-1', lines };
-  const fulfillment = { type: 'PICKUP' } as const;
+  const fulfillment = {
+    type: 'DELIVERY',
+    municipalityId: 'mun-guatemala-guatemala',
+    zone: 'Zona 10',
+  } as const;
   const quote = await quoteCheckout(h.client, { cart, fulfillment });
   return createOrder(
     h.client,
     {
       cart,
       fulfillment,
+      deliveryAddress: { addressLine: '6a avenida 10-50', referenceNote: '' },
       quoteToken: quote.quote.token as string,
       contact: { fullName: 'Ana López', phone: '5555-1234' },
       paymentMethodPreference: 'cash',

@@ -29,7 +29,6 @@ import { OrdersTable } from './OrdersTable';
 
 type View = 'kanban' | 'tabla';
 type TabValue = 'todos' | BoardGroupKey;
-type TypeFilter = 'todos' | 'PICKUP' | 'DELIVERY';
 type Range = 'hoy' | '7d' | 'custom';
 
 const MAX_RANGE_DAYS = 92;
@@ -52,7 +51,6 @@ export function OrdersScreen() {
   const feed = useBoardFeed();
   const [view, setView] = useState<View>('kanban');
   const [tab, setTab] = useState<TabValue>('todos');
-  const [type, setType] = useState<TypeFilter>('todos');
   const [range, setRange] = useState<Range>('hoy');
   const [fromDay, setFromDay] = useState('');
   const [toDay, setToDay] = useState('');
@@ -71,13 +69,12 @@ export function OrdersScreen() {
     () => ({
       branchId: shell.branchId,
       status: tab === 'todos' ? undefined : statusesOfGroup(tab),
-      fulfillmentType: type === 'todos' ? undefined : type,
       q: query.length >= SEARCH_MIN ? query : undefined,
       from: from ? dayStart(from) : undefined,
       to: to ? dayEnd(to) : undefined,
       limit: 25,
     }),
-    [shell.branchId, tab, type, query, from, to],
+    [shell.branchId, tab, query, from, to],
   );
   const tableActive = view === 'tabla' && today !== null && !rangeInvalid;
   const list = useAdminOrderList(filters, { poll: tableActive, enabled: tableActive });
@@ -92,7 +89,6 @@ export function OrdersScreen() {
     setDraft('');
     setQuery('');
     setTab('todos');
-    setType('todos');
     setRange('hoy');
     setFromDay('');
     setToDay('');
@@ -183,18 +179,6 @@ export function OrdersScreen() {
         <>
           <Tabs zone="bo" label={tt('tabsLabel')} items={tabs} value={tab} onChange={setTab} />
           <div className="toolbar">
-            <span className="flabel">{tt('type')}</span>
-            <SegmentedControl
-              zone="bo"
-              label={tt('typeLabel')}
-              value={type}
-              onChange={setType}
-              options={[
-                { value: 'todos', label: tt('typeAll') },
-                { value: 'DELIVERY', label: t('type.delivery') },
-                { value: 'PICKUP', label: t('type.pickup') },
-              ]}
-            />
             <span className="flabel">{tl('table.range')}</span>
             <SegmentedControl
               zone="bo"

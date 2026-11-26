@@ -2,7 +2,6 @@
 
 import {
   ArrowLeft,
-  Clock,
   CreditCard,
   FileText,
   MapPin,
@@ -24,8 +23,6 @@ import { isApiError } from '@/lib/data-access/errors';
 import type { Incident, DraftOrder } from '@/lib/data-access/models';
 import { formatDateTime, formatMoney } from '@/lib/format';
 import { isOrderInProgress, toStoreOrderState, toStoreTrackingStep } from '@/lib/order-status';
-import { localDate } from '@/lib/time';
-import { formatWhen } from '@/features/order-mode/when';
 import { OrderStatusChip } from '@/features/orders/components/order-status-chip';
 import { ReorderDialog } from '@/features/orders/components/reorder-dialog';
 import { useAdvanceOrderDemo, useIsSimulation, useOrder } from '@/features/orders/hooks';
@@ -125,7 +122,6 @@ export function OrderDetailView({ order }: { order: DraftOrder }) {
   const tp = useTranslations('payment');
   const tch = useTranslations('checkout');
   const tcom = useTranslations('common');
-  const twhen = useTranslations('when');
   const ti = useTranslations('incidents');
   const locale = useLocale();
   const router = useRouter();
@@ -138,7 +134,6 @@ export function OrderDetailView({ order }: { order: DraftOrder }) {
   const step = toStoreTrackingStep(order);
   const state = toStoreOrderState(order);
   const inProgress = isOrderInProgress(order);
-  const today = config.data ? localDate(new Date(config.data.serverTime)) : null;
   const delivery = order.fulfillment === 'delivery';
   const paymentLabel = tp('cash');
   const showEta = inProgress && delivery && step.progress >= 4;
@@ -277,15 +272,6 @@ export function OrderDetailView({ order }: { order: DraftOrder }) {
                 ? formatOrderAddress(order.address, (zone) => tt('zoneN', { zone }))
                 : branchName
             }
-          />
-          <DetailRow
-            icon={<Clock className="h-4 w-4" />}
-            label={tch('when')}
-            value={formatWhen(order.schedule, today, locale, {
-              asap: twhen('asap'),
-              today: twhen('today'),
-              tomorrow: twhen('tomorrow'),
-            })}
           />
           <DetailRow
             icon={<CreditCard className="h-4 w-4" />}

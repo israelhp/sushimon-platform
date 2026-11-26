@@ -34,7 +34,6 @@ describe('services/admin-orders sobre http', () => {
       {
         branchId: 'b1',
         status: ['pending', 'accepted'],
-        fulfillmentType: 'PICKUP',
         q: 'MON-001042',
         from: '2026-11-11T00:00:00-06:00',
         to: '2026-11-11T23:59:59.999-06:00',

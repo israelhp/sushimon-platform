@@ -6,7 +6,6 @@ import {
   blockerMessageKey,
   buildClientView,
   buildQuoteRequest,
-  canProceedFor,
   centsToMoney,
   classifyQuoteError,
   moneyToCents,
@@ -43,7 +42,7 @@ const state = (lines: CartLine[], branchId = 'b1'): CartState => ({
 });
 const inputs = (over: Partial<QuoteInputs> = {}): QuoteInputs => ({
   cart: toQuoteInput(state([line({ productId: 'a', quantity: 2 })]))!,
-  fulfillment: { type: 'PICKUP' },
+  fulfillment: { type: 'DELIVERY', municipalityId: 'm0', zone: null },
   couponCode: '',
   ...over,
 });
@@ -212,24 +211,6 @@ describe('F19 · vigencia, avance y errores', () => {
         }),
       ),
     ).toBeNull();
-  });
-
-  it('canProceed del servidor; solo BRANCH_CLOSED se ignora en un pedido programado SIMULADO', () => {
-    expect(canProceedFor(quote(), false)).toBe(true);
-    const closed = quote({
-      canProceed: false,
-      blockers: [{ code: 'BRANCH_CLOSED', scope: 'BRANCH' }],
-    });
-    expect(canProceedFor(closed, false)).toBe(false);
-    expect(canProceedFor(closed, true)).toBe(true);
-    const mixed = quote({
-      canProceed: false,
-      blockers: [
-        { code: 'BRANCH_CLOSED', scope: 'BRANCH' },
-        { code: 'UNAVAILABLE', scope: 'LINE', lineIndex: 0 },
-      ],
-    });
-    expect(canProceedFor(mixed, true)).toBe(false);
   });
 
   it('clasifica errores por estado y código de negocio, y reintenta UNA vez solo 503/red', () => {

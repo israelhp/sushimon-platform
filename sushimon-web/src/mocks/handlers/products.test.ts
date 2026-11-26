@@ -425,8 +425,14 @@ describe('F11 mock · pedidos, favoritos y extras simulados', () => {
   it('un pedido no acepta productos inactivos o con categoría oculta y usa basePrice', async () => {
     const h = createHarness();
     const order = {
-      fulfillment: 'pickup' as const,
-      schedule: { kind: 'now' as const },
+      fulfillment: 'delivery' as const,
+      address: {
+        department: 'Guatemala',
+        municipality: 'Guatemala',
+        zone: '10',
+        line: '6a avenida 10-50',
+        references: '',
+      },
       customer: { name: 'Ana Prueba', phone: '5555-0000', email: 'ana@ejemplo.com' },
       branchId: 'sucursal-1',
       paymentMethod: 'cash' as const,

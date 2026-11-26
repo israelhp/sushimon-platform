@@ -28,7 +28,17 @@ async function pickBranch(page: Page, branchId: string | null) {
       if (!id) return;
       localStorage.setItem(
         key as string,
-        JSON.stringify({ type: 'pickup', when: { kind: 'now' }, branchId: id, address: null }),
+        JSON.stringify({
+          type: 'delivery',
+          branchId: id,
+          address: {
+            department: 'Guatemala',
+            municipality: 'Guatemala',
+            zone: '10',
+            line: '6a avenida 10-50',
+            references: '',
+          },
+        }),
       );
     },
     [ORDER_MODE_KEY, branchId],
@@ -292,13 +302,18 @@ async function openMenu(
 
 const searchbox = (page: Page) => page.getByRole('searchbox', { name: 'Buscar en el menú' });
 
+/** ADR-0036: la sucursal sale de la cobertura de la dirección (Fraijanes solo lo cubre Sucursal 2). */
 async function switchBranch(page: Page, name: string) {
   await page
-    .getByRole('button', { name: /Cambiar forma de pedido/ })
+    .getByRole('button', { name: /Cambiar la dirección de entrega/ })
     .first()
     .click();
   const sheet = page.getByRole('dialog', { name: 'Pedir ahora' });
-  await sheet.getByRole('radio', { name: new RegExp(name) }).check();
+  await sheet.getByLabel('Municipio').selectOption({ label: 'Fraijanes' });
+  await sheet.getByLabel('Dirección exacta').fill('Calle principal 123');
+  await expect(
+    sheet.getByText(new RegExp(`Entregamos en esta dirección desde ${name}`)),
+  ).toBeVisible();
   await sheet.getByRole('button', { name: /Ver (el )?menú/ }).click();
   await expect(sheet).toBeHidden();
 }

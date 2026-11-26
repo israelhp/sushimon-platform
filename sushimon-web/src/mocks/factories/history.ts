@@ -297,7 +297,6 @@ export function generateDayOrders(dateISO: string, today: string): DraftOrder[] 
             updatedAt: history[history.length - 1]?.at ?? created.toISOString(),
             branchId,
             fulfillment: delivery ? 'delivery' : 'pickup',
-            schedule: { kind: 'now' },
             customer: {
               name,
               phone,

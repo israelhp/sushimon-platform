@@ -45,7 +45,6 @@ async function setup(draft = storedDraft(2)) {
     view.api().cart.add(cartInput('dumplings', 1));
     view.api().mode.setMode({
       type: 'delivery',
-      when: { kind: 'now' },
       branchId: 'sucursal-1',
       address: null,
     });

@@ -345,7 +345,7 @@ describe('GET /v1/admin/orders (listado por cursor)', () => {
     );
   });
 
-  it('filtros: status (csv), fulfillmentType, q por número y por nombre', async () => {
+  it('filtros: status (csv), q por número y por nombre; fulfillmentType se retiró (400, ADR-0036)', async () => {
     const h = as('admin');
     const accepted = await get<AdminOrderPage>(h, '/v1/admin/orders', {
       ...day,
@@ -354,12 +354,9 @@ describe('GET /v1/admin/orders (listado por cursor)', () => {
     });
     expect(accepted.items.length).toBeGreaterThan(0);
     expect(accepted.items.every((o) => ['accepted', 'preparing'].includes(o.status))).toBe(true);
-    const pickup = await get<AdminOrderPage>(h, '/v1/admin/orders', {
-      ...day,
-      fulfillmentType: 'PICKUP',
-      limit: '50',
-    });
-    expect(pickup.items.every((o) => o.fulfillmentType === 'PICKUP')).toBe(true);
+    await expect(
+      get(h, '/v1/admin/orders', { ...day, fulfillmentType: 'PICKUP', limit: '50' }),
+    ).rejects.toMatchObject({ status: 400 });
     const byNumber = await get<AdminOrderPage>(h, '/v1/admin/orders', { ...day, q: 'MON-307057' });
     expect(byNumber.items.map((o) => o.id)).toEqual(['MON-307057']);
     const byDigits = await get<AdminOrderPage>(h, '/v1/admin/orders', { ...day, q: '307057' });

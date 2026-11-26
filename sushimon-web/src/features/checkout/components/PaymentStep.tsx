@@ -33,7 +33,7 @@ export function PaymentStep({ data }: { data: CheckoutData }) {
         <div className="min-w-0">
           <p className="m-0 font-bold">{t('payment.cash')}</p>
           <p className="m-0 mt-1 text-[14px] text-muted" data-testid="payment-instructions">
-            {t(data.type === 'delivery' ? 'payment.cashDelivery' : 'payment.cashPickup')}
+            {t('payment.cashDelivery')}
           </p>
           <p className="m-0 mt-2 text-[15px]" data-testid="payment-total">
             <span className="text-muted">{t('payment.totalToPay')}: </span>

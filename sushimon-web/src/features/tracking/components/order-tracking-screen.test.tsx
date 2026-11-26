@@ -27,13 +27,18 @@ async function place(over: Partial<OrderCreateRequest> = {}) {
     branchId: 'sucursal-1',
     lines: [{ productId: 'dumplings', quantity: 2, selections: [] }],
   };
-  const fulfillment = { type: 'PICKUP' as const };
+  const fulfillment = {
+    type: 'DELIVERY' as const,
+    municipalityId: 'mun-guatemala-guatemala',
+    zone: 'Zona 10',
+  };
   const quote = await quoteCheckout(h.client, { cart, fulfillment });
   const created: OrderCreated = await createOrder(
     h.client,
     {
       cart,
       fulfillment,
+      deliveryAddress: { addressLine: '6a avenida 10-50', referenceNote: '' },
       quoteToken: quote.quote.token as string,
       contact: { fullName: 'Ana López', phone: '5555-1234' },
       paymentMethodPreference: 'cash',

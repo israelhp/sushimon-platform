@@ -352,8 +352,7 @@ describe('PromoCarousel: bootstrap y sucursal', () => {
 
     act(() => {
       view.api().mode.setMode({
-        type: 'pickup',
-        when: { kind: 'now' },
+        type: 'delivery',
         branchId: 'sucursal-2',
         address: null,
       });

@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { CART_KEY, DUMPLINGS, cartV2, pickupMode } from './support/cart';
+import { CART_KEY, DUMPLINGS, cartV2, deliveryMode } from './support/cart';
 
 /**
  * F18 — Carrito local (MOCK_ONLY: datos simulados, sin API real ni red externa). Cubre agregar con extras, unificar/separar
@@ -20,7 +20,7 @@ async function seed(page: Page, cart: string | null, branchId: string | null = '
       if (cartValue) localStorage.setItem(cartKey!, cartValue);
       if (modeValue) localStorage.setItem(modeKey!, modeValue);
     },
-    [CART_KEY, cart, MODE_KEY, branchId ? pickupMode(branchId) : null],
+    [CART_KEY, cart, MODE_KEY, branchId ? deliveryMode(branchId) : null],
   );
 }
 
@@ -281,7 +281,7 @@ test.describe('carrito · estados por línea y política de sucursal', () => {
       ([key, mode]) => {
         localStorage.setItem(key!, mode!);
       },
-      [MODE_KEY, pickupMode('sucursal-2')],
+      [MODE_KEY, deliveryMode('sucursal-2')],
     );
     await page.reload();
     const dialog = page.getByRole('alertdialog', { name: 'Cambiaste de sucursal' });

@@ -30,7 +30,9 @@ test('/backoffice redirige a la pantalla de inicio del rol', async ({ page }) =>
   await expect(page).toHaveURL(/\/backoffice\/panel$/);
 });
 
-test('encargado: acepta, prepara y deja listo un pedido de recoger en tienda', async ({ page }) => {
+test('encargado: acepta, prepara y deja listo un pedido PICKUP histórico (ADR-0036)', async ({
+  page,
+}) => {
   await enterAs(page, /Marco Antonio Gómez/);
   await expect(page).toHaveURL(/\/backoffice\/panel$/);
   await expect(page.getByRole('heading', { name: /Buenas tardes, Marco/ })).toBeVisible();

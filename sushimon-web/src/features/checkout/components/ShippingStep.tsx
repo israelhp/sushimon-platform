@@ -5,10 +5,9 @@ import { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
 import { SimulationBadge } from '@/components/ui/SimulationBadge';
 import { BranchHoursDisclosure } from '@/features/branch-schedule/components/BranchHoursPanel';
-import { useOrderMode } from '@/features/order-mode/order-mode-context';
-import { MapLinks } from '@/features/store-shell/components/StoreFooter';
 import { formatAddress, type CheckoutStep } from '../checkout-model';
 import { useCheckoutDraft } from '../checkout-context';
+import { useOrderMode } from '@/features/order-mode/order-mode-context';
 import type { CheckoutData } from '../use-checkout-data';
 import { CouponField } from './CouponField';
 import { DeliveryOptions } from './DeliveryOptions';
@@ -16,9 +15,8 @@ import { ChoiceCard, useCheckoutSteps } from './parts';
 
 /**
  * Paso 3 · Envío. La sucursal es la DEL CARRITO (F18, una sola): cambiarla pasa por el flujo de cambio de sucursal del carrito
- * (nada se reasigna ni se vacía en silencio). A domicilio: destino y tipo de entrega con la tarifa AL CLIENTE que devuelve la
- * cotización del servidor (cada proveedor se evalúa por separado; PedidosYa nunca es seleccionable). Al recoger: sucursal.
- * El cupón aplica a ambas modalidades. Los bloqueos y avisos de la cotización se muestran arriba (`QuoteAlerts`).
+ * (nada se reasigna ni se vacía en silencio). Solo a domicilio (ADR-0036): destino y tipo de entrega con la tarifa AL CLIENTE
+ * que devuelve la cotización del servidor (cada proveedor se evalúa por separado; PedidosYa nunca es seleccionable). Los bloqueos y avisos de la cotización se muestran arriba (`QuoteAlerts`).
  */
 export function ShippingStep({
   data,
@@ -32,13 +30,12 @@ export function ShippingStep({
 }) {
   const t = useTranslations();
   const steps = useCheckoutSteps();
-  const { draft, dispatch } = useCheckoutDraft();
+  const { draft } = useCheckoutDraft();
   const { update } = useOrderMode();
-  const { config, branches } = data;
+  const { branches } = data;
   const zoneWord = t('checkoutFlow.zoneInline');
 
   const pickBranch = (branchId: string) => {
-    dispatch({ type: 'pickup-branch', branchId });
     // El modo de pedido manda: si difiere de la sucursal del carrito, `CartBranchGuard` abre el plan de cambio (F18).
     update({ branchId });
   };
@@ -83,22 +80,6 @@ export function ShippingStep({
       </fieldset>
     );
   };
-
-  if (data.type !== 'delivery') {
-    return (
-      <section aria-label={steps[2]} className="flex flex-col gap-5">
-        {branchList(t('delivery.branchPickup'))}
-        {config && branches[0] && data.branchId === branches[0].id ? (
-          <MapLinks config={config} />
-        ) : null}
-        <p className="notice notice-info m-0">
-          {t('delivery.pickupNoFee')} {t('delivery.prepTime')}.
-        </p>
-        <CouponField data={data} />
-        <div className="lg:hidden">{summary}</div>
-      </section>
-    );
-  }
 
   // Con una respuesta previa de la misma sesión las opciones siguen montadas (atenuadas); sin ella, un indicador de carga.
   const calculating =

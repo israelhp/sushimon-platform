@@ -26,7 +26,7 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(page.getByTestId('payment-cash')).toBeVisible();
     await expect(page.getByRole('radio')).toHaveCount(0);
     await expect(page.getByTestId('payment-instructions')).toHaveText(
-      'Realiza el pago en efectivo cuando recojas tu pedido en la sucursal.',
+      'Realiza el pago en efectivo cuando recibas tu pedido.',
     );
     expect(await noHorizontalOverflow(page)).toBe(true);
     expect(await axe(page, '#paso-actual')).toEqual([]);

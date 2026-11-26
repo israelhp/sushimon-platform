@@ -30,9 +30,8 @@ async function openDeliverySheet(page: Page) {
     .getByRole('button', { name: /Iniciar pedido/ })
     .first()
     .click();
-  const sheet = page.getByRole('dialog', { name: 'Pedir ahora' });
-  await sheet.getByRole('button', { name: 'A domicilio' }).click();
-  return sheet;
+  // ADR-0036: la hoja «Pedir ahora» es solo a domicilio; los campos de dirección ya están visibles.
+  return page.getByRole('dialog', { name: 'Pedir ahora' });
 }
 
 test('admin crea una zona; la tienda comprueba la cobertura y muestra la tarifa del servidor', async ({
@@ -77,21 +76,21 @@ test('admin crea una zona; la tienda comprueba la cobertura y muestra la tarifa 
   await expect(page).toHaveURL(/\/menu$/);
 });
 
-test('sin zona propia PedidosYa queda «por confirmar» (no «sin cobertura»); recoger nunca se bloquea', async ({
+test('sin zona propia PedidosYa queda «por confirmar» (no «sin cobertura»); solo informa, sin ofrecer recoger', async ({
   page,
 }) => {
   const sheet = await openDeliverySheet(page);
   await sheet.getByLabel('Municipio').selectOption({ label: 'Palencia' });
   await sheet.getByLabel('Dirección exacta').fill('Calle principal 123');
-  await expect(sheet.getByText(/No podemos confirmar el envío a domicilio/)).toBeVisible();
-  await expect(sheet.getByText(/no tenemos cobertura a domicilio/)).toHaveCount(0);
+  await expect(sheet.getByText(/No pudimos confirmar si llegamos a esa dirección/)).toBeVisible();
+  await expect(sheet.getByText('Por ahora no llegamos a esa dirección.')).toHaveCount(0);
   await sheet.getByRole('button', { name: 'Ver el menú' }).click();
   await expect(page).not.toHaveURL(/\/menu$/);
-  await expect(sheet.getByText(/No podemos confirmar el envío a domicilio/).last()).toBeVisible();
-
-  await sheet.getByRole('button', { name: 'Recoger' }).click();
-  await sheet.getByRole('button', { name: 'Ver el menú' }).click();
-  await expect(page).toHaveURL(/\/menu$/);
+  await expect(
+    sheet.getByText(/No pudimos confirmar si llegamos a esa dirección/).last(),
+  ).toBeVisible();
+  // Sin alternativas: ni recoger en sucursal ni programar.
+  await expect(sheet.getByRole('button', { name: /Recoger|Programar/ })).toHaveCount(0);
 });
 
 test('departamento sin municipios cargados: aviso claro y no se puede continuar a domicilio', async ({
@@ -138,7 +137,7 @@ test('admin desactiva la entrega propia con confirmación y la tienda deja de co
   const sheet = await openDeliverySheet(page);
   await sheet.getByLabel('Zona', { exact: true }).selectOption('10');
   await sheet.getByLabel('Dirección exacta').fill('6a avenida 10-50');
-  await expect(sheet.getByText(/Por ahora no tenemos cobertura a domicilio/)).toBeVisible();
+  await expect(sheet.getByText('Por ahora no llegamos a esa dirección.')).toBeVisible();
   await expect(sheet.getByText(/No podemos confirmar/)).toHaveCount(0);
 });
 

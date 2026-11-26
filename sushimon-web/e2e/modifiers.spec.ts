@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { pickupMode } from './support/cart';
+import { deliveryMode } from './support/cart';
 import { expect, test, type Page } from '@playwright/test';
 
 /**
@@ -34,7 +34,7 @@ test('tienda: la ficha de Sushi Pizza exige la salsa (radio), limita los extras 
   // F18: agregar exige sucursal elegida en el modo de pedido.
   await page.addInitScript(
     (mode) => localStorage.setItem('monsushi-order-mode-v1', mode),
-    pickupMode('sucursal-1'),
+    deliveryMode('sucursal-1'),
   );
   await page.goto('/menu');
   await page

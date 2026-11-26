@@ -2,9 +2,6 @@
 
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 
-/** Variante de la hoja de modo de pedido: "pedir ahora" (solo recoger/domicilio) o "programar" (día y hora). */
-export type OrderSheetVariant = 'now' | 'schedule';
-
 /** Aviso opcional al abrir la hoja (p. ej., la sucursal elegida dejó de estar disponible). */
 export type OrderSheetNotice = 'branchRemoved';
 
@@ -12,10 +9,10 @@ export interface StoreShellApi {
   cartOpen: boolean;
   openCart: () => void;
   closeCart: () => void;
-  /** Hoja de modo de pedido abierta (o null). */
-  orderSheet: OrderSheetVariant | null;
+  /** Hoja «Pedir ahora» (dirección de entrega) abierta. */
+  orderSheet: boolean;
   orderSheetNotice: OrderSheetNotice | null;
-  openOrderSheet: (variant?: OrderSheetVariant, notice?: OrderSheetNotice) => void;
+  openOrderSheet: (notice?: OrderSheetNotice) => void;
   closeOrderSheet: () => void;
   /** Modal de inicio de sesión simulado. */
   authOpen: boolean;
@@ -31,7 +28,7 @@ const StoreShellContext = createContext<StoreShellApi | null>(null);
  */
 export function StoreShellProvider({ children }: { children: ReactNode }) {
   const [cartOpen, setCartOpen] = useState(false);
-  const [orderSheet, setOrderSheet] = useState<OrderSheetVariant | null>(null);
+  const [orderSheet, setOrderSheet] = useState(false);
   const [orderSheetNotice, setOrderSheetNotice] = useState<OrderSheetNotice | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
 
@@ -42,12 +39,12 @@ export function StoreShellProvider({ children }: { children: ReactNode }) {
       closeCart: () => setCartOpen(false),
       orderSheet,
       orderSheetNotice,
-      openOrderSheet: (variant = 'now', notice) => {
+      openOrderSheet: (notice) => {
         setOrderSheetNotice(notice ?? null);
-        setOrderSheet(variant);
+        setOrderSheet(true);
       },
       closeOrderSheet: () => {
-        setOrderSheet(null);
+        setOrderSheet(false);
         setOrderSheetNotice(null);
       },
       authOpen,
@@ -71,11 +68,11 @@ export function useAuthModal() {
   return { isOpen: authOpen, open: openAuth, close: closeAuth };
 }
 
-/** Abre/cierra la hoja de modo de pedido (recoger/domicilio, ahora/programar). */
+/** Abre/cierra la hoja «Pedir ahora» (dirección de entrega). */
 export function useOrderSheet() {
   const { orderSheet, orderSheetNotice, openOrderSheet, closeOrderSheet } = useStoreShell();
   return {
-    variant: orderSheet,
+    isOpen: orderSheet,
     notice: orderSheetNotice,
     open: openOrderSheet,
     close: closeOrderSheet,

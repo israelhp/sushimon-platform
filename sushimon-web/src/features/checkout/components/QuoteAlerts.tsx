@@ -4,7 +4,6 @@ import { Info, Loader2, Pencil, RotateCcw, Store, TriangleAlert } from 'lucide-r
 import { useLocale, useTranslations } from 'next-intl';
 import { useCart } from '@/features/cart/cart-context';
 import { useAvailabilityText } from '@/features/branch-schedule/use-availability-text';
-import { useOrderMode } from '@/features/order-mode/order-mode-context';
 import { ErrorNotice } from '@/features/store-shell/components/ErrorNotice';
 import {
   blockerMessageKey,
@@ -19,7 +18,6 @@ import type { CheckoutQuote } from '@/lib/data-access/models';
 import type { CheckoutStep } from '../checkout-model';
 import type { CheckoutData } from '../use-checkout-data';
 import { quoteLineName, rowNamesByConfig } from './quote-helpers';
-import { useScheduleAction } from './use-schedule-action';
 
 const ERROR_KEY: Record<QuoteErrorKind, string> = {
   offline: 'offline',
@@ -34,8 +32,7 @@ const ERROR_KEY: Record<QuoteErrorKind, string> = {
 
 /**
  * Bloqueos y avisos de la cotización (`blockers[]`, `notices[]`) con textos es/en por CÓDIGO estable, más los estados de error
- * y vencimiento. Cada bloqueo trae su acción (corregir línea, completar dirección, recoger en sucursal, programar con datos
- * simulados). NUNCA modifica el carrito en silencio: «Actualizar precio» es una acción explícita del cliente.
+ * y vencimiento. Cada bloqueo trae su acción (corregir línea, completar dirección; sucursal cerrada y sin cobertura son solo informativos, ADR-0036). NUNCA modifica el carrito en silencio: «Actualizar precio» es una acción explícita del cliente.
  * El contenedor de bloqueos lleva `data-focus-error`: al intentar avanzar el flujo enfoca el primer bloqueo.
  */
 export function QuoteAlerts({
@@ -48,9 +45,7 @@ export function QuoteAlerts({
   const t = useTranslations();
   const locale = useLocale();
   const cart = useCart();
-  const { update } = useOrderMode();
   const availabilityText = useAvailabilityText();
-  const schedule = useScheduleAction(data, goTo);
   const { quote: state, shownQuote: quote } = data;
   const updating = state.updating;
   const names = rowNamesByConfig(data.rows);
@@ -101,11 +96,9 @@ export function QuoteAlerts({
   }
   if (!quote) return null;
 
-  const scheduled = data.when.kind === 'scheduled' && data.scheduledSupported;
-  const blockers = quote.blockers.filter((b) => !(scheduled && b.code === 'BRANCH_CLOSED'));
+  const blockers = quote.blockers;
   const lineBlocked = blockers.some((b) => b.scope === 'LINE');
   const addressBlocked = blockers.some((b) => b.code === 'ADDRESS_INCOMPLETE');
-  const fulfillmentBlocked = blockers.some((b) => b.scope === 'FULFILLMENT');
   const closed = blockers.some((b) => b.code === 'BRANCH_CLOSED');
 
   const lineName = (index: number | undefined) => {
@@ -216,22 +209,7 @@ export function QuoteAlerts({
                 {t('checkout.quote.actions.completeAddress')}
               </button>
             ) : null}
-            {fulfillmentBlocked && data.type === 'delivery' ? (
-              <button
-                type="button"
-                className="btn btn-primary !min-h-[42px] !px-4 text-sm"
-                onClick={() => update({ type: 'pickup' })}
-              >
-                <Store className="h-4 w-4" aria-hidden="true" />{' '}
-                {t('checkout.quote.actions.switchPickup')}
-              </button>
-            ) : null}
-            {closed && data.scheduledSupported ? (
-              <button type="button" className="btn !min-h-[42px] !px-4 text-sm" onClick={schedule}>
-                {t('checkout.quote.actions.schedule')}
-              </button>
-            ) : null}
-            {closed && !data.scheduledSupported ? (
+            {closed ? (
               <>
                 <span className="w-full text-[13px]">{t('checkout.quote.closedHint')}</span>
                 <button

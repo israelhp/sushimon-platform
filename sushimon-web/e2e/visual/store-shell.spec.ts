@@ -73,8 +73,7 @@ for (const theme of ['light', 'dark'] as const) {
               localStorage.setItem(
                 'monsushi-order-mode-v1',
                 JSON.stringify({
-                  type: 'pickup',
-                  when: { kind: 'now' },
+                  type: 'delivery',
                   branchId: 'sucursal-1',
                   address: null,
                 }),

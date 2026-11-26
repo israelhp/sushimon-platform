@@ -15,7 +15,7 @@ const intent = (over: Partial<OrderIntent> = {}): OrderIntent => ({
       branchId: 'b1',
       lines: [{ productId: 'p1', quantity: 2, selections: [] }],
     },
-    fulfillment: { type: 'PICKUP' },
+    fulfillment: { type: 'DELIVERY', municipalityId: 'm1', zone: null },
     couponCode: '',
   },
   contact: { fullName: 'Ana López', phone: '5555-1234', email: '' },

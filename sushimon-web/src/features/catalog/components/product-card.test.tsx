@@ -92,7 +92,7 @@ describe('ProductCard · agregar con extras (F18)', () => {
     const user = userEvent.setup();
     const view = await renderStore(<Row id="dumplings" />);
     await user.click(await screen.findByRole('button', { name: 'Agregar Dumplings a tu pedido' }));
-    await waitFor(() => expect(view.api().shell.orderSheet).toBe('now'));
+    await waitFor(() => expect(view.api().shell.orderSheet).toBe(true));
     expect(view.api().cart.count).toBe(0);
   });
 

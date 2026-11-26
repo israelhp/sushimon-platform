@@ -1,15 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type {
-  CheckoutFulfillmentInput,
-  BranchHoursDay,
-  PublicBranch,
-  PublicClosureWindow,
-  OrderSchedule,
-  StoreConfig,
-} from '@/lib/data-access/models';
-import { isScheduleValid } from '@/lib/schedule';
+import type { CheckoutFulfillmentInput, PublicBranch, StoreConfig } from '@/lib/data-access/models';
 import { useDataClient } from '@/lib/data-access/provider';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import {
@@ -29,7 +21,7 @@ import { useCart } from '@/features/cart/cart-context';
 import { useCartView } from '@/features/cart/use-cart-view';
 import { checkZone, requiresZone } from '@/features/order-mode/draft';
 import { useOrderMode } from '@/features/order-mode/order-mode-context';
-import { useBranchesAvailability, usePublicBranchHours } from '@/features/branch-schedule/hooks';
+import { useBranchesAvailability } from '@/features/branch-schedule/hooks';
 import { useLocationOptions } from '@/features/delivery-coverage/hooks';
 import { usePublicBranches } from '@/features/branches/hooks';
 import { useStoreConfig } from '@/features/store/hooks';
@@ -47,9 +39,7 @@ import { useCheckoutQuote } from './use-checkout-quote';
 /** Pausa de escritura del cupón y de la zona escrita (los selects y las cantidades NO usan debounce). */
 export const QUOTE_DEBOUNCE_MS = 400;
 
-const NO_HOURS: BranchHoursDay[] = [];
 const NO_ZONES: number[] = [];
-const NO_CLOSURES: PublicClosureWindow[] = [];
 
 /**
  * Datos derivados del checkout (carrito + catálogo + modo de pedido + borrador + cotización).
@@ -58,9 +48,9 @@ const NO_CLOSURES: PublicClosureWindow[] = [];
 export function useCheckoutData() {
   const { draft } = useCheckoutDraft();
   const cart = useCart();
-  const { mode, update } = useOrderMode();
+  const { mode } = useOrderMode();
   const client = useDataClient();
-  // `useStoreConfig` es SIMULADO (reglas de programación, zonas inexistentes, hora del servidor: F10, sin API todavía).
+  // `useStoreConfig` es SIMULADO (zonas inexistentes, hora del servidor: F10, sin API todavía).
   const configQuery = useStoreConfig();
   // Sucursales activas: lista PÚBLICA real (F07). Disponibilidad (F08) y cobertura (F09) se consultan por su id.
   const branchesQuery = usePublicBranches();
@@ -73,8 +63,6 @@ export function useCheckoutData() {
   const config: StoreConfig | undefined = configQuery.data;
   const now = useMemo(() => (config ? new Date(config.serverTime) : null), [config]);
 
-  const type = mode.type;
-  const when: OrderSchedule = mode.when;
   // `GET /v1/branches` ya devuelve solo las activas.
   const activeBranches = useMemo<PublicBranch[]>(
     () => branchesQuery.data ?? [],
@@ -88,39 +76,20 @@ export function useCheckoutData() {
   const nonexistentZones = config?.nonexistentZones ?? NO_ZONES;
   const needsZone = requiresZone(draft.address.department, draft.address.municipality);
   const contactErrors: ContactErrors = validateContact(draft.contact);
-  const addressErrors: AddressErrors =
-    type === 'delivery' ? validateAddress(draft.address, nonexistentZones) : {};
+  // ADR-0036: todo pedido es a domicilio e inmediato, así que la dirección siempre se valida.
+  const addressErrors: AddressErrors = validateAddress(draft.address, nonexistentZones);
 
   // ── Sucursal ────────────────────────────────────────────────────────────────────────────
   // F19 (ADR-0025 D10): la cotización usa SIEMPRE la sucursal del carrito (F18: una sola). Ya no se reasigna por cobertura: si la
   // elegida en el modo de pedido difiere, el flujo de cambio de sucursal de F18 (`CartBranchGuard`) pide resolverlo.
   const branchId = cart.branchId ?? mode.branchId ?? null;
-  const pickupBranchId =
-    activeBranches.find((b) => b.id === (mode.branchId ?? cart.branchId))?.id ??
-    activeBranches.find((b) => availability.byId[b.id]?.isAcceptingOrders)?.id ??
-    activeBranches[0]?.id ??
-    null;
   const branch = activeBranches.find((b) => b.id === branchId) ?? null;
   const branchAvailability = branch ? availability.byId[branch.id] : undefined;
-  // Horario para programar: el de la sucursal asignada o, mientras no hay una, el de la primera que recibe pedidos.
-  const hoursBranchId =
-    branch?.id ??
-    activeBranches.find((b) => availability.byId[b.id]?.isAcceptingOrders)?.id ??
-    activeBranches[0]?.id ??
-    null;
-  const hoursQuery = usePublicBranchHours(hoursBranchId);
-  const hours = hoursQuery.data?.days ?? NO_HOURS;
-  const closures = hoursQuery.data?.upcomingClosures ?? NO_CLOSURES;
-  const hoursLoading = !!hoursBranchId && hoursQuery.isPending;
-  const closedNow =
-    when.kind === 'now' && !!branch && branchAvailability?.isAcceptingOrders === false;
+  // ADR-0036: sucursal cerrada o fuera de horario => bloqueo informativo (sin programar ni recoger).
+  const closedNow = !!branch && branchAvailability?.isAcceptingOrders === false;
   const allClosed =
-    when.kind === 'now' &&
     activeBranches.length > 0 &&
     activeBranches.every((b) => availability.byId[b.id]?.isAcceptingOrders === false);
-  const scheduleValid =
-    when.kind === 'now' ||
-    (!!config && !!now && isScheduleValid(config.schedule, hours, when, now, closures));
 
   // ── Productos ───────────────────────────────────────────────────────────────────────────
   // F18: las líneas, su revalidación y el subtotal ESTIMADO salen de la MISMA fuente que el cajón (`useCartView`, sucursal del
@@ -133,7 +102,6 @@ export function useCheckoutData() {
   const units = cart.count;
 
   // ── Cotización del servidor (F19) ───────────────────────────────────────────────────────
-  const isHttp = client.kind === 'http';
   // Cupón: lo ESCRITO (`coupon`) no entra en la cotización; solo el APLICADO (botón «Aplicar» o Enter). Sin debounce.
   const [coupon, setCouponText] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState('');
@@ -156,18 +124,13 @@ export function useCheckoutData() {
   const debouncedZone = useDebouncedValue(typedZone, QUOTE_DEBOUNCE_MS);
   // Lo escrito aún no se aplicó a la cotización: «Continuar» espera (no se cotiza por pulsación).
   const settling = typedZone !== debouncedZone;
-  const locations = useLocationOptions(draft.address.department, type === 'delivery');
+  const locations = useLocationOptions(draft.address.department, true);
   const municipality =
     locations.municipalities.find((m) => m.name === draft.address.municipality) ?? null;
   const savedAddress =
     signedIn && draft.addressId !== 'other'
       ? (addressesQuery.data ?? []).find((a) => a.id === draft.addressId)
       : undefined;
-
-  // F19 P42: la cotización es siempre «ahora». Con la API real el horario programado no existe: se vuelve a «ahora».
-  useEffect(() => {
-    if (isHttp && mode.when.kind === 'scheduled') update({ when: { kind: 'now' } });
-  }, [isHttp, mode.when.kind, update]);
 
   const quoteCart = useMemo(() => {
     const state: CartState = {
@@ -180,8 +143,6 @@ export function useCheckoutData() {
   }, [cart.branchId, cart.lines, mode.branchId]);
 
   const fulfillment = useMemo<CheckoutFulfillmentInput | null>(() => {
-    if (type === 'pickup') return { type: 'PICKUP' };
-    if (type !== 'delivery') return null;
     const preference = provider ? { deliveryProvider: provider } : {};
     if (savedAddress) {
       return { type: 'DELIVERY', customerAddressId: savedAddress.id, ...preference };
@@ -193,7 +154,7 @@ export function useCheckoutData() {
         ? coverageZoneOf(debouncedZone)
         : null;
     return { type: 'DELIVERY', municipalityId: municipality.id, zone, ...preference };
-  }, [type, provider, savedAddress, municipality, needsZone, debouncedZone, nonexistentZones]);
+  }, [provider, savedAddress, municipality, needsZone, debouncedZone, nonexistentZones]);
 
   const quoteInputs = useMemo<QuoteInputs | null>(() => {
     if (!quoteCart || !fulfillment || view.status !== 'ready') return null;
@@ -204,10 +165,8 @@ export function useCheckoutData() {
       clientView: buildClientView(quoteCart, cart.lines, null),
     };
   }, [quoteCart, fulfillment, view.status, appliedCoupon, cart.lines]);
-  const scheduled = when.kind === 'scheduled' && !isHttp;
   const quote = useCheckoutQuote(quoteInputs, {
     settling,
-    scheduled,
     // En Pago/Confirmación no se refresca al volver el foco: no deben esconderse los importes a mitad de pago.
     refreshOnFocus: draft.step <= 3,
     // 429 con cupón = error LOCAL del campo: el cupón se descarta y la cotización SIN cupón sigue vigente.
@@ -236,8 +195,7 @@ export function useCheckoutData() {
   // Importes de PANTALLA: los del servidor cuando hay cotización vigente; si no, solo el subtotal local ESTIMADO.
   const serverTotalCents = moneyToCents(serverQuote?.total);
   const serverFeeCents = moneyToCents(serverQuote?.deliveryFee);
-  const shipping =
-    type === 'delivery' ? (serverFeeCents !== null ? serverFeeCents / 100 : null) : 0;
+  const shipping = serverFeeCents !== null ? serverFeeCents / 100 : null;
   const total = serverTotalCents !== null ? serverTotalCents / 100 : subtotal;
 
   const addresses = addressesQuery.data ?? [];
@@ -247,12 +205,7 @@ export function useCheckoutData() {
       case 1:
         return view.canContinue;
       case 2:
-        return (
-          !!type &&
-          scheduleValid &&
-          !hasAnyError(contactErrors) &&
-          (type === 'pickup' || !hasAnyError(addressErrors))
-        );
+        return !hasAnyError(contactErrors) && !hasAnyError(addressErrors);
       // F19: desde «Envío» solo se avanza con una cotización VIGENTE, de las entradas ACTUALES y con `canProceed`.
       case 3:
       case 4:
@@ -265,26 +218,19 @@ export function useCheckoutData() {
   return {
     config,
     now,
-    type,
-    when,
     branches: activeBranches,
     branchId,
     branch,
-    pickupBranchId,
-    hours,
-    closures,
-    hoursLoading,
     branchAvailability,
     availability: availability.byId,
     closedNow,
     allClosed,
-    scheduleValid,
     rows,
     unavailable,
     /** Subtotal ESTIMADO local (F18): solo se muestra mientras llega la cotización, rotulado «estimado». */
     subtotal,
     units,
-    /** Tarifa del SERVIDOR (`0` al recoger; `null` si no hay cotización vigente o no es verificable). */
+    /** Tarifa del SERVIDOR (`null` si no hay cotización vigente o no es verificable). */
     shipping,
     /** Total del SERVIDOR si hay cotización vigente; si no, el subtotal estimado (`totalIsEstimate`). */
     total,
@@ -315,11 +261,9 @@ export function useCheckoutData() {
     branchMismatch:
       cart.lines.length > 0 && mode.branchId !== null && cart.branchId !== mode.branchId,
     /** A domicilio sin municipio resuelto o sin dirección guardada elegida: aún no hay con qué cotizar. */
-    addressPending: type === 'delivery' && fulfillment === null,
+    addressPending: fulfillment === null,
     provider,
     setProvider,
-    /** `http`: el horario programado no tiene contrato (P42): se deshabilita. */
-    scheduledSupported: !isHttp,
     /** Datos simulados (mock): se rotula «Simulación». */
     isSimulation: client.kind === 'mock',
     contactErrors,

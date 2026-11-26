@@ -5,10 +5,8 @@ import type {
   DraftOrder,
   OrderLine,
   OrderLookupRequest,
-  OrderSchedule,
 } from '@/lib/data-access/models';
 import { priceToNumber } from '@/lib/product-rules';
-import { isScheduleValid } from '@/lib/schedule';
 import {
   assertAddress,
   availableAt,
@@ -26,7 +24,7 @@ import {
   totals,
   touch,
 } from '../domain';
-import { availabilityFor, upcomingClosuresOf, weekOf } from './schedule';
+import { availabilityFor } from './schedule';
 import { pick, rngFor } from '../factories/random';
 import type { MockStore } from '../store';
 import { advanceDelivery, applyOrderStatus, dispatchOrder, freeOwnRider } from './logistics';
@@ -71,26 +69,15 @@ export function settleReviews(req: Req, orders: DraftOrder[]) {
   }
 }
 
-function parseSchedule(value: unknown): OrderSchedule {
-  if (!value || typeof value !== 'object') fail(400, 'schedule inválido');
-  const s = value as Partial<OrderSchedule>;
-  const kind = oneOf(s.kind, ['now', 'scheduled'] as const, 'schedule.kind');
-  if (kind === 'now') return { kind };
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(str(s.date)) || !/^\d{2}:\d{2}$/.test(str(s.time))) {
-    fail(400, 'Fecha u hora programada inválida');
-  }
-  return { kind, date: s.date, time: s.time };
-}
-
 /**
  * POST /v1/demo/orders — SOLO mock: crea el pedido BORRADOR (`DraftOrder`) que usan el seguimiento y el backoffice simulados.
  * El pedido real de F20 es `POST /v1/orders` (`order-placement.ts`). Se retira con F21/F22.
  */
 export const createDraftOrder: Handler = (req): DraftOrder => {
   const b = body<DraftCreateOrderRequest>(req);
-  const fulfillment = oneOf(b.fulfillment, ['pickup', 'delivery'] as const, 'fulfillment');
+  // ADR-0036: solo a domicilio e inmediato (`pickup` => 400).
+  const fulfillment = oneOf(b.fulfillment, ['delivery'] as const, 'fulfillment');
   const paymentMethod = oneOf(b.paymentMethod, ['cash', 'card'] as const, 'paymentMethod');
-  const schedule = parseSchedule(b.schedule);
 
   const customer = b.customer ?? { name: '', phone: '', email: '' };
   if (str(customer.name).trim().length < 3) fail(400, 'Escribe tu nombre');
@@ -112,37 +99,20 @@ export const createDraftOrder: Handler = (req): DraftOrder => {
 
   // Sucursal y envío.
   let branchId = str(b.branchId) || null;
-  let address = null;
-  let deliveryFee = 0;
-  if (fulfillment === 'delivery') {
-    address = assertAddress(req.store, b.address);
-    // F09: la tarifa es el `baseFee` de la zona propia (nunca un monto del cliente). Checkout/pedidos reales: F19/F20.
-    const own = resolveOwnDelivery(req.store, address, branchId);
-    if (!own) fail(422, 'Sin cobertura de envío para esa dirección');
-    branchId = own.branchId;
-    deliveryFee = own.fee;
-  } else if (!branchId) {
-    fail(400, 'Elige la sucursal para recoger');
-  }
+  const address = assertAddress(req.store, b.address);
+  // F09: la tarifa es el `baseFee` de la zona propia (nunca un monto del cliente). Checkout/pedidos reales: F19/F20.
+  const own = resolveOwnDelivery(req.store, address, branchId);
+  if (!own) fail(422, 'Sin cobertura de envío para esa dirección');
+  branchId = own.branchId;
+  const deliveryFee = own.fee;
   const branch = req.store.branches.find((x) => x.id === branchId);
   if (!branch) fail(404, 'Sucursal no encontrada');
   if (branch.status !== 'active') fail(422, 'La sucursal aún no está disponible');
 
   const at = now(req);
   // La validación definitiva la hace el servidor con el motor de disponibilidad (F08), no la respuesta pública cacheada.
-  if (schedule.kind === 'now' && !availabilityFor(req.store, branch, at).isAcceptingOrders) {
-    fail(409, 'La sucursal está cerrada en este momento; programa tu pedido');
-  }
-  if (
-    !isScheduleValid(
-      req.store.config.schedule,
-      weekOf(req.store, branch.id),
-      schedule,
-      at,
-      upcomingClosuresOf(req.store, branch.id, at),
-    )
-  ) {
-    fail(422, 'Horario programado no disponible');
+  if (!availabilityFor(req.store, branch, at).isAcceptingOrders) {
+    fail(409, 'La sucursal está cerrada en este momento');
   }
 
   const lines: OrderLine[] = b.lines.map((l) => {
@@ -172,7 +142,6 @@ export const createDraftOrder: Handler = (req): DraftOrder => {
     updatedAt: at.toISOString(),
     branchId: branch.id,
     fulfillment,
-    schedule,
     customer: {
       name: str(customer.name).trim(),
       phone: str(customer.phone).trim(),
@@ -335,6 +304,7 @@ export const demoAdvanceOrder: Handler = (req) => {
       break;
     case 'ready':
       if (order.fulfillment === 'pickup') {
+        // PICKUP histórico (ADR-0036): ya no se crean pedidos nuevos para recoger.
         applyOrderStatus(req, order, 'delivered', 'staff');
       } else if (!order.delivery || order.delivery.status === 'failed') {
         const rider = freeOwnRider(req.store, order.branchId);
@@ -386,7 +356,6 @@ export const demoSimulateOrder: Handler = (req) => {
     (p) => p.food && isProductVisible(req.store, p) && availableAt(req.store, p, branch.id),
   );
   if (pool.length === 0) fail(409, 'No hay productos disponibles');
-  const delivery = n % 3 !== 1;
   const at = now(req);
   const picks = [pick(rng, pool), pick(rng, pool)].filter(
     (p, i, arr) => arr.findIndex((x) => x.id === p.id) === i,
@@ -406,7 +375,7 @@ export const demoSimulateOrder: Handler = (req) => {
     (z) =>
       z.branchId === branch.id && z.active && z.municipalityName === 'Guatemala' && z.zoneLabel,
   );
-  const fee = delivery && zoneRule ? Number(zoneRule.baseFee) : 0;
+  const fee = zoneRule ? Number(zoneRule.baseFee) : 0;
   const t = totals(lines, fee);
   const name = SIM_NAMES[n % SIM_NAMES.length] ?? 'Cliente';
   const order: DraftOrder = {
@@ -414,23 +383,21 @@ export const demoSimulateOrder: Handler = (req) => {
     createdAt: at.toISOString(),
     updatedAt: at.toISOString(),
     branchId: branch.id,
-    fulfillment: delivery ? 'delivery' : 'pickup',
-    schedule: { kind: 'now' },
+    fulfillment: 'delivery',
     customer: {
       name,
       phone: `+502 5${100 + (n % 800)}-${1000 + ((n * 37) % 9000)}`,
       email: `${name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(' ', '.')}@ejemplo.com`,
     },
-    address:
-      delivery && zoneRule
-        ? {
-            department: 'Guatemala',
-            municipality: 'Guatemala',
-            zone: (zoneRule.zoneLabel ?? '').replace(/^Zona /, ''),
-            line: `${1 + (n % 20)}a avenida ${n % 30}-${10 + (n % 80)}, ${zoneRule.zoneLabel}`,
-            references: '',
-          }
-        : null,
+    address: zoneRule
+      ? {
+          department: 'Guatemala',
+          municipality: 'Guatemala',
+          zone: (zoneRule.zoneLabel ?? '').replace(/^Zona /, ''),
+          line: `${1 + (n % 20)}a avenida ${n % 30}-${10 + (n % 80)}, ${zoneRule.zoneLabel}`,
+          references: '',
+        }
+      : null,
     lines,
     ...t,
     currency: 'GTQ',

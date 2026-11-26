@@ -10,7 +10,7 @@ import { formatMoneyGtq, type CoverageOutcome } from '../summary';
 /**
  * Resultado de cobertura para el cliente. Tres hechos distintos, nunca confundidos: confirmado (con la tarifa PROPIA que
  * devolvió el servidor), pendiente (PedidosYa no verificable: «no podemos confirmar», no «sin cobertura») y sin cobertura.
- * No muestra `integrationStatus` ni `reason` crudos. La recogida en sucursal nunca se bloquea.
+ * No muestra `integrationStatus` ni `reason` crudos. Sin cobertura solo informa (ADR-0036: no se ofrece recoger ni programar).
  */
 export function CoverageNotice({
   state,

@@ -2,24 +2,19 @@
 
 import {
   ArrowRight,
-  CalendarClock,
   ChevronRight,
   LifeBuoy,
   PackageSearch,
   ShoppingBag,
-  Store,
   Truck,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useLocale, useTranslations } from 'next-intl';
+import { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
-import { localDate } from '@/lib/time';
 import { useOrderMode } from '@/features/order-mode/order-mode-context';
-import { formatWhen } from '@/features/order-mode/when';
 import { STORE_ROUTES } from '@/features/store-shell/nav';
 import { useOrderSheet } from '@/features/store-shell/store-shell-context';
-import { useStoreConfig } from '@/features/store/hooks';
 
 const CARD =
   'relative flex min-h-[100px] min-w-0 flex-col items-start justify-between gap-2 rounded-3xl p-3 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-lift active:translate-y-0.5 max-[359px]:min-h-[92px] min-[400px]:p-3.5 sm:min-h-[96px] sm:flex-row sm:items-center sm:justify-start sm:gap-4 sm:p-5';
@@ -59,15 +54,11 @@ function CardBody({
   );
 }
 
-/** "¿Tenés hambre?": Pedir ahora, Programar, Consultá tu orden y Reclamo (+ el modo de pedido actual si ya se eligió). */
+/** "¿Tenés hambre?": Pedir ahora, Consultá tu orden y Reclamo (+ el modo de pedido actual si ya se eligió). */
 export function ActionCards() {
   const t = useTranslations();
-  const locale = useLocale();
   const orderSheet = useOrderSheet();
   const { mode, isSet } = useOrderMode();
-  const config = useStoreConfig();
-  const today = config.data ? localDate(new Date(config.data.serverTime)) : null;
-  const ModeIcon = mode.type === 'delivery' ? Truck : Store;
 
   return (
     <section aria-labelledby="hambre" className="grid grid-cols-2 gap-3 sm:gap-4">
@@ -80,8 +71,8 @@ export function ActionCards() {
       <div className="col-span-2 grid auto-rows-fr grid-cols-2 gap-3 sm:gap-4">
         <button
           type="button"
-          onClick={() => orderSheet.open('now')}
-          className={cn(CARD, 'bg-primary text-onprimary')}
+          onClick={() => orderSheet.open()}
+          className={cn(CARD, 'col-span-2 bg-primary text-onprimary')}
         >
           <CardBody
             nowrap
@@ -90,19 +81,6 @@ export function ActionCards() {
             title={t('home.orderNow')}
             sub={t('home.orderNowSub')}
             subClass="text-white dark:text-[rgb(var(--on-band-amber))]"
-          />
-        </button>
-        <button
-          type="button"
-          onClick={() => orderSheet.open('schedule')}
-          className={cn(CARD, OUTLINE)}
-        >
-          <CardBody
-            nowrap
-            icon={<CalendarClock className="h-5 w-5 sm:h-7 sm:w-7" aria-hidden="true" />}
-            iconClass="bg-accent text-[rgb(var(--on-band-amber))]"
-            title={t('home.schedule')}
-            sub={t('home.scheduleSub')}
           />
         </button>
         <Link href={STORE_ROUTES.track} className={cn(CARD, OUTLINE)}>
@@ -128,19 +106,16 @@ export function ActionCards() {
           className="col-span-2 flex items-center gap-3 rounded-2xl border border-line bg-surface px-3.5 py-3 text-fg no-underline shadow-card transition hover:shadow-lift"
         >
           <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-primary-soft text-primary">
-            <ModeIcon className="h-5 w-5" aria-hidden="true" />
+            <Truck className="h-5 w-5" aria-hidden="true" />
           </span>
           <span className="min-w-0 flex-1 text-[14px] leading-snug">
             <span className="block">
-              {t('home.current')}{' '}
-              <strong>{mode.type === 'delivery' ? t('mode.delivery') : t('mode.pickup')}</strong>
+              {t('home.current')} <strong>{t('mode.delivery')}</strong>
             </span>
             <span className="block text-[13px] text-muted">
-              {formatWhen(mode.when, today, locale, {
-                asap: t('when.asap'),
-                today: t('when.today'),
-                tomorrow: t('when.tomorrow'),
-              })}
+              {mode.address
+                ? [mode.address.line, mode.address.municipality].filter(Boolean).join(', ')
+                : ''}
             </span>
           </span>
           <ChevronRight className="h-5 w-5 flex-none text-muted" aria-hidden="true" />

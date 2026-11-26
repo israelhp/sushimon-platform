@@ -72,6 +72,7 @@ export interface OrderSeed {
   /** Minutos antes de la fecha base del reloj. */
   minutesAgo: number;
   branchId: string;
+  /** ADR-0036: `pickup` solo en pedidos HISTÓRICOS (anteriores al retiro de «Recoger»); los nuevos son siempre `delivery`. */
   fulfillment: 'pickup' | 'delivery';
   customer: { name: string; phone: string; email: string };
   address: OrderAddress | null;

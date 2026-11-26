@@ -82,13 +82,11 @@ beforeEach(() => {
 async function openCheckout(
   t: Tap,
   {
-    type = 'pickup',
     lines = [['dumplings', 1]],
     scenario,
     locale,
     prepareStore,
   }: {
-    type?: 'pickup' | 'delivery';
     lines?: [string, number][];
     scenario?: MockScenario;
     locale?: 'es' | 'en';
@@ -103,7 +101,7 @@ async function openCheckout(
   });
   await act(async () => {
     for (const [id, qty] of lines) view.api().cart.add(cartInput(id, qty));
-    view.api().mode.setMode({ type, when: { kind: 'now' }, branchId: 'sucursal-1', address: null });
+    view.api().mode.setMode({ type: 'delivery', branchId: 'sucursal-1', address: null });
   });
   return view;
 }
@@ -195,8 +193,8 @@ describe('checkout · cotización del servidor (F19)', () => {
     await waitFor(() =>
       expect(btn(/Continuar a pago/i)).not.toHaveAttribute('aria-disabled', 'true'),
     );
-    expect(total()).toHaveTextContent('Q53.00');
-    expect(live()).toHaveTextContent('Total actualizado: Q53.00');
+    expect(total()).toHaveTextContent('Q68.00');
+    expect(live()).toHaveTextContent('Total actualizado: Q68.00');
     expect(screen.queryByTestId('summary-skeleton')).not.toBeInTheDocument();
   });
 
@@ -210,7 +208,7 @@ describe('checkout · cotización del servidor (F19)', () => {
         blockers: [{ code: 'DELIVERY_UNAVAILABLE', scope: 'FULFILLMENT' }],
       }),
     });
-    await openCheckout(t, { type: 'delivery' });
+    await openCheckout(t);
     await toStep3(user);
     const alert = await screen.findByRole('alert');
     await waitFor(() =>
@@ -229,14 +227,18 @@ describe('checkout · cotización del servidor (F19)', () => {
     const t = tap();
     await openCheckout(t, { lines: [['dumplings', 2]] });
     await toShipping(user);
-    await waitFor(() => expect(total()).toHaveTextContent('Q106.00'));
+    await waitFor(() => expect(total()).toHaveTextContent('Q121.00'));
     const summary = screen.getAllByRole('region', { name: /Resumen/i })[0]!;
     expect(within(summary).getByText('Simulación')).toBeInTheDocument();
-    expect(within(summary).getByTestId('summary-fee')).toHaveTextContent('Sin costo');
+    expect(within(summary).getByTestId('summary-fee')).toHaveTextContent('Q15.00');
     // M1: ni el desglose ni el resumen llevan regiones en vivo propias.
     expect(summary.querySelector('[aria-live], [role="status"]')).toBeNull();
     const body = t.bodies.at(-1)!;
-    expect(body.fulfillment).toEqual({ type: 'PICKUP' });
+    expect(body.fulfillment).toEqual({
+      type: 'DELIVERY',
+      municipalityId: 'mun-guatemala-guatemala',
+      zone: 'Zona 10',
+    });
     expect(body.cart.lines).toEqual([{ productId: 'dumplings', quantity: 2, selections: [] }]);
     expect(body.clientView?.lines).toEqual([{ index: 0, unitPrice: '53.00' }]);
     expect(JSON.stringify(body)).not.toMatch(/"(price|fee|total|discount)"/);
@@ -247,7 +249,7 @@ describe('checkout · cotización del servidor (F19)', () => {
     const t = tap();
     const view = await openCheckout(t, { lines: [['dumplings', 1]] });
     await toShipping(user);
-    await waitFor(() => expect(total()).toHaveTextContent('Q53.00'));
+    await waitFor(() => expect(total()).toHaveTextContent('Q68.00'));
     const release = t.hold(t.bodies.length + 1);
     const lineId = view.api().cart.lines[0]!.lineId;
     await act(async () => view.api().cart.increment(lineId));
@@ -255,18 +257,18 @@ describe('checkout · cotización del servidor (F19)', () => {
       expect(screen.getAllByTestId('summary-updating')[0]).toHaveTextContent('Actualizando…'),
     );
     // Sigue visible el último total de la misma sesión, atenuado, pero NO habilita nada.
-    expect(total()).toHaveTextContent('Q53.00');
+    expect(total()).toHaveTextContent('Q68.00');
     expect(total().closest('[data-updating]')).not.toBeNull();
     blockedBtn(/Continuar a pago/i);
     expect(live()).toHaveTextContent('Actualizando importes…');
     await act(async () => release());
-    await waitFor(() => expect(total()).toHaveTextContent('Q106.00'));
+    await waitFor(() => expect(total()).toHaveTextContent('Q121.00'));
     expect(screen.queryByTestId('summary-updating')).not.toBeInTheDocument();
     // M6: el cambio de total se muestra y se anuncia.
     expect(screen.getAllByTestId('summary-total-changed')[0]).toHaveTextContent(
-      'Total actualizado: de Q53.00 a Q106.00',
+      'Total actualizado: de Q68.00 a Q121.00',
     );
-    expect(live()).toHaveTextContent('Total actualizado: Q106.00');
+    expect(live()).toHaveTextContent('Total actualizado: Q121.00');
   });
 
   it('precio cambiado: aviso con la diferencia, no bloquea, NO toca el carrito hasta «Actualizar precio» y recotiza', async () => {
@@ -331,7 +333,7 @@ describe('checkout · cotización del servidor (F19)', () => {
         blockers: [{ code: 'ADDRESS_INCOMPLETE', scope: 'FULFILLMENT' }],
       }),
     });
-    await openCheckout(t, { type: 'delivery' });
+    await openCheckout(t);
     await toStep3(user);
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Falta la zona o el municipio de tu dirección.');
@@ -343,7 +345,7 @@ describe('checkout · cotización del servidor (F19)', () => {
   it('a domicilio: radios nativos; PedidosYa «Por verificar» deshabilitado, sin tarifa y sin solicitudes; el foco se conserva al recotizar', async () => {
     const user = userEvent.setup();
     const t = tap();
-    const view = await openCheckout(t, { type: 'delivery' });
+    const view = await openCheckout(t);
     await toStep3(user);
     const own = await screen.findByRole('radio', { name: /Entrega propia/ });
     const py = screen.getByRole('radio', { name: /PedidosYa/ });
@@ -396,7 +398,7 @@ describe('checkout · cotización del servidor (F19)', () => {
         },
       }),
     });
-    await openCheckout(t, { type: 'delivery' });
+    await openCheckout(t);
     await toStep3(user);
     const py = await screen.findByRole('radio', { name: /PedidosYa/ });
     expect(py).toBeDisabled();
@@ -487,9 +489,9 @@ describe('checkout · cotización del servidor (F19)', () => {
     await user.type(input, 'bienvenido10{Enter}');
     await screen.findByText('Cupón aplicado.');
     expect(screen.getAllByTestId('summary-discount')[0]).toHaveTextContent('−Q10.60');
-    expect(total()).toHaveTextContent('Q95.40');
+    expect(total()).toHaveTextContent('Q110.40');
     expect(screen.getAllByTestId('summary-total-changed')[0]).toHaveTextContent(
-      'de Q106.00 a Q95.40',
+      'de Q121.00 a Q110.40',
     );
     expect(input).not.toHaveAttribute('aria-invalid');
   });
@@ -563,7 +565,7 @@ describe('checkout · cotización del servidor (F19)', () => {
     const t = tap();
     const view = await openCheckout(t);
     await toShipping(user);
-    await waitFor(() => expect(total()).toHaveTextContent('Q53.00'));
+    await waitFor(() => expect(total()).toHaveTextContent('Q68.00'));
     await user.click(screen.getByRole('radio', { name: /Sucursal 2/ }));
     expect(view.api().mode.mode.branchId).toBe('sucursal-2');
     expect(screen.getByRole('radio', { name: /Sucursal 1/ })).toHaveAttribute(
@@ -614,23 +616,22 @@ describe('checkout · cotización del servidor (F19)', () => {
         blockers: [{ code: 'DELIVERY_UNAVAILABLE', scope: 'FULFILLMENT' }],
       }),
     });
-    await openCheckout(t, { type: 'delivery', locale: 'en' });
+    await openCheckout(t, { locale: 'en' });
     await next(user, /Continue to delivery/i);
     await next(user, /Continue to shipping/i);
-    expect(
-      await screen.findByText(/Home delivery is not available for this address/),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Pick up at the branch' })).toBeInTheDocument();
+    expect(await screen.findByText('We don’t deliver to that address yet.')).toBeInTheDocument();
+    // ADR-0036: solo se informa; no se ofrece recoger ni programar.
+    expect(screen.queryByRole('button', { name: /Pick up|Schedule/ })).not.toBeInTheDocument();
     expect(screen.getByTestId('quote-live')).toBeInTheDocument();
   });
 
-  it('con la API real (http) el horario programado se deshabilita con aviso (P42) y no hay rótulo de simulación en Entrega', async () => {
+  it('con la API real (http) Entrega no ofrece programar ni recoger y no hay rótulo de simulación', async () => {
     const user = userEvent.setup();
     const t = tap({ kind: 'http' });
     await openCheckout(t);
     await next(user, /Continuar a entrega/i);
-    expect(screen.getByRole('button', { name: 'Programar' })).toBeDisabled();
-    expect(screen.getByText('Programar pedidos estará disponible pronto.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Programar' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Programar pedidos/)).not.toBeInTheDocument();
     const summary = screen.getAllByRole('region', { name: /Resumen/i })[0]!;
     expect(within(summary).queryByText('Simulación')).not.toBeInTheDocument();
   });
@@ -655,7 +656,7 @@ describe('checkout · cotización del servidor (F19)', () => {
     expect(within(region).queryAllByRole('radio')).toHaveLength(0);
     expect(within(region).getByText('Efectivo')).toBeInTheDocument();
     expect(
-      within(region).getByText(/Realiza el pago en efectivo cuando recojas tu pedido/),
+      within(region).getByText(/Realiza el pago en efectivo cuando recibas tu pedido/),
     ).toBeInTheDocument();
     expect(region.textContent).not.toMatch(/tarjeta|transferencia|neonet|comprobante/i);
   });
@@ -815,7 +816,7 @@ describe('checkout · cotización del servidor (F19)', () => {
     void user;
     expect(screen.getByText('Efectivo')).toBeInTheDocument();
     expect(
-      screen.getByText('Realiza el pago en efectivo cuando recojas tu pedido en la sucursal.'),
+      screen.getByText('Realiza el pago en efectivo cuando recibas tu pedido.'),
     ).toBeInTheDocument();
   });
 
@@ -842,7 +843,7 @@ describe('checkout · cotización del servidor (F19)', () => {
   it('B3: la confirmación muestra el proveedor elegido y el cupón aplicado (simulación con datos de demostración)', async () => {
     const user = userEvent.setup();
     const t = tap();
-    await openCheckout(t, { type: 'delivery', lines: [['dumplings', 2]] });
+    await openCheckout(t, { lines: [['dumplings', 2]] });
     await toStep3(user);
     await screen.findByRole('radio', { name: /Entrega propia/ });
     await user.type(screen.getByLabelText(/Cupón de descuento/), 'bienvenido10{Enter}');

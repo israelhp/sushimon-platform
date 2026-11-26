@@ -45,7 +45,18 @@ export function cartV2(branchId: string, lines: SeedLine[], updatedAt = Date.now
   });
 }
 
-export const pickupMode = (branchId: string) =>
-  JSON.stringify({ type: 'pickup', when: { kind: 'now' }, branchId, address: null });
+/** Modo de pedido guardado (ADR-0036: la tienda es solo a domicilio e inmediata). */
+export const deliveryMode = (branchId: string) =>
+  JSON.stringify({
+    type: 'delivery',
+    branchId,
+    address: {
+      department: 'Guatemala',
+      municipality: 'Guatemala',
+      zone: '10',
+      line: '6a avenida 10-50',
+      references: '',
+    },
+  });
 
 export const DUMPLINGS = { productId: 'dumplings', name: 'Dumplings', unitCents: 5300 } as const;

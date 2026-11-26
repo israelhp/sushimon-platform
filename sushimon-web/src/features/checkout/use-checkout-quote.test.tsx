@@ -71,7 +71,7 @@ const cartOf = (productId: string, quantity = 1): QuoteInputs['cart'] => ({
 });
 const inputsOf = (over: Partial<QuoteInputs> = {}): QuoteInputs => ({
   cart: cartOf('a'),
-  fulfillment: { type: 'PICKUP' },
+  fulfillment: { type: 'DELIVERY', municipalityId: 'm1', zone: null },
   couponCode: '',
   ...over,
 });

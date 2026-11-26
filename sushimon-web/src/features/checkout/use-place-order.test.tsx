@@ -31,7 +31,7 @@ const intent: OrderIntent = {
       branchId: 'sucursal-1',
       lines: [{ productId: 'dumplings', quantity: 1, selections: [] }],
     },
-    fulfillment: { type: 'PICKUP' },
+    fulfillment: { type: 'DELIVERY', municipalityId: 'm1', zone: null },
     couponCode: '',
   },
   contact: { fullName: 'Ana López', phone: '5555-1234', email: '' },
