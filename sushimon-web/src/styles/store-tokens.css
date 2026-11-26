@@ -41,8 +41,8 @@
   --band-red-2: #dd4439; /* segunda onda más oscura: el texto blanco queda sobre >= 3,81:1 en ambas */
   --band-blue: #283479;
   --band-blue-2: #303f8c;
-  --band-deep: #111827;
-  --band-deep-2: #1b2333;
+  --band-deep: #283479;
+  --band-deep-2: #303f8c;
   --band-amber: #f59e0b;
   --band-amber-2: #f7aa2b;
   --on-band: 255 255 255;
