@@ -4,6 +4,8 @@
 **Dependencias**: F19 (cotizador y token), F01/F04 (cliente autenticado opcional), F05 (dirección guardada), F08/F09/F12/F13/F15 (vía el cotizador) · **Decisiones**: `docs/adr/0026-creacion-pedidos-idempotencia.md` · **Pendientes**: P48–P60 en `docs/business-rules/decisiones-pendientes.md`
 **Estado global (actualizado 2026-11-18)**: `INTEGRATED` en entorno de pruebas para pickup y reparto propio (`OWN`) como invitado; NO `READY` (ver §16). Estado inicial de diseño: `CONTRACT_DEFINED` (operaciones `createOrder` y `getOrder` y esquemas `Order*` en `openapi.yaml`; sin migración, API ni web). `pnpm contracts:check` queda rojo solo por esas dos operaciones sin implementar (esperado). PedidosYa real: `BLOCKED_EXTERNAL` (F29); pagos: F24/F25.
 
+> **Nota ADR-0036 (2026-11-26, pedidos solo a domicilio e inmediatos)**: reemplaza parcialmente lo que esta spec dice sobre PICKUP y pedidos programados en creación: solo `DELIVERY` e inmediato (PICKUP => 400), `deliveryAddress` obligatorio con `municipalityId`, `scheduled_for` obsoleta (0024) y los pedidos PICKUP creados antes pasan a ser históricos. El texto original se conserva como historial; ver `docs/adr/0036-pedidos-solo-a-domicilio-e-inmediatos.md`.
+
 ## 1. Alcance y fuera de alcance
 
 Dentro: `POST /v1/orders` (invitado o autenticado, `Idempotency-Key` obligatoria, recotización con el cotizador de F19) y `GET /v1/orders/{id}` (dueño por JWT o token de invitado); migración 0018 (pedidos, snapshots, historial, tokens de acceso, claves de idempotencia); número de pedido por secuencia; confirmación web real («pedido recibido») sobre el checkout de F19; limpieza del carrito solo tras éxito confirmado; auditoría `order.created`.

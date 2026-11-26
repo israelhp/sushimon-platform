@@ -6,6 +6,8 @@
 
 > **Cambio de requerimientos (prioridad sobre backlog, prototipos y mocks)**: F24 es SOLO EFECTIVO. Quedan PROHIBIDOS en esta feature: transferencia bancaria (opción, cuentas, comprobantes, referencias, conciliación), tarjetas/Neonet y reembolsos. `bank_transfer` se retira del contrato, el checkout, los mocks, los textos y el puerto provisional de F22 (`ProvisionalPaymentRule`, P74). La ficha F24 del backlog («Efectivo y transferencias bancarias») queda superada por esta spec.
 
+> **Nota ADR-0036 (2026-11-26, pedidos solo a domicilio e inmediatos)**: reemplaza parcialmente lo que esta spec dice sobre PICKUP y pedidos programados en pagos: el cobro `BRANCH` (mostrador) solo para PICKUP histórico o en curso; P84 cerrada. El texto original se conserva como historial; ver `docs/adr/0036-pedidos-solo-a-domicilio-e-inmediatos.md`.
+
 ## 1. Alcance y fuera de alcance
 
 Dentro:

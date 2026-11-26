@@ -2,6 +2,8 @@
 
 **Estado**: **propuesta** (2026-11-18, F22). Se acepta al fusionar `specs/023-order-management`. Sin migración.
 
+> **Reemplazado parcialmente por ADR-0036** (2026-11-26, pedidos solo a domicilio e inmediatos) en lo relativo a gestión: la acción `complete` (`ready` → `picked_up`) se conserva solo para pedidos PICKUP históricos o en curso (su retiro es una fase posterior); el filtro `fulfillmentType` del listado y `scheduledFor` se eliminan. El texto original se conserva como historial.
+
 **Contexto**: F20 dejó `orders` con el catálogo cerrado de estados (CHECK), `order_status_history` append-only, `audit_events` y los permisos granulares `orders.read|accept|reject|prepare|complete|cancel` (0005) con alcance por sucursal (ADR-0010). F21 ya presenta el historial al cliente sin `changed_by` ni `reason`. F22 debe mover los pedidos por su ciclo de vida desde el backoffice con control de concurrencia, motivo, quién ejecuta y auditoría, sin tocar entregas (F28), pagos (F24) ni PedidosYa (F29, `BLOCKED_EXTERNAL`). Restricciones: serverless sin memoria compartida (ADR-0006), ~100 pedidos/día, sin Redis, colas, WebSockets ni dependencias nuevas, y un mock nunca confirma entregas reales.
 
 ## Decisión

@@ -4,6 +4,8 @@
 **Dependencias**: F08 (horarios), F09 (cobertura), F12 (extras), F13 (precio por sucursal), F15 (promociones), F18 (carrito); F05 (direcciones) para dirección guardada; F01 (JWT opcional) · **Decisiones**: `docs/adr/0025-cotizacion-checkout.md` · **Pendientes**: P39–P47 en `docs/business-rules/decisiones-pendientes.md`
 **Estado global**: `CONTRACT_DEFINED` (operación `quoteCheckout` y esquemas `Checkout*` en `openapi.yaml`; API y web sin implementar). `contracts:check` falla hasta que la API implemente la operación (esperado). Sin migración. PedidosYa real: `BLOCKED_EXTERNAL` (F29).
 
+> **Nota ADR-0036 (2026-11-26, pedidos solo a domicilio e inmediatos)**: reemplaza parcialmente lo que esta spec dice sobre PICKUP y pedidos programados en cotización: `fulfillment.type` es solo `DELIVERY` (PICKUP => 400) y no hay pedidos programados ni recogida; `deliveryFee` ya no es `0.00` por PICKUP; sin cobertura (`DELIVERY_UNAVAILABLE`) o con sucursal cerrada (`BRANCH_CLOSED`) la web solo informa. El texto original se conserva como historial; ver `docs/adr/0036-pedidos-solo-a-domicilio-e-inmediatos.md`.
+
 ## Alcance y fuera de alcance
 
 Dentro: `POST /v1/checkout/quote` (cálculo de servidor sin efectos), cotizador reutilizable por F20, acceso opcional por JWT, tarifa propia (OWN) y estado PedidosYa `UNKNOWN`, firma sin estado de vigencia, flujo de checkout web que consume la cotización (modo http) con paridad mock rotulada como simulación.

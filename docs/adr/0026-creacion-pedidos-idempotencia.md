@@ -2,6 +2,8 @@
 
 **Estado**: **propuesta** (2026-11-18, F20). Se acepta al fusionar `specs/021-order-creation`. Requiere la migración 0018 (ver la spec §6).
 
+> **Reemplazado parcialmente por ADR-0036** (2026-11-26, pedidos solo a domicilio e inmediatos) en lo relativo a creación: `fulfillment.type` solo `DELIVERY` (PICKUP => 400), `deliveryAddress` obligatorio con `municipalityId`, sin programación (`scheduled_for` obsoleta) y sin pedidos PICKUP nuevos; los PICKUP históricos se conservan. El texto original se conserva como historial.
+
 **Contexto**: F19 dejó el cotizador (`CheckoutQuoteService`) y el token HMAC de vigencia (ADR-0025 D5), que declara que F20 debe recotizar, comparar y aplicar idempotencia. El DBML ya define `orders`, `order_addresses`, `order_items`, `order_item_modifiers`, `order_promotions` y `order_status_history`; el borrador `Order` de la web es solo un mock. Falta una tabla de idempotencia y una política de acceso de invitado (ficha F20). Restricciones: el cliente nunca es fuente de verdad; PedidosYa real es `BLOCKED_EXTERNAL` (F29); pagos son F24/F25; serverless sin memoria compartida (ADR-0006); sin Redis, colas ni dependencias nuevas.
 
 ## Decisión

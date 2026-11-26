@@ -4,6 +4,8 @@
 **Dependencias**: F20 (pedidos, historial `order_status_history`, token de invitado) · **Integración posterior**: F22 (escribe los estados), F28 (entregas propias), F29 (tracking externo, `BLOCKED_EXTERNAL`), F31 (avisos) · **Decisiones**: `docs/adr/0027-seguimiento-pedidos.md` · **Pendientes**: P61–P67 en `docs/business-rules/decisiones-pendientes.md`
 **Estado de integración inicial: `CONTRACT_DEFINED`** (operación `getOrderTracking` y esquemas `OrderTracking*`/`OrderPublicStatus` en `openapi.yaml`; sin migración, API ni web). `pnpm contracts:check` queda rojo SOLO por `GET /v1/orders/{id}/tracking#getOrderTracking` sin implementar (comprobado). Estado de la feature en el backlog: no se edita aquí (`docs/BACKLOG.md` lo actualiza el propietario al fusionar). PedidosYa real: `BLOCKED_EXTERNAL`.
 
+> **Nota ADR-0036 (2026-11-26, pedidos solo a domicilio e inmediatos)**: reemplaza parcialmente lo que esta spec dice sobre PICKUP y pedidos programados en seguimiento: PICKUP (recorrido sin `on_the_way`, `delivery: null`) aplica solo a pedidos históricos o en curso. El texto original se conserva como historial; ver `docs/adr/0036-pedidos-solo-a-domicilio-e-inmediatos.md`.
+
 ## 1. Alcance y fuera de alcance
 
 Dentro: `GET /v1/orders/{id}/tracking` (`getOrderTracking`, solo lectura, polling moderado); fases públicas normalizadas; línea de tiempo con los eventos REALES de `order_status_history`; bloque `delivery` mínimo; pantalla web de seguimiento `/pedidos/[id]/seguimiento` con polling controlado (TanStack Query); enlace desde la confirmación de F20; manejo de acceso perdido, 429/503 y red caída; migrar el mock del seguimiento a la forma real.
