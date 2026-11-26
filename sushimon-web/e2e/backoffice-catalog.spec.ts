@@ -158,6 +158,23 @@ test('administrador: crea una subcategoría, la reordena con el teclado y desact
     .getByRole('button', { name: 'Desactivar' })
     .click();
   await expect(page.locator('.crow.off .cname', { hasText: 'Postres' })).toBeVisible();
+
+  // Eliminar (ADR-0034): una categoría en uso (Sushi Rolls) se rechaza con conteos y sin cerrar; una sin uso se elimina.
+  await page.getByRole('button', { name: 'Eliminar Sushi Rolls' }).click();
+  const inUse = page.getByRole('dialog', { name: 'Eliminar «Sushi Rolls»' });
+  await expect(inUse.getByRole('button', { name: 'Cancelar' })).toBeFocused();
+  await inUse.getByRole('button', { name: 'Eliminar categoría' }).click();
+  await expect(inUse.getByRole('alert')).toContainText('está en uso: 2 subcategorías');
+  await inUse.getByRole('button', { name: 'Cancelar' }).click();
+  await page.getByRole('button', { name: 'Eliminar Rolls fríos' }).click();
+  await page
+    .getByRole('dialog', { name: 'Eliminar «Rolls fríos»' })
+    .getByRole('button', { name: 'Eliminar categoría' })
+    .click();
+  await expect(
+    page.locator('.toast', { hasText: 'Categoría «Rolls fríos» eliminada' }),
+  ).toBeVisible();
+  await expect(page.locator('.crow .cname', { hasText: 'Rolls fríos' })).toHaveCount(0);
   await page.goto('/menu');
   await expect(page.getByRole('heading', { name: /^Entradas/ })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('heading', { name: /^Postres/ })).toHaveCount(0);

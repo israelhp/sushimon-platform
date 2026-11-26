@@ -157,10 +157,9 @@ describe('F10 admin: lectura y permisos', () => {
     expect((await adminList(h)).find((c) => c.slug === 'bowls')).toBeUndefined();
   });
 
-  it('no existe DELETE', async () => {
+  it('DELETE de una categoría inexistente => 404 (el borrado de ADR-0034 se prueba más abajo)', async () => {
     const h = admin();
-    const first = (await adminList(h))[0]!;
-    expect(await status(h.client.delete(paths.adminCategory(first.id)))).toBe(404);
+    expect(await status(h.client.delete(paths.adminCategory('cat-no-existe')))).toBe(404);
   });
 });
 
@@ -455,5 +454,89 @@ describe('F10 reordenar entre hermanos', () => {
     for (const c of h.store.menuCategories) if (c.parentId === null) c.sortOrder = 0;
     const roots = (await siblingsOf(h, null)).map((c) => c.name);
     expect(roots).toEqual([...roots].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)));
+  });
+});
+
+describe('ADR-0034 eliminar categoría (DELETE /v1/admin/categories/:id)', () => {
+  it('204: borra una categoría sin uso, la quita de las listas y deja libre su slug', async () => {
+    const h = admin();
+    const target = bySlug(await adminList(h), 'rolls-frios');
+    expect(await categories.deleteAdminCategory(h.client, target.id)).toBeUndefined();
+    const after = await adminList(h);
+    expect(after.map((c) => c.slug)).not.toContain('rolls-frios');
+    expect(after).toHaveLength(9);
+    // Repetir => 404 sin efectos; el slug puede reutilizarse.
+    expect(await status(categories.deleteAdminCategory(h.client, target.id))).toBe(404);
+    const again = await categories.createAdminCategory(h.client, {
+      name: 'Otra',
+      slug: 'rolls-frios',
+      parentId: null,
+    });
+    expect(again.slug).toBe('rolls-frios');
+  });
+
+  it('409 CATEGORY_IN_USE con conteos: subcategorías, productos y banners (0 en el mock); no borra nada', async () => {
+    const h = admin();
+    const list = await adminList(h);
+    const rolls = bySlug(list, 'rolls');
+    const e = await failure(categories.deleteAdminCategory(h.client, rolls.id));
+    expect(e.status).toBe(409);
+    expect(e.businessCode).toBe('CATEGORY_IN_USE');
+    const usage = (e.body as { usage: Record<string, number> }).usage;
+    expect(usage.children).toBe(2);
+    expect(usage.products).toBe(h.store.products.filter((p) => p.categoryId === rolls.id).length);
+    expect(usage.products).toBeGreaterThan(0);
+    expect(usage.banners).toBe(0);
+    // Solo productos (también inactivos cuentan): Postres.
+    h.store.products.find((p) => p.categoryId === bySlug(list, 'postres').id)!.active = false;
+    const postres = await failure(
+      categories.deleteAdminCategory(h.client, bySlug(list, 'postres').id),
+    );
+    expect((postres.body as { usage: unknown }).usage).toEqual({
+      children: 0,
+      products: 1,
+      banners: 0,
+    });
+    expect(await adminList(h)).toHaveLength(list.length);
+  });
+
+  it('una categoría con hijas sigue en uso hasta borrar la última hija (que a su vez exige quedar sin productos)', async () => {
+    const h = admin();
+    const list = await adminList(h);
+    const temporada = bySlug(list, 'temporada');
+    const edicion = bySlug(list, 'edicion-limitada');
+    const first = await failure(categories.deleteAdminCategory(h.client, temporada.id));
+    expect((first.body as { usage: unknown }).usage).toEqual({
+      children: 1,
+      products: 0,
+      banners: 0,
+    });
+    expect(await status(categories.deleteAdminCategory(h.client, edicion.id))).toBe(409); // tiene 1 producto
+    h.store.products = h.store.products.filter((p) => p.categoryId !== edicion.id);
+    expect(await status(categories.deleteAdminCategory(h.client, edicion.id))).toBe(200);
+    expect(await status(categories.deleteAdminCategory(h.client, temporada.id))).toBe(200);
+  });
+
+  it('404 si no existe; 401 sin sesión; 403 sin catalog.update o sin alcance global', async () => {
+    const h = admin();
+    expect(await status(categories.deleteAdminCategory(h.client, 'cat-no-existe'))).toBe(404);
+    const anon = createHarness();
+    expect(await status(categories.deleteAdminCategory(anon.client, 'cat-postres'))).toBe(401);
+    const manager = createHarness();
+    manager.asStaff('manager');
+    expect(await status(categories.deleteAdminCategory(manager.client, 'cat-postres'))).toBe(403);
+    const scoped = createHarness();
+    scoped.asStaff('manager');
+    scoped.store.roles.find((r) => r.code === 'manager')!.permissions.push('catalog.update');
+    expect(await status(categories.deleteAdminCategory(scoped.client, 'cat-postres'))).toBe(403);
+  });
+
+  it('es determinista: dos stores sembrados igual dan el mismo 409', async () => {
+    const a = admin();
+    const b = admin();
+    const id = bySlug(await adminList(a), 'rolls').id;
+    const ea = await failure(categories.deleteAdminCategory(a.client, id));
+    const eb = await failure(categories.deleteAdminCategory(b.client, id));
+    expect(eb.body).toEqual(ea.body);
   });
 });

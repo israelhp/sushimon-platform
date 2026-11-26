@@ -25,18 +25,21 @@ import { canGlobally } from '@/lib/permissions';
 import { categoryServerError } from '../categories-view';
 import { isForbidden } from '@/features/bo-orders/error-message';
 import { CategoryFormModal } from './CategoryFormModal';
+import { DeleteCategoryModal } from './DeleteCategoryModal';
 
 type Dialog =
   | { kind: 'create'; parentId: string | null }
   | { kind: 'edit'; id: string }
-  | { kind: 'status'; id: string };
+  | { kind: 'status'; id: string }
+  | { kind: 'delete'; id: string };
 
 /**
  * Pantalla Categorías (F10): árbol del menú como lista indentada (hasta 3 niveles) con alta, edición (nombre, slug,
  * descripción, padre), activar/desactivar con confirmación (muestra la visibilidad EFECTIVA: un hijo activo bajo un padre
  * inactivo sigue oculto) y reordenar entre hermanos con botones subir/bajar (teclado y anuncio). La vista exige
  * `catalog.read`; las acciones `catalog.create`/`catalog.update` con alcance GLOBAL (si no, se deshabilitan con aviso:
- * el servidor responde 403 de todos modos). Sin borrado: solo se desactiva.
+ * el servidor responde 403 de todos modos). Eliminar (ADR-0034) es permanente y solo se acepta si no está en uso (409 con conteos y
+ * alternativa «Desactivar»); desactivar sigue siendo la opción reversible.
  */
 export function CategoriesScreen() {
   const t = useTranslations('backoffice.categories');
@@ -53,6 +56,7 @@ export function CategoriesScreen() {
   const [actionError, setActionError] = useState('');
   const [announcement, setAnnouncement] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
   const focusAfter = useRef<{ id: string; dir: 'up' | 'down' } | null>(null);
 
   const list = useMemo(() => categories.data?.items ?? [], [categories.data]);
@@ -148,7 +152,9 @@ export function CategoriesScreen() {
     <div className="page" style={{ maxWidth: 980, animation: 'none' }}>
       <div className="page-h">
         <div className="grow">
-          <h1>{t('title')}</h1>
+          <h1 ref={titleRef} tabIndex={-1} className="outline-none">
+            {t('title')}
+          </h1>
           <div className="page-sub">{t('subtitle', { max: MAX_CATEGORY_DEPTH })}</div>
         </div>
         <button
@@ -268,6 +274,15 @@ export function CategoriesScreen() {
                   </button>
                   <button
                     type="button"
+                    className="btn sm danger"
+                    disabled={!canUpdate}
+                    aria-label={t('deleteLabel', { name: c.name })}
+                    onClick={() => setDialog({ kind: 'delete', id: c.id })}
+                  >
+                    {t('delete')}
+                  </button>
+                  <button
+                    type="button"
                     className="icon-btn bordered"
                     disabled={!canCreate || !c.active || c.depth >= MAX_CATEGORY_DEPTH}
                     aria-label={t('addChild', { name: c.name })}
@@ -311,6 +326,13 @@ export function CategoriesScreen() {
       ) : null}
       {dialog?.kind === 'edit' && target ? (
         <CategoryFormModal category={target} list={list} onClose={close} />
+      ) : null}
+      {dialog?.kind === 'delete' && target ? (
+        <DeleteCategoryModal
+          category={target}
+          onClose={close}
+          onDone={() => setTimeout(() => titleRef.current?.focus(), 0)}
+        />
       ) : null}
       {dialog?.kind === 'status' && target ? (
         <ConfirmModal

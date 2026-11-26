@@ -765,6 +765,10 @@ describe('paridad mock ↔ http', () => {
           orderedIds: ['cat-rolls-frios'],
         }), // 422
       (c) => categories.listStoreCategories(c),
+      (c) => categories.deleteAdminCategory(c, 'cat-rolls'), // 409 CATEGORY_IN_USE (hijas y productos)
+      (c) => categories.deleteAdminCategory(c, 'cat-rolls-frios'), // 204
+      (c) => categories.deleteAdminCategory(c, 'cat-rolls-frios'), // 404 (repetir)
+      (c) => categories.listAdminCategories(c),
     ];
     const a = await run(steps, p.mock.client);
     const b = await run(steps, p.http);
@@ -779,6 +783,7 @@ describe('paridad mock ↔ http', () => {
       [
         'CATEGORY_CYCLE',
         'CATEGORY_DEPTH_EXCEEDED',
+        'CATEGORY_IN_USE',
         'CATEGORY_PARENT_INVALID',
         'CATEGORY_REORDER_MISMATCH',
         'CATEGORY_SLUG_TAKEN',

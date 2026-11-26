@@ -28,7 +28,7 @@ describe('paths', () => {
   it('F10: rutas de categorías del menú (público y admin)', () => {
     expect(paths.storeCategories()).toBe('/v1/store/categories');
     expect(paths.adminCategories()).toBe('/v1/admin/categories');
-    expect(paths.adminCategory('c 1')).toBe('/v1/admin/categories/c%201');
+    expect(paths.adminCategory('c 1')).toBe('/v1/admin/categories/c%201'); // PATCH y DELETE (ADR-0034)
     expect(paths.adminCategoriesReorder()).toBe('/v1/admin/categories/reorder');
   });
 

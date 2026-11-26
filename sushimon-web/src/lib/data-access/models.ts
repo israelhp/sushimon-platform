@@ -86,6 +86,9 @@ export type AdminCategoryList = S['AdminCategoryList'];
 export type CreateCategoryRequest = S['CreateCategoryRequest'];
 export type UpdateCategoryRequest = S['UpdateCategoryRequest'];
 export type ReorderCategoriesRequest = S['ReorderCategoriesRequest'];
+/** ADR-0034: cuerpo del 409 `CATEGORY_IN_USE` de `deleteAdminCategory` (`usage` = conteos de lo que impide el borrado). */
+export type CategoryInUseError = S['CategoryInUseError'];
+export type CategoryUsage = CategoryInUseError['usage'];
 /**
  * Modelo UI del producto (borrador `Product`, MOCK_ONLY): lo que consumen carrito, checkout y favoritos. Desde F11 se
  * construye en `features/catalog/catalog-product.ts` a partir de `PublicProduct` (contrato real) más lo que F11 NO provee y

@@ -1,6 +1,7 @@
 import { isApiError } from '@/lib/data-access/errors';
 import type {
   AdminCategory,
+  CategoryUsage,
   CreateCategoryRequest,
   UpdateCategoryRequest,
 } from '@/lib/data-access/models';
@@ -115,6 +116,7 @@ export type CategoryErrorKind =
   | 'parentInvalid'
   | 'reorderMismatch'
   | 'limit'
+  | 'inUse'
   | 'busy'
   | 'invalid'
   | 'forbidden'
@@ -128,6 +130,8 @@ export interface CategoryServerError {
   fields: CategoryFormErrors;
   /** Hay que volver a pedir la jerarquía (cambió en otra sesión). */
   reload: boolean;
+  /** Solo en `inUse` (409 `CATEGORY_IN_USE`): conteos de lo que impide el borrado. */
+  usage?: CategoryUsage;
 }
 
 const result = (
@@ -137,8 +141,22 @@ const result = (
   reload = false,
 ): CategoryServerError => ({ kind, message, fields, reload });
 
+/** Lee `usage` del cuerpo del 409 `CATEGORY_IN_USE` (ADR-0034) validando cada conteo; null si no es utilizable. */
+export function categoryUsage(error: unknown): CategoryUsage | null {
+  const usage = (
+    isApiError(error) ? (error.body as { usage?: unknown } | undefined)?.usage : null
+  ) as Record<string, unknown> | null | undefined;
+  if (!usage || typeof usage !== 'object') return null;
+  const count = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : 0);
+  return {
+    children: count(usage.children),
+    products: count(usage.products),
+    banners: count(usage.banners),
+  };
+}
+
 /**
- * 409 `CATEGORY_SLUG_TAKEN`; 422 `CATEGORY_CYCLE` | `CATEGORY_DEPTH_EXCEEDED` | `CATEGORY_PARENT_INVALID` |
+ * 409 `CATEGORY_SLUG_TAKEN` | `CATEGORY_IN_USE` (borrado); 422 `CATEGORY_CYCLE` | `CATEGORY_DEPTH_EXCEEDED` | `CATEGORY_PARENT_INVALID` |
  * `CATEGORY_REORDER_MISMATCH` | `CATEGORY_LIMIT_REACHED`; 400, 401, 403, 404.
  */
 export function categoryServerError(error: unknown): CategoryServerError {
@@ -178,6 +196,17 @@ export function categoryServerError(error: unknown): CategoryServerError {
         {},
         true,
       );
+    case 'CATEGORY_IN_USE': {
+      const out = result(
+        'inUse',
+        'La categoría está en uso: no se puede eliminar. Puedes desactivarla en su lugar.',
+        {},
+        true,
+      );
+      // `usage` siempre viene en el contrato; si faltara, se muestra solo el mensaje genérico.
+      out.usage = categoryUsage(error) ?? undefined;
+      return out;
+    }
     case 'CATEGORIES_BUSY':
       return result('busy', 'Hay otra edición en curso. Espera un momento y reintenta.');
     case 'CATEGORY_LIMIT_REACHED':

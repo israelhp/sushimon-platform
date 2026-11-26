@@ -3,6 +3,7 @@ import { ApiError } from '@/lib/data-access/errors';
 import type { AdminCategory } from '@/lib/data-access/models';
 import {
   categoryServerError,
+  categoryUsage,
   categoryToForm,
   emptyCategoryForm,
   firstCategoryError,
@@ -140,5 +141,50 @@ describe('mensajes por code (nunca por message)', () => {
       message: 'boom',
     });
     expect(categoryServerError(new ApiError(0, 'offline', 'sin conexión')).kind).toBe('other');
+  });
+});
+
+describe('categoryServerError: borrado (ADR-0034)', () => {
+  const inUse = (usage: unknown) =>
+    new ApiError(
+      409,
+      'conflict',
+      'texto cualquiera',
+      undefined,
+      undefined,
+      'CATEGORY_IN_USE',
+      undefined,
+      undefined,
+      { statusCode: 409, code: 'CATEGORY_IN_USE', usage },
+    );
+
+  it('409 CATEGORY_IN_USE => inUse con los conteos de usage', () => {
+    const parsed = categoryServerError(inUse({ children: 2, products: 14, banners: 0 }));
+    expect(parsed).toMatchObject({
+      kind: 'inUse',
+      reload: true,
+      usage: { children: 2, products: 14, banners: 0 },
+    });
+  });
+
+  it('usage ausente o con valores inválidos no rompe: conteos a 0 o sin usage', () => {
+    expect(categoryUsage(inUse({ children: -3, products: 'x', banners: 1.5 }))).toEqual({
+      children: 0,
+      products: 0,
+      banners: 0,
+    });
+    expect(categoryServerError(inUse(undefined))).toMatchObject({
+      kind: 'inUse',
+      usage: undefined,
+    });
+    expect(categoryUsage(new Error('x'))).toBeNull();
+  });
+
+  it('503 CATEGORIES_BUSY es reintentable (busy) y 404 pide recargar', () => {
+    const busy = categoryServerError(
+      new ApiError(503, 'server_error', 'x', undefined, undefined, 'CATEGORIES_BUSY'),
+    );
+    expect(busy).toMatchObject({ kind: 'busy', reload: false });
+    expect(categoryServerError(new ApiError(404, 'not_found', 'x')).kind).toBe('notFound');
   });
 });
