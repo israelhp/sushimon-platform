@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/data-access/errors';
 import type { OrderTracking } from '@/lib/data-access/models';
 import { renderStore } from '@/test/store-providers';
@@ -15,6 +15,7 @@ import {
 import type { OrderTrackingResult } from '@/features/orders/hooks';
 import { resetConfirmationMemory } from '@/features/checkout/confirmation-store';
 import { OrderTrackingScreen } from './order-tracking-screen';
+import { DEMO_BASE_TIME } from '@/mocks/clock';
 
 /** F21 · pantalla de seguimiento por ESTADO (el hook se sustituye por un resultado guionado; el polling se prueba aparte). */
 let result: OrderTrackingResult;
@@ -49,9 +50,18 @@ const show = (locale: 'es' | 'en' = 'es') =>
 const label = () => screen.getByTestId('status-label').textContent;
 const hint = () => screen.getByTestId('status-hint').textContent ?? '';
 
+// El mock emite la credencial con el reloj fijo de la demo (`DEMO_BASE_TIME` + 14 días); la app la compara con
+// `Date.now()`. Sin fijar solo `Date`, estas pruebas dejan de pasar cuando el calendario real supera esa vigencia.
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(DEMO_BASE_TIME));
+
   resetConfirmationMemory();
   window.sessionStorage.clear();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('OrderTrackingScreen · mensajes honestos por publicStatus', () => {

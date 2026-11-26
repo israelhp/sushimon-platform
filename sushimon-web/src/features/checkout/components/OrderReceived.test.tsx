@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/data-access/errors';
 import type { OrderCreateRequest, OrderCreated } from '@/lib/data-access/models';
 import { withShortcuts, type DataClient, type RequestOptions } from '@/lib/data-access/types';
@@ -10,6 +10,7 @@ import { createOrder } from '@/services/orders';
 import { renderStore } from '@/test/store-providers';
 import { resetConfirmationMemory, saveConfirmation } from '../confirmation-store';
 import { OrderDetail } from '@/features/tracking/components/order-detail';
+import { DEMO_BASE_TIME } from '@/mocks/clock';
 
 /** F20 · «pedido recibido» en `/pedidos/[id]` con la API real: se reconstruye con GET + credencial; honesto y sin seguimiento. */
 const asHttp = (backend: DataClient) =>
@@ -40,10 +41,19 @@ async function place(
   return { created, backend: h.client };
 }
 
+// El mock emite la credencial con el reloj fijo de la demo (`DEMO_BASE_TIME` + 14 días); la app la compara con
+// `Date.now()`. Sin fijar solo `Date`, estas pruebas dejan de pasar cuando el calendario real supera esa vigencia.
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(DEMO_BASE_TIME));
+
   resetConfirmationMemory();
   window.sessionStorage.clear();
   window.localStorage.clear();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('OrderDetail con la API real (http): pedido recibido', () => {
