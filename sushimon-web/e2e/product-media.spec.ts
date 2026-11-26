@@ -77,6 +77,41 @@ test('administrador: sube una imagen, la reordena, edita su texto y la desvincul
   expect(external).toEqual([]);
 });
 
+test('administrador: crea un producto ELIGIENDO la imagen desde el alta (se sube al guardar) y aparece en la lista', async ({
+  page,
+}) => {
+  await enterAsAdmin(page);
+  await page
+    .getByRole('navigation', { name: 'Menú principal' })
+    .getByRole('link', { name: 'Productos' })
+    .click();
+  await page.getByRole('button', { name: 'Nuevo producto' }).click({ timeout: 90_000 });
+  const dialog = page.getByRole('dialog', { name: 'Nuevo producto' });
+  // En el alta ya se ofrece «Imágenes»: se elige el archivo, con vista previa local, sin tocar la API de medios.
+  await expect(dialog.getByRole('heading', { name: 'Imágenes' })).toBeVisible();
+  await dialog.getByRole('textbox', { name: 'Nombre', exact: true }).fill('Roll con foto');
+  await dialog.getByRole('combobox', { name: /^Categoría/ }).selectOption({ label: 'Sushi Rolls' });
+  await dialog.getByLabel(/^Precio/).fill('55');
+  await dialog
+    .getByLabel('Seleccionar imágenes para subir')
+    .setInputFiles({ name: 'roll.png', mimeType: 'image/png', buffer: PNG_1X1 });
+  await expect(
+    dialog.getByRole('listitem', { name: 'Imagen 1 de 1' }).getByText('Principal'),
+  ).toBeVisible();
+  await dialog.getByRole('button', { name: 'Guardar producto' }).click();
+  await expect(
+    page.locator('.toast', { hasText: 'Producto «Roll con foto» creado con 1 imagen' }),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(dialog).toBeHidden();
+  await page.getByRole('searchbox', { name: 'Buscar producto' }).fill('Roll con foto');
+  const card = page.locator('.pcard', { hasText: 'Roll con foto' });
+  await expect(card).toBeVisible();
+  await page.getByRole('button', { name: 'Editar Roll con foto' }).click();
+  await expect(
+    page.getByRole('dialog', { name: 'Editar producto' }).getByText('1/8'),
+  ).toBeVisible();
+});
+
 test('sin permisos de escritura global no hay carga de imágenes (solo lectura)', async ({
   page,
 }) => {

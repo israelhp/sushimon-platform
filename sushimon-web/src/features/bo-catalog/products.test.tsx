@@ -152,7 +152,7 @@ describe('Productos F11: crear y editar', () => {
     expect(within(dialog).getByText(/precio mayor a Q0\.00/)).toBeVisible();
   });
 
-  it('crea un producto con slug generado y SKU; las imágenes se añaden al editar (F14) y aparece en la lista', async () => {
+  it('crea un producto con slug generado y SKU, sin imágenes (la sección «Imágenes» ya se ofrece en el alta) y aparece en la lista', async () => {
     await renderScreen(<ProductsScreen />, 'admin');
     await screen.findByText('Dumplings');
     const dialog = await openNew();
@@ -163,11 +163,11 @@ describe('Productos F11: crear y editar', () => {
     );
     await userEvent.type(within(dialog).getByLabelText(/^Precio/), '48,5');
     await userEvent.type(within(dialog).getByRole('textbox', { name: /^SKU/ }), 'rm-1');
-    // F14: sin campo de URL; las imágenes se gestionan al editar.
+    // F14: sin campo de URL; las imágenes se eligen como archivos (ver product-create-media.test.tsx).
     expect(within(dialog).queryByRole('textbox', { name: /URL de la imagen/ })).toBeNull();
-    expect(
-      within(dialog).getByText('Guarda el producto para poder añadir imágenes.'),
-    ).toBeVisible();
+    expect(within(dialog).getByRole('heading', { name: 'Imágenes' })).toBeVisible();
+    expect(within(dialog).getByText('0/8')).toBeVisible();
+    expect(within(dialog).queryByText(/Guarda el producto para poder añadir/)).toBeNull();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Guardar producto' }));
     expect(await screen.findByText('Producto «Roll Mon» creado')).toBeVisible();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());

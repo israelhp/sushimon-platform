@@ -115,6 +115,8 @@ export const queryKeys = {
       ['products', 'store', 'detail', slug, branchId ?? 'none'] as const,
     adminLists: ['products', 'admin'] as const,
     admin: (filters: AdminProductFilters = {}) => ['products', 'admin', filters] as const,
+    /** Detalle admin de un producto (el alta lo usa para seguir sus imágenes tras crearlo). */
+    adminDetail: (id: string) => ['products', 'admin', 'detail', id] as const,
     /** SIMULADO (solo mock): disponibilidad por sucursal, ilustración y textos en inglés de cada producto. */
     extras: ['products', 'extras'] as const,
   },
