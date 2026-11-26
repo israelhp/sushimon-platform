@@ -29,7 +29,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
-      <body>
+      {/* Extensiones del navegador (p. ej. ColorZilla: `cz-shortcut-listen`) añaden atributos al <body> antes de hidratar. */}
+      <body suppressHydrationWarning>
         <NextIntlClientProvider>
           <ThemeProvider>
             <AppProviders>{children}</AppProviders>
