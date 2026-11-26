@@ -60,10 +60,10 @@
     --bo-tile-coral-dark: #ffd9d6;
     --bo-tile-navy-dark: #ffefc2;
     --bo-white: #ffffff;
-    /* Rojo de marca exacto #e94a3f en botones y texto (decisión del dueño; blanco = 3,81:1, excepción aceptada). Hover algo más oscuro. */
-    --bo-primary: #e94a3f;
-    --bo-primary-strong: #d24339;
-    --bo-primary-soft: #fdedec;
+    /* Blanco sobre #e94a3f = 3,81:1: texto y botones usan el derivado #d22418 (5,24:1); hover #b01d12 (6,93:1). */
+    --bo-primary: #d22418;
+    --bo-primary-strong: #b01d12;
+    --bo-primary-soft: #feeeec;
     --bo-on-primary: #ffffff;
     --bo-secondary: #283479;
     --bo-secondary-soft: #e8eaf6;
@@ -82,7 +82,7 @@
     --bo-green-soft: #e3f3e8;
     --bo-green-text: #166534;
     --bo-red-text: #b91c1c; /* PELIGRO/error (semántico, distinto del rojo de marca) */
-    --bo-brand-text: #e94a3f; /* texto de marca (rojo exacto) */
+    --bo-brand-text: #d22418; /* texto de marca (rojo derivado AA) */
     --bo-blue-text: #283479;
     --bo-amber-text: #92400e;
     --bo-shadow: 0 1px 2px rgba(17, 24, 39, 0.05), 0 4px 14px rgba(17, 24, 39, 0.06);
@@ -106,10 +106,10 @@
   }
   /* ===== Paleta · tema oscuro ===== */
   .dark [data-zone='bo'] {
-    /* Rojo de marca exacto #e94a3f (texto de botón: tinta, 5,15:1) y tinte claro del azul #a0abee. */
-    --bo-primary: #e94a3f;
-    --bo-primary-strong: #d24339;
-    --bo-primary-soft: rgba(233, 74, 63, 0.16);
+    /* Tintes claros (AA sobre superficies oscuras): rojo #eb5b51 y azul #a0abee. */
+    --bo-primary: #eb5b51;
+    --bo-primary-strong: #f1766d;
+    --bo-primary-soft: rgba(235, 91, 81, 0.16);
     --bo-on-primary: #0b0b0f;
     --bo-secondary: #a0abee;
     --bo-secondary-soft: rgba(160, 171, 238, 0.14);
@@ -128,7 +128,7 @@
     --bo-green-soft: rgba(74, 222, 128, 0.14);
     --bo-green-text: #86efac;
     --bo-red-text: #fca5a5;
-    --bo-brand-text: #e94a3f;
+    --bo-brand-text: #f58b83;
     --bo-blue-text: #a0abee;
     --bo-amber-text: #fbbf24;
     --bo-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.3);

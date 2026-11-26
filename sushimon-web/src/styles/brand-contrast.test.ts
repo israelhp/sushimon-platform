@@ -80,13 +80,6 @@ const boDark = {
 
 type Pair = { fg: string; bg: string; min: number; note?: string };
 
-/**
- * Decisión del dueño: todo el rojo de marca es exactamente #E94A3F. Blanco sobre #E94A3F = 3,81:1 y #E94A3F como texto
- * sobre blanco = 3,81:1 (< AA 4,5). Estas parejas se validan contra el mínimo 3:1 (texto grande/negrita y componentes de
- * UI) y NO se esconden: quedan listadas como excepción para revisión futura.
- */
-const OWNER = 'excepción aceptada por el dueño: rojo #E94A3F exacto, < AA 4,5';
-
 const WHITE = 'WHITE';
 function run(
   tokens: Record<string, string>,
@@ -125,11 +118,11 @@ describe('Tienda · marca exacta', () => {
 
 const storePairs = (t: Record<string, string>): Pair[] => [
   { fg: '--fg', bg: '--bg', min: 4.5 },
-  { fg: '--primary', bg: '--bg', min: 3, note: OWNER },
-  { fg: '--primary', bg: '--surface', min: 3, note: OWNER },
-  { fg: '--primary', bg: '--subtle', min: 3, note: OWNER },
-  { fg: '--primary', bg: '--primary-soft', min: 3, note: OWNER },
-  { fg: '--onprimary', bg: '--primary', min: 3, note: OWNER },
+  { fg: '--primary', bg: '--bg', min: 4.5 },
+  { fg: '--primary', bg: '--surface', min: 4.5 },
+  { fg: '--primary', bg: '--subtle', min: 4.5 },
+  { fg: '--primary', bg: '--primary-soft', min: 4.5 },
+  { fg: '--onprimary', bg: '--primary', min: 4.5 },
   { fg: '--secondary', bg: '--bg', min: 4.5 },
   { fg: '--secondary', bg: '--surface', min: 4.5 },
   { fg: '--secondary', bg: '--subtle', min: 4.5 },
@@ -140,9 +133,9 @@ const storePairs = (t: Record<string, string>): Pair[] => [
   { fg: '--danger', bg: '--danger-soft', min: 4.5 },
   { fg: '--brand-red', bg: '--bg', min: 3, note: 'gráfico/ícono/subrayado' },
   { fg: '--brand-red', bg: '--surface', min: 3, note: 'gráfico/ícono' },
-  { fg: '--onprimary', bg: '--primary', min: 3, note: OWNER },
+  { fg: '--onprimary', bg: '--primary', min: 4.5 },
   { fg: '--onsecondary', bg: '--secondary', min: 4.5 },
-  ...(t === storeLight ? [{ fg: '--hanko', bg: '--hanko-paper', min: 3, note: OWNER }] : []),
+  ...(t === storeLight ? [{ fg: '--hanko', bg: '--hanko-paper', min: 4.5 }] : []),
 ];
 
 describe('Tienda · tema claro', () => {
@@ -178,12 +171,12 @@ describe('Tienda · tema oscuro', () => {
 
 const boPairs: Pair[] = [
   { fg: '--bo-text', bg: '--bo-bg', min: 4.5 },
-  { fg: '--bo-on-primary', bg: '--bo-primary', min: 3, note: OWNER },
-  { fg: '--bo-on-primary', bg: '--bo-primary-strong', min: 3, note: `hover del botón; ${OWNER}` },
-  { fg: '--bo-primary', bg: '--bo-surface', min: 3, note: OWNER },
-  { fg: '--bo-brand-text', bg: '--bo-surface', min: 3, note: OWNER },
-  { fg: '--bo-brand-text', bg: '--bo-bg', min: 3, note: OWNER },
-  { fg: '--bo-brand-text', bg: '--bo-primary-soft', min: 3, note: OWNER },
+  { fg: '--bo-on-primary', bg: '--bo-primary', min: 4.5 },
+  { fg: '--bo-on-primary', bg: '--bo-primary-strong', min: 4.5, note: 'hover del botón' },
+  { fg: '--bo-primary', bg: '--bo-surface', min: 4.5 },
+  { fg: '--bo-brand-text', bg: '--bo-surface', min: 4.5 },
+  { fg: '--bo-brand-text', bg: '--bo-bg', min: 4.5 },
+  { fg: '--bo-brand-text', bg: '--bo-primary-soft', min: 4.5 },
   { fg: '--bo-red-text', bg: '--bo-surface', min: 4.5, note: 'error/peligro' },
   { fg: '--bo-red-text', bg: '--bo-bg', min: 4.5, note: 'error/peligro' },
   { fg: '--bo-secondary', bg: '--bo-surface', min: 4.5 },
