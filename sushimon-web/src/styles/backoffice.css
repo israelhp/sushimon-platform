@@ -2613,6 +2613,18 @@
     margin-top: auto;
     padding-top: 10px;
   }
+  [data-zone='bo'] .pactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 10px;
+  }
+  [data-zone='bo'] .pcard.clickable {
+    cursor: pointer;
+  }
+  [data-zone='bo'] .pcard.clickable:hover {
+    border-color: var(--bo-line-strong);
+  }
   [data-zone='bo'] .price {
     font-weight: 800;
     font-size: 17px;

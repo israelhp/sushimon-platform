@@ -5,6 +5,7 @@ import type {
   CategoryNode,
   CategoryPatch,
   CategoryRow,
+  CategoryUsage,
   NewCategoryData,
 } from './categories.types.js';
 
@@ -62,5 +63,24 @@ export class CategoriesRepository {
 
   update(tx: CategoryTx, id: string, data: CategoryPatch): Promise<CategoryRow> {
     return tx.category.update({ where: { id }, data, select: ROW_SELECT });
+  }
+
+  /**
+   * Usos que impiden el borrado (ADR-0034): hijas directas, productos (activos e inactivos) y banners con
+   * `cta_category_id` (residuo previo a 0023). Con `tx` cuenta bajo el lock de jerarquía; sin `tx`, fuera de él.
+   */
+  async countUsage(id: string, tx?: CategoryTx): Promise<CategoryUsage> {
+    const db = tx ?? this.prisma;
+    const [children, products, banners] = await Promise.all([
+      db.category.count({ where: { parentId: id } }),
+      db.product.count({ where: { categoryId: id } }),
+      db.banner.count({ where: { ctaCategoryId: id } }),
+    ]);
+    return { children, products, banners };
+  }
+
+  /** Borrado físico. Las FK RESTRICT (parent_id, products.category_id, banners.cta_category_id) son la red de seguridad. */
+  async delete(tx: CategoryTx, id: string): Promise<void> {
+    await tx.category.delete({ where: { id }, select: { id: true } });
   }
 }

@@ -159,10 +159,12 @@ export const mockRoutes: MockRoutes<MockStore, MockContext> = {
   'POST /v1/admin/categories': categories.createAdminCategory,
   'PUT /v1/admin/categories/reorder': categories.reorderAdminCategories,
   'PATCH /v1/admin/categories/:id': categories.updateAdminCategory,
+  'DELETE /v1/admin/categories/:id': categories.deleteAdminCategory,
   // F11: productos y fichas (contrato)
   'GET /v1/admin/products': products.listAdminProducts,
   'POST /v1/admin/products': products.createAdminProduct,
   'GET /v1/admin/products/:id': products.getAdminProduct,
+  'DELETE /v1/admin/products/:id': products.deleteAdminProduct,
   'PATCH /v1/admin/products/:id': products.updateAdminProduct,
   // F14: medios (intent firmado, confirmación, biblioteca) y vínculo con productos (contrato)
   'POST /v1/admin/media/upload-intents': media.createUploadIntent,

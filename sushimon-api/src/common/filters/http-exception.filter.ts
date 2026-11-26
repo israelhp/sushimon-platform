@@ -29,6 +29,8 @@ export interface ErrorBody {
   blockers?: unknown;
   /** F22: estado ACTUAL del pedido en 409 `ORDER_STATE_CONFLICT` y 422 `ORDER_TRANSITION_INVALID`. */
   current?: unknown;
+  /** F10 (ADR-0034): conteos de uso en 409 `CATEGORY_IN_USE` (`CategoryInUseError`). */
+  usage?: unknown;
 }
 
 /**
@@ -64,10 +66,11 @@ const PUBLIC_5XX_CODES: ReadonlySet<string> = new Set([
 /**
  * Campos adicionales del cuerpo de error que una excepción puede declarar en `extra` (F20): `changes` + `quote` (409
  * `QUOTE_CHANGED`/`QUOTE_EXPIRED`, esquema `OrderQuoteConflict`) y `blockers` (422 `CHECKOUT_BLOCKED`, `OrderBlocked`);
- * F22: `current` (409 `ORDER_STATE_CONFLICT` y 422 `ORDER_TRANSITION_INVALID`, `AdminOrderStateError`).
+ * F22: `current` (409 `ORDER_STATE_CONFLICT` y 422 `ORDER_TRANSITION_INVALID`, `AdminOrderStateError`);
+ * F10 (ADR-0034): `usage` (409 `CATEGORY_IN_USE`, `CategoryInUseError`, solo conteos).
  * Lista blanca y solo en 4xx: nunca se propaga otra clave ni un 5xx con datos.
  */
-const EXTRA_BODY_KEYS: readonly string[] = ['changes', 'quote', 'blockers', 'current'];
+const EXTRA_BODY_KEYS: readonly string[] = ['changes', 'quote', 'blockers', 'current', 'usage'];
 
 function pickExtra(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null) return {};

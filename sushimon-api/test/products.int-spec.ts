@@ -370,3 +370,348 @@ describe.skipIf(!url || !ready)('Productos contra PostgreSQL real', () => {
     });
   });
 });
+
+/**
+ * ADR-0035 · borrado físico de productos contra PostgreSQL real. Se omite (con aviso) sin DATABASE_URL_TEST o si faltan las
+ * tablas de las que depende (productos, pedidos, promociones, banners, ofertas por sucursal, medios). NO se ejecuta contra
+ * la base compartida sin aprobación: cada prueba limpia SOLO lo que sembró (pedidos con el interruptor de limpieza de
+ * pruebas de 0019, promociones, banners, assets y luego productos/categorías/sucursales).
+ */
+const readyDelete = url
+  ? await withClient(url, async (c) => {
+      const res = await c.query<{ ok: boolean }>(
+        `SELECT bool_and(to_regclass(t) IS NOT NULL) AS ok
+           FROM unnest(ARRAY['app.products','app.categories','app.orders','app.order_items','app.order_status_history',
+                             'app.promotions','app.promotion_products','app.banners','app.branch_products',
+                             'app.media_assets','app.product_media','app.branches']) AS t`,
+      );
+      return res.rows[0]?.ok === true;
+    }).catch(() => false)
+  : false;
+if (url && !readyDelete) {
+  console.warn(
+    '[products.int-spec] borrado (ADR-0035) OMITIDO: faltan tablas en DATABASE_URL_TEST (migraciones 0012-0018/0023). El SQL de borrado NO se probó contra PostgreSQL real.',
+  );
+}
+
+describe.skipIf(!url || !readyDelete)(
+  'Borrado de productos contra PostgreSQL real (ADR-0035)',
+  () => {
+    const run = randomUUID().slice(0, 8);
+    const staff = globalStaff(['catalog.read', 'catalog.create', 'catalog.update'], {
+      staffId: randomUUID(),
+    });
+    let prisma: PrismaService;
+    let categoriesCmd: AdminCategoriesService;
+    let commands: AdminProductsService;
+    const released: { assetId: string; kind: string }[] = [];
+    const productIds = new Set<string>();
+    const categoryIds = new Set<string>();
+    const branchIds = new Set<string>();
+    const orderIds: string[] = [];
+    const promotionIds: string[] = [];
+    const bannerIds: string[] = [];
+    const assetIds: string[] = [];
+
+    const q = <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) =>
+      withClient(url as string, async (c) => (await c.query<T>(sql, params)).rows);
+    const newCategory = async () => {
+      const view = await categoriesCmd.create(staff, {
+        name: `Del ${randomUUID().slice(0, 6)} ${run}`,
+        parentId: null,
+        active: true,
+      });
+      categoryIds.add(view.id);
+      return view;
+    };
+    const newProduct = async (
+      over: Partial<Parameters<AdminProductsService['create']>[1]> = {},
+    ) => {
+      const cat = await newCategory();
+      const view = await commands.create(staff, {
+        name: `Borrable ${randomUUID().slice(0, 6)} ${run}`,
+        basePrice: '25.00',
+        categoryId: cat.id,
+        sku: `DEL-${randomUUID().slice(0, 8)}`,
+        ...over,
+      });
+      productIds.add(view.id);
+      return view;
+    };
+    const newBranch = async () => {
+      const b = await prisma.branch.create({
+        data: {
+          code: `del-${run}-${randomUUID().slice(0, 6)}`,
+          name: `Suc ${run}`,
+          address: 'Zona 1',
+        },
+      });
+      branchIds.add(b.id);
+      return b.id;
+    };
+    const newOrder = async (branchId: string, productId: string, status = 'pending') => {
+      const id = randomUUID();
+      await withClient(url as string, async (c) => {
+        await c.query('BEGIN');
+        try {
+          await c.query(
+            `INSERT INTO app.orders (id, branch_id, customer_name, customer_phone, customer_email, fulfillment_type,
+                                   status, subtotal, total, placed_at)
+           VALUES ($1, $2, 'Cliente prueba', '+50255500000', $3, 'PICKUP', $4, 100, 100, now())`,
+            [id, branchId, `pii-${run}@example.com`, status],
+          );
+          await c.query(
+            `INSERT INTO app.order_items (order_id, product_id, line_no, product_name, quantity, unit_price)
+           VALUES ($1, $2, 1, 'Roll', 2, 50)`,
+            [id, productId],
+          );
+          await c.query(
+            `INSERT INTO app.order_status_history (order_id, old_status, new_status, changed_at)
+           VALUES ($1, NULL, 'pending', now())`,
+            [id],
+          );
+          await c.query('COMMIT');
+        } catch (e) {
+          await c.query('ROLLBACK');
+          throw e;
+        }
+      });
+      orderIds.push(id);
+      return id;
+    };
+    const exists = async (id: string) =>
+      (await q('SELECT 1 FROM app.products WHERE id = $1', [id])).length > 0;
+    const code = (e: unknown) => (e as { response?: { code?: string } }).response?.code;
+    const failure = (p: Promise<unknown>) =>
+      p.then(
+        () => null,
+        (e: unknown) => e,
+      );
+
+    beforeAll(() => {
+      vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+      vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      prisma = new PrismaService(
+        new ConfigService<Env, true>(
+          validateEnv({ DATABASE_URL: url, DB_POOL_MAX: '8', NODE_ENV: 'test' }),
+        ),
+      );
+      const catRepo = new CategoriesRepository(prisma);
+      const authorization = new AuthorizationService({} as IdentityService);
+      categoriesCmd = new AdminCategoriesService(catRepo, new AuditService(), authorization);
+      commands = new AdminProductsService(
+        new ProductsRepository(prisma),
+        new AuditService(),
+        authorization,
+        new CategoriesQueryService(catRepo),
+        { get: () => [] } as unknown as ConfigService<Env, true>,
+        undefined,
+        {
+          removeUnusedAsset: (_staff, assetId, kind) => {
+            released.push({ assetId, kind });
+            return Promise.resolve();
+          },
+        },
+      );
+    });
+    afterAll(async () => {
+      await prisma.$disconnect();
+      if (!readyDelete || !url) return;
+      // Primero lo que referencia a los productos con RESTRICT (pedidos, promociones, banners), solo lo sembrado aquí.
+      await withClient(url, async (c) => {
+        await c.query('BEGIN');
+        try {
+          await c.query("SET LOCAL app.allow_order_cleanup = 'on'");
+          await c.query("SET LOCAL app.allow_audit_cleanup = 'on'");
+          for (const t of ['order_status_history', 'order_items']) {
+            await c.query(`DELETE FROM app.${t} WHERE order_id = ANY($1::uuid[])`, [orderIds]);
+          }
+          await c.query('DELETE FROM app.orders WHERE id = ANY($1::uuid[])', [orderIds]);
+          await c.query('DELETE FROM app.banners WHERE id = ANY($1::uuid[])', [bannerIds]);
+          await c.query('DELETE FROM app.media_assets WHERE id = ANY($1::uuid[])', [assetIds]);
+          await c.query('DELETE FROM app.promotions WHERE id = ANY($1::uuid[])', [promotionIds]);
+          await c.query('COMMIT');
+        } catch (e) {
+          await c.query('ROLLBACK');
+          throw e;
+        }
+      });
+      await cleanupTestData(url, { authUserIds: [], branchIds, productIds, categoryIds });
+    });
+
+    it('producto libre: borra producto, ofertas de sucursal y (por cascada) imágenes y favoritos; audita product.deleted y libera los assets', async () => {
+      const p = await newProduct({
+        media: [
+          { url: 'https://cdn.example.com/del-a.jpg' },
+          { url: 'https://cdn.example.com/del-b.jpg' },
+        ],
+      });
+      const branch = await newBranch();
+      await q(
+        'INSERT INTO app.branch_products (branch_id, product_id, price_override, available) VALUES ($1,$2,30,true)',
+        [branch, p.id],
+      );
+      await expect(commands.remove(staff, p.id)).resolves.toBeUndefined();
+      expect(await exists(p.id)).toBe(false);
+      expect(
+        await q('SELECT 1 FROM app.branch_products WHERE product_id = $1', [p.id]),
+      ).toHaveLength(0);
+      expect(await q('SELECT 1 FROM app.product_media WHERE product_id = $1', [p.id])).toHaveLength(
+        0,
+      );
+      const events = await q<{ action: string; old_values: Record<string, unknown> }>(
+        "SELECT action, old_values FROM app.audit_events WHERE entity_type = 'product' AND entity_id = $1 ORDER BY created_at",
+        [p.id],
+      );
+      expect(events.map((e) => e.action)).toEqual(['product.created', 'product.deleted']);
+      expect(events[1]?.old_values).toMatchObject({
+        id: p.id,
+        slug: p.slug,
+        sku: p.sku,
+        name: p.name,
+        basePrice: '25.00',
+        active: true,
+        branchOffers: [`${branch}|30.00|available`],
+      });
+      expect(code(await failure(commands.remove(staff, p.id)))).toBe('PRODUCT_NOT_FOUND');
+      // El slug y el SKU quedan libres para reutilizarse.
+      const again = await commands.create(staff, {
+        name: p.name,
+        slug: p.slug,
+        sku: p.sku,
+        basePrice: '10.00',
+        categoryId: p.categoryId,
+      });
+      productIds.add(again.id);
+      expect(again.slug).toBe(p.slug);
+    });
+
+    it('con un pedido real (cualquier estado) => 409 PRODUCT_IN_USE; los pedidos distintos se cuentan una sola vez por pedido y nada se borra', async () => {
+      const p = await newProduct();
+      const branch = await newBranch();
+      const order = await newOrder(branch, p.id, 'delivered');
+      // Segunda línea del MISMO pedido: cuenta 1 pedido, no 2.
+      await q(
+        `INSERT INTO app.order_items (order_id, product_id, line_no, product_name, quantity, unit_price)
+       VALUES ($1, $2, 2, 'Roll', 1, 50)`,
+        [order, p.id],
+      );
+      await newOrder(branch, p.id, 'cancelled');
+      await q(
+        'INSERT INTO app.branch_products (branch_id, product_id, available) VALUES ($1,$2,true)',
+        [branch, p.id],
+      );
+      await expect(commands.remove(staff, p.id)).rejects.toMatchObject({
+        status: 409,
+        response: {
+          code: 'PRODUCT_IN_USE',
+          extra: { usage: { orders: 2, promotions: 0, banners: 0 } },
+        },
+      });
+      expect(await exists(p.id)).toBe(true);
+      // La transacción se revirtió: la oferta de sucursal sigue ahí y no hay evento product.deleted.
+      expect(
+        await q('SELECT 1 FROM app.branch_products WHERE product_id = $1', [p.id]),
+      ).toHaveLength(1);
+      expect(
+        await q(
+          "SELECT 1 FROM app.audit_events WHERE entity_id = $1 AND action = 'product.deleted'",
+          [p.id],
+        ),
+      ).toHaveLength(0);
+      expect(await q('SELECT 1 FROM app.order_items WHERE product_id = $1', [p.id])).toHaveLength(
+        3,
+      );
+    });
+
+    it('en el alcance de una promoción SELECTED (activa o no) => 409 con promotions=1', async () => {
+      const p = await newProduct();
+      const [promo] = await q<{ id: string }>(
+        `INSERT INTO app.promotions (name, kind, value, starts_at, ends_at, active)
+       VALUES ($1, 'PERCENT', 10, '2026-01-01T00:00:00Z', '2026-12-31T00:00:00Z', false) RETURNING id`,
+        [`Promo del ${run}`],
+      );
+      promotionIds.push(promo?.id as string);
+      await q('INSERT INTO app.promotion_products (promotion_id, product_id) VALUES ($1,$2)', [
+        promo?.id,
+        p.id,
+      ]);
+      await expect(commands.remove(staff, p.id)).rejects.toMatchObject({
+        status: 409,
+        response: { extra: { usage: { orders: 0, promotions: 1, banners: 0 } } },
+      });
+      expect(await exists(p.id)).toBe(true);
+      expect(
+        await q('SELECT 1 FROM app.promotion_products WHERE product_id = $1', [p.id]),
+      ).toHaveLength(1);
+    });
+
+    it('banner residual (cta_product_id) => 409 con banners=1 (si hay cupo de banners)', async () => {
+      const p = await newProduct();
+      const assetId = randomUUID();
+      const bannerId = randomUUID();
+      const placed = await withClient(url as string, async (c) => {
+        // El tope de 5 banners es de BD (0023): sin cupo no se fuerza nada.
+        const total = await c.query<{ n: number }>('SELECT count(*)::int AS n FROM app.banners');
+        if ((total.rows[0]?.n ?? 5) >= 5) return false;
+        await c.query(
+          `INSERT INTO app.media_assets (id, kind, object_key, bucket, mime_type, size_bytes, checksum_sha256, status, confirmed_at)
+         VALUES ($1, 'BANNER_IMAGE', $2, 'bucket-test', 'image/webp', 200000, $3, 'READY', now())`,
+          [assetId, `banners/2026/${assetId}.webp`, 'b'.repeat(64)],
+        );
+        assetIds.push(assetId);
+        await c.query(
+          `INSERT INTO app.banners (id, code, image_asset_id, cta_type, cta_product_id)
+         VALUES ($1, $2, $3, 'PRODUCT', $4)`,
+          [bannerId, `dp-${run}`, assetId, p.id],
+        );
+        bannerIds.push(bannerId);
+        return true;
+      });
+      if (!placed) return;
+      await expect(commands.remove(staff, p.id)).rejects.toMatchObject({
+        status: 409,
+        response: { extra: { usage: { orders: 0, promotions: 0, banners: 1 } } },
+      });
+      expect(await exists(p.id)).toBe(true);
+    });
+
+    it('combinado: pedido + promoción => 409 con ambos conteos', async () => {
+      const p = await newProduct();
+      const branch = await newBranch();
+      await newOrder(branch, p.id);
+      const [promo] = await q<{ id: string }>(
+        `INSERT INTO app.promotions (name, kind, value, starts_at, ends_at)
+       VALUES ($1, 'PERCENT', 10, '2026-01-01T00:00:00Z', '2026-12-31T00:00:00Z') RETURNING id`,
+        [`Promo comb ${run}`],
+      );
+      promotionIds.push(promo?.id as string);
+      await q('INSERT INTO app.promotion_products (promotion_id, product_id) VALUES ($1,$2)', [
+        promo?.id,
+        p.id,
+      ]);
+      await expect(commands.remove(staff, p.id)).rejects.toMatchObject({
+        status: 409,
+        response: { extra: { usage: { orders: 1, promotions: 1, banners: 0 } } },
+      });
+    });
+
+    it('carrera: una oferta de sucursal insertada entre el recuento y el borrado se borra igual bajo el mismo flujo; un pedido que gana la carrera => 409 por FK (23503) recontado', async () => {
+      const p = await newProduct();
+      const branch = await newBranch();
+      // Un pedido concurrente puede insertar su línea (FK KEY SHARE) mientras el borrado espera el bloqueo de fila.
+      const results = await Promise.allSettled([
+        commands.remove(staff, p.id),
+        newOrder(branch, p.id),
+      ]);
+      const removed = !(await exists(p.id));
+      const orderOk = results[1]?.status === 'fulfilled';
+      // Nunca ambos: o se borró el producto (el pedido falló por FK) o el pedido ganó (el borrado dio 409/503).
+      expect(removed && orderOk).toBe(false);
+      if (!removed) {
+        const rejected = results[0] as PromiseRejectedResult;
+        expect(['PRODUCT_IN_USE', 'PRODUCTS_BUSY']).toContain(code(rejected.reason));
+      }
+    });
+  },
+);

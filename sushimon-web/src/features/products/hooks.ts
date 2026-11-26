@@ -2,9 +2,11 @@
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDataClient } from '@/lib/data-access/provider';
-import type { UpdateProductRequest } from '@/lib/data-access/models';
+import type { AdminProduct, UpdateProductRequest } from '@/lib/data-access/models';
 import {
   createAdminProduct,
+  deleteAdminProduct,
+  getAdminProduct,
   listAdminProducts,
   updateAdminProduct,
   type AdminProductFilters,
@@ -26,6 +28,21 @@ export function useAdminProducts(filters: AdminProductFilters = {}) {
     queryFn: () => listAdminProducts(client, filters),
     enabled: Boolean(staff),
     placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * Detalle admin de UN producto (`initialData` = lo que devolvió el alta). Cuelga de `products`: toda mutación de productos y
+ * de medios lo refresca, así el editor muestra las imágenes recién adjuntadas.
+ */
+export function useAdminProduct(id: string | undefined, initialData?: AdminProduct) {
+  const client = useDataClient();
+  const { staff } = useDemoSession();
+  return useQuery({
+    queryKey: queryKeys.products.adminDetail(id ?? ''),
+    queryFn: () => getAdminProduct(client, id as string),
+    enabled: Boolean(id) && Boolean(staff),
+    initialData,
   });
 }
 
@@ -54,6 +71,16 @@ export function useUpdateProduct() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateProductRequest }) =>
       updateAdminProduct(client, id, input),
+    onSuccess: invalidate,
+  });
+}
+
+/** ADR-0035: borra un producto sin uso. Invalida lo mismo que editar (admin, catálogo público, menú y agregados). */
+export function useDeleteProduct() {
+  const client = useDataClient();
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (id: string) => deleteAdminProduct(client, id),
     onSuccess: invalidate,
   });
 }

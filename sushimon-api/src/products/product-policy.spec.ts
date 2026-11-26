@@ -6,6 +6,7 @@ import {
   fold,
   formatCents,
   indexVisibleTree,
+  isUnused,
   normalizeDescription,
   normalizeMedia,
   normalizeName,
@@ -14,6 +15,7 @@ import {
   normalizeSlug,
   normalizeUpdate,
   parsePriceCents,
+  productInUse,
   slugify,
   slugSearchPrefix,
   SQL_ACCENTS_FROM,
@@ -337,5 +339,36 @@ describe('toAdminView', () => {
     expect(
       toAdminView(product(), [], { ...category, effectivelyVisible: true }).publiclyVisible,
     ).toBe(true);
+  });
+});
+
+describe('borrado: isUnused y productInUse (ADR-0035)', () => {
+  const body = (e: unknown) =>
+    (
+      e as { getResponse(): { message: string; code: string; extra: { usage: unknown } } }
+    ).getResponse();
+
+  it('isUnused solo con los tres conteos en cero', () => {
+    expect(isUnused({ orders: 0, promotions: 0, banners: 0 })).toBe(true);
+    expect(isUnused({ orders: 0, promotions: 0, banners: 1 })).toBe(false);
+    expect(isUnused({ orders: 0, promotions: 1, banners: 0 })).toBe(false);
+    expect(isUnused({ orders: 1, promotions: 0, banners: 0 })).toBe(false);
+  });
+
+  it('409 PRODUCT_IN_USE: singular/plural, solo conteos presentes, sugerencia según haya pedidos', () => {
+    const one = productInUse({ orders: 1, promotions: 0, banners: 0 });
+    expect(one.getStatus()).toBe(409);
+    expect(body(one).code).toBe('PRODUCT_IN_USE');
+    expect(body(one).message).toBe(
+      'El producto está en uso (1 pedido). El historial de pedidos se conserva: desactívalo en su lugar',
+    );
+    const many = productInUse({ orders: 0, promotions: 2, banners: 1 });
+    expect(body(many).message).toBe(
+      'El producto está en uso (2 promociones, 1 banner). Quítalo de esas promociones o banners, o desactívalo en su lugar',
+    );
+    expect(body(many).extra.usage).toEqual({ orders: 0, promotions: 2, banners: 1 });
+    expect(body(productInUse({ orders: 4, promotions: 1, banners: 1 })).message).toContain(
+      '4 pedidos, 1 promoción, 1 banner',
+    );
   });
 });

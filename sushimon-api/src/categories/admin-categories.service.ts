@@ -9,17 +9,19 @@ import type {
   CategoryPatch,
   CategoryRow,
 } from './categories.types.js';
-import { translateCategoryDbError } from './category-db-errors.js';
+import { translateCategoryDbError, translateCategoryDeleteError } from './category-db-errors.js';
 import {
   assertLimit,
   assertParentAllowed,
   assertReorderExact,
   assertSlugFree,
   buildAdminViews,
+  categoryInUse,
   childrenIndex,
   compareSiblings,
   diffCategory,
   indexById,
+  isUnused,
   nextSortOrder,
   normalizeDescription,
   normalizeName,
@@ -215,6 +217,41 @@ export class AdminCategoriesService {
       .filter((v) => v.parentId === parentId)
       .sort(compareSiblings);
     return { items, total: items.length };
+  }
+
+  /**
+   * ADR-0034: borrado físico solo si no está en uso. Bajo el lock de jerarquía: existe (404) → cuenta usos (409
+   * `CATEGORY_IN_USE`) → borra y audita en la misma transacción. Los hermanos no se renumeran. Un 23503 (carrera con un
+   * escritor sin lock) se traduce a 409 recontando fuera de la transacción abortada.
+   */
+  async remove(staff: StaffContext, id: string): Promise<void> {
+    this.assertGlobal(staff, 'catalog.update');
+    try {
+      await this.repo.transaction(async (tx) => {
+        await this.repo.lockHierarchy(tx);
+        const current = (await this.repo.findAllRows(tx)).find((r) => r.id === id);
+        if (!current) throw new NotFoundException(NOT_FOUND);
+        const usage = await this.repo.countUsage(id, tx);
+        if (!isUnused(usage)) throw categoryInUse(usage);
+        await this.repo.delete(tx, id);
+        await this.audit.record(tx, {
+          actorId: staff.staffId,
+          entityType: ENTITY,
+          entityId: id,
+          action: 'category.deleted',
+          oldValues: {
+            id: current.id,
+            slug: current.slug,
+            name: current.name,
+            parentId: current.parentId,
+            active: current.active,
+          },
+        });
+      });
+    } catch (error) {
+      throw await translateCategoryDeleteError(error, () => this.repo.countUsage(id));
+    }
+    this.logger.log(`Categoría eliminada (id=${id}, staff=${staff.staffId})`);
   }
 
   /** Las categorías son globales: un alcance solo por sucursal no basta (403 antes que cualquier 404/422). */

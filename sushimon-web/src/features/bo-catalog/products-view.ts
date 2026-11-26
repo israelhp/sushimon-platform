@@ -1,6 +1,11 @@
 import { ancestorsOf } from '@/lib/category-tree';
 import { isApiError } from '@/lib/data-access/errors';
-import type { AdminCategory, AdminProduct, UpdateProductRequest } from '@/lib/data-access/models';
+import type {
+  AdminCategory,
+  AdminProduct,
+  ProductUsage,
+  UpdateProductRequest,
+} from '@/lib/data-access/models';
 import {
   PRODUCT_DESCRIPTION_MAX,
   PRODUCT_NAME_MAX,
@@ -186,6 +191,7 @@ export type ProductErrorKind =
   | 'skuTaken'
   | 'categoryInvalid'
   | 'mediaInvalid'
+  | 'inUse'
   | 'busy'
   | 'invalid'
   | 'forbidden'
@@ -199,6 +205,8 @@ export interface ProductServerError {
   fields: ProductFormErrors;
   /** Hay que volver a pedir datos (el producto o las categorías cambiaron en otra sesión). */
   reload: boolean;
+  /** Solo en `inUse` (409 `PRODUCT_IN_USE`): conteos de lo que impide el borrado. */
+  usage?: ProductUsage;
 }
 
 const result = (
@@ -210,8 +218,22 @@ const result = (
 
 export const BUSY_MESSAGE = 'Hay otra edición en curso. Espera un momento y reintenta.';
 
+/** Lee `usage` del cuerpo del 409 `PRODUCT_IN_USE` (ADR-0035) validando cada conteo; null si no es utilizable. */
+export function productUsage(error: unknown): ProductUsage | null {
+  const usage = (
+    isApiError(error) ? (error.body as { usage?: unknown } | undefined)?.usage : null
+  ) as Record<string, unknown> | null | undefined;
+  if (!usage || typeof usage !== 'object') return null;
+  const count = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : 0);
+  return {
+    orders: count(usage.orders),
+    promotions: count(usage.promotions),
+    banners: count(usage.banners),
+  };
+}
+
 /**
- * 409 `PRODUCT_SLUG_TAKEN` | `PRODUCT_SKU_TAKEN`; 422 `PRODUCT_CATEGORY_INVALID` | `PRODUCT_MEDIA_INVALID`;
+ * 409 `PRODUCT_SLUG_TAKEN` | `PRODUCT_SKU_TAKEN` | `PRODUCT_IN_USE` (borrado); 422 `PRODUCT_CATEGORY_INVALID` | `PRODUCT_MEDIA_INVALID`;
  * 503 `PRODUCTS_BUSY`; 404 `PRODUCT_NOT_FOUND`; 400, 401, 403.
  */
 export function productServerError(error: unknown): ProductServerError {
@@ -239,6 +261,17 @@ export function productServerError(error: unknown): ProductServerError {
         'mediaInvalid',
         'Revisa las imágenes: máximo 8 por producto y texto alternativo de hasta 200 caracteres.',
       );
+    case 'PRODUCT_IN_USE': {
+      const out = result(
+        'inUse',
+        'El producto está en uso: no se puede eliminar. Puedes desactivarlo en su lugar.',
+        {},
+        true,
+      );
+      // `usage` siempre viene en el contrato; si faltara, se muestra solo el mensaje genérico.
+      out.usage = productUsage(error) ?? undefined;
+      return out;
+    }
     case 'PRODUCTS_BUSY':
       return result('busy', BUSY_MESSAGE);
     case 'PRODUCT_NOT_FOUND':

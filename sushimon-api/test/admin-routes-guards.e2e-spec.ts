@@ -95,13 +95,14 @@ describe('Arquitectura: toda ruta /v1/admin exige StaffGuard y MfaGuard', () => 
     }
   });
 
-  it('las 4 rutas admin de categorías (F10) están registradas y protegidas', async () => {
+  it('las 5 rutas admin de categorías (F10 + ADR-0034) están registradas y protegidas', async () => {
     const { moduleRef, controllers, StaffGuard, MfaGuard } = await loadApp();
     try {
       const routes = adminRoutes(controllers).filter((r) => r.label.includes('/admin/categories'));
       expect(routes.map((r) => r.label).sort()).toEqual([
         'AdminCategoriesController.create (/admin/categories)',
         'AdminCategoriesController.list (/admin/categories)',
+        'AdminCategoriesController.remove (/admin/categories/:id)',
         'AdminCategoriesController.reorder (/admin/categories/reorder)',
         'AdminCategoriesController.update (/admin/categories/:id)',
       ]);
@@ -111,7 +112,7 @@ describe('Arquitectura: toda ruta /v1/admin exige StaffGuard y MfaGuard', () => 
     }
   });
 
-  it('las 4 rutas admin de productos (F11) están registradas y protegidas', async () => {
+  it('las 5 rutas admin de productos (F11, con borrado ADR-0035) están registradas y protegidas', async () => {
     const { moduleRef, controllers, StaffGuard, MfaGuard } = await loadApp();
     try {
       const routes = adminRoutes(controllers).filter((r) =>
@@ -121,6 +122,7 @@ describe('Arquitectura: toda ruta /v1/admin exige StaffGuard y MfaGuard', () => 
         'AdminProductsController.create (/admin/products)',
         'AdminProductsController.get (/admin/products/:id)',
         'AdminProductsController.list (/admin/products)',
+        'AdminProductsController.remove (/admin/products/:id)',
         'AdminProductsController.update (/admin/products/:id)',
       ]);
       expect(violations(routes, StaffGuard, MfaGuard)).toEqual([]);

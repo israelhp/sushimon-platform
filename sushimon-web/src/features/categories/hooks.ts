@@ -9,6 +9,7 @@ import type {
 } from '@/lib/data-access/models';
 import {
   createAdminCategory,
+  deleteAdminCategory,
   listAdminCategories,
   listStoreCategories,
   reorderAdminCategories,
@@ -79,6 +80,16 @@ export function useReorderCategories() {
   const invalidate = useInvalidate();
   return useMutation({
     mutationFn: (input: ReorderCategoriesRequest) => reorderAdminCategories(client, input),
+    onSuccess: invalidate,
+  });
+}
+
+/** ADR-0034: borra una categoría sin uso. Invalida lo mismo que editar (admin, árbol público, menú y bootstrap). */
+export function useDeleteCategory() {
+  const client = useDataClient();
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (id: string) => deleteAdminCategory(client, id),
     onSuccess: invalidate,
   });
 }

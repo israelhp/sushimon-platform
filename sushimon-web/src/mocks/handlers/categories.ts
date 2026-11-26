@@ -21,6 +21,7 @@ import {
   uniqueSlug,
   validateMove,
 } from '@/lib/category-tree';
+import { ApiError } from '@/lib/data-access/errors';
 import { badRequest, fail, failCode } from '../domain';
 import type { CategoryRecord } from '../fixtures/categories';
 import type { MockStore } from '../store';
@@ -33,7 +34,9 @@ import { now, requireStaff, type Handler, type Req, type StaffActor } from './sh
  * `CATEGORY_CYCLE` | `CATEGORY_DEPTH_EXCEEDED` | `CATEGORY_PARENT_INVALID` | `CATEGORY_REORDER_MISMATCH` |
  * `CATEGORY_LIMIT_REACHED`, permisos `catalog.read|create|update` y 403 en escrituras sin alcance GLOBAL (las categorías no
  * pertenecen a una sucursal). NO simula auditoría, cabeceras de caché ni la forma UUID (los ids del mock son legibles).
- * Sin DELETE: solo se desactiva.
+ * DELETE (ADR-0034): borrado físico solo si la categoría no está en uso; si lo está, 409 `CATEGORY_IN_USE` con `usage` calculado
+ * desde el store (hijas, productos activos e inactivos). Los banners simplificados (ADR-0033) ya no tienen categoría destino: el
+ * conteo `banners` es 0 en el mock (en la API puede haber residuos previos a la migración 0023).
  */
 
 // ── Vistas ─────────────────────────────────────────────────────────────────────────────────
@@ -318,4 +321,38 @@ export const reorderAdminCategories: Handler = (req): AdminCategoryList => {
   const all = views(store.menuCategories);
   const items = orderedIds.flatMap((id) => all.find((c) => c.id === id) ?? []);
   return { items, total: items.length };
+};
+
+/** DELETE /v1/admin/categories/:id — 204; 404 si no existe; 409 `CATEGORY_IN_USE` (con `usage`) si tiene hijas, productos o banners. */
+export const deleteAdminCategory: Handler = (req): void => {
+  writer(req, 'catalog.update');
+  const { store } = req;
+  const current = store.menuCategories.find((c) => c.id === req.params.id);
+  if (!current) fail(404, 'Categoría no encontrada');
+  const usage = {
+    children: store.menuCategories.filter((c) => c.parentId === current.id).length,
+    products: store.products.filter((p) => p.categoryId === current.id).length,
+    banners: 0,
+  };
+  if (usage.children + usage.products + usage.banners > 0) {
+    const parts = [
+      usage.children
+        ? `${usage.children} ${usage.children === 1 ? 'subcategoría' : 'subcategorías'}`
+        : '',
+      usage.products ? `${usage.products} ${usage.products === 1 ? 'producto' : 'productos'}` : '',
+    ].filter(Boolean);
+    const message = `La categoría está en uso (${parts.join(', ')}). Mueve o elimina esos elementos, o desactívala en su lugar`;
+    throw new ApiError(
+      409,
+      'conflict',
+      message,
+      undefined,
+      undefined,
+      'CATEGORY_IN_USE',
+      undefined,
+      undefined,
+      { statusCode: 409, error: 'CONFLICT', message, code: 'CATEGORY_IN_USE', usage },
+    );
+  }
+  store.menuCategories = store.menuCategories.filter((c) => c.id !== current.id);
 };

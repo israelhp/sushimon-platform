@@ -127,6 +127,7 @@ export const paths = {
   adminBranchDeliverySettings: (id: string) => `/v1/admin/branches/${seg(id)}/delivery-settings`,
   /** F10 (contrato): categorías y jerarquía del menú (`catalog.read|create|update` + aal2; escrituras con alcance global). */
   adminCategories: () => '/v1/admin/categories',
+  /** PATCH (editar/mover/activar) y DELETE (ADR-0034, borrado físico solo si no está en uso). */
   adminCategory: (id: string) => `/v1/admin/categories/${seg(id)}`,
   adminCategoriesReorder: () => '/v1/admin/categories/reorder',
   /** F11 (contrato): productos del backoffice (`catalog.read|create|update` + aal2; escrituras con alcance global). */
@@ -138,6 +139,7 @@ export const paths = {
   adminProductBranches: (productId: string) => `/v1/admin/products/${seg(productId)}/branches`,
   adminProductAvailability: (productId: string) =>
     `/v1/admin/products/${seg(productId)}/availability`,
+  /** GET, PATCH y DELETE (ADR-0035, borrado físico solo si no está en uso). */
   adminProduct: (id: string) => `/v1/admin/products/${seg(id)}`,
   /** F14 (contrato): biblioteca de medios y subida firmada (`catalog.read|update` + aal2; escrituras con alcance global). */
   adminMediaUploadIntents: () => '/v1/admin/media/upload-intents',

@@ -79,7 +79,23 @@ function staffRow(assignments: { branchId: string | null; permissions: string[] 
   };
 }
 
-async function createApp(keys: TestKeys, db: ReturnType<typeof fakeDb>, repo: FakeProductsRepo) {
+/** Doble de la liberación de imágenes (F14 `removeUnusedAsset`): registra (asset, tipo) y puede fallar. */
+class FakeReleaser {
+  released: { assetId: string; kind: string }[] = [];
+  failWith: Error | null = null;
+  removeUnusedAsset(_staff: unknown, assetId: string, kind: string): Promise<void> {
+    if (this.failWith) return Promise.reject(this.failWith);
+    this.released.push({ assetId, kind });
+    return Promise.resolve();
+  }
+}
+
+async function createApp(
+  keys: TestKeys,
+  db: ReturnType<typeof fakeDb>,
+  repo: FakeProductsRepo,
+  releaser: FakeReleaser,
+) {
   Object.assign(process.env, {
     SUPABASE_URL: 'http://127.0.0.1:54341',
     HEALTH_READY_TOKEN: 'token-e2e-123456789',
@@ -92,6 +108,7 @@ async function createApp(keys: TestKeys, db: ReturnType<typeof fakeDb>, repo: Fa
   const { JWKS_RESOLVER } = await import('../src/auth/jwt-verifier.service.js');
   const { ProductsRepository } = await import('../src/products/products.repository.js');
   const { ModifiersRepository } = await import('../src/modifiers/modifiers.repository.js');
+  const { AdminMediaService } = await import('../src/media/admin-media.service.js');
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(PrismaService)
     .useValue(db)
@@ -101,6 +118,8 @@ async function createApp(keys: TestKeys, db: ReturnType<typeof fakeDb>, repo: Fa
     .useValue(repo)
     .overrideProvider(ModifiersRepository)
     .useValue(new FakeModifiersRepo())
+    .overrideProvider(AdminMediaService)
+    .useValue(releaser)
     .compile();
   const app = moduleRef.createNestApplication<NestExpressApplication>();
   configureApp(app, { corsOrigins: ['http://localhost:3000'] });
@@ -120,6 +139,7 @@ describe('Productos (e2e)', () => {
   let app: NestExpressApplication;
   let db: ReturnType<typeof fakeDb>;
   let repo: FakeProductsRepo;
+  let releaser: FakeReleaser;
   let categories: CategoryRowT[];
   const http = () => request(app.getHttpServer());
   const bearer = async (claims?: Parameters<TestKeys['sign']>[0]) =>
@@ -170,7 +190,8 @@ describe('Productos (e2e)', () => {
     );
     repo.seed(productRow(pid(4), { name: 'Inactivo', slug: 'inactivo', active: false }));
     repo.seed(productRow(pid(5), { name: 'Oculto', slug: 'oculto', categoryId: CAT.calientes }));
-    app = await createApp(keys, db, repo);
+    releaser = new FakeReleaser();
+    app = await createApp(keys, db, repo, releaser);
   });
   afterEach(async () => {
     await app.close();
@@ -828,17 +849,189 @@ describe('Productos (e2e)', () => {
       expect(res.body).toMatchObject({ code: 'PRODUCTS_BUSY' });
     });
 
-    it('no existe DELETE ni otros métodos', async () => {
+    it('PUT sigue sin existir (solo PATCH edita; DELETE llegó con ADR-0035)', async () => {
       const auth = await asStaff();
-      await http()
-        .delete(`/v1/admin/products/${pid(1)}`)
-        .set('Authorization', auth)
-        .expect(404);
       await http()
         .put(`/v1/admin/products/${pid(1)}`)
         .set('Authorization', auth)
         .send({})
         .expect(404);
+    });
+  });
+
+  describe('admin: DELETE /v1/admin/products/{id} (ADR-0035)', () => {
+    const del = async (id: string, auth?: string) =>
+      http()
+        .delete(`/v1/admin/products/${id}`)
+        .set('Authorization', auth ?? (await asStaff()));
+
+    it('producto libre => 204 sin cuerpo, no-store, borra ofertas de sucursal y producto, audita y libera assets de PRODUCT_IMAGE', async () => {
+      repo.seed(productRow(pid(10), { name: 'Libre', slug: 'libre', sku: 'LB-1' }), [
+        { url: 'https://cdn.x.io/a.jpg', assetId: 'asset-a' },
+        { url: 'https://cdn.x.io/b.jpg', assetId: 'asset-a' },
+        { url: 'https://ext.io/c.jpg' },
+      ]);
+      repo.branchOffers.set(pid(10), [
+        { branchId: 'b1', priceOverride: '70.00', available: true },
+        { branchId: 'b2', priceOverride: null, available: false },
+      ]);
+      const res = await del(pid(10));
+      expect(res.status).toBe(204);
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.text).toBe('');
+      expect(repo.products.has(pid(10))).toBe(false);
+      expect(repo.branchOffers.has(pid(10))).toBe(false);
+      expect(repo.audit).toHaveLength(1);
+      expect(repo.audit[0]).toMatchObject({
+        action: 'product.deleted',
+        entityType: 'product',
+        entityId: pid(10),
+        actorId: STAFF_ID,
+        oldValues: {
+          id: pid(10),
+          slug: 'libre',
+          sku: 'LB-1',
+          name: 'Libre',
+          active: true,
+          basePrice: '50.00',
+          branchOffers: ['b1|70.00|available', 'b2|base|unavailable'],
+        },
+      });
+      expect(releaser.released).toEqual([{ assetId: 'asset-a', kind: 'PRODUCT_IMAGE' }]);
+      // Repetir => 404 sin efectos.
+      expect((await del(pid(10))).status).toBe(404);
+      expect(repo.audit).toHaveLength(1);
+    });
+
+    it('con pedidos => 409 PRODUCT_IN_USE con usage, no-store, sin ids ni nombres; no borra ni audita ni libera', async () => {
+      repo.usage.set(pid(1), { orders: 3, promotions: 0, banners: 0 });
+      const res = await del(pid(1));
+      expect(res.status).toBe(409);
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.body).toMatchObject({
+        statusCode: 409,
+        code: 'PRODUCT_IN_USE',
+        usage: { orders: 3, promotions: 0, banners: 0 },
+      });
+      const body = res.body as { message: string };
+      expect(body.message).toContain('3 pedidos');
+      expect(body.message).toContain('desactívalo');
+      expect(JSON.stringify(res.body)).not.toContain('Roll California');
+      expect(repo.products.has(pid(1))).toBe(true);
+      expect(repo.audit).toHaveLength(0);
+      expect(releaser.released).toEqual([]);
+    });
+
+    it('con promociones, con banners y combinados => 409 con los conteos reales', async () => {
+      repo.usage.set(pid(1), { orders: 0, promotions: 2, banners: 0 });
+      let res = await del(pid(1));
+      expect(res.status).toBe(409);
+      expect((res.body as { usage: unknown }).usage).toEqual({
+        orders: 0,
+        promotions: 2,
+        banners: 0,
+      });
+      repo.usage.set(pid(1), { orders: 0, promotions: 0, banners: 1 });
+      res = await del(pid(1));
+      expect((res.body as { usage: unknown }).usage).toEqual({
+        orders: 0,
+        promotions: 0,
+        banners: 1,
+      });
+      repo.usage.set(pid(1), { orders: 5, promotions: 1, banners: 1 });
+      res = await del(pid(1));
+      expect((res.body as { usage: unknown }).usage).toEqual({
+        orders: 5,
+        promotions: 1,
+        banners: 1,
+      });
+      expect(repo.products.has(pid(1))).toBe(true);
+    });
+
+    it('inexistente => 404 PRODUCT_NOT_FOUND; id no UUID => 400', async () => {
+      const gone = await del(MISSING);
+      expect(gone.status).toBe(404);
+      expect(gone.body).toMatchObject({ statusCode: 404, code: 'PRODUCT_NOT_FOUND' });
+      expect((await del('no-es-uuid')).status).toBe(400);
+      expect(repo.audit).toHaveLength(0);
+    });
+
+    it('sin JWT / JWT ajeno => 401; cliente => 403; aal1 => 403 MFA_REQUIRED; sin catalog.update => 403', async () => {
+      await http()
+        .delete(`/v1/admin/products/${pid(1)}`)
+        .expect(401);
+      await http()
+        .delete(`/v1/admin/products/${pid(1)}`)
+        .set('Authorization', `Bearer ${await keys.signWithForeignKey()}`)
+        .expect(401);
+      await del(pid(1), await bearer(AAL2)).then((r) => expect(r.status).toBe(403));
+      const aal1 = await del(pid(1), await asStaff({}, {}));
+      expect(aal1.status).toBe(403);
+      expect((aal1.body as { message: string }).message).toBe('MFA_REQUIRED');
+      for (const permissions of [
+        ['catalog.read'],
+        ['catalog.create'],
+        ['catalog.read', 'catalog.create'],
+      ]) {
+        expect((await del(pid(1), await asStaff({ permissions }))).status).toBe(403);
+      }
+      expect(repo.calls).toEqual([]);
+      expect(repo.products.has(pid(1))).toBe(true);
+    });
+
+    it('alcance acotado a sucursal => 403 genérico antes de leer (incluso con id inexistente)', async () => {
+      const auth = await asStaff({ branchId: '00000000-0000-4000-8000-000000000500' });
+      const res = await del(MISSING, auth);
+      expect(res.status).toBe(403);
+      expect((res.body as { message: string }).message).toBe('Acceso denegado');
+      expect(repo.calls).toEqual([]);
+      expect(repo.audit).toEqual([]);
+    });
+
+    it('carrera 23503 => 409 con el usage recontado fuera de la transacción; sin uso => 503 PRODUCTS_BUSY', async () => {
+      repo.beforeDelete = () => repo.usage.set(pid(1), { orders: 1, promotions: 0, banners: 0 });
+      repo.failNextDeleteWith = Object.assign(new Error('fk'), { code: 'P2003' });
+      const conflict = await del(pid(1));
+      expect(conflict.status).toBe(409);
+      expect(conflict.body).toMatchObject({
+        code: 'PRODUCT_IN_USE',
+        usage: { orders: 1, promotions: 0, banners: 0 },
+      });
+      repo.beforeDelete = null;
+      repo.usage.clear();
+      repo.failNextDeleteWith = { cause: { code: '23503' } };
+      const busy = await del(pid(1));
+      expect(busy.status).toBe(503);
+      expect(busy.body).toMatchObject({ code: 'PRODUCTS_BUSY' });
+      expect(busy.body).not.toHaveProperty('usage');
+      expect(repo.products.has(pid(1))).toBe(true);
+      expect(repo.audit).toHaveLength(0);
+    });
+
+    it('lock_timeout (55P03) => 503 PRODUCTS_BUSY reintentable', async () => {
+      repo.failTransactionWith = { cause: { code: '55P03' } };
+      const res = await del(pid(1));
+      expect(res.status).toBe(503);
+      expect(res.body).toMatchObject({ code: 'PRODUCTS_BUSY' });
+    });
+
+    it('fallo del almacenamiento al liberar assets => igualmente 204; MEDIA_IN_USE (asset compartido) se ignora', async () => {
+      repo.seed(productRow(pid(11), { slug: 'con-img' }), [
+        { url: 'https://cdn.x.io/a.jpg', assetId: 'asset-x' },
+      ]);
+      releaser.failWith = Object.assign(new Error('r2 down'), {
+        response: { code: 'MEDIA_STORAGE_UNAVAILABLE' },
+      });
+      expect((await del(pid(11))).status).toBe(204);
+      expect(repo.products.has(pid(11))).toBe(false);
+      repo.seed(productRow(pid(12), { slug: 'compartida' }), [
+        { url: 'https://cdn.x.io/s.jpg', assetId: 'asset-shared' },
+      ]);
+      releaser.failWith = Object.assign(new Error('in use'), {
+        response: { code: 'MEDIA_IN_USE' },
+      });
+      expect((await del(pid(12))).status).toBe(204);
+      expect(releaser.released).toEqual([]);
     });
   });
 });

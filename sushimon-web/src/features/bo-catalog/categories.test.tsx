@@ -91,6 +91,7 @@ describe('Categorías (F10): permisos de la sesión', () => {
     expect(screen.getByRole('button', { name: 'Nueva categoría' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Editar Entradas' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Desactivar Entradas' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Eliminar Entradas' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Agregar subcategoría a Entradas' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Bajar Entradas' })).toBeDisabled();
   });
@@ -113,6 +114,7 @@ describe('Categorías (F10): permisos de la sesión', () => {
     expect(screen.queryByText(/Solo lectura/)).toBeNull();
     expect(screen.getByRole('button', { name: 'Nueva categoría' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Editar Entradas' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Eliminar Entradas' })).toBeEnabled();
   });
 
   it('si el permiso se revoca en el servidor tras cargar, el 403 se explica sin cerrar el diálogo', async () => {
@@ -345,6 +347,118 @@ describe('Categorías (F10): activar y desactivar con confirmación', () => {
     await waitFor(() =>
       expect(within(rowOf('Edición limitada')).getByText('Oculta: padre inactivo')).toBeVisible(),
     );
+  });
+});
+
+describe('Categorías (ADR-0034): eliminar', () => {
+  it('confirma con foco en «Cancelar», explica que es permanente, elimina, avisa y devuelve el foco al título', async () => {
+    const user = userEvent.setup();
+    const view = await renderScreen();
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Eliminar Rolls fríos' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Eliminar «Rolls fríos»' });
+    expect(within(dialog).getByText(/de forma permanente/)).toBeVisible();
+    expect(within(dialog).getByText(/no tiene subcategorías, productos ni banners/)).toBeVisible();
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: 'Cancelar' })).toHaveFocus(),
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Eliminar categoría' }));
+    expect(await screen.findByText('Categoría «Rolls fríos» eliminada')).toBeVisible();
+    await waitFor(() =>
+      expect(screen.queryByText('Rolls fríos', { selector: '.cname' })).toBeNull(),
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Categorías', level: 1 })).toHaveFocus(),
+    );
+    const admin = await view
+      .api()
+      .client.get<{ items: { slug: string }[] }>('/v1/admin/categories');
+    expect(admin.items.map((c) => c.slug)).not.toContain('rolls-frios');
+  });
+
+  it('cancelar no borra nada', async () => {
+    const user = userEvent.setup();
+    await renderScreen();
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Eliminar Postres' }));
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancelar' }),
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(rowOf('Postres')).toBeVisible();
+  });
+
+  it('409 CATEGORY_IN_USE: no se cierra, explica con conteos (singular/plural, sin ceros) y ofrece «Desactivar en su lugar»', async () => {
+    const user = userEvent.setup();
+    await renderScreen();
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Eliminar Postres' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Eliminar categoría' }));
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'No se puede eliminar «Postres» porque está en uso: 1 producto.',
+    );
+    expect(rowOf('Postres')).toBeVisible();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Desactivar en su lugar' }));
+    expect(await screen.findByText('«Postres» desactivada')).toBeVisible();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(within(rowOf('Postres')).getByText('Inactiva')).toBeVisible());
+  });
+
+  it('409 con subcategorías y productos los lista juntos', async () => {
+    const user = userEvent.setup();
+    await renderScreen();
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Eliminar Sushi Rolls' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Eliminar categoría' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      /está en uso: 2 subcategorías y \d+ productos\./,
+    );
+  });
+
+  it('en una categoría ya inactiva en uso no se ofrece desactivar', async () => {
+    const user = userEvent.setup();
+    await renderScreen();
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Eliminar Temporada' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Eliminar categoría' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('1 subcategoría.');
+    expect(within(dialog).queryByRole('button', { name: 'Desactivar en su lugar' })).toBeNull();
+  });
+
+  it('404: la categoría ya no existe; avisa, recarga y cierra', async () => {
+    const user = userEvent.setup();
+    const view = await renderScreen();
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Eliminar Rolls fríos' }));
+    const dialog = await screen.findByRole('dialog');
+    const store = view.api().store;
+    store.menuCategories = store.menuCategories.filter((c) => c.id !== 'cat-rolls-frios');
+    await user.click(within(dialog).getByRole('button', { name: 'Eliminar categoría' }));
+    expect(await screen.findByText(/La categoría ya no existe/)).toBeVisible();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByText('Rolls fríos', { selector: '.cname' })).toBeNull(),
+    );
+  });
+
+  it('403 si el permiso se revoca tras cargar: se explica en el diálogo sin cerrarlo', async () => {
+    const user = userEvent.setup();
+    const view = await renderScreen();
+    await ready();
+    view.api().store.roles.find((r) => r.code === 'admin')!.permissions = ['catalog.read'];
+    await user.click(screen.getByRole('button', { name: 'Eliminar Rolls fríos' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Eliminar categoría' }));
+    expect(
+      await within(dialog).findByText(/No tienes permiso para modificar categorías/),
+    ).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'Eliminar categoría' })).toBeEnabled();
   });
 });
 

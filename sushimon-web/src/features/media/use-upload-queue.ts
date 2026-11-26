@@ -20,6 +20,10 @@ interface Entry {
   optimized?: OptimizedImage;
   /** Asset ya READY (un reintento retoma en el vínculo, sin subir otra vez). */
   assetId?: string;
+  /** Producto destino fijado al encolar (alta: el id existe solo después de crear el producto). */
+  productId?: string;
+  /** Texto alternativo elegido antes de subir (se envía al adjuntar). */
+  altText?: string | null;
   abort?: AbortController;
 }
 
@@ -40,7 +44,7 @@ function previewOf(file: Blob): string | null {
  * estado; un fallo no detiene a los demás. «Reintentar» pide un intent NUEVO (y retoma en el vínculo si el asset ya está READY).
  * `MEDIA_UPLOAD_EXPIRED` y los errores del PUT se resuelven igual: reintentar.
  */
-export function useUploadQueue(productId: string, attachedCount: number) {
+export function useUploadQueue(productId: string | undefined, attachedCount: number) {
   const client = useDataClient();
   const tools = useMediaTools();
   const invalidate = useInvalidateMedia();
@@ -50,6 +54,13 @@ export function useUploadQueue(productId: string, attachedCount: number) {
   const itemsRef = useRef<QueueItem[]>([]);
   const running = useRef(false);
   const alive = useRef(true);
+  // Valores vigentes sin recrear callbacks: `add` puede llamarse en el mismo tick en que se crea el producto.
+  const productIdRef = useRef(productId);
+  const attachedRef = useRef(attachedCount);
+  useEffect(() => {
+    productIdRef.current = productId;
+    attachedRef.current = attachedCount;
+  }, [productId, attachedCount]);
 
   const commit = useCallback((next: QueueItem[]) => {
     itemsRef.current = next;
@@ -115,7 +126,12 @@ export function useUploadQueue(productId: string, attachedCount: number) {
           }
         }
         patch(id, { status: 'attaching', progress: 1 });
-        await attachProductMedia(client, productId, { assetId: entry.assetId });
+        const target = entry.productId ?? productIdRef.current;
+        if (!target) throw new MediaClientError('other', 'El producto aún no existe');
+        await attachProductMedia(client, target, {
+          assetId: entry.assetId,
+          ...(entry.altText ? { altText: entry.altText } : {}),
+        });
         entry.optimized = undefined;
         patch(id, { status: 'done' });
         await invalidate();
@@ -130,7 +146,7 @@ export function useUploadQueue(productId: string, attachedCount: number) {
         if (entries.current.get(id)) entries.current.get(id)!.abort = undefined;
       }
     },
-    [client, invalidate, patch, productId, remove, tools.processor, uploader],
+    [client, invalidate, patch, remove, tools.processor, uploader],
   );
 
   const pump = useCallback(async () => {
@@ -147,13 +163,23 @@ export function useUploadQueue(productId: string, attachedCount: number) {
     }
   }, [run]);
 
-  /** Añade archivos; los que no caben (tope de 8 por producto) quedan como error `productMediaInvalid`. */
+  /**
+   * Añade archivos; los que no caben (tope de 8 por producto) quedan como error `productMediaInvalid`. `options.productId`
+   * fija el destino (producto recién creado) y `options.altTexts` el texto alternativo por archivo (mismo orden).
+   */
   const add = useCallback(
-    (files: readonly File[]) => {
-      let free = MEDIA_PER_PRODUCT_MAX - attachedCount - queuedSlots(itemsRef.current);
-      const added: QueueItem[] = files.map((file) => {
+    (
+      files: readonly File[],
+      options: { productId?: string; altTexts?: readonly (string | null | undefined)[] } = {},
+    ) => {
+      let free = MEDIA_PER_PRODUCT_MAX - attachedRef.current - queuedSlots(itemsRef.current);
+      const added: QueueItem[] = files.map((file, index) => {
         const id = `up${++itemSeq}`;
-        entries.current.set(id, { file });
+        entries.current.set(id, {
+          file,
+          productId: options.productId,
+          altText: options.altTexts?.[index] ?? null,
+        });
         const fits = free > 0;
         if (fits) free -= 1;
         return {
@@ -168,7 +194,7 @@ export function useUploadQueue(productId: string, attachedCount: number) {
       commit([...itemsRef.current, ...added]);
       void pump();
     },
-    [attachedCount, commit, pump],
+    [commit, pump],
   );
 
   const retry = useCallback(
@@ -204,3 +230,5 @@ export function useUploadQueue(productId: string, attachedCount: number) {
 
   return { items, add, retry, remove, clearDone };
 }
+
+export type UploadQueue = ReturnType<typeof useUploadQueue>;

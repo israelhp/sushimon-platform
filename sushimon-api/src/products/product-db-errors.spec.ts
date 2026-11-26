@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { translateProductDbError } from './product-db-errors.js';
+import { translateProductDbError, translateProductDeleteError } from './product-db-errors.js';
 
 const payload = (e: unknown) => (e as { getResponse(): Record<string, unknown> }).getResponse();
 const status = (e: unknown) => (e as { getStatus(): number }).getStatus();
@@ -100,5 +100,50 @@ describe('translateProductDbError', () => {
     expect(translateProductDbError(generic)).toBe(generic);
     expect(translateProductDbError('x')).toBe('x');
     expect(translateProductDbError(null)).toBeNull();
+  });
+});
+
+describe('translateProductDeleteError (ADR-0035)', () => {
+  const used = { orders: 3, promotions: 1, banners: 0 };
+  const none = { orders: 0, promotions: 0, banners: 0 };
+
+  it('23503/P2003 (también en cause) recuenta y responde 409 PRODUCT_IN_USE con el usage real', async () => {
+    for (const error of [
+      { code: 'P2003' },
+      { code: '23503' },
+      { cause: { code: '23503' } },
+      Object.assign(new Error('fk'), { code: 'P2003', meta: { field_name: 'x' } }),
+    ]) {
+      const recount = vi.fn().mockResolvedValue(used);
+      const out = await translateProductDeleteError(error, recount);
+      expect(recount).toHaveBeenCalledTimes(1);
+      expect(status(out)).toBe(409);
+      expect(payload(out)).toMatchObject({
+        code: 'PRODUCT_IN_USE',
+        extra: { usage: used },
+      });
+    }
+  });
+
+  it('23503 con recuento en cero o fallido => 503 PRODUCTS_BUSY (nunca ceros inventados)', async () => {
+    for (const recount of [
+      vi.fn().mockResolvedValue(none),
+      vi.fn().mockRejectedValue(new Error('x')),
+    ]) {
+      const out = await translateProductDeleteError({ code: '23503' }, recount);
+      expect(status(out)).toBe(503);
+      expect(payload(out)['code']).toBe('PRODUCTS_BUSY');
+    }
+  });
+
+  it('55P03/P2028 => 503 PRODUCTS_BUSY sin recontar; otros errores pasan igual', async () => {
+    const recount = vi.fn();
+    for (const error of [{ code: '55P03' }, { code: 'P2028' }, { cause: { code: '40P01' } }]) {
+      const out = await translateProductDeleteError(error, recount);
+      expect(payload(out)['code']).toBe('PRODUCTS_BUSY');
+    }
+    const boom = new Error('otro');
+    expect(await translateProductDeleteError(boom, recount)).toBe(boom);
+    expect(recount).not.toHaveBeenCalled();
   });
 });

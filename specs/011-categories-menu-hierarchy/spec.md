@@ -8,8 +8,16 @@
 ## Alcance
 
 Jerarquía padre/hijo del menú (máx. 3 niveles), orden estable, slug, visibilidad, lectura pública del árbol de categorías visibles y administración
-(listar, crear, editar, mover, activar/desactivar, reordenar) con auditoría. Fuera: productos (F11), imágenes de categoría, precios/disponibilidad por
-sucursal (F13), borrado físico, localización por idioma de nombres (los textos son los del restaurante).
+(listar, crear, editar, mover, activar/desactivar, reordenar y, desde ADR-0034, eliminar una categoría sin uso) con auditoría. Fuera: productos (F11), imágenes de categoría, precios/disponibilidad por
+sucursal (F13), localización por idioma de nombres (los textos son los del restaurante).
+
+## Borrado (ADR-0034)
+
+Revierte parcialmente la decisión original de «sin borrado físico». `DELETE /v1/admin/categories/{id}` (`deleteAdminCategory`): `catalog.update` global + `aal2`, 204 sin cuerpo, borrado
+físico, sin `expectedVersion` (no hay columna de versión). Solo si la categoría no está en uso: sin subcategorías, sin productos (activos o inactivos) y sin banners residuales
+(`banners.cta_category_id`). En uso => 409 `CATEGORY_IN_USE` con `usage {children, products, banners}`; nunca cascada ni reasignación. Mismo bloqueo de jerarquía (advisory 1100110);
+las FK RESTRICT (23503) son la red de seguridad. Audita `category.deleted`. Desactivar (`active=false`) sigue siendo la alternativa reversible. Estado: `CONTRACT_DEFINED` (API y web pendientes).
+La desaparición del menú público sigue los tiempos de caché de D7 (hasta ~6 min).
 
 ## Estados por componente
 
@@ -43,8 +51,8 @@ sucursal (F13), borrado físico, localización por idioma de nombres (los textos
 ## Decisiones (resumen; razones en ADR-0016)
 
 - **D1 Modelo**: columnas del DBML + `created_at`/`updated_at`. `slug` único (índice único), `^[a-z0-9]+(-[a-z0-9]+)*$`, ≤ 80. `name` 1–80 normalizado (NFC, recorte,
-  colapso de espacios, sin caracteres de control); `description` ≤ 500 opcional; `sort_order >= 0` (`CHECK`). FK `parent_id` `ON DELETE RESTRICT`. **Sin DELETE**
-  (ni endpoint ni permiso): solo desactivar.
+  colapso de espacios, sin caracteres de control); `description` ≤ 500 opcional; `sort_order >= 0` (`CHECK`). FK `parent_id` `ON DELETE RESTRICT`. ~~Sin DELETE~~
+  (reemplazado por ADR-0034, ver «Borrado (ADR-0034)»): sin permiso nuevo.
 - **D2 Profundidad**: máximo 3 niveles (raíz = 1). Al mover se valida `depth(destino) + altura(subárbol movido) <= 3`.
 - **D3 Visibilidad efectiva**: `effectivelyVisible = active AND todos los ancestros active`. Desactivar un padre no toca a los hijos; el admin ve ambos valores.
   Un hijo activo bajo un padre inactivo no aparece al público ni puede recibir hijos nuevos (padre inactivo => `CATEGORY_PARENT_INVALID`).

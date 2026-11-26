@@ -23,7 +23,7 @@ import {
   progressPercent,
   type QueueItem,
 } from '@/features/media/media-view';
-import { useUploadQueue } from '@/features/media/use-upload-queue';
+import { useUploadQueue, type UploadQueue } from '@/features/media/use-upload-queue';
 import { moveWithin } from '@/lib/category-tree';
 import { useDataClient } from '@/lib/data-access/provider';
 import type { AdminProduct, AdminProductMedia } from '@/lib/data-access/models';
@@ -46,13 +46,27 @@ import { MediaThumb } from './MediaThumb';
  * (no forma parte del botón «Guardar producto»). Escritura: `catalog.update` con alcance global; sin él, solo lectura.
  */
 export function ProductMediaSection({ product }: { product: AdminProduct }) {
+  const queue = useUploadQueue(product.id, product.media.length);
+  return <ProductMediaPanel product={product} queue={queue} />;
+}
+
+/**
+ * Cuerpo de la sección con la cola inyectada: el alta de producto (`ProductModal`) crea la cola ANTES de que exista el producto
+ * (para encolar las imágenes elegidas apenas se obtiene su id) y la conserva al pasar a edición.
+ */
+export function ProductMediaPanel({
+  product,
+  queue,
+}: {
+  product: AdminProduct;
+  queue: UploadQueue;
+}) {
   const t = useTranslations('backoffice.media');
   const toast = useToast();
   const client = useDataClient();
   const { grants } = useShell();
   const canWrite = canGlobally(grants, 'catalog.update');
   const items = [...product.media].sort((a, b) => a.sortOrder - b.sortOrder);
-  const queue = useUploadQueue(product.id, items.length);
   const reorder = useReorderProductMedia(product.id);
   const detach = useDetachProductMedia(product.id);
   const updateAlt = useUpdateProductMedia(product.id);

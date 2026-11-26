@@ -72,3 +72,10 @@ export interface CategoryPatch {
   active?: boolean;
   updatedAt: Date;
 }
+
+/** Qué impide borrar una categoría (ADR-0034): solo conteos, nunca nombres ni ids. */
+export interface CategoryUsage {
+  children: number;
+  products: number;
+  banners: number;
+}

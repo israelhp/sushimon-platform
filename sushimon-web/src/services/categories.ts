@@ -11,7 +11,8 @@ import { paths } from '@/lib/data-access/paths';
 
 /**
  * F10 — Categorías y jerarquía del menú. Operaciones del contrato: listStoreCategories, listAdminCategories,
- * createAdminCategory, updateAdminCategory y reorderAdminCategories. Sin borrado físico: se desactiva con `active=false`.
+ * createAdminCategory, updateAdminCategory, reorderAdminCategories y deleteAdminCategory (ADR-0034: borrado físico solo si no está
+ * en uso; la alternativa reversible es `active=false`).
  * Los errores de negocio llegan en `ApiError.businessCode` (`CATEGORY_*`); la UI ramifica por él, nunca por `message`.
  * La API decide permisos y alcance (401/403): las escrituras exigen alcance global.
  */
@@ -52,3 +53,10 @@ export const updateAdminCategory = (client: DataClient, id: string, input: Updat
 /** `orderedIds` = EXACTAMENTE los hermanos actuales de `parentId`. 422 `CATEGORY_REORDER_MISMATCH`; 404 si el padre no existe. */
 export const reorderAdminCategories = (client: DataClient, input: ReorderCategoriesRequest) =>
   client.put<AdminCategoryList>(paths.adminCategoriesReorder(), input);
+
+/**
+ * Borrado físico (204, ADR-0034). 409 `CATEGORY_IN_USE` (el cuerpo trae `usage` con conteos de subcategorías, productos y banners);
+ * 404 si no existe (repetirlo también); 403 sin `catalog.update` global; 503 `CATEGORIES_BUSY` (reintentable).
+ */
+export const deleteAdminCategory = (client: DataClient, id: string) =>
+  client.delete<void>(paths.adminCategory(id));

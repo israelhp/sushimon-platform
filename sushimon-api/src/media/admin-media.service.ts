@@ -272,12 +272,19 @@ export class AdminMediaService {
   }
 
   /**
-   * Libera un asset que un llamador YA autorizado dejó sin dueño (F16: tras borrar un banner). Misma lógica que `remove`
-   * (409 `MEDIA_IN_USE` si otro banner o producto lo usa; fila y objeto) pero sin exigir `catalog.update`: el permiso lo
-   * verificó el llamador sobre su propio recurso. Solo borra assets `BANNER_IMAGE` (nunca de producto). Lanza los mismos errores que `remove`; el llamador decide si son fatales.
+   * Libera un asset que un llamador YA autorizado dejó sin dueño (F16: tras borrar un banner; F11/ADR-0035: tras borrar un
+   * producto). Misma lógica que `remove` (409 `MEDIA_IN_USE` si otro banner o producto lo usa; fila y objeto) pero sin
+   * exigir `catalog.update`: el permiso lo verificó el llamador sobre su propio recurso. El tipo permitido es un
+   * parámetro OBLIGATORIO: cada llamador solo puede liberar assets de SU tipo (un asset de otro tipo responde 404 como si
+   * no existiera), así que ninguno puede borrar imágenes ajenas. Lanza los mismos errores que `remove`; el llamador decide
+   * si son fatales.
    */
-  async removeUnusedAsset(staff: StaffContext, assetId: string): Promise<void> {
-    await this.removeAsset(staff, assetId, 'BANNER_IMAGE');
+  async removeUnusedAsset(
+    staff: StaffContext,
+    assetId: string,
+    onlyKind: MediaKind,
+  ): Promise<void> {
+    await this.removeAsset(staff, assetId, onlyKind);
   }
 
   /** `onlyKind`: restringe el borrado a un tipo (un asset de otro tipo responde 404 como si no existiera). */

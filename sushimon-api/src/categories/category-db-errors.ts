@@ -1,7 +1,8 @@
 import { BadRequestException, HttpStatus } from '@nestjs/common';
 import { dbErrorCodes as codes, uniqueTarget } from '../common/db/db-error-codes.js';
 import { codedException } from '../common/errors/coded-exception.js';
-import { slugTaken } from './category-policy.js';
+import type { CategoryUsage } from './categories.types.js';
+import { categoryInUse, isUnused, slugTaken } from './category-policy.js';
 
 const messageOf = (error: unknown): string => {
   const parts: string[] = [];
@@ -64,4 +65,32 @@ export function translateCategoryDbError(error: unknown): unknown {
     return new BadRequestException(['Datos inválidos']);
   }
   return error;
+}
+
+const BUSY_RETRY = () =>
+  codedException(
+    HttpStatus.SERVICE_UNAVAILABLE,
+    'CATEGORIES_BUSY',
+    'Las categorías se están modificando; reintenta en unos segundos',
+  );
+
+/**
+ * Borrado (ADR-0034). Un FK RESTRICT violado (P2003/23503) es una carrera con un escritor que no tomó el lock de
+ * jerarquía. La transacción abortada ya no sirve para leer, así que RECUENTA fuera de ella (`recount`) para devolver
+ * el `usage` real en 409 `CATEGORY_IN_USE`. Si el recuento falla o sale en cero (la referencia desapareció entre
+ * medias) NO se inventan ceros: se responde 503 `CATEGORIES_BUSY`, reintentable (la reintentada decide con datos).
+ * El resto de errores sigue el camino de `translateCategoryDbError`.
+ */
+export async function translateCategoryDeleteError(
+  error: unknown,
+  recount: () => Promise<CategoryUsage>,
+): Promise<unknown> {
+  const found = typeof error === 'object' && error !== null ? codes(error) : [];
+  if (!found.includes('P2003') && !found.includes('23503')) return translateCategoryDbError(error);
+  try {
+    const usage = await recount();
+    return isUnused(usage) ? BUSY_RETRY() : categoryInUse(usage);
+  } catch {
+    return BUSY_RETRY();
+  }
 }

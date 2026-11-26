@@ -1,4 +1,4 @@
-import { BadRequestException, HttpStatus } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
 import type { AuditValues } from '../audit/audit.service.js';
 import { codedException } from '../common/errors/coded-exception.js';
 import { SLUG_MAX, SLUG_PATTERN, slugifyText, uniqueSlug } from '../common/text/slug.js';
@@ -7,6 +7,7 @@ import type {
   AdminCategoryView,
   CategoryNode,
   CategoryRow,
+  CategoryUsage,
   PublicCategoryView,
 } from './categories.types.js';
 
@@ -33,6 +34,29 @@ export const slugTaken = () =>
     'CATEGORY_SLUG_TAKEN',
     'Ya existe una categoría con ese slug',
   );
+
+// ---------- borrado (ADR-0034) ----------
+
+export const isUnused = (u: CategoryUsage): boolean => u.children + u.products + u.banners === 0;
+
+const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+
+/** 409 `CATEGORY_IN_USE` (`CategoryInUseError`): mensaje con conteos, sin nombres ni ids; `usage` siempre presente. */
+export function categoryInUse(usage: CategoryUsage): HttpException {
+  const parts = [
+    usage.children > 0 ? plural(usage.children, 'subcategoría', 'subcategorías') : null,
+    usage.products > 0 ? plural(usage.products, 'producto', 'productos') : null,
+    usage.banners > 0 ? plural(usage.banners, 'banner', 'banners') : null,
+  ].filter((p): p is string => p !== null);
+  return new HttpException(
+    {
+      message: `La categoría está en uso (${parts.join(', ')}). Mueve o elimina esos elementos, o desactívala en su lugar`,
+      code: 'CATEGORY_IN_USE',
+      extra: { usage: { ...usage } },
+    },
+    HttpStatus.CONFLICT,
+  );
+}
 
 // ---------- normalización ----------
 

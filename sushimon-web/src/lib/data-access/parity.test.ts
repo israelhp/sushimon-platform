@@ -339,6 +339,10 @@ describe('paridad mock ↔ http', () => {
       (c) => products.updateAdminProduct(c, 'dumplings', { media: [] }),
       (c) => products.updateAdminProduct(c, 'dumplings', {}), // 400
       (c) => products.updateAdminProduct(c, 'no-existe', { name: 'X' }), // 404
+      (c) => products.deleteAdminProduct(c, 'dumplings'), // 409 PRODUCT_IN_USE (pedidos y promoción)
+      (c) => products.deleteAdminProduct(c, 'sushi-pizza'), // 204
+      (c) => products.deleteAdminProduct(c, 'sushi-pizza'), // 404 (repetir)
+      (c) => products.listAdminProducts(c, { q: 'sushi pizza' }),
       (c) => products.listStoreProducts(c, { q: 'dumpl' }),
     ];
     const a = await run(steps, p.mock.client);
@@ -352,7 +356,9 @@ describe('paridad mock ↔ http', () => {
     ).toEqual(
       [
         'PRODUCT_CATEGORY_INVALID',
+        'PRODUCT_IN_USE',
         'PRODUCT_MEDIA_INVALID',
+        'PRODUCT_NOT_FOUND',
         'PRODUCT_NOT_FOUND',
         'PRODUCT_NOT_FOUND',
         'PRODUCT_NOT_FOUND',
@@ -765,6 +771,10 @@ describe('paridad mock ↔ http', () => {
           orderedIds: ['cat-rolls-frios'],
         }), // 422
       (c) => categories.listStoreCategories(c),
+      (c) => categories.deleteAdminCategory(c, 'cat-rolls'), // 409 CATEGORY_IN_USE (hijas y productos)
+      (c) => categories.deleteAdminCategory(c, 'cat-rolls-frios'), // 204
+      (c) => categories.deleteAdminCategory(c, 'cat-rolls-frios'), // 404 (repetir)
+      (c) => categories.listAdminCategories(c),
     ];
     const a = await run(steps, p.mock.client);
     const b = await run(steps, p.http);
@@ -779,6 +789,7 @@ describe('paridad mock ↔ http', () => {
       [
         'CATEGORY_CYCLE',
         'CATEGORY_DEPTH_EXCEEDED',
+        'CATEGORY_IN_USE',
         'CATEGORY_PARENT_INVALID',
         'CATEGORY_REORDER_MISMATCH',
         'CATEGORY_SLUG_TAKEN',

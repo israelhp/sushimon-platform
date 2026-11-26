@@ -5,11 +5,14 @@ import { AuthorizationService } from '../auth/authorization.service.js';
 import { CategoriesQueryService } from '../categories/categories-query.service.js';
 import type { Env } from '../config/env.js';
 import type { StaffContext } from '../identity/identity.types.js';
+import { safeErrorLabel } from '../media/guarded-storage.js';
+import { AdminMediaService } from '../media/admin-media.service.js';
 import { MediaUrlService } from '../media/media-url.service.js';
-import { translateProductDbError } from './product-db-errors.js';
+import { translateProductDbError, translateProductDeleteError } from './product-db-errors.js';
 import {
   categoryInvalid,
   diffProduct,
+  isUnused,
   mediaInvalid,
   normalizeDescription,
   normalizeMedia,
@@ -19,6 +22,7 @@ import {
   normalizeSlug,
   normalizeUpdate,
   notFound,
+  productInUse,
   slugify,
   slugSearchPrefix,
   toAdminView,
@@ -36,6 +40,9 @@ import type {
 } from './products.types.js';
 
 const ENTITY = 'product';
+
+/** Lo único que ADR-0035 necesita de F14 para liberar las imágenes (facilita el doble en pruebas). */
+export type ProductImageReleaser = Pick<AdminMediaService, 'removeUnusedAsset'>;
 
 const isSlugTaken = (error: unknown): boolean =>
   (error as { response?: { code?: string } } | null)?.response?.code === 'PRODUCT_SLUG_TAKEN';
@@ -68,6 +75,8 @@ export class AdminProductsService {
     @Inject(ConfigService) private readonly config: ConfigService<Env, true>,
     /** F14. Opcional en construcción manual (pruebas de F11): sin él no hay enlace de URL de R2 con assets. */
     @Inject(MediaUrlService) private readonly mediaUrls?: MediaUrlService,
+    /** ADR-0035. Opcional en construcción manual: sin él no se liberan assets tras borrar. */
+    @Inject(AdminMediaService) private readonly media?: ProductImageReleaser,
   ) {}
 
   /**
@@ -227,6 +236,74 @@ export class AdminProductsService {
       this.logger.log(`Producto actualizado (id=${id}, staff=${staff.staffId})`);
     }
     return this.viewOf(result.row, result.media);
+  }
+
+  /**
+   * ADR-0035: borrado físico solo sin pedidos, promociones ni banners. Bajo el bloqueo de fila: existe (404) → recuenta
+   * (409 `PRODUCT_IN_USE`) → borra `branch_products` → borra el producto (cascada: medios, vínculos de modificadores,
+   * favoritos) → audita, todo en una transacción. Un 23503 (carrera con un escritor que no tomó el bloqueo) se traduce
+   * recontando fuera de la transacción abortada. DESPUÉS de confirmar se liberan, best-effort, los assets de imagen.
+   */
+  async remove(staff: StaffContext, id: string): Promise<void> {
+    this.assertGlobal(staff, 'catalog.update');
+    let assetIds: string[];
+    try {
+      assetIds = await this.repo.transaction(async (tx) => {
+        if (!(await this.repo.lockProduct(tx, id))) throw notFound();
+        const current = await this.repo.findById(id, tx);
+        if (!current) throw notFound();
+        const usage = await this.repo.countUsage(id, tx);
+        if (!isUnused(usage)) throw productInUse(usage);
+        const media = await this.repo.findMediaInTx(tx, id);
+        const offers = await this.repo.findBranchOffers(tx, id);
+        await this.repo.deleteBranchOffers(tx, id);
+        await this.repo.delete(tx, id);
+        await this.audit.record(tx, {
+          actorId: staff.staffId,
+          entityType: ENTITY,
+          entityId: id,
+          action: 'product.deleted',
+          oldValues: {
+            id: current.id,
+            slug: current.slug,
+            sku: current.sku,
+            name: current.name,
+            categoryId: current.categoryId,
+            active: current.active,
+            basePrice: current.basePrice,
+            branchOffers: offers.map(
+              (o) =>
+                `${o.branchId}|${o.priceOverride ?? 'base'}|${o.available ? 'available' : 'unavailable'}`,
+            ),
+          },
+        });
+        return [...new Set(media.flatMap((m) => (m.assetId ? [m.assetId] : [])))];
+      });
+    } catch (error) {
+      throw await translateProductDeleteError(error, () => this.repo.countUsage(id));
+    }
+    this.logger.log(`Producto eliminado (id=${id}, staff=${staff.staffId})`);
+    await this.releaseImages(staff, id, assetIds);
+  }
+
+  /** Mejor esfuerzo: el producto YA no existe; cualquier fallo solo deja el asset libre en la biblioteca de medios. */
+  private async releaseImages(
+    staff: StaffContext,
+    productId: string,
+    assetIds: readonly string[],
+  ): Promise<void> {
+    if (!this.media) return;
+    for (const assetId of assetIds) {
+      try {
+        await this.media.removeUnusedAsset(staff, assetId, 'PRODUCT_IMAGE');
+      } catch (error) {
+        const code = (error as { response?: { code?: unknown } } | null)?.response?.code;
+        if (code === 'MEDIA_IN_USE') continue; // otro producto o banner la usa: se conserva (esperado)
+        this.logger.warn(
+          `Imagen de producto eliminado no liberada (producto=${productId}, asset=${assetId}, ${typeof code === 'string' ? code : safeErrorLabel(error)}); queda libre en la biblioteca de medios`,
+        );
+      }
+    }
   }
 
   /** Los productos son globales: un alcance solo por sucursal no basta (403 antes que cualquier 404/422). */

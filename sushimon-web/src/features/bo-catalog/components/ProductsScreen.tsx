@@ -2,7 +2,7 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { BoProductArt, IconPencil, IconPlus } from '@/components/icons/bo';
 import { Banner } from '@/components/ui/Banner';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -33,7 +33,7 @@ import {
   type ProductStatusFilter,
 } from '../products-view';
 import { BranchProductsMatrix } from './BranchProductsMatrix';
-import { ProductBranchesModal } from './ProductBranchesModal';
+import { DeleteProductModal } from './DeleteProductModal';
 import { ProductModal } from './ProductModal';
 import { firstProductImage } from '@/features/catalog/components/product-art';
 import { displayMediaSrc } from '@/lib/media-simulated';
@@ -48,14 +48,16 @@ type Dialog =
   | { kind: 'create' }
   | { kind: 'edit'; id: string }
   | { kind: 'status'; id: string }
-  | { kind: 'branches'; id: string };
+  | { kind: 'delete'; id: string };
 
 /**
  * Pantalla Productos (F11): lista PAGINADA del servidor (búsqueda con debounce, filtro por categoría y estado), alta, edición y
- * activar/desactivar con confirmación. Muestra `publiclyVisible` y el motivo (inactivo o categoría oculta). La vista exige
- * `catalog.read`; crear/editar `catalog.create`/`catalog.update` con alcance GLOBAL (si no, se deshabilitan con aviso: el
- * servidor responde 403 de todos modos). Sin borrado. F13 (contrato): cada tarjeta abre la hoja «Sucursales» (precio especial y
- * disponibilidad por sucursal; no exige `catalog.update`) y la vista «Por sucursal» muestra la matriz de una sucursal.
+ * activar/desactivar con confirmación y eliminar. Muestra `publiclyVisible` y el motivo (inactivo o categoría oculta). La vista exige
+ * `catalog.read`; crear/editar/eliminar `catalog.create`/`catalog.update` con alcance GLOBAL (si no, se deshabilitan con aviso: el
+ * servidor responde 403 de todos modos). Eliminar (ADR-0035) es permanente y solo se acepta si el producto no tiene pedidos,
+ * promociones ni banners (409 con conteos y alternativa «Desactivar»); desactivar sigue siendo la opción reversible. F13 (contrato):
+ * el precio especial y la disponibilidad por sucursal se editan en la vista «Por sucursal» (matriz de una sucursal; no exige
+ * `catalog.update` para la disponibilidad) y en la sección «Sucursales» del editor de un producto.
  */
 export function ProductsScreen() {
   const t = useTranslations('backoffice.products');
@@ -74,6 +76,7 @@ export function ProductsScreen() {
   const [page, setPage] = useState(1);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [statusError, setStatusError] = useState('');
+  const titleRef = useRef<HTMLHeadingElement>(null);
 
   const q = useDebouncedValue(query, 300).trim();
   const products = useAdminProducts({
@@ -150,14 +153,6 @@ export function ProductsScreen() {
       <button
         type="button"
         className="btn sm"
-        aria-label={t('branchesLabel', { name: p.name })}
-        onClick={() => setDialog({ kind: 'branches', id: p.id })}
-      >
-        {t('branches')}
-      </button>
-      <button
-        type="button"
-        className="btn sm"
         disabled={!canUpdate}
         aria-label={t(p.active ? 'deactivateLabel' : 'activateLabel', { name: p.name })}
         onClick={() => setDialog({ kind: 'status', id: p.id })}
@@ -174,8 +169,58 @@ export function ProductsScreen() {
       >
         <IconPencil size="sm" />
       </button>
+      <button
+        type="button"
+        className="btn sm danger"
+        disabled={!canUpdate}
+        aria-label={t('deleteLabel', { name: p.name })}
+        onClick={() => setDialog({ kind: 'delete', id: p.id })}
+      >
+        {t('delete')}
+      </button>
     </>
   );
+
+  /** Acciones de la tarjeta (cuadrícula): en su propia fila y con «Editar» visible con texto; la tabla usa `actions`. */
+  const gridActions = (p: AdminProduct) => (
+    <div className="pactions">
+      <button
+        type="button"
+        className="btn sm btn-primary"
+        disabled={!canUpdate}
+        aria-label={t('editLabel', { name: p.name })}
+        onClick={() => setDialog({ kind: 'edit', id: p.id })}
+      >
+        <IconPencil size="sm" />
+        {t('edit')}
+      </button>
+      <button
+        type="button"
+        className="btn sm"
+        disabled={!canUpdate}
+        aria-label={t(p.active ? 'deactivateLabel' : 'activateLabel', { name: p.name })}
+        onClick={() => setDialog({ kind: 'status', id: p.id })}
+      >
+        {t(p.active ? 'deactivate' : 'activate')}
+      </button>
+      <button
+        type="button"
+        className="btn sm danger"
+        disabled={!canUpdate}
+        aria-label={t('deleteLabel', { name: p.name })}
+        onClick={() => setDialog({ kind: 'delete', id: p.id })}
+      >
+        {t('delete')}
+      </button>
+    </div>
+  );
+
+  /** Clic en la tarjeta (comodidad con ratón): abre la edición salvo que el clic sea sobre un botón; el teclado usa «Editar». */
+  const openFromCard = (p: AdminProduct, target: EventTarget) => {
+    if (!canUpdate) return;
+    if (target instanceof Element && target.closest('button, a, input, select, textarea')) return;
+    setDialog({ kind: 'edit', id: p.id });
+  };
 
   const look = (p: AdminProduct) => categoryLook(categorySlugChain(p, categories));
   const photo = (p: AdminProduct, variant?: 'thumb') => {
@@ -193,7 +238,9 @@ export function ProductsScreen() {
     <div className="page" style={{ animation: 'none' }}>
       <div className="page-h">
         <div className="grow">
-          <h1>{t('title')}</h1>
+          <h1 ref={titleRef} tabIndex={-1} className="outline-none">
+            {t('title')}
+          </h1>
           <div className="page-sub">
             {mode === 'branch' ? t('subtitleBranch') : t('subtitleReal', { count: total })}
           </div>
@@ -315,7 +362,8 @@ export function ProductsScreen() {
                 <div
                   key={p.id}
                   role="listitem"
-                  className={cn('pcard', !p.publiclyVisible && 'off')}
+                  className={cn('pcard', !p.publiclyVisible && 'off', canUpdate && 'clickable')}
+                  onClick={(e) => openFromCard(p, e.target)}
                 >
                   <div className={cn('pimg', look(p).tile)}>
                     {visibilityPill(p)}
@@ -331,9 +379,8 @@ export function ProductsScreen() {
                     </div>
                     <div className="pfoot">
                       <span className="price">{formatMoney(priceToNumber(p.basePrice))}</span>
-                      <span className="spacer" />
-                      {actions(p)}
                     </div>
+                    {gridActions(p)}
                   </div>
                 </div>
               ))}
@@ -414,8 +461,12 @@ export function ProductsScreen() {
       {dialog?.kind === 'edit' && target ? (
         <ProductModal product={target} categories={categories} onClose={close} />
       ) : null}
-      {dialog?.kind === 'branches' && target ? (
-        <ProductBranchesModal productId={target.id} productName={target.name} onClose={close} />
+      {dialog?.kind === 'delete' && target ? (
+        <DeleteProductModal
+          product={target}
+          onClose={close}
+          onDone={() => setTimeout(() => titleRef.current?.focus(), 0)}
+        />
       ) : null}
       {dialog?.kind === 'status' && target ? (
         <ConfirmModal

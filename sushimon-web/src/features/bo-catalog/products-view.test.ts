@@ -6,6 +6,7 @@ import {
   categorySlugChain,
   emptyProductForm,
   productServerError,
+  productUsage,
   productToForm,
   selectableCategories,
   statusToActive,
@@ -191,5 +192,54 @@ describe('errores del servidor por code (nunca por message)', () => {
 
   it('el mensaje del servidor no decide: un 409 sin code no es slugTaken', () => {
     expect(productServerError(api(409)).kind).toBe('other');
+  });
+});
+
+describe('productServerError: borrado (ADR-0035)', () => {
+  const inUse = (usage: unknown) =>
+    new ApiError(
+      409,
+      'conflict',
+      'texto cualquiera',
+      undefined,
+      undefined,
+      'PRODUCT_IN_USE',
+      undefined,
+      undefined,
+      { statusCode: 409, code: 'PRODUCT_IN_USE', usage },
+    );
+
+  it('409 PRODUCT_IN_USE => inUse con los conteos de usage y recarga', () => {
+    expect(productServerError(inUse({ orders: 3, promotions: 1, banners: 0 }))).toMatchObject({
+      kind: 'inUse',
+      reload: true,
+      usage: { orders: 3, promotions: 1, banners: 0 },
+    });
+  });
+
+  it('usage ausente o con valores inválidos no rompe: conteos a 0 o sin usage', () => {
+    expect(productUsage(inUse({ orders: -3, promotions: 'x', banners: 1.5 }))).toEqual({
+      orders: 0,
+      promotions: 0,
+      banners: 0,
+    });
+    expect(productServerError(inUse(undefined))).toMatchObject({
+      kind: 'inUse',
+      usage: undefined,
+    });
+    expect(productUsage(new Error('x'))).toBeNull();
+  });
+
+  it('404 PRODUCT_NOT_FOUND pide recargar y 503 PRODUCTS_BUSY es reintentable', () => {
+    expect(
+      productServerError(
+        new ApiError(404, 'not_found', 'x', undefined, undefined, 'PRODUCT_NOT_FOUND'),
+      ),
+    ).toMatchObject({ kind: 'notFound', reload: true });
+    expect(
+      productServerError(
+        new ApiError(503, 'server_error', 'x', undefined, undefined, 'PRODUCTS_BUSY'),
+      ),
+    ).toMatchObject({ kind: 'busy', reload: false });
   });
 });
