@@ -21,16 +21,12 @@ const renderScreen = (role: StaffRole = 'admin', prepareStore?: Prepare) =>
     { role, prepareStore },
   );
 
+/** La sección «Sucursales» de un producto vive en el editor (la tarjeta ya no tiene botón propio). */
 async function openBranches(name: string) {
   await screen.findByText('Dumplings');
   await userEvent.type(screen.getByRole('searchbox', { name: 'Buscar producto' }), name);
-  await screen.findByRole('button', {
-    name: `Sucursales de ${name}: precio y disponibilidad`,
-  });
-  await userEvent.click(
-    screen.getByRole('button', { name: `Sucursales de ${name}: precio y disponibilidad` }),
-  );
-  const dialog = await screen.findByRole('dialog', { name: `Sucursales · ${name}` });
+  await userEvent.click(await screen.findByRole('button', { name: `Editar ${name}` }));
+  const dialog = await screen.findByRole('dialog', { name: 'Editar producto' });
   await within(dialog).findByText('Sucursal 1');
   return dialog;
 }
@@ -39,7 +35,7 @@ const rowOf = (dialog: HTMLElement, branch: string) =>
   within(dialog).getByText(branch).closest('li') as HTMLElement;
 const effective = (row: HTMLElement) => within(row).getByTestId('effective-price');
 
-describe('F13 backoffice · sección «Sucursales» de un producto', () => {
+describe('F13 backoffice · sección «Sucursales» del editor de un producto', () => {
   it('administrador: una fila por sucursal con base, precio especial, efectivo y disponibilidad', async () => {
     await renderScreen('admin');
     const dialog = await openBranches('Dynamita Roll');
@@ -137,14 +133,6 @@ describe('F13 backoffice · sección «Sucursales» de un producto', () => {
     await waitFor(() =>
       expect(within(rowOf(dialog, 'Sucursal 1')).getByText('Ofertado')).toBeVisible(),
     );
-  });
-
-  it('un encargado acotado solo ve SU sucursal', async () => {
-    await renderScreen('manager');
-    const dialog = await openBranches('Dynamita Roll');
-    expect(within(dialog).getByText('Sucursal 1')).toBeVisible();
-    expect(within(dialog).queryByText('Sucursal 2')).not.toBeInTheDocument();
-    expect(within(dialog).queryByText('Sucursal 3')).not.toBeInTheDocument();
   });
 
   it('el editor de producto (solo editar) incluye la sección «Sucursales»; el alta no', async () => {

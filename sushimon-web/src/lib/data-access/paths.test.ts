@@ -32,6 +32,10 @@ describe('paths', () => {
     expect(paths.adminCategoriesReorder()).toBe('/v1/admin/categories/reorder');
   });
 
+  it('ADR-0035: la ruta de un producto admin sirve a GET, PATCH y DELETE', () => {
+    expect(paths.adminProduct('p 1')).toBe('/v1/admin/products/p%201');
+  });
+
   it('F15: rutas de promociones (público y admin); las rutas mock previas quedaron retiradas', () => {
     expect(paths.storePromotions()).toBe('/v1/store/promotions');
     expect(paths.adminPromotions()).toBe('/v1/admin/promotions');

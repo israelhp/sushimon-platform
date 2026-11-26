@@ -139,6 +139,7 @@ export const paths = {
   adminProductBranches: (productId: string) => `/v1/admin/products/${seg(productId)}/branches`,
   adminProductAvailability: (productId: string) =>
     `/v1/admin/products/${seg(productId)}/availability`,
+  /** GET, PATCH y DELETE (ADR-0035, borrado físico solo si no está en uso). */
   adminProduct: (id: string) => `/v1/admin/products/${seg(id)}`,
   /** F14 (contrato): biblioteca de medios y subida firmada (`catalog.read|update` + aal2; escrituras con alcance global). */
   adminMediaUploadIntents: () => '/v1/admin/media/upload-intents',

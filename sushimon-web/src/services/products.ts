@@ -14,7 +14,8 @@ import { PRODUCT_PAGE_MAX, PRODUCT_PAGE_SIZE_MAX } from '@/lib/product-rules';
 
 /**
  * F11 — Productos y fichas. Operaciones del contrato: listStoreProducts, getStoreProduct, listAdminProducts,
- * createAdminProduct, getAdminProduct y updateAdminProduct. Sin borrado físico: se desactiva con `active=false`.
+ * createAdminProduct, getAdminProduct, updateAdminProduct y deleteAdminProduct (ADR-0035: borrado físico solo si no está en uso;
+ * la alternativa reversible es `active=false`).
  * Los importes son CADENAS decimales (`"85.00"`): se formatean a GTQ solo al mostrar. Los errores de negocio llegan en
  * `ApiError.businessCode` (`PRODUCT_*`, `PRODUCTS_BUSY`); la UI ramifica por él, nunca por `message`.
  * La API decide permisos y alcance (401/403): lectura `catalog.read`; escrituras con alcance global.
@@ -126,6 +127,13 @@ export const createAdminProduct = (client: DataClient, input: CreateProductInput
  */
 export const updateAdminProduct = (client: DataClient, id: string, input: UpdateProductRequest) =>
   client.patch<AdminProduct>(paths.adminProduct(id), input);
+
+/**
+ * Borrado físico (204, ADR-0035). 409 `PRODUCT_IN_USE` (el cuerpo trae `usage` con conteos de pedidos, promociones y banners);
+ * 404 `PRODUCT_NOT_FOUND` (repetirlo también); 403 sin `catalog.update` global; 503 `PRODUCTS_BUSY` (reintentable).
+ */
+export const deleteAdminProduct = (client: DataClient, id: string) =>
+  client.delete<void>(paths.adminProduct(id));
 
 // ── SIMULADO (solo mock): lo que F11 no provee ────────────────────────────────────────────────
 

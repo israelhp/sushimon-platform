@@ -467,3 +467,120 @@ describe('F11 mock · pedidos, favoritos y extras simulados', () => {
     ).toMatchObject({ status: 404 });
   });
 });
+
+describe('ADR-0035 mock · eliminar producto (DELETE /v1/admin/products/:id)', () => {
+  const usageOf = async (h: ReturnType<typeof createHarness>, id: string) => {
+    try {
+      await products.deleteAdminProduct(h.client, id);
+    } catch (e) {
+      if (e instanceof ApiError) {
+        return {
+          status: e.status,
+          code: e.businessCode,
+          usage: (e.body as { usage?: unknown }).usage,
+        };
+      }
+      throw e;
+    }
+    return null;
+  };
+
+  it('204: borra un producto sin uso, lo quita de listas y fichas y deja libre su slug; repetir => 404', async () => {
+    const h = createHarness();
+    h.asStaff('admin');
+    expect(await products.deleteAdminProduct(h.client, 'sushi-pizza')).toBeUndefined();
+    const page = await products.listAdminProducts(h.client, { q: 'sushi pizza' });
+    expect(page.items.map((p) => p.id)).not.toContain('sushi-pizza');
+    expect(await failure(products.getAdminProduct(h.client, 'sushi-pizza'))).toEqual({
+      status: 404,
+      code: 'PRODUCT_NOT_FOUND',
+    });
+    expect(await failure(products.getStoreProduct(h.client, 'sushi-pizza'))).toMatchObject({
+      status: 404,
+    });
+    expect(await failure(products.deleteAdminProduct(h.client, 'sushi-pizza'))).toEqual({
+      status: 404,
+      code: 'PRODUCT_NOT_FOUND',
+    });
+    const again = await products.createAdminProduct(h.client, {
+      ...ok,
+      name: 'Sushi Pizza',
+      slug: 'sushi-pizza',
+    });
+    expect(again.slug).toBe('sushi-pizza');
+  });
+
+  it('409 PRODUCT_IN_USE con conteos (pedidos distintos y promociones SELECTED; banners 0); no borra nada', async () => {
+    const h = createHarness();
+    h.asStaff('admin');
+    expect(await usageOf(h, 'dumplings')).toEqual({
+      status: 409,
+      code: 'PRODUCT_IN_USE',
+      usage: { orders: 3, promotions: 1, banners: 0 },
+    });
+    // Solo promoción / solo pedidos.
+    expect(await usageOf(h, 'moni-roll')).toMatchObject({ usage: { orders: 0, promotions: 1 } });
+    expect(await usageOf(h, 'alaska-roll')).toMatchObject({ usage: { orders: 1, promotions: 0 } });
+    expect(h.store.products.some((p) => p.id === 'dumplings')).toBe(true);
+    // Un producto inactivo en uso también se rechaza (se desactiva y sigue en uso).
+    await products.updateAdminProduct(h.client, 'alaska-roll', { active: false });
+    expect(await usageOf(h, 'alaska-roll')).toMatchObject({ status: 409 });
+  });
+
+  it('al borrar limpia precios por sucursal, modificadores y favoritos; es determinista', async () => {
+    const h = createHarness();
+    h.asCustomer();
+    const { addMyFavorite, listMyFavoriteIds } = await import('@/services/favorites');
+    await addMyFavorite(h.client, 'sushi-pizza');
+    expect((await listMyFavoriteIds(h.client)).favoriteProductIds).toContain('sushi-pizza');
+    h.store.branchProducts.push({
+      branchId: 'sucursal-1',
+      productId: 'sushi-pizza',
+      priceOverride: '70.00',
+      available: false,
+      updatedAt: '2026-11-01T00:00:00.000Z',
+    });
+    expect(h.store.productModifierGroups['sushi-pizza']?.length).toBeGreaterThan(0);
+    h.asStaff('admin');
+    await products.deleteAdminProduct(h.client, 'sushi-pizza');
+    expect(h.store.branchProducts.some((r) => r.productId === 'sushi-pizza')).toBe(false);
+    expect(h.store.productModifierGroups['sushi-pizza']).toBeUndefined();
+    h.asCustomer();
+    expect((await listMyFavoriteIds(h.client)).favoriteProductIds).not.toContain('sushi-pizza');
+
+    const a = createHarness();
+    const b = createHarness();
+    a.asStaff('admin');
+    b.asStaff('admin');
+    expect(await usageOf(a, 'dumplings')).toEqual(await usageOf(b, 'dumplings'));
+  });
+
+  it('401 sin sesión; 403 sin catalog.update o sin alcance global; 503 PRODUCTS_BUSY reintentable', async () => {
+    const anon = createHarness();
+    expect(await failure(products.deleteAdminProduct(anon.client, 'sushi-pizza'))).toMatchObject({
+      status: 401,
+    });
+    const manager = createHarness();
+    manager.asStaff('manager');
+    expect(await failure(products.deleteAdminProduct(manager.client, 'sushi-pizza'))).toMatchObject(
+      {
+        status: 403,
+      },
+    );
+    const scoped = createHarness();
+    scoped.asStaff('manager');
+    scoped.store.roles.find((r) => r.code === 'manager')!.permissions.push('catalog.update');
+    expect(await failure(products.deleteAdminProduct(scoped.client, 'sushi-pizza'))).toMatchObject({
+      status: 403,
+    });
+    const busy = createHarness();
+    busy.asStaff('admin');
+    busy.store.productsBusy = 1;
+    expect(await failure(products.deleteAdminProduct(busy.client, 'sushi-pizza'))).toEqual({
+      status: 503,
+      code: 'PRODUCTS_BUSY',
+    });
+    expect(busy.store.products.some((p) => p.id === 'sushi-pizza')).toBe(true);
+    expect(await products.deleteAdminProduct(busy.client, 'sushi-pizza')).toBeUndefined();
+  });
+});

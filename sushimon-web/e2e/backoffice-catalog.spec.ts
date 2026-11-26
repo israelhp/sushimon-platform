@@ -16,8 +16,6 @@ const nav = (page: Page) => page.getByRole('navigation', { name: 'Menú principa
 const card = (page: Page, name: string) =>
   page.locator('.pcard').filter({ has: page.getByText(name, { exact: true }) });
 const editDumplings = (page: Page) => page.getByRole('button', { name: 'Editar Dumplings' });
-const branchesOf = (page: Page, name: string) =>
-  page.getByRole('button', { name: `Sucursales de ${name}: precio y disponibilidad` });
 /** Preferencia de la tienda (solo comodidad, no autenticación): sucursal para recoger. */
 const pickBranch = (page: Page, branchId: string) =>
   page.evaluate((id) => {
@@ -37,9 +35,9 @@ test('administrador: agota un producto en una sucursal y fija un precio especial
   });
   await expect(editDumplings(page)).toBeVisible({ timeout: 60_000 });
 
-  // F13 (contrato): hoja «Sucursales» del producto, con una fila por sucursal.
-  await branchesOf(page, 'Dumplings').click();
-  const dialog = page.getByRole('dialog', { name: 'Sucursales · Dumplings' });
+  // F13 (contrato): sección «Sucursales» del editor del producto, con una fila por sucursal.
+  await editDumplings(page).click();
+  const dialog = page.getByRole('dialog', { name: 'Editar producto' });
   const row = (branch: string) => dialog.locator('li').filter({ hasText: branch }).first();
   await expect(row('Sucursal 2').getByTestId('effective-price')).toHaveText('Q53.00');
   await row('Sucursal 2').getByRole('switch', { name: 'Disponible: Sucursal 2' }).click();
@@ -211,17 +209,16 @@ test('encargado: sin botones de edición, pero cambia la disponibilidad de su su
   await expect(page.getByRole('button', { name: 'Nuevo producto' })).toBeDisabled();
   await expect(editDumplings(page)).toBeDisabled();
 
-  await branchesOf(page, 'Dumplings').click();
-  const dialog = page.getByRole('dialog', { name: 'Sucursales · Dumplings' });
-  await expect(dialog.getByText('Sucursal 2')).toHaveCount(0);
-  await expect(dialog.getByLabel('Sucursal 1: precio especial')).toBeDisabled();
-  const toggle = dialog.getByRole('switch', { name: 'Disponible: Sucursal 1' });
+  // Sin botón «Sucursales» por producto: la vista «Por sucursal» (matriz) es donde el encargado marca agotados.
+  await page.getByRole('button', { name: 'Por sucursal' }).click();
+  const matrix = page.getByRole('list', { name: 'Productos de la sucursal' });
+  await page.getByRole('searchbox', { name: 'Buscar producto en la sucursal' }).fill('dumplings');
+  await expect(page.getByRole('combobox', { name: 'Sucursal' })).toBeDisabled();
+  const dumplings = matrix.locator('li').filter({ hasText: 'Dumplings' }).first();
+  await expect(dumplings.getByLabel('Dumplings: precio especial')).toBeDisabled();
+  const toggle = dumplings.getByRole('switch', { name: 'Disponible: Dumplings' });
   await toggle.click();
-  await expect(
-    page.locator('.toast', { hasText: 'Sucursal 1 marcado como agotado' }),
-  ).toBeVisible();
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
-  await dialog.getByRole('button', { name: 'Cerrar' }).first().click();
 
   // Categorías (solo lectura, catalog.read) sí; promociones no están en su menú.
   await nav(page).getByRole('link', { name: 'Categorías' }).click();
@@ -232,4 +229,30 @@ test('encargado: sin botones de edición, pero cambia la disponibilidad de su su
   await expect(
     page.getByRole('heading', { name: 'No tienes permiso para ver esta pantalla' }),
   ).toBeVisible({ timeout: 60_000 });
+});
+
+test('administrador: eliminar producto (ADR-0035) rechaza uno en uso con conteos y elimina uno sin uso', async ({
+  page,
+}) => {
+  await enterAs(page, /Ana Lucía Pérez/);
+  await nav(page).getByRole('link', { name: 'Productos' }).click();
+  await expect(editDumplings(page)).toBeVisible({ timeout: 90_000 });
+
+  await page.getByRole('button', { name: 'Eliminar Dumplings' }).click();
+  const inUse = page.getByRole('dialog', { name: 'Eliminar «Dumplings»' });
+  await expect(inUse.getByRole('button', { name: 'Cancelar' })).toBeFocused();
+  await inUse.getByRole('button', { name: 'Eliminar producto' }).click();
+  await expect(inUse.getByRole('alert')).toContainText('3 pedidos y 1 promoción');
+  await inUse.getByRole('button', { name: 'Cancelar' }).click();
+
+  await page.getByRole('searchbox', { name: 'Buscar producto' }).fill('sushi pizza');
+  await page.getByRole('button', { name: 'Eliminar Sushi Pizza' }).click();
+  await page
+    .getByRole('dialog', { name: 'Eliminar «Sushi Pizza»' })
+    .getByRole('button', { name: 'Eliminar producto' })
+    .click();
+  await expect(
+    page.locator('.toast', { hasText: 'Producto «Sushi Pizza» eliminado' }),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Eliminar Sushi Pizza' })).toHaveCount(0);
 });

@@ -30,6 +30,7 @@ import {
   slugifyProductName,
   uniqueSlug,
 } from '@/lib/product-rules';
+import { ApiError } from '@/lib/data-access/errors';
 import { badRequest, fail, failCode } from '../domain';
 import type { CategoryRecord } from '../fixtures/categories';
 import type { MockStore, ProductRecord } from '../store';
@@ -46,7 +47,10 @@ import { now, requireStaff, type Handler, type Req } from './shared';
  * vacío en PATCH, precio/nombre/slug/SKU inválidos), 404, 409 `PRODUCT_SLUG_TAKEN` | `PRODUCT_SKU_TAKEN`, 422
  * `PRODUCT_CATEGORY_INVALID` | `PRODUCT_MEDIA_INVALID` y 503 `PRODUCTS_BUSY` (determinista, `store.productsBusy`). `media`
  * reemplaza la lista. NO simula auditoría, cabeceras de caché, throttling ni la forma UUID (los ids del mock son legibles).
- * Sin DELETE: solo se desactiva.
+ * DELETE (ADR-0035): borrado físico solo si el producto no está en uso; si lo está, 409 `PRODUCT_IN_USE` con `usage` calculado desde el
+ * store (pedidos vivos y los creados en la sesión (`lineRefs`), promociones con alcance `SELECTED`; los banners simplificados, ADR-0033, ya no apuntan
+ * a un producto: 0 en el mock). El historial generado de días anteriores no vive en el store y no se cuenta. Al borrar se limpian
+ * sus precios/disponibilidad por sucursal, su asociación de modificadores y los favoritos de las cuentas del mock.
  *
  * Al final del archivo, lo SIMULADO que F11 no provee (ilustración, destacado, textos en inglés): solo `/v1/demo/*`.
  */
@@ -582,6 +586,52 @@ export const updateAdminProduct: Handler = (req): AdminProduct => {
     if (mediaChanged && input.media) current.media = toMedia(store, input.media);
   }
   return adminView(store, current);
+};
+
+/** DELETE /v1/admin/products/:id — 204; 404 `PRODUCT_NOT_FOUND`; 409 `PRODUCT_IN_USE` (con `usage`) si tiene pedidos, promociones o banners. */
+export const deleteAdminProduct: Handler = (req): void => {
+  writer(req, 'catalog.update');
+  const { store } = req;
+  const current = store.products.find((p) => p.id === req.params.id);
+  if (!current) failCode(404, 'PRODUCT_NOT_FOUND', 'Producto no encontrado');
+  maybeBusy(store);
+
+  const orderIds = new Set<string>();
+  for (const o of store.orders) {
+    if (o.lines.some((l) => l.productId === current.id)) orderIds.add(o.id);
+  }
+  for (const placed of store.placedOrders ?? []) {
+    const hit = (placed.lineRefs ?? []).some((r) => r.productId === current.id);
+    if (hit) orderIds.add(placed.draftId);
+  }
+  const usage = {
+    orders: orderIds.size,
+    promotions: store.promotions.filter(
+      (p) => p.productScope === 'SELECTED' && p.productIds.includes(current.id),
+    ).length,
+    banners: 0,
+  };
+  if (usage.orders + usage.promotions + usage.banners > 0) {
+    const message =
+      'El producto está en uso: desactívalo en su lugar o quítalo de promociones y banners';
+    throw new ApiError(
+      409,
+      'conflict',
+      message,
+      undefined,
+      undefined,
+      'PRODUCT_IN_USE',
+      undefined,
+      undefined,
+      { statusCode: 409, error: 'CONFLICT', message, code: 'PRODUCT_IN_USE', usage },
+    );
+  }
+  store.products = store.products.filter((p) => p.id !== current.id);
+  store.branchProducts = store.branchProducts.filter((b) => b.productId !== current.id);
+  delete store.productModifierGroups[current.id];
+  for (const account of Object.values(store.accounts)) {
+    account.favorites = account.favorites.filter((f) => f.productId !== current.id);
+  }
 };
 
 // ── SIMULADO: lo que F11 no provee (solo /v1/demo/*; nunca existe en la API real) ─────────────

@@ -5,6 +5,7 @@ import { useDataClient } from '@/lib/data-access/provider';
 import type { AdminProduct, UpdateProductRequest } from '@/lib/data-access/models';
 import {
   createAdminProduct,
+  deleteAdminProduct,
   getAdminProduct,
   listAdminProducts,
   updateAdminProduct,
@@ -70,6 +71,16 @@ export function useUpdateProduct() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateProductRequest }) =>
       updateAdminProduct(client, id, input),
+    onSuccess: invalidate,
+  });
+}
+
+/** ADR-0035: borra un producto sin uso. Invalida lo mismo que editar (admin, catálogo público, menú y agregados). */
+export function useDeleteProduct() {
+  const client = useDataClient();
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (id: string) => deleteAdminProduct(client, id),
     onSuccess: invalidate,
   });
 }
