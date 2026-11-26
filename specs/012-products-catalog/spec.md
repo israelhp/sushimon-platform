@@ -10,7 +10,17 @@
 CRUD de productos (crear, listar, ver, editar, activar/desactivar) con SKU opcional, slug, nombre, descripción, categoría, precio base e imágenes referenciadas (URL
 https); lectura pública paginada con búsqueda y filtro por categoría; ficha pública; adaptador real del puerto de catálogo de favoritos. Fuera: modificadores
 (F12), precio y disponibilidad por sucursal (F13), subida de archivos (F14: F11 solo guarda y sirve URL https existentes; la web usa un placeholder), promociones
-(F15), agregado de tienda (F17), borrado físico, textos por idioma.
+(F15), agregado de tienda (F17), textos por idioma. El borrado físico quedó fuera de F11 y se añadió después (ver «Borrado (ADR-0035)»).
+
+## Borrado (ADR-0035)
+
+Revierte parcialmente la decisión original de «sin borrado físico». `DELETE /v1/admin/products/{id}` (`deleteAdminProduct`): `catalog.update` global + `aal2`, 204 sin cuerpo, borrado físico,
+sin `expectedVersion`. Solo si el producto no tiene pedidos (`order_items`, cualquier estado), promociones en cuyo alcance esté ni banners residuales (`banners.cta_product_id`). En uso => 409
+`PRODUCT_IN_USE` con `usage {orders, promotions, banners}` (solo conteos); con pedidos la UI sugiere desactivar. Si procede, en una transacción bajo el bloqueo de fila del producto: se
+borran sus `branch_products` (precio/disponibilidad por sucursal), el producto, y por cascada de BD sus `product_media`, vínculos de modificadores y favoritos; los grupos de modificadores no
+se tocan; los assets de imagen sin otro uso se liberan best-effort. Las FK RESTRICT (23503) son la red de seguridad (409 recontando; 503 `PRODUCTS_BUSY` si no se puede). Audita `product.deleted`.
+Desaparición del menú público: hasta ~6 min por la caché (D7); un carrito con el producto recotiza como línea `NOT_FOUND` (sin 500). La web además retira el botón «Sucursales» de la tarjeta
+de producto. Estado: `CONTRACT_DEFINED` (API y web pendientes).
 
 ## Estados por componente
 
@@ -44,14 +54,14 @@ https); lectura pública paginada con búsqueda y filtro por categoría; ficha p
 | Precios coherentes       | `numeric(12,2)` + `CHECK`; la API entrega `"85.00"` (cadena); nunca `number` (D2)                                          |
 | Validación de campos     | DTO (400) + `CHECK` de BD; negocio 409/422 con `code` (D8)                                                                 |
 | 401/403 administrativos  | JWT + personal activo + aal2 + permiso `catalog.*`; escrituras con alcance global (D7)                                     |
-| No borrar físicamente    | Sin DELETE (ni endpoint ni permiso); FK `RESTRICT` desde futuros `order_items`; pedidos con snapshots (F20+)               |
+| No borrar con historial  | (ADR-0035) Borrado físico solo sin pedidos/promociones/banners; FK `RESTRICT` desde `order_items` protege el historial     |
 
 ## Decisiones (resumen; razones en ADR-0017)
 
 - **D1 Modelo**: `app.products` = DBML + `updated_at`; `sku` opcional único (1–40, `[A-Z0-9._-]`, guardado en mayúsculas); `slug` único kebab ≤ 80; `name` 1–120 (NFC, recorte,
   colapso de espacios, sin control); `description` ≤ 2000 texto plano; `base_price numeric(12,2)` con `CHECK (base_price > 0 AND base_price <= 999999.99)`; `category_id` FK →
   `categories` `ON DELETE RESTRICT`; `active` default true. `app.product_media (id, product_id FK ON DELETE CASCADE, media_url https ≤ 2048, alt_text ≤ 200, sort_order >= 0)`,
-  máx. 8 por producto. **Sin DELETE**: solo desactivar.
+  máx. 8 por producto. Sin DELETE en F11; desde ADR-0035 existe `deleteAdminProduct` (ver «Borrado (ADR-0035)»); desactivar sigue siendo la alternativa reversible.
 - **D2 Precio**: cadena decimal con 2 decimales (`"85.00"`), tanto en entrada como en salida. La API parsea con aritmética decimal (no `Number`). Rango y forma inválidos ⇒ 400.
   Es el precio **base global**: sin precios por sucursal en F11.
 - **D3 Visibilidad pública**: producto `active` Y categoría efectivamente visible (ella y sus ancestros activos, F10). Un producto en categoría oculta ⇒ 404 en ficha y ausente en lista.

@@ -1,6 +1,6 @@
 # ADR-0017 Productos: catálogo global, precio decimal como cadena, imágenes por URL y visibilidad derivada de la categoría
 
-**Estado**: **propuesta** (2026-11-15, F11). Se acepta al fusionar `specs/012-products-catalog`.
+**Estado**: **propuesta** (2026-11-15, F11). Se acepta al fusionar `specs/012-products-catalog`. **Parcialmente reemplazado por ADR-0035** (borrado de productos): lo dicho abajo sobre «sin borrado físico» queda superado; el resto sigue vigente.
 
 **Contexto**: el DBML define `app.products` y `app.product_media`; F10 dejó `CategoriesQueryService` y F06 un puerto `CatalogProductsPort` con adaptador "no disponible"
 (ADR-0015). F11 ofrece el catálogo real y administración, sin invadir F12 (modificadores), F13 (precio/disponibilidad por sucursal), F14 (subida de imágenes), F15 (promociones) ni F17 (agregados).
@@ -9,7 +9,7 @@
 
 1. **Tablas** `app.products` y `app.product_media` (migración `0012_products`): columnas del DBML + `updated_at`; `slug` único kebab ≤ 80; `sku` opcional único; `name` 1–120; `description` ≤ 2000
    (texto plano); `base_price numeric(12,2)` con `CHECK > 0 AND <= 999999.99`; `category_id` FK `ON DELETE RESTRICT`; media con `ON DELETE CASCADE`, URL https ≤ 2048, máx. 8 por producto; RLS sin
-   políticas + `REVOKE`. **Sin borrado físico** (ni endpoint ni permiso): se desactiva con `active=false`; la FK `RESTRICT` desde futuros `order_items` protege el histórico y los pedidos guardarán
+   políticas + `REVOKE`. **Sin borrado físico** (superado por ADR-0035: ahora se puede borrar un producto sin pedidos, promociones ni banners; sigue sin permiso nuevo): se desactiva con `active=false`; la FK `RESTRICT` desde futuros `order_items` protege el histórico y los pedidos guardarán
    snapshots (F20+).
 2. **Precio como cadena decimal** (`"85.00"`) en entrada y salida; nunca `number`. Evita errores de coma flotante en dinero; la API opera con aritmética decimal. El precio es el **base global**; el precio
    por sucursal/disponibilidad es de F13 y se añadirá como `branchPrice`/`available` en una lectura por sucursal (no implementado ni reservado).
