@@ -1,10 +1,7 @@
 'use client';
 
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { useLocale } from 'next-intl';
-import { isBannerLocale } from '@/lib/banner-rules';
 import { isApiError } from '@/lib/data-access/errors';
-import type { BannerLocale } from '@/lib/data-access/models';
 import { useDataClient } from '@/lib/data-access/provider';
 import {
   STORE_AGGREGATE_STALE_MS,
@@ -58,23 +55,23 @@ export function useBranches() {
 }
 
 /**
- * F17 — Agregado de arranque del Inicio (`GET /v1/store/bootstrap`) para la sucursal y el idioma dados (`null` = sin sucursal: sin
+ * F17 — Agregado de arranque del Inicio (`GET /v1/store/bootstrap`) para la sucursal dada (`null` = sin sucursal: sin
  * disponibilidad ni promociones, solo banners para todas). UNA solicitud en lugar de categorías + catálogo + overlay + banners. Si la
  * sucursal guardada en el navegador ya no existe o está inactiva (404 `BRANCH_NOT_FOUND`) se reintenta SIN sucursal en vez de dejar el
  * Inicio vacío. Refetch programado en `nextChangeAt` (medido con `generatedAt` del SERVIDOR), al volver al foco y al cambiar de
- * sucursal/idioma (clave). Sin HydrationBoundary: la sucursal vive en localStorage.
+ * sucursal (clave). Sin HydrationBoundary: la sucursal vive en localStorage.
  */
-export function useStoreBootstrap(branchId: string | null, locale: BannerLocale) {
+export function useStoreBootstrap(branchId: string | null) {
   const client = useDataClient();
   // La sucursal vive en localStorage: durante la hidratación el modo de pedido aún es el inicial (sin sucursal). No se consulta hasta
   // conocerla, para no emitir una solicitud «sin sucursal» que enseguida se descarta.
   const ready = useClientReady();
   const query = useQuery({
     enabled: ready,
-    queryKey: queryKeys.store.bootstrap(branchId, locale),
+    queryKey: queryKeys.store.bootstrap(branchId),
     queryFn: async ({ signal }) => {
       try {
-        return await getStoreBootstrap(client, { branchId, locale }, signal);
+        return await getStoreBootstrap(client, { branchId }, signal);
       } catch (error) {
         if (
           branchId !== null &&
@@ -82,7 +79,7 @@ export function useStoreBootstrap(branchId: string | null, locale: BannerLocale)
           error.status === 404 &&
           error.businessCode === 'BRANCH_NOT_FOUND'
         ) {
-          return await getStoreBootstrap(client, { branchId: null, locale }, signal);
+          return await getStoreBootstrap(client, { branchId: null }, signal);
         }
         throw error;
       }
@@ -94,12 +91,10 @@ export function useStoreBootstrap(branchId: string | null, locale: BannerLocale)
   return query;
 }
 
-/** Bootstrap del Inicio con la sucursal del modo de pedido y el idioma activo (todas las secciones del Inicio comparten la clave). */
+/** Bootstrap del Inicio con la sucursal del modo de pedido (todas las secciones del Inicio comparten la clave). */
 export function useHomeBootstrap() {
-  const rawLocale = useLocale();
-  const locale = isBannerLocale(rawLocale) ? rawLocale : 'es';
   const branchId = useOptionalOrderMode()?.mode.branchId ?? null;
-  return useStoreBootstrap(branchId, locale);
+  return useStoreBootstrap(branchId);
 }
 
 export interface StoreSearchFilters {

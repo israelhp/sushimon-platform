@@ -1,13 +1,14 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Inject,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
-  Put,
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -16,34 +17,24 @@ import { CurrentStaff } from '../auth/current-user.decorator.js';
 import { RequireStaff } from '../auth/staff.guard.js';
 import { BANNER_WRITE_THROTTLE } from '../common/throttle/app-throttler.guard.js';
 import type { StaffContext } from '../identity/identity.types.js';
-import { DEFAULT_PAGE_SIZE } from '../products/dto/product-requests.dto.js';
 import { AdminBannersService } from './admin-banners.service.js';
 import {
   CreateBannerRequest,
-  ListAdminBannersQuery,
-  ReorderBannersRequest,
+  DeleteBannerQuery,
+  NoQuery,
   UpdateBannerRequest,
-  UpdateBannerStatusRequest,
 } from './dto/banner-requests.dto.js';
-import {
-  AdminBannerDto,
-  AdminBannerOrderDto,
-  AdminBannerPageDto,
-} from './dto/banner-responses.dto.js';
+import { AdminBannerDto, AdminBannerListDto } from './dto/banner-responses.dto.js';
 
 const UNAUTHORIZED = { status: 401, description: 'Token ausente, inválido o expirado' } as const;
 const FORBIDDEN = {
   status: 403,
-  description:
-    'No es personal activo, falta el permiso, la sesión no es aal2 o BANNER_SCOPE_FORBIDDEN',
+  description: 'No es personal activo, falta el permiso con alcance global o la sesión no es aal2',
 } as const;
 const BUSY = { status: 503, description: 'BANNERS_BUSY (reintentable)' } as const;
 const RATE = { status: 429, description: 'RATE_LIMITED' } as const;
 
-/**
- * Backoffice de banners (F16): permiso por método + aal2 (`RequireStaff`); alcance por sucursal en el servicio. La ruta
- * estática `order` se declara ANTES que `:id` para que no se interprete como identificador.
- */
+/** Backoffice de banners (F16 simplificado, ADR-0033): permiso por método + aal2 (`RequireStaff`); alcance GLOBAL en el servicio. */
 @ApiTags('banners')
 @ApiBearerAuth()
 @Controller('admin/banners')
@@ -52,45 +43,32 @@ export class AdminBannersController {
 
   @Get()
   @RequireStaff('banners.read')
-  @ApiOperation({ operationId: 'listAdminBanners', summary: 'Banners del backoffice' })
-  @ApiOkResponse({ type: AdminBannerPageDto })
-  @ApiResponse({ status: 400, description: 'Parámetros de consulta inválidos' })
+  @ApiOperation({
+    operationId: 'listAdminBanners',
+    summary: 'Banners del backoffice (todos, activos e inactivos; máx. 5)',
+  })
+  @ApiOkResponse({ type: AdminBannerListDto })
   @ApiResponse(UNAUTHORIZED)
   @ApiResponse(FORBIDDEN)
-  @ApiResponse({
-    status: 404,
-    description: 'BRANCH_NOT_FOUND: filtro de sucursal fuera de alcance',
-  })
-  list(
-    @CurrentStaff() staff: StaffContext,
-    @Query() query: ListAdminBannersQuery,
-  ): Promise<AdminBannerPageDto> {
-    return this.service.list(staff, {
-      ...(query.branchId !== undefined ? { branchId: query.branchId } : {}),
-      ...(query.lifecycle !== undefined ? { lifecycle: query.lifecycle } : {}),
-      ...(query.q !== undefined ? { q: query.q } : {}),
-      ...(query.sort !== undefined ? { sort: query.sort } : {}),
-      ...(query.order !== undefined ? { order: query.order } : {}),
-      page: query.page ?? 1,
-      pageSize: query.pageSize ?? DEFAULT_PAGE_SIZE,
-    });
+  @ApiResponse(BUSY)
+  list(@CurrentStaff() staff: StaffContext, @Query() query: NoQuery): Promise<AdminBannerListDto> {
+    void query; // sin parámetros: el DTO vacío solo hace que `forbidNonWhitelisted` rechace cualquiera
+    return this.service.list(staff);
   }
 
   @Post()
   @RequireStaff('banners.create')
   @Throttle(BANNER_WRITE_THROTTLE)
-  @ApiOperation({ operationId: 'createAdminBanner', summary: 'Crea un banner' })
+  @ApiOperation({
+    operationId: 'createAdminBanner',
+    summary: 'Crea un banner (imagen + texto alternativo)',
+  })
   @ApiResponse({ status: 201, type: AdminBannerDto })
-  @ApiResponse({ status: 400, description: 'Forma inválida' })
+  @ApiResponse({ status: 400, description: 'Forma inválida o `imageAlt` fuera de 1..120' })
   @ApiResponse(UNAUTHORIZED)
   @ApiResponse(FORBIDDEN)
-  @ApiResponse({ status: 404, description: 'BRANCH_NOT_FOUND' })
-  @ApiResponse({ status: 409, description: 'BANNER_CODE_TAKEN' })
-  @ApiResponse({
-    status: 422,
-    description:
-      'BANNER_IMAGE/TRANSLATION/CTA/PERIOD/SCOPE/PROMOTION_INVALID o BANNER_LIMIT_REACHED',
-  })
+  @ApiResponse({ status: 409, description: 'BANNER_LIMIT_REACHED: ya existen 5 banners' })
+  @ApiResponse({ status: 422, description: 'BANNER_IMAGE_INVALID o BANNER_ALT_INVALID' })
   @ApiResponse(RATE)
   @ApiResponse(BUSY)
   create(
@@ -98,27 +76,6 @@ export class AdminBannersController {
     @Body() body: CreateBannerRequest,
   ): Promise<AdminBannerDto> {
     return this.service.create(staff, body);
-  }
-
-  @Put('order')
-  @RequireStaff('banners.update')
-  @Throttle(BANNER_WRITE_THROTTLE)
-  @ApiOperation({
-    operationId: 'reorderAdminBanners',
-    summary: 'Reordena los banners no vencidos (prioridad atómica)',
-  })
-  @ApiOkResponse({ type: AdminBannerOrderDto })
-  @ApiResponse({ status: 400, description: 'Forma inválida' })
-  @ApiResponse(UNAUTHORIZED)
-  @ApiResponse(FORBIDDEN)
-  @ApiResponse({ status: 422, description: 'BANNER_REORDER_MISMATCH' })
-  @ApiResponse(RATE)
-  @ApiResponse(BUSY)
-  reorder(
-    @CurrentStaff() staff: StaffContext,
-    @Body() body: ReorderBannersRequest,
-  ): Promise<AdminBannerOrderDto> {
-    return this.service.reorder(staff, body);
   }
 
   @Get(':id')
@@ -141,18 +98,15 @@ export class AdminBannersController {
   @Throttle(BANNER_WRITE_THROTTLE)
   @ApiOperation({
     operationId: 'updateAdminBanner',
-    summary: 'Edita un banner (parcial, con concurrencia optimista)',
+    summary: 'Edita un banner (imagen, texto alternativo, activo; concurrencia optimista)',
   })
   @ApiOkResponse({ type: AdminBannerDto })
   @ApiResponse({ status: 400, description: 'Forma inválida' })
   @ApiResponse(UNAUTHORIZED)
   @ApiResponse(FORBIDDEN)
-  @ApiResponse({ status: 404, description: 'BANNER_NOT_FOUND o BRANCH_NOT_FOUND' })
+  @ApiResponse({ status: 404, description: 'BANNER_NOT_FOUND' })
   @ApiResponse({ status: 409, description: 'BANNER_VERSION_CONFLICT' })
-  @ApiResponse({
-    status: 422,
-    description: 'BANNER_IMAGE/TRANSLATION/CTA/PERIOD/SCOPE/PROMOTION_INVALID',
-  })
+  @ApiResponse({ status: 422, description: 'BANNER_IMAGE_INVALID o BANNER_ALT_INVALID' })
   @ApiResponse(RATE)
   @ApiResponse(BUSY)
   update(
@@ -163,25 +117,30 @@ export class AdminBannersController {
     return this.service.update(staff, id, body);
   }
 
-  @Patch(':id/status')
+  @Delete(':id')
+  @HttpCode(204)
   @RequireStaff('banners.update')
   @Throttle(BANNER_WRITE_THROTTLE)
   @ApiOperation({
-    operationId: 'updateAdminBannerStatus',
-    summary: 'Activa o desactiva un banner (idempotente, sin versión)',
+    operationId: 'deleteAdminBanner',
+    summary: 'Elimina un banner (borrado físico) y libera su imagen',
   })
-  @ApiOkResponse({ type: AdminBannerDto })
-  @ApiResponse({ status: 400, description: 'Forma inválida' })
+  @ApiResponse({ status: 204, description: 'Banner eliminado (sin cuerpo)' })
+  @ApiResponse({
+    status: 400,
+    description: 'UUID mal formado o `expectedVersion` ausente/no entero',
+  })
   @ApiResponse(UNAUTHORIZED)
   @ApiResponse(FORBIDDEN)
   @ApiResponse({ status: 404, description: 'BANNER_NOT_FOUND' })
+  @ApiResponse({ status: 409, description: 'BANNER_VERSION_CONFLICT' })
   @ApiResponse(RATE)
   @ApiResponse(BUSY)
-  updateStatus(
+  remove(
     @CurrentStaff() staff: StaffContext,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: UpdateBannerStatusRequest,
-  ): Promise<AdminBannerDto> {
-    return this.service.updateStatus(staff, id, body);
+    @Query() query: DeleteBannerQuery,
+  ): Promise<void> {
+    return this.service.remove(staff, id, query.expectedVersion);
   }
 }

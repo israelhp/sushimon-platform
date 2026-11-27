@@ -14,7 +14,6 @@ import type { CategoryFilters } from '@/services/categories';
 import type { ModifierGroupFilters } from '@/services/modifiers';
 import type { BranchProductFilters } from '@/services/branch-products';
 import type { MediaFilters } from '@/services/media';
-import type { AdminBannerFilters } from '@/services/banners';
 import type { AdminPromotionFilters } from '@/services/promotions';
 
 /**
@@ -34,13 +33,12 @@ export const queryKeys = {
     /** Operación SIMULADA (horario, abierta ahora, cobertura: F08/F09). */
     branchOperations: ['store', 'branches', 'operations'] as const,
     /**
-     * F17 (spec 018 D6d): agregados PÚBLICOS. La clave lleva sucursal (`'none'` = sin sucursal), idioma/filtros/página: cambiar de
-     * sucursal o de idioma cambia la clave (nunca se mezclan precios). Los prefijos `bootstrapAll`/`menuAll`/`searchAll` los
+     * F17 (spec 018 D6d): agregados PÚBLICOS. La clave lleva sucursal (`'none'` = sin sucursal), filtros/página: cambiar de
+     * sucursal cambia la clave (nunca se mezclan precios). Los prefijos `bootstrapAll`/`menuAll`/`searchAll` los
      * invalida el backoffice tras cada mutación (`invalidateStoreAggregates`). SIN HydrationBoundary: la sucursal vive en localStorage.
      */
     bootstrapAll: ['store', 'bootstrap'] as const,
-    bootstrap: (branchId: string | null, locale: string) =>
-      ['store', 'bootstrap', branchId ?? 'none', locale] as const,
+    bootstrap: (branchId: string | null) => ['store', 'bootstrap', branchId ?? 'none'] as const,
     menuAll: ['store', 'menu'] as const,
     /** Menú COMPLETO (todas las páginas) o una página: `filters.page` = número o `'all'`. */
     menu: (
@@ -295,11 +293,9 @@ export const queryKeys = {
     promotionList: (filters: AdminPromotionFilters = {}) =>
       ['catalog', 'backoffice', 'promotions', 'list', filters] as const,
     promotion: (id: string) => ['catalog', 'backoffice', 'promotions', 'detail', id] as const,
-    /** F16: banners ADMIN. `banners` = prefijo de listas, orden y detalle; toda mutación lo invalida (y `catalog.banners`). */
+    /** F16: banners ADMIN. `banners` = prefijo de la lista (máx. 5) y del detalle; toda mutación lo invalida (y `catalog.banners`). */
     banners: ['catalog', 'backoffice', 'banners'] as const,
-    bannerList: (filters: AdminBannerFilters = {}) =>
-      ['catalog', 'backoffice', 'banners', 'list', filters] as const,
-    bannerOrder: ['catalog', 'backoffice', 'banners', 'order'] as const,
+    bannerList: ['catalog', 'backoffice', 'banners', 'list'] as const,
     banner: (id: string) => ['catalog', 'backoffice', 'banners', 'detail', id] as const,
     /** Prefijo de las consultas administrativas de sucursales (F07). */
     branches: ['backoffice', 'branches'] as const,

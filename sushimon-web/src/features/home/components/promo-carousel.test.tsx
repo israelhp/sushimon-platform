@@ -11,14 +11,14 @@ vi.mock('next/navigation', () => ({
 }));
 
 /**
- * F16 — Carrusel del Inicio con banners del contrato. Con el reloj de la demo (mié 11 nov 2026, 14:25 en Guatemala) y SIN sucursal
- * se publican 3 banners: favoritos, calientito y equipo (Happy Hour espera a su promoción, 15:00; los demás están programados,
- * vencidos, inactivos o son de otras sucursales).
+ * F16 (simplificado, ADR-0033) — Carrusel del Inicio con banners del contrato: solo imágenes con su texto alternativo, sin textos
+ * superpuestos ni enlaces. La semilla trae 3 banners activos (favoritos, happy-hour y calientito) y 1 inactivo (navidad), en orden
+ * de creación; el carrusel solo recibe los activos.
  */
-const TITLES_ES = [
-  'Los favoritos de los MONcheros',
-  'Te merecés un calientito',
-  '¿Querés ser MONchero?',
+const ALTS = [
+  'Selección de rolls favoritos de Sushi Mon',
+  'Mesa con rolls y bebidas durante el Happy Hour',
+  'Calientito Roll recién salido de la cocina',
 ];
 
 const dot = (n: number) => screen.getByRole('button', { name: `Ir a la promoción ${n}` });
@@ -55,7 +55,7 @@ afterEach(() => {
 });
 
 describe('PromoCarousel con banners del servidor', () => {
-  it('muestra los banners vigentes en orden de prioridad con roles accesibles y el primero activo', async () => {
+  it('muestra los banners activos en orden de creación con roles accesibles y el primero activo', async () => {
     await renderLoaded();
     expect(screen.getByRole('region', { name: 'Promociones' })).toHaveAttribute(
       'aria-roledescription',
@@ -66,20 +66,28 @@ describe('PromoCarousel con banners del servidor', () => {
       '2 de 3',
       '3 de 3',
     ]);
-    expect(slides().map((el) => el.querySelector('h2')?.textContent)).toEqual(TITLES_ES);
+    // Solo imágenes (o fondo de marca con su nombre accesible): el texto alternativo es lo único que se lee.
+    expect(
+      slides().map(
+        (el) =>
+          (el.querySelector('img') ?? el.querySelector('[role="img"]'))?.getAttribute('alt') ??
+          el.querySelector('[role="img"]')?.getAttribute('aria-label'),
+      ),
+    ).toEqual(ALTS);
+    expect(slides().every((el) => el.querySelector('h2, p, a, button') === null)).toBe(true);
     // Solo la diapositiva actual es interactiva.
     expect(slides().map((el) => el.hasAttribute('inert'))).toEqual([false, true, true]);
     expect(current()).toBe(1);
     expect(screen.getByRole('button', { name: 'Promoción siguiente' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Promoción anterior' })).toBeInTheDocument();
-    // Ya no hay precios, ilustraciones ni kanji decorativo.
+    // Ni precios ni textos superpuestos ni enlaces.
     expect(document.body.textContent).not.toMatch(/Q\d/);
-    expect(document.querySelector('[lang="ja"]')).toBeNull();
+    expect(document.querySelectorAll('article a')).toHaveLength(0);
   });
 
-  it('no muestra un cupón, un código ni datos de la promoción vinculada', async () => {
+  it('la lista no depende de la sucursal: los mismos banners con y sin sucursal', async () => {
     await renderLoaded({ branchId: 'sucursal-1' });
-    expect(document.body.textContent).not.toMatch(/BIENVENIDO10|COMBOMON|promotionId|25\.00/);
+    expect(slides()).toHaveLength(3);
   });
 
   it('avanza sola cada 6 s y vuelve al inicio', async () => {
@@ -164,7 +172,7 @@ describe('PromoCarousel con banners del servidor', () => {
   it('un solo banner: sin controles, sin puntos y sin avance automático', async () => {
     await renderLoaded({
       prepareStore: (s) => {
-        s.banners = s.banners.filter((b) => b.code === 'favoritos');
+        s.banners = s.banners.filter((b) => b.id === 'banner-favoritos');
       },
     });
     expect(slides()).toHaveLength(1);
@@ -226,8 +234,8 @@ describe('PromoCarousel: accesibilidad y controles', () => {
     expect(status).toBeEmptyDOMElement();
     // Un cambio manual anuncia SOLO la diapositiva actual.
     fireEvent.click(dot(3));
-    expect(status).toHaveTextContent('3 de 3: ¿Querés ser MONchero?');
-    expect(status.textContent).not.toMatch(/calientito|favoritos/i);
+    expect(status).toHaveTextContent('3 de 3: Calientito Roll recién salido de la cocina');
+    expect(status.textContent).not.toMatch(/favoritos|Happy Hour/i);
     // Las inertes no se leen.
     expect(slides().filter((el) => el.hasAttribute('inert'))).toHaveLength(2);
   });
@@ -247,64 +255,37 @@ describe('PromoCarousel: accesibilidad y controles', () => {
       /focus-visible:ring-amber-400/,
     );
   });
-
-  it('el texto lleva velo vertical en móvil y horizontal desde sm, y el título se recorta a 2 líneas', async () => {
-    await renderLoaded();
-    const first = slides()[0]!;
-    const h2 = first.querySelector('h2')!;
-    expect(h2.className).toMatch(/\bline-clamp-2\b/);
-    expect(h2.className).not.toMatch(/sm:line-clamp-2/);
-  });
 });
 
-describe('PromoCarousel: destinos (función cerrada)', () => {
-  it('categoría y página son enlaces a rutas conocidas; el producto abre la ficha', async () => {
-    const view = await renderLoaded();
-    const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('article a'));
-    expect(links.map((a) => a.getAttribute('href'))).toEqual([
-      '/menu?cat=rolls',
-      '/trabaja-con-nosotros',
-    ]);
-    const product = within(slides()[1]!).getByRole('button', { name: /Pedí el tuyo/ });
-    fireEvent.click(product);
-    await waitFor(() => expect(view.api().shell).toBeDefined());
-  });
-
-  it('un CTA corrupto o de un tipo futuro no se convierte en enlace (el servidor nunca manda rutas)', async () => {
-    await renderLoaded({
-      prepareStore: (s) => {
-        const b = s.banners.find((x) => x.code === 'favoritos')!;
-        b.cta = { type: 'CATEGORY', categoryId: 'no-existe', productId: null, page: null };
-        const e = s.banners.find((x) => x.code === 'equipo')!;
-        e.cta = { type: 'EXTERNAL' as never, categoryId: null, productId: null, page: null };
-      },
-    });
-    // «favoritos» queda oculto por destino inexistente; «equipo» con tipo desconocido no genera enlace.
-    expect(document.querySelectorAll('article a')).toHaveLength(0);
-  });
-});
-
-describe('PromoCarousel: imagen y textos', () => {
+describe('PromoCarousel: imagen y accesibilidad (sin textos ni enlaces)', () => {
   const stubBlobUrls = () => {
     let n = 0;
     vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: () => `blob:banner-${++n}` }));
   };
+  const IDS = ['favoritos', 'happy-hour', 'calientito'];
 
-  it('la primera imagen es prioritaria y las demás diferidas; usa <img> con el alt del idioma', async () => {
+  it('las diapositivas contienen solo la imagen: sin títulos, textos ni enlaces', async () => {
+    await renderLoaded();
+    for (const slide of slides()) {
+      expect(slide.querySelector('h2, p, a, button, span')).toBeNull();
+    }
+  });
+
+  it('la primera imagen es prioritaria y las demás diferidas; usa <img> con su texto alternativo', async () => {
     stubBlobUrls();
     mockReducedMotion(true); // sin avance automático durante la comprobación
-    for (const code of ['favoritos', 'calientito', 'equipo']) {
-      registerSimulatedObject(`media-seed-banner-${code}`, new Blob(['x'], { type: 'image/webp' }));
+    for (const id of IDS) {
+      registerSimulatedObject(`media-seed-banner-${id}`, new Blob(['x'], { type: 'image/webp' }));
     }
     await renderLoaded();
     const images = Array.from(document.querySelectorAll<HTMLImageElement>('article img'));
     expect(images).toHaveLength(3);
+    expect(images.map((i) => i.getAttribute('alt'))).toEqual(ALTS);
     expect(images[0]).toHaveAttribute('fetchpriority', 'high');
     expect(images[0]).toHaveAttribute('loading', 'eager');
     expect(images[1]).toHaveAttribute('loading', 'lazy');
     expect(images[1]).not.toHaveAttribute('fetchpriority');
     expect(images[2]).toHaveAttribute('loading', 'lazy');
-    expect(images[0]).toHaveAttribute('alt', 'Selección de rolls favoritos de Sushi Mon');
     expect(images[0]).toHaveAttribute('decoding', 'async');
     // Solo la diapositiva actual y la siguiente piden su imagen; la lejana espera sin `src`.
     expect(images.map((i) => i.getAttribute('src'))).toEqual([
@@ -324,7 +305,7 @@ describe('PromoCarousel: imagen y textos', () => {
     );
   });
 
-  it('si la imagen falla muestra el fondo de marca conservando texto y CTA, sin reintentar', async () => {
+  it('si la imagen falla muestra el fondo de marca con su texto alternativo como nombre accesible, sin reintentar', async () => {
     stubBlobUrls();
     registerSimulatedObject('media-seed-banner-favoritos', new Blob(['x'], { type: 'image/webp' }));
     await renderLoaded();
@@ -336,15 +317,10 @@ describe('PromoCarousel: imagen y textos', () => {
     );
     fireEvent.error(img);
     expect(first.querySelector('img')).toBeNull();
-    expect(first.querySelector('[data-banner-image]')).toHaveAttribute(
-      'data-banner-image',
-      'fallback',
-    );
-    expect(first.querySelector('h2')).toHaveTextContent('Los favoritos de los MONcheros');
-    expect(within(first).getByRole('link', { name: /Ver rolls/ })).toHaveAttribute(
-      'href',
-      '/menu?cat=rolls',
-    );
+    const fallback = first.querySelector('[data-banner-image]')!;
+    expect(fallback).toHaveAttribute('data-banner-image', 'fallback');
+    expect(fallback).toHaveAttribute('role', 'img');
+    expect(fallback).toHaveAttribute('aria-label', ALTS[0]);
   });
 
   it('sin bytes de una imagen simulada (host .invalid) muestra el fondo de marca y no pide nada por red', async () => {
@@ -353,54 +329,27 @@ describe('PromoCarousel: imagen y textos', () => {
     expect(document.querySelectorAll('[data-banner-image="fallback"]')).toHaveLength(3);
   });
 
-  it('en inglés usa los textos en inglés y marca lang="es" solo en los campos de respaldo', async () => {
-    await renderLoaded({ locale: 'en', branchId: 'sucursal-1' });
-    const titles = slides().map((el) => el.querySelector('h2')?.textContent);
-    expect(titles).toEqual([
-      "MONcheros' favorites",
-      'You deserve something hot',
-      'Want to be a MONchero?',
-      // «Fin de mes» no tiene inglés: todo sale en español con `lang="es"`.
-      'Fin de mes: bebidas',
-    ]);
-    const fallback = slides()[3]!;
-    expect(fallback.querySelector('h2')).toHaveAttribute('lang', 'es');
-    expect(within(fallback).getByText('En las sucursales 1 y 2.')).toHaveAttribute('lang', 'es');
-    expect(fallback.querySelector('a span')).toHaveAttribute('lang', 'es');
-    // Con inglés completo no hay marcas de idioma.
-    expect(slides()[0]!.querySelector('h2')).not.toHaveAttribute('lang');
-    expect(within(slides()[0]!).getByRole('link', { name: /See rolls/ })).toBeVisible();
-  });
-
-  it('sin etiqueta propia usa la genérica localizada del botón', async () => {
-    await renderLoaded({
-      locale: 'en',
-      prepareStore: (s) => {
-        s.banners.find((b) => b.code === 'favoritos')!.translations.es.ctaLabel = null;
-        s.banners.find((b) => b.code === 'favoritos')!.translations.en!.ctaLabel = null;
-      },
-    });
-    expect(within(slides()[0]!).getByRole('link', { name: /See more/ })).toBeVisible();
+  it('el texto alternativo es el mismo en español e inglés (un solo idioma por banner)', async () => {
+    await renderLoaded({ locale: 'en' });
+    const labels = slides().map((el) =>
+      el.querySelector('[data-banner-image]')?.getAttribute('aria-label'),
+    );
+    expect(labels).toEqual(ALTS);
+    // Los controles de la interfaz sí se traducen.
+    expect(screen.getByRole('region', { name: 'Promotions' })).toBeInTheDocument();
   });
 });
 
-describe('PromoCarousel: actualización en nextChangeAt y por sucursal', () => {
-  it('vuelve a pedir la lista cuando llega nextChangeAt (hora del servidor) y al cambiar de sucursal', async () => {
+describe('PromoCarousel: bootstrap y sucursal', () => {
+  it('se alimenta del bootstrap (no pide /store/banners aparte), sin idioma en la URL, y al cambiar de sucursal vuelve a pedirlo', async () => {
     const spy = createSpyClient();
     const view = await renderStore(<PromoCarousel />, { wrapClient: spy.wrap });
     await waitFor(() => expect(slides().length).toBe(3));
-    // F17: el carrusel se alimenta del bootstrap; `/store/banners` NO se pide aparte.
-    const banners = () => spy.count('GET', /\/v1\/store\/bootstrap$/);
+    const calls = () => spy.count('GET', /\/v1\/store\/bootstrap$/);
     expect(spy.count('GET', /\/v1\/store\/banners$/)).toBe(0);
-    expect(banners()).toBe(1);
-    // El Happy Hour empieza a las 15:00 (35 min después de 14:25): hay un refetch programado, sin sondeo previo.
-    await advance(30 * 60_000);
-    expect(banners()).toBe(1);
-    await advance(5 * 60_000 + 2_000);
-    await waitFor(() => expect(banners()).toBe(2));
-    expect(spy.calls.at(-1)?.path).toBe('/v1/store/bootstrap');
+    expect(calls()).toBe(1);
+    expect(spy.calls.at(-1)?.query?.locale).toBeUndefined();
 
-    // Cambiar de sucursal = otra clave = otra consulta con `branchId`.
     act(() => {
       view.api().mode.setMode({
         type: 'pickup',
@@ -409,13 +358,13 @@ describe('PromoCarousel: actualización en nextChangeAt y por sucursal', () => {
         address: null,
       });
     });
-    await waitFor(() => expect(banners()).toBe(3));
+    await waitFor(() => expect(calls()).toBe(2));
     expect(spy.calls.at(-1)?.query).toMatchObject({ branchId: 'sucursal-2' });
     expect(spy.count('GET', /\/v1\/store\/banners$/)).toBe(0);
   });
 
   it('si la sucursal guardada ya no existe (404) reintenta sin sucursal en vez de dejar el Inicio sin carrusel', async () => {
     await renderLoaded({ branchId: 'sucursal-inexistente' });
-    expect(slides().map((el) => el.querySelector('h2')?.textContent)).toEqual(TITLES_ES);
+    expect(slides()).toHaveLength(3);
   });
 });

@@ -4,7 +4,6 @@ import type {
   Category,
   JobApplication,
   JobApplicationRequest,
-  BannerLocale,
   StoreBootstrap,
   StoreConfig,
   StoreSearchPage,
@@ -27,20 +26,16 @@ export const getStoreConfig = (client: DataClient): Promise<StoreConfig> =>
     : client.get<StoreConfig>(paths.storeConfig());
 
 /**
- * Público (F17): agregado de arranque del Inicio por sucursal e idioma. Sin `branchId`: `branch`/`availability` `null`, sin
+ * Público (F17): agregado de arranque del Inicio por sucursal (sin parámetro de idioma: los banners tienen un solo texto, ADR-0033). Sin `branchId`: `branch`/`availability` `null`, sin
  * promociones. 404 `BRANCH_NOT_FOUND`; 429 `RATE_LIMITED`; 503 `STORE_BUSY`. Nunca trae datos del cliente.
  */
 export const getStoreBootstrap = (
   client: DataClient,
-  params: { branchId?: string | null; locale?: BannerLocale } = {},
+  params: { branchId?: string | null } = {},
   signal?: AbortSignal,
 ) =>
   client.get<StoreBootstrap>(paths.storeBootstrap(), {
-    query: {
-      branchId: params.branchId ?? undefined,
-      // `es` es el valor por defecto del servidor: se omite para que la URL sea canónica.
-      locale: params.locale && params.locale !== 'es' ? params.locale : undefined,
-    },
+    query: { branchId: params.branchId ?? undefined },
     signal,
     public: true,
   });

@@ -1,94 +1,79 @@
 import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import pg from 'pg';
 import type { TestContext } from 'vitest';
 import { AuditService } from '../src/audit/audit.service.js';
 import { AuthorizationService } from '../src/auth/authorization.service.js';
 import { AdminBannersService } from '../src/banners/admin-banners.service.js';
 import { BannersReadRepository } from '../src/banners/banners-read.repository.js';
-import { BannersTimeService } from '../src/banners/banners-time.service.js';
 import { BannersRepository } from '../src/banners/banners.repository.js';
 import type { CreateBannerRequest } from '../src/banners/dto/banner-requests.dto.js';
 import { PublicBannersReader } from '../src/banners/public-banners.reader.js';
-import { AdminCategoriesService } from '../src/categories/admin-categories.service.js';
-import { CategoriesQueryService } from '../src/categories/categories-query.service.js';
-import { CategoriesRepository } from '../src/categories/categories.repository.js';
 import { validateEnv, type Env } from '../src/config/env.js';
 import { PrismaService } from '../src/database/prisma.service.js';
 import type { IdentityService } from '../src/identity/identity.service.js';
-import { MediaRepository } from '../src/media/media.repository.js';
+import { AdminMediaService } from '../src/media/admin-media.service.js';
+import { MediaCleanupService } from '../src/media/media-cleanup.service.js';
+import { MediaQueryService } from '../src/media/media-query.service.js';
 import { MediaUrlService } from '../src/media/media-url.service.js';
-import { AdminProductsService } from '../src/products/admin-products.service.js';
-import { ProductsRepository } from '../src/products/products.repository.js';
-import { AdminPromotionsService } from '../src/promotions/admin-promotions.service.js';
-import { PromotionTimeService } from '../src/promotions/promotion-time.service.js';
-import { PromotionsRepository } from '../src/promotions/promotions.repository.js';
-import { cleanupTestData, TEST_URL, withClient } from './support/db.js';
+import { MediaRepository } from '../src/media/media.repository.js';
+import { MockMediaStorageAdapter } from '../src/media/mock-media-storage.adapter.js';
+import { TEST_URL, withClient } from './support/db.js';
 import { mediaConfig } from './support/media-harness.js';
-import { MutableClock, TZ } from './support/promotions-harness.js';
-import { globalStaff, scopedStaff } from './support/staff-context.js';
+import { globalStaff } from './support/staff-context.js';
 
 const url = TEST_URL;
 
 /**
- * Se omite (con aviso) si no hay DATABASE_URL_TEST o si la migración 0017 aún no está aplicada (`app.banners` ausente o
- * `media_assets` sin `BANNER_IMAGE`). La 0017 requiere aprobación humana y NO se aplica desde aquí: hasta que se ejecute
- * esta prueba contra PostgreSQL real, el SQL de F16 (lector público con JOIN de traducciones/imagen/destino y agregado
- * JSON, filtros del listado con `folded`/`LIKE` y NULLS LAST, reordenado con `unnest` bajo `pg_advisory_xact_lock`,
- * `FOR NO KEY UPDATE`, FK RESTRICT hacia `media_assets`) NO está probado.
+ * F16 simplificado (ADR-0033) contra PostgreSQL REAL. Se omite (con aviso) si no hay DATABASE_URL_TEST o si la migración
+ * 0023 aún no está aplicada (sin el trigger `banners_max_count_trg` o con el CHECK de la fila `es` que exige `title`):
+ * la 0023 requiere aprobación humana y NO se aplica desde aquí. Hasta que se ejecute, el SQL del lector público, el
+ * borrado físico en cascada, el trigger de tope y la liberación de la imagen NO están probados.
+ *
+ * BD COMPARTIDA: el tope de 5 cuenta TODAS las filas de `app.banners`, también las ajenas. Cada prueba calcula su cupo
+ * (`needSlots`): borra lo suyo (SQL directo), cuenta las filas ajenas y se omite con aviso si no caben las que necesita.
+ * Nunca toca filas ajenas y limpia solo lo que creó.
  */
 const ready = url
   ? await withClient(url, async (c) => {
-      const res = await c.query<{ b: string | null; m: string | null; k: boolean }>(
-        `SELECT to_regclass('app.banners') AS b, to_regclass('app.promotions') AS m,
+      const res = await c.query<{ b: string | null; t: boolean; k: boolean; c: boolean }>(
+        `SELECT to_regclass('app.banners') AS b,
+                EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'banners_max_count_trg' AND NOT tgisinternal) AS t,
                 COALESCE((SELECT pg_get_constraintdef(oid) LIKE '%BANNER_IMAGE%'
                             FROM pg_constraint
-                           WHERE conrelid = 'app.media_assets'::regclass AND conname = 'media_assets_kind_chk'), false) AS k`,
+                           WHERE conrelid = 'app.media_assets'::regclass AND conname = 'media_assets_kind_chk'), false) AS k,
+                COALESCE((SELECT pg_get_constraintdef(oid) NOT LIKE '%title%'
+                            FROM pg_constraint
+                           WHERE conrelid = 'app.banner_translations'::regclass
+                             AND conname = 'banner_translations_es_required_chk'), false) AS c`,
       );
       const row = res.rows[0];
-      return row?.b != null && row?.m != null && row?.k === true;
+      return row?.b != null && row.t && row.k && row.c;
     }).catch(() => false)
   : false;
 if (url && !ready) {
   console.warn(
-    '[banners.int-spec] OMITIDA: app.banners no existe en DATABASE_URL_TEST o media_assets no admite BANNER_IMAGE (migración 0017 sin aplicar). El SQL de F16 NO se probó contra PostgreSQL real.',
+    '[banners.int-spec] OMITIDA: app.banners/BANNER_IMAGE ausentes o la migración 0023 (trigger de tope y CHECK de la fila es) sin aplicar en DATABASE_URL_TEST. El SQL de F16 simplificado NO se probó contra PostgreSQL real.',
   );
 }
 
-describe.skipIf(!url || !ready)('Banners (F16) contra PostgreSQL real', () => {
+describe.skipIf(!url || !ready)('Banners simplificados (F16, 0023) contra PostgreSQL real', () => {
   const run = randomUUID().slice(0, 8);
   const staffId = randomUUID();
   const PERMS = ['banners.read', 'banners.create', 'banners.update'];
   const staff = globalStaff(PERMS, { staffId });
-  // Crear promociones vinculadas exige permisos de promociones, distintos de los de banners.
-  const promoStaff = globalStaff(['promotions.read', 'promotions.create', 'promotions.update'], {
-    staffId,
-  });
-  // Sembrar categorías/productos exige permisos de catálogo, distintos de los de banners (lección de F15).
-  const catalogStaff = globalStaff(['catalog.read', 'catalog.create', 'catalog.update'], {
-    staffId,
-  });
-  const NOW = new Date('2026-11-16T22:00:00Z'); // lunes 16:00 en Guatemala
-  const at = (ms: number) => new Date(NOW.getTime() + ms).toISOString();
   let prisma: PrismaService;
   let admin: AdminBannersService;
+  let adminWithRealMedia: AdminBannersService;
   let reader: PublicBannersReader;
-  let promotions: AdminPromotionsService;
-  let categories: AdminCategoriesService;
-  let products: AdminProductsService;
   let media: MediaRepository;
-  let clock: MutableClock;
+  let storage: MockMediaStorageAdapter;
+  const released: string[] = [];
+  /** Banners de esta ejecución vivos ahora / todos los que existieron (para limpiar auditoría). */
   const bannerIds = new Set<string>();
+  const everBannerIds = new Set<string>();
   const assetIds = new Set<string>();
-  const promotionIds = new Set<string>();
-  const productIds = new Set<string>();
-  const categoryIds = new Set<string>();
-  const branchIds = new Set<string>();
-  let branchA = '';
-  let branchB = '';
-  let categoryId = '';
-  let productId = '';
+  let image = '';
   let seq = 0;
 
   const code = (e: unknown) => (e as { response?: { code?: string } }).response?.code;
@@ -97,14 +82,27 @@ describe.skipIf(!url || !ready)('Banners (F16) contra PostgreSQL real', () => {
       () => null,
       (e: unknown) => e,
     );
-  const skipUnlessReady = (ctx: TestContext) => {
-    if (!ready) ctx.skip('app.banners no existe en DATABASE_URL_TEST (0017 sin aplicar)');
-  };
   const raw = <T extends Record<string, unknown>>(sql: string, params: unknown[] = []) =>
     withClient(url as string, async (c) => (await c.query<T>(sql, params)).rows);
   const hex64 = () => (randomUUID() + randomUUID()).replaceAll('-', '').slice(0, 64);
+  const track = (id: string) => {
+    bannerIds.add(id);
+    everBannerIds.add(id);
+  };
 
-  /** Asset READY de banner (fila directa: la subida real es de F14 y necesita R2). */
+  /** Borra los banners propios (SQL directo; hijas en cascada) y comprueba que caben `n` más bajo el tope de 5. */
+  const needSlots = async (ctx: TestContext, n: number) => {
+    if (bannerIds.size > 0) {
+      await raw('DELETE FROM app.banners WHERE id = ANY($1::uuid[])', [[...bannerIds]]);
+      bannerIds.clear();
+    }
+    const others =
+      (await raw<{ n: number }>('SELECT count(*)::int AS n FROM app.banners'))[0]?.n ?? 0;
+    if (others + n > 5)
+      ctx.skip(`BD compartida con ${others} banners ajenos: no caben ${n} más bajo el tope de 5`);
+  };
+
+  /** Asset de banner (fila directa: la subida real es de F14 y necesita R2). */
   const newAsset = async (over: { kind?: string; status?: string } = {}) => {
     const id = randomUUID();
     const kind = over.kind ?? 'BANNER_IMAGE';
@@ -120,70 +118,18 @@ describe.skipIf(!url || !ready)('Banners (F16) contra PostgreSQL real', () => {
     assetIds.add(id);
     return id;
   };
-  const newBranch = async (active = true) => {
-    const b = await prisma.branch.create({
-      data: {
-        code: `bn-${run}-${randomUUID().slice(0, 6)}`,
-        name: `Suc ${run}`,
-        address: 'Zona 1',
-        active,
-      },
-    });
-    branchIds.add(b.id);
-    return b.id;
-  };
-  const newCategory = async (name: string) => {
-    const cat = await categories.create(catalogStaff, {
-      name: `${name} ${run}`,
-      parentId: null,
-      active: true,
-    });
-    categoryIds.add(cat.id);
-    return cat.id;
-  };
-  let image = '';
   const create = async (over: Partial<CreateBannerRequest> = {}) => {
     seq += 1;
     const out = await admin.create(staff, {
-      code: `b${seq}-${run}`,
       imageAssetId: image,
-      translations: { es: { title: `Banner ${seq} ${run}`, imageAlt: 'Alt' } },
-      cta: { type: 'MENU' },
-      branchScope: 'ALL',
+      imageAlt: `Banner ${seq} ${run}`,
       ...over,
     });
-    bannerIds.add(out.id);
+    track(out.id);
     return out;
   };
-  const promotion = async (over: Record<string, unknown> = {}) => {
-    const p = await promotions.create(promoStaff, {
-      name: `Promo ${run}`,
-      kind: 'PERCENT',
-      value: '15.00',
-      startsAt: '2026-01-01T00:00:00-06:00',
-      endsAt: '2027-01-01T00:00:00-06:00',
-      branchScope: 'ALL',
-      productScope: 'ALL',
-      ...over,
-    } as never);
-    promotionIds.add(p.id);
-    return p;
-  };
-  /**
-   * La tienda devuelve como máximo 10 banners: antes de cada prueba de lectura se desactivan los banners que esta misma
-   * prueba creó antes (SQL directo, sin tocar filas ajenas), para que los nuevos no queden fuera del tope.
-   */
-  const quiet = () =>
-    raw('UPDATE app.banners SET active = false WHERE id = ANY($1::uuid[])', [[...bannerIds]]);
-  const storeIds = async (over: { branchId?: string | null; locale?: 'es' | 'en' } = {}) =>
-    (
-      await reader.findActiveBanners({
-        branchId: over.branchId ?? null,
-        locale: over.locale ?? 'es',
-      })
-    ).items
-      .map((i) => i.id)
-      .filter((id) => bannerIds.has(id));
+  const storeIds = async () =>
+    (await reader.findActiveBanners()).map((b) => b.id).filter((id) => bannerIds.has(id));
 
   beforeAll(async () => {
     vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
@@ -195,52 +141,36 @@ describe.skipIf(!url || !ready)('Banners (F16) contra PostgreSQL real', () => {
     );
     const authorization = new AuthorizationService({} as IdentityService);
     const audit = new AuditService();
-    const catRepo = new CategoriesRepository(prisma);
-    const catQuery = new CategoriesQueryService(catRepo);
-    categories = new AdminCategoriesService(catRepo, audit, authorization);
-    products = new AdminProductsService(
-      new ProductsRepository(prisma),
-      audit,
-      authorization,
-      catQuery,
-      { get: () => [] } as unknown as ConfigService<Env, true>,
-    );
-    clock = new MutableClock(NOW);
-    const time = new BannersTimeService(clock, TZ);
-    const urls = new MediaUrlService(mediaConfig());
-    admin = new AdminBannersService(
-      new BannersRepository(prisma),
-      audit,
-      authorization,
-      time,
-      urls,
-    );
-    reader = new PublicBannersReader(new BannersReadRepository(prisma), time, urls);
-    promotions = new AdminPromotionsService(
-      new PromotionsRepository(prisma),
-      audit,
-      authorization,
-      new PromotionTimeService(clock, TZ),
-    );
-    media = new MediaRepository(prisma);
-    // `audit_events.actor_id` tiene FK a staff_users: empleado de prueba (@sushimon.test, lo borra la limpieza).
-    await withClient(url as string, (c) =>
-      c.query(`INSERT INTO app.staff_users (id, full_name, email) VALUES ($1, $2, $3)`, [
-        staffId,
-        'Prueba banners',
-        `banner-${run}@sushimon.test`,
-      ]),
-    );
-    branchA = await newBranch();
-    branchB = await newBranch();
-    categoryId = await newCategory('Rolls');
-    const view = await products.create(catalogStaff, {
-      name: `Roll ${run}`,
-      basePrice: '85.00',
-      categoryId,
+    const config = mediaConfig();
+    const urls = new MediaUrlService(config);
+    const repo = new BannersRepository(prisma);
+    // Liberación de imagen simulada (registra las llamadas) para las pruebas que no miden el borrado del asset.
+    admin = new AdminBannersService(repo, audit, authorization, urls, {
+      removeUnusedAsset: (_s, assetId) => {
+        released.push(assetId);
+        return Promise.resolve();
+      },
     });
-    productIds.add(view.id);
-    productId = view.id;
+    // Servicio REAL de medios (F14) sobre la BD y el almacenamiento simulado.
+    storage = new MockMediaStorageAdapter();
+    media = new MediaRepository(prisma);
+    const mediaService = new AdminMediaService(
+      media,
+      storage,
+      new MediaQueryService(media, urls, config),
+      new MediaCleanupService(media, storage),
+      audit,
+      authorization,
+      config,
+    );
+    adminWithRealMedia = new AdminBannersService(repo, audit, authorization, urls, mediaService);
+    reader = new PublicBannersReader(new BannersReadRepository(prisma), urls);
+    // `audit_events.actor_id` tiene FK a staff_users: empleado de prueba (@sushimon.test).
+    await raw(`INSERT INTO app.staff_users (id, full_name, email) VALUES ($1, $2, $3)`, [
+      staffId,
+      'Prueba banners',
+      `banner-${run}@sushimon.test`,
+    ]);
     image = await newAsset();
   });
 
@@ -251,65 +181,59 @@ describe.skipIf(!url || !ready)('Banners (F16) contra PostgreSQL real', () => {
         await c.query('BEGIN');
         try {
           await c.query("SET LOCAL app.allow_audit_cleanup = 'on'");
-          const ids = [...bannerIds, ...promotionIds, ...assetIds];
+          const ids = [...everBannerIds, ...assetIds];
           await c.query('DELETE FROM app.audit_events WHERE entity_id = ANY($1::uuid[])', [ids]);
-          // Orden de la reordenación: el UUID nulo agrupa la auditoría del reordenado de esta prueba.
-          await c.query(
-            `DELETE FROM app.audit_events WHERE action = 'banner.reordered' AND actor_id = $1`,
-            [staffId],
-          );
-          // Hijas en cascada; banners ANTES que sus destinos (FK RESTRICT hacia assets, promociones, categorías y productos).
-          await c.query('DELETE FROM app.banners WHERE id = ANY($1::uuid[])', [[...bannerIds]]);
-          await c.query('DELETE FROM app.promotions WHERE id = ANY($1::uuid[])', [
-            [...promotionIds],
-          ]);
+          // Banners ANTES que sus assets (FK RESTRICT); hijas en cascada.
+          await c.query('DELETE FROM app.banners WHERE id = ANY($1::uuid[])', [[...everBannerIds]]);
           await c.query('DELETE FROM app.media_assets WHERE id = ANY($1::uuid[])', [[...assetIds]]);
+          await c.query('DELETE FROM app.staff_users WHERE id = $1', [staffId]);
           await c.query('COMMIT');
         } catch (error) {
           await c.query('ROLLBACK');
           throw error;
         }
       });
-      await cleanupTestData(url, { authUserIds: [], branchIds, productIds, categoryIds });
     }
   });
 
-  it('crea y lee: código normalizado, traducciones es/en, sucursales, version 1 y auditoría en la misma transacción', async (ctx) => {
-    skipUnlessReady(ctx);
-    const out = await create({
-      code: `Verano-${run}`,
-      branchScope: 'SELECTED',
-      branchIds: [branchA, branchB],
-      translations: {
-        es: { title: 'Verano', subtitle: 'Sub', imageAlt: 'Alt' },
-        en: { title: 'Summer', imageAlt: 'Alt en' },
-      },
-      cta: { type: 'CATEGORY', categoryId },
-    });
-    expect(out).toMatchObject({
-      code: `verano-${run}`,
+  it('crea y lee: código interno generado, solo traducción es sin title, valores neutros y auditoría en la misma transacción', async (ctx) => {
+    await needSlots(ctx, 1);
+    const out = await create({ imageAlt: '  Roll   de salmón ' });
+    expect(out).toMatchObject({ imageAlt: 'Roll de salmón', active: true, version: 1 });
+    expect(Object.keys(out).sort()).toEqual(
+      ['active', 'createdAt', 'id', 'image', 'imageAlt', 'updatedAt', 'version'].sort(),
+    );
+    const [row] = await raw<Record<string, unknown>>(`SELECT * FROM app.banners WHERE id = $1`, [
+      out.id,
+    ]);
+    expect(row).toMatchObject({
+      code: `banner-${out.id.replaceAll('-', '').slice(0, 8)}`,
+      cta_type: 'NONE',
+      starts_at: null,
+      ends_at: null,
+      promotion_id: null,
+      sort_order: 0,
       version: 1,
-      branchScope: 'SELECTED',
-      hasEnglish: true,
-      cta: { type: 'CATEGORY', categoryId, targetActive: true },
     });
-    expect(out.branches.map((b) => b.id).sort()).toEqual([branchA, branchB].sort());
-    const tr = await raw<{ locale: string }>(
-      'SELECT locale FROM app.banner_translations WHERE banner_id = $1 ORDER BY locale',
+    const tr = await raw<{ locale: string; title: string | null; cta_label: string | null }>(
+      'SELECT locale, title, cta_label FROM app.banner_translations WHERE banner_id = $1',
       [out.id],
     );
-    expect(tr.map((t) => t.locale)).toEqual(['en', 'es']);
+    expect(tr).toEqual([{ locale: 'es', title: null, cta_label: null }]);
+    expect(
+      await raw('SELECT 1 FROM app.banner_branches WHERE banner_id = $1', [out.id]),
+    ).toHaveLength(0);
     const audited = await raw<{ action: string }>(
       'SELECT action FROM app.audit_events WHERE entity_id = $1',
       [out.id],
     );
     expect(audited.map((a) => a.action)).toEqual(['banner.created']);
-    expect(code(await failure(create({ code: `VERANO-${run}` })))).toBe('BANNER_CODE_TAKEN');
-    expect((await admin.get(staff, out.id)).translations.es.title).toBe('Verano');
+    expect((await admin.get(staff, out.id)).imageAlt).toBe('Roll de salmón');
+    expect((await admin.list(staff)).items.map((i) => i.id)).toContain(out.id);
   });
 
-  it('imagen: inexistente, PENDING y de otro tipo => 422 con motivo (SQL real)', async (ctx) => {
-    skipUnlessReady(ctx);
+  it('imagen inexistente, PENDING y de otro tipo => 422 con motivo; alt en blanco => 422 BANNER_ALT_INVALID (SQL real)', async (ctx) => {
+    await needSlots(ctx, 1);
     const pending = await newAsset({ status: 'PENDING' });
     const product = await newAsset({ kind: 'PRODUCT_IMAGE' });
     for (const [id, reason] of [
@@ -323,337 +247,240 @@ describe.skipIf(!url || !ready)('Banners (F16) contra PostgreSQL real', () => {
         (e as { response?: { violations?: { code: string }[] } }).response?.violations?.[0]?.code,
       ).toBe(reason);
     }
+    expect(code(await failure(create({ imageAlt: '   ' })))).toBe('BANNER_ALT_INVALID');
+    expect(bannerIds.size).toBe(0);
   });
 
-  it('PATCH parcial: reemplaza listas atómicamente, no pisa lo omitido, borra inglés, version+1 e idempotencia', async (ctx) => {
-    skipUnlessReady(ctx);
-    const b = await create({
-      branchScope: 'SELECTED',
-      branchIds: [branchA],
-      translations: {
-        es: { title: 'Uno', subtitle: 'Sub', imageAlt: 'Alt' },
-        en: { title: 'One', imageAlt: 'Alt en' },
-      },
-    });
-    const out = await admin.update(staff, b.id, {
+  it('PATCH parcial: version+1, idempotente sin cambios, no pisa lo omitido y audita sin texto', async (ctx) => {
+    await needSlots(ctx, 1);
+    const other = await newAsset();
+    const b = await create({ imageAlt: `Original ${run}` });
+    const same = await admin.update(staff, b.id, {
       expectedVersion: 1,
-      branchIds: [branchB],
-      translations: { es: { title: 'Dos' }, en: null },
+      imageAlt: `Original ${run}`,
     });
-    expect(out).toMatchObject({ version: 2, hasEnglish: false });
-    expect(out.branches.map((x) => x.id)).toEqual([branchB]);
-    expect(out.translations.es).toMatchObject({ title: 'Dos', subtitle: 'Sub', imageAlt: 'Alt' });
-    expect(
-      (await raw('SELECT 1 FROM app.banner_translations WHERE banner_id = $1', [b.id])).length,
-    ).toBe(1);
-    expect(
-      (await admin.update(staff, b.id, { expectedVersion: 2, branchIds: [branchB] })).version,
-    ).toBe(2);
-    expect(
-      code(await failure(admin.update(staff, b.id, { expectedVersion: 1, sortOrder: 3 }))),
-    ).toBe('BANNER_VERSION_CONFLICT');
-    const actions = await raw<{ action: string }>(
-      'SELECT action FROM app.audit_events WHERE entity_id = $1 ORDER BY created_at',
+    expect(same.version).toBe(1);
+    const edited = await admin.update(staff, b.id, {
+      expectedVersion: 1,
+      imageAssetId: other,
+      active: false,
+    });
+    expect(edited).toMatchObject({ version: 2, active: false, imageAlt: `Original ${run}` });
+    expect(edited.image.assetId).toBe(other);
+    const renamed = await admin.update(staff, b.id, { expectedVersion: 2, imageAlt: 'Nuevo alt' });
+    expect(renamed).toMatchObject({ version: 3, imageAlt: 'Nuevo alt', active: false });
+    const audited = await raw<{ action: string; new_values: unknown }>(
+      `SELECT action, new_values FROM app.audit_events WHERE entity_id = $1 ORDER BY occurred_at, action`,
       [b.id],
     );
-    expect(actions.map((a) => a.action)).toEqual(['banner.created', 'banner.updated']);
+    expect(audited.map((a) => a.action).sort()).toEqual([
+      'banner.created',
+      'banner.updated',
+      'banner.updated',
+    ]);
+    expect(JSON.stringify(audited)).not.toContain('Nuevo alt');
+    expect(
+      code(await failure(admin.update(staff, b.id, { expectedVersion: 1, active: true }))),
+    ).toBe('BANNER_VERSION_CONFLICT');
+    expect(code(await failure(admin.update(staff, randomUUID(), { expectedVersion: 1 })))).toBe(
+      'BANNER_NOT_FOUND',
+    );
   });
 
   it('PATCH concurrentes con la misma versión: uno gana y el otro recibe 409', async (ctx) => {
-    skipUnlessReady(ctx);
+    await needSlots(ctx, 1);
     const b = await create();
-    const results = await Promise.all([
-      failure(admin.update(staff, b.id, { expectedVersion: 1, sortOrder: 11 })),
-      failure(admin.update(staff, b.id, { expectedVersion: 1, sortOrder: 12 })),
+    const results = await Promise.allSettled([
+      admin.update(staff, b.id, { expectedVersion: 1, active: false }),
+      admin.update(staff, b.id, { expectedVersion: 1, imageAlt: `Otro ${run}` }),
     ]);
-    expect(results.filter((r) => r === null)).toHaveLength(1);
-    expect(results.filter((r) => r !== null).map(code)).toEqual(['BANNER_VERSION_CONFLICT']);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const loser = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(code(loser.reason)).toBe('BANNER_VERSION_CONFLICT');
     expect((await admin.get(staff, b.id)).version).toBe(2);
   });
 
-  it('B1: actor sin alcance recibe 404/403 aunque la fila esté bloqueada (no toca el candado: sin 503 ni espera)', async (ctx) => {
-    skipUnlessReady(ctx);
-    const b = await create({ branchScope: 'SELECTED', branchIds: [branchB] });
-    const onlyA = scopedStaff(PERMS, [branchA], { staffId });
-    const client = new pg.Client({ connectionString: url });
-    await client.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query('SELECT id FROM app.banners WHERE id = $1 FOR UPDATE', [b.id]);
-      const started = Date.now();
-      const patch = await failure(admin.update(onlyA, b.id, { expectedVersion: 1, sortOrder: 4 }));
-      const status = await failure(admin.updateStatus(onlyA, b.id, { active: false }));
-      expect([code(patch), code(status)]).toEqual(['BANNER_NOT_FOUND', 'BANNER_NOT_FOUND']);
-      expect(Date.now() - started).toBeLessThan(2_000); // lock_timeout es 3 s: no esperó
-    } finally {
-      await client.query('ROLLBACK');
-      await client.end();
-    }
-  });
-
-  it('estado: idempotente y auditado; un banner desactivado no sale en la tienda', async (ctx) => {
-    skipUnlessReady(ctx);
-    await quiet();
+  it('DELETE: borrado físico en cascada, auditado, con versión; el asset NO lo borra la BD (la API lo libera después)', async (ctx) => {
+    await needSlots(ctx, 1);
     const b = await create();
-    expect(await storeIds()).toContain(b.id);
+    expect(code(await failure(admin.remove(staff, b.id, 9)))).toBe('BANNER_VERSION_CONFLICT');
+    const before = released.length;
+    await admin.remove(staff, b.id, 1);
+    bannerIds.delete(b.id);
+    expect(await raw('SELECT 1 FROM app.banners WHERE id = $1', [b.id])).toHaveLength(0);
     expect(
-      (await admin.updateStatus(staff, b.id, { active: false, reason: 'prueba' })).version,
-    ).toBe(2);
-    expect((await admin.updateStatus(staff, b.id, { active: false })).version).toBe(2);
-    expect(await storeIds()).not.toContain(b.id);
-    expect((await admin.updateStatus(staff, b.id, { active: true })).version).toBe(3);
-    expect(await storeIds()).toContain(b.id);
-  });
-
-  it('tienda (SQL real): vigencia [inicio, fin), sucursal, idioma con respaldo, imagen y nextChangeAt', async (ctx) => {
-    skipUnlessReady(ctx);
-    await quiet();
-    clock.current = NOW;
-    const everywhere = await create({ translations: { es: { title: 'Todos', imageAlt: 'A' } } });
-    const onlyA = await create({ branchScope: 'SELECTED', branchIds: [branchA] });
-    const scheduled = await create({ startsAt: at(60_000) });
-    const expiring = await create({ endsAt: at(30_000) });
-    expect(await storeIds()).toEqual(expect.arrayContaining([everywhere.id, expiring.id]));
-    expect(await storeIds()).not.toContain(onlyA.id); // sin sucursal, solo los ALL
-    expect(await storeIds()).not.toContain(scheduled.id);
-    expect(await storeIds({ branchId: branchA })).toContain(onlyA.id);
-    expect(await storeIds({ branchId: branchB })).not.toContain(onlyA.id);
-    const res = await reader.findActiveBanners({ branchId: branchA, locale: 'en' });
-    const item = res.items.find((i) => i.id === everywhere.id);
-    expect(item).toMatchObject({ title: 'Todos', fallbackFields: ['title', 'imageAlt'] });
-    expect(item?.image.url).toMatch(/^https:\/\/media\.mock\.invalid\/banners\//);
-    expect(new Date(res.nextChangeAt as string).getTime()).toBeLessThanOrEqual(
-      NOW.getTime() + 30_000,
+      await raw('SELECT 1 FROM app.banner_translations WHERE banner_id = $1', [b.id]),
+    ).toHaveLength(0);
+    const audited = await raw<{ action: string }>(
+      'SELECT action FROM app.audit_events WHERE entity_id = $1 ORDER BY action',
+      [b.id],
     );
-    // el reloj avanza: el vencido sale y el programado entra
-    clock.current = new Date(NOW.getTime() + 60_000);
-    const later = await storeIds();
-    expect(later).toContain(scheduled.id);
-    expect(later).not.toContain(expiring.id);
-    clock.current = NOW;
-    // imagen PENDING o de otro tipo: no se publica (defensa en profundidad del JOIN)
-    const pending = await newAsset({ status: 'PENDING' });
-    const product = await newAsset({ kind: 'PRODUCT_IMAGE' });
-    const a = await create();
-    await raw('UPDATE app.banners SET image_asset_id = $2 WHERE id = $1', [a.id, pending]);
-    expect(await storeIds()).not.toContain(a.id);
-    await raw('UPDATE app.banners SET image_asset_id = $2 WHERE id = $1', [a.id, product]);
-    expect(await storeIds()).not.toContain(a.id);
+    expect(audited.map((a) => a.action)).toEqual(['banner.created', 'banner.deleted']);
+    expect(released.slice(before)).toEqual([image]);
+    // el asset sigue existiendo (solo lo borra F14 al liberarlo)
+    expect(await raw('SELECT 1 FROM app.media_assets WHERE id = $1', [image])).toHaveLength(1);
+    expect(code(await failure(admin.remove(staff, b.id, 1)))).toBe('BANNER_NOT_FOUND');
+    expect(code(await failure(admin.get(staff, b.id)))).toBe('BANNER_NOT_FOUND');
   });
 
-  it('tienda: destino de catálogo inactivo oculta el banner; fila `es` ausente no se publica', async (ctx) => {
-    skipUnlessReady(ctx);
-    await quiet();
-    const cat = await newCategory('Temporal');
-    const withCategory = await create({ cta: { type: 'CATEGORY', categoryId: cat } });
-    const withProduct = await create({ cta: { type: 'PRODUCT', productId } });
-    expect(await storeIds()).toEqual(expect.arrayContaining([withCategory.id, withProduct.id]));
-    await raw('UPDATE app.categories SET active = false WHERE id = $1', [cat]);
-    await raw('UPDATE app.products SET active = false WHERE id = $1', [productId]);
-    expect(await storeIds()).not.toContain(withCategory.id);
-    expect(await storeIds()).not.toContain(withProduct.id);
-    expect((await admin.get(staff, withCategory.id)).hiddenReason).toBe('CTA_TARGET_INACTIVE');
-    await raw('UPDATE app.products SET active = true WHERE id = $1', [productId]);
-    const corrupt = await create();
-    await raw(`DELETE FROM app.banner_translations WHERE banner_id = $1 AND locale = 'es'`, [
-      corrupt.id,
+  it('DELETE concurrentes con la misma versión: uno borra y el otro recibe 404 (la fila ya no existe)', async (ctx) => {
+    await needSlots(ctx, 1);
+    const b = await create();
+    const results = await Promise.allSettled([
+      admin.remove(staff, b.id, 1),
+      admin.remove(staff, b.id, 1),
     ]);
-    expect(await storeIds()).not.toContain(corrupt.id);
+    bannerIds.delete(b.id);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const loser = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(['BANNER_NOT_FOUND', 'BANNER_VERSION_CONFLICT']).toContain(code(loser.reason));
   });
 
-  it('tienda: banner con promoción solo mientras ésta rige y aplica a la sucursal; no revela el cupón', async (ctx) => {
-    skipUnlessReady(ctx);
-    await quiet();
-    const live = await promotion({ code: `SEC${run.toUpperCase()}`, value: '90.00' });
-    const onlyB = await promotion({ branchScope: 'SELECTED', branchIds: [branchB] });
-    const inactive = await promotion();
-    await promotions.updateStatus(promoStaff, inactive.id, { active: false });
-    const future = await promotion({
-      startsAt: '2027-02-01T00:00:00-06:00',
-      endsAt: '2027-03-01T00:00:00-06:00',
-    });
-    const ok = await create({ promotionId: live.id });
-    const wrongBranch = await create({
-      promotionId: onlyB.id,
-      branchScope: 'SELECTED',
-      branchIds: [branchB],
-    });
-    const stopped = await create({ promotionId: inactive.id });
-    const notYet = await create({ promotionId: future.id });
-    const ids = await storeIds({ branchId: branchA });
-    expect(ids).toContain(ok.id);
-    for (const hidden of [stopped.id, notYet.id, wrongBranch.id]) expect(ids).not.toContain(hidden);
-    expect((await admin.get(staff, stopped.id)).hiddenReason).toBe('PROMOTION_NOT_LIVE');
-    expect(
-      JSON.stringify(await reader.findActiveBanners({ branchId: branchA, locale: 'es' })),
-    ).not.toContain(`SEC${run.toUpperCase()}`);
-    // alcance insuficiente al escribir
-    const mismatch = await failure(create({ promotionId: onlyB.id }));
-    expect(code(mismatch)).toBe('BANNER_PROMOTION_INVALID');
-  });
-
-  it('listado: filtros por estado derivado, búsqueda con comodines literales y acentos, orden, y alcance acotado', async (ctx) => {
-    skipUnlessReady(ctx);
-    const special = await create({
-      translations: { es: { title: `Café 100% ${run}`, imageAlt: 'A' } },
-    });
-    const onlyB = await create({
-      translations: { es: { title: `Solo B ${run}`, imageAlt: 'A' } },
-      branchScope: 'SELECTED',
-      branchIds: [branchB],
-    });
-    const expired = await create({
-      endsAt: at(-1000),
-      translations: { es: { title: `Viejo ${run}`, imageAlt: 'A' } },
-    });
-    const base = { page: 1, pageSize: 100 };
-    const ids = async (q: Parameters<typeof admin.list>[1], who = staff) =>
-      (await admin.list(who, q)).items.map((i) => i.id);
-    expect(await ids({ ...base, q: `cafe 100% ${run}` })).toEqual([special.id]);
-    expect(await ids({ ...base, q: `% ${run}` })).toEqual([special.id]);
-    expect(await ids({ ...base, lifecycle: 'EXPIRED', q: run })).toEqual([expired.id]);
-    expect(await ids({ ...base, q: run, sort: 'endsAt', order: 'desc' })).toContain(expired.id);
-    const onlyA = scopedStaff(PERMS, [branchA], { staffId });
-    expect(await ids({ ...base, q: run }, onlyA)).not.toContain(onlyB.id);
-    expect(code(await failure(admin.list(onlyA, { ...base, branchId: branchB })))).toBe(
-      'BRANCH_NOT_FOUND',
+  it('DELETE libera el asset (servicio REAL de F14): si otro banner lo usa se conserva; el último lo borra con su objeto', async (ctx) => {
+    await needSlots(ctx, 2);
+    const shared = await newAsset();
+    const [{ object_key: key } = { object_key: '' }] = await raw<{ object_key: string }>(
+      'SELECT object_key FROM app.media_assets WHERE id = $1',
+      [shared],
     );
-    expect(
-      (await admin.list(staff, { ...base, branchId: branchB })).items.map((i) => i.id),
-    ).toContain(onlyB.id);
+    storage.objects.set(key, { bytes: new Uint8Array([1]), contentType: 'image/webp' });
+    const a = await create({ imageAssetId: shared });
+    const b = await create({ imageAssetId: shared });
+    // 1) compartido: borrar uno responde igual y conserva el asset (otro banner lo usa)
+    await adminWithRealMedia.remove(staff, a.id, 1);
+    bannerIds.delete(a.id);
+    expect(await raw('SELECT 1 FROM app.media_assets WHERE id = $1', [shared])).toHaveLength(1);
+    expect(storage.objects.has(key)).toBe(true);
+    // 2) el último banner que lo usa: se borran la fila y el objeto (banner primero: la FK RESTRICT lo exige)
+    await adminWithRealMedia.remove(staff, b.id, 1);
+    bannerIds.delete(b.id);
+    expect(await raw('SELECT 1 FROM app.media_assets WHERE id = $1', [shared])).toHaveLength(0);
+    expect(storage.objects.has(key)).toBe(false);
+    const audited = await raw<{ action: string }>(
+      'SELECT action FROM app.audit_events WHERE entity_id = $1',
+      [shared],
+    );
+    expect(audited.map((x) => x.action)).toContain('media.deleted');
   });
 
-  it('reordenado: conjunto exacto bajo candado de orden; version+1 solo en los cambiados; idempotente; concurrente = uno de los órdenes', async (ctx) => {
-    skipUnlessReady(ctx);
-    const rows = await raw<{ id: string }>(
-      `SELECT id::text AS id FROM app.banners WHERE ends_at IS NULL OR ends_at > $1::timestamptz ORDER BY sort_order, created_at, id`,
-      [NOW.toISOString()],
-    );
-    const current = rows.map((r) => r.id);
-    if (current.some((id) => !bannerIds.has(id))) {
-      ctx.skip('hay banners ajenos a la prueba en la base: no se reordena una base compartida');
-      return;
-    }
-    const first = [...current].reverse();
-    const out = await admin.reorder(staff, { orderedIds: first });
-    expect(out.items.map((i) => i.id)).toEqual(first);
-    expect(out.items.map((i) => i.sortOrder)).toEqual(first.map((_, i) => i));
-    expect((await admin.reorder(staff, { orderedIds: first })).items).toEqual(out.items);
-    expect(code(await failure(admin.reorder(staff, { orderedIds: first.slice(1) })))).toBe(
-      'BANNER_REORDER_MISMATCH',
-    );
-    const second = [...current].sort(() => 0.5 - Math.random());
-    const third = [...current];
-    await Promise.all([
-      admin.reorder(staff, { orderedIds: second }),
-      admin.reorder(staff, { orderedIds: third }),
-    ]);
-    const final = (
-      await raw<{ id: string }>(
-        `SELECT id::text AS id FROM app.banners WHERE id = ANY($1::uuid[]) ORDER BY sort_order, created_at, id`,
-        [current],
-      )
-    ).map((r) => r.id);
-    expect([second, third]).toContainEqual(final); // nunca una mezcla
-    expect(
-      code(
-        await failure(
-          admin.reorder(scopedStaff(PERMS, [branchA], { staffId }), { orderedIds: current }),
-        ),
-      ),
-    ).toBe('BANNER_SCOPE_FORBIDDEN');
-  });
-
-  it('tope de 100 banners no vencidos (SQL real de conteo)', async (ctx) => {
-    skipUnlessReady(ctx);
-    const have =
-      (
-        await raw<{ n: number }>(
-          `SELECT count(*)::int AS n FROM app.banners WHERE ends_at IS NULL OR ends_at > $1::timestamptz`,
-          [NOW.toISOString()],
-        )
-      )[0]?.n ?? 0;
-    if (have > 0) {
-      ctx.skip(
-        'la base ya tiene banners no vencidos: no se llena hasta el tope en una base compartida',
-      );
-      return;
-    }
-    const filler = await raw<{ id: string }>(
-      `INSERT INTO app.banners (code, image_asset_id, cta_type, sort_order)
-       SELECT $1 || '-' || g, $2::uuid, 'NONE', g FROM generate_series(1, 100) g RETURNING id::text AS id`,
-      [`fill${run}`, image],
-    );
-    for (const f of filler) bannerIds.add(f.id);
-    expect(code(await failure(create()))).toBe('BANNER_LIMIT_REACHED');
-    await raw('DELETE FROM app.banners WHERE id = ANY($1::uuid[])', [filler.map((f) => f.id)]);
-  });
-
-  it('tope de 100 con altas concurrentes: con 99 no vencidos solo una tiene éxito (candado de orden)', async (ctx) => {
-    skipUnlessReady(ctx);
-    const have =
-      (
-        await raw<{ n: number }>(
-          `SELECT count(*)::int AS n FROM app.banners WHERE ends_at IS NULL OR ends_at > $1::timestamptz`,
-          [NOW.toISOString()],
-        )
-      )[0]?.n ?? 0;
-    if (have > 0) {
-      ctx.skip(
-        'la base ya tiene banners no vencidos: no se llena hasta el tope en una base compartida',
-      );
-      return;
-    }
-    const filler = await raw<{ id: string }>(
-      `INSERT INTO app.banners (code, image_asset_id, cta_type, sort_order)
-       SELECT $1 || '-' || g, $2::uuid, 'NONE', g FROM generate_series(1, 99) g RETURNING id::text AS id`,
-      [`race${run}`, image],
-    );
-    for (const f of filler) bannerIds.add(f.id);
-    try {
-      const results = await Promise.all([
-        failure(create({ code: `carrera-a-${run}` })),
-        failure(create({ code: `carrera-b-${run}` })),
-      ]);
-      expect(results.filter((r) => r === null)).toHaveLength(1);
-      expect(results.filter((r) => r !== null).map(code)).toEqual(['BANNER_LIMIT_REACHED']);
-    } finally {
-      await raw('DELETE FROM app.banners WHERE id = ANY($1::uuid[])', [filler.map((f) => f.id)]);
-    }
-  });
-
-  it('F14: usageCount y bannerUsages cuentan banners; el asset en uso no se borra (FK RESTRICT => 23503)', async (ctx) => {
-    skipUnlessReady(ctx);
+  it('FK RESTRICT: con el banner vivo el asset no se borra (23503); tras borrar el banner sí', async (ctx) => {
+    await needSlots(ctx, 1);
     const asset = await newAsset();
     const b = await create({ imageAssetId: asset });
-    const row = await media.findById(asset);
-    expect(row?.usageCount).toBe(1);
-    expect((await media.findBannerUsages(asset)).map((u) => u.bannerId)).toEqual([b.id]);
-    const page = await media.findPage({
-      unreferenced: false,
-      kind: 'BANNER_IMAGE',
-      page: 1,
-      pageSize: 100,
-    });
-    expect(page.rows.map((r) => r.id)).toContain(asset);
+    expect((await media.findById(asset))?.usageCount).toBe(1);
+    const usages = await media.findBannerUsages(asset);
+    expect(usages).toEqual([{ bannerId: b.id, bannerAlt: b.imageAlt }]);
     await expect(raw('DELETE FROM app.media_assets WHERE id = $1', [asset])).rejects.toMatchObject({
       code: '23503',
     });
-    // reemplazar la imagen NO borra el asset anterior: queda sin uso
-    const next = await newAsset();
-    await admin.update(staff, b.id, { expectedVersion: 1, imageAssetId: next });
+    await raw('DELETE FROM app.banners WHERE id = $1', [b.id]);
+    bannerIds.delete(b.id);
     expect((await media.findById(asset))?.usageCount).toBe(0);
-    const unused = await media.findPage({
-      unreferenced: true,
-      kind: 'BANNER_IMAGE',
-      page: 1,
-      pageSize: 100,
-    });
-    expect(unused.rows.map((r) => r.id)).toContain(asset);
+    await raw('DELETE FROM app.media_assets WHERE id = $1', [asset]);
+    assetIds.delete(asset);
   });
 
-  it('F14: tipo BANNER_IMAGE en SQL real: > 1 MiB y prefijo de clave cruzado los rechaza la BD', async (ctx) => {
-    skipUnlessReady(ctx);
+  it('tope de 5 (SQL real): el 6.º => 409 BANNER_LIMIT_REACHED; el trigger lo respalda con 23514 banners_max_count', async (ctx) => {
+    await needSlots(ctx, 5);
+    for (let n = 0; n < 5; n += 1) await create();
+    expect(code(await failure(create()))).toBe('BANNER_LIMIT_REACHED');
+    expect(await raw('SELECT 1 FROM app.banners')).toHaveLength(5);
+    // saltándose la API: el trigger de BD rechaza el INSERT
+    await expect(
+      raw(`INSERT INTO app.banners (code, image_asset_id) VALUES ($1, $2)`, [`raw-${run}`, image]),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'banners_max_count' });
+    // borrar uno libera cupo
+    const [first] = [...bannerIds];
+    await admin.remove(staff, first as string, 1);
+    bannerIds.delete(first as string);
+    await create();
+    expect(await raw('SELECT 1 FROM app.banners')).toHaveLength(5);
+  });
+
+  it('tope de 5 con altas concurrentes: con 4 banners solo una de dos creaciones simultáneas tiene éxito', async (ctx) => {
+    await needSlots(ctx, 5);
+    for (let n = 0; n < 4; n += 1) await create();
+    const results = await Promise.allSettled([
+      admin.create(staff, { imageAssetId: image, imageAlt: `Carrera A ${run}` }),
+      admin.create(staff, { imageAssetId: image, imageAlt: `Carrera B ${run}` }),
+    ]);
+    for (const r of results) if (r.status === 'fulfilled') track(r.value.id);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const loser = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(code(loser.reason)).toBe('BANNER_LIMIT_REACHED');
+    expect(await raw('SELECT 1 FROM app.banners')).toHaveLength(5);
+  });
+
+  it('tienda (SQL real): solo activos, en orden de creación, máx. 5; IGNORA vigencia, sucursales, promoción y CTA de filas antiguas', async (ctx) => {
+    await needSlots(ctx, 5);
+    const [branch] = await raw<{ id: string }>(`SELECT id FROM app.branches LIMIT 1`);
+    const legacy = async (
+      createdAt: string,
+      cols: Record<string, string | boolean | null>,
+      withEn = false,
+    ) => {
+      const id = randomUUID();
+      const keys = Object.keys(cols);
+      await raw(
+        `INSERT INTO app.banners (id, code, image_asset_id, created_at, ${keys.join(', ')})
+         VALUES ($1, $2, $3, $4, ${keys.map((_, i) => `$${i + 5}`).join(', ')})`,
+        [id, `legacy-${run}-${id.slice(0, 6)}`, image, createdAt, ...Object.values(cols)],
+      );
+      await raw(
+        `INSERT INTO app.banner_translations (banner_id, locale, title, subtitle, image_alt) VALUES ($1, 'es', 'Título viejo', 'Sub', $2)`,
+        [id, `Alt ${id.slice(0, 6)}`],
+      );
+      if (withEn)
+        await raw(
+          `INSERT INTO app.banner_translations (banner_id, locale, title, image_alt) VALUES ($1, 'en', 'Old title', 'Alt en')`,
+          [id],
+        );
+      track(id);
+      return id;
+    };
+    const expired = await legacy('2026-01-01T00:00:00Z', {
+      ends_at: '2026-02-01T00:00:00Z',
+      cta_type: 'MENU',
+      active: true,
+    });
+    const scheduled = await legacy('2026-01-02T00:00:00Z', {
+      starts_at: '2099-01-01T00:00:00Z',
+      active: true,
+    });
+    const scoped = await legacy('2026-01-03T00:00:00Z', { active: true }, true);
+    if (branch)
+      await raw(`INSERT INTO app.banner_branches (banner_id, branch_id) VALUES ($1, $2)`, [
+        scoped,
+        branch.id,
+      ]);
+    const inactive = await legacy('2026-01-04T00:00:00Z', { active: false });
+    const newest = await create({ imageAlt: 'Más nuevo' });
+    expect(await storeIds()).toEqual([expired, scheduled, scoped, newest.id]);
+    expect(await storeIds()).not.toContain(inactive);
+    const items = await reader.findActiveBanners();
+    expect(items.length).toBeLessThanOrEqual(5);
+    const mine = items.filter((i) => bannerIds.has(i.id));
+    expect(mine.map((i) => Object.keys(i).sort())).toEqual(mine.map(() => ['alt', 'id', 'image']));
+    const json = JSON.stringify(items);
+    expect(json).not.toMatch(/Título viejo|Old title|assetId|objectKey/);
+    // desactivar por PATCH lo saca; activar lo devuelve
+    await admin.update(staff, newest.id, { expectedVersion: 1, active: false });
+    expect(await storeIds()).not.toContain(newest.id);
+    await admin.update(staff, newest.id, { expectedVersion: 2, active: true });
+    expect(await storeIds()).toContain(newest.id);
+    // el listado administrativo muestra TODOS, inactivos incluidos, con alt y sin campos retirados
+    const list = await admin.list(staff);
+    expect(list.limit).toBe(5);
+    expect(list.items.filter((i) => bannerIds.has(i.id)).map((i) => i.id)).toEqual([
+      expired,
+      scheduled,
+      scoped,
+      inactive,
+      newest.id,
+    ]);
+  });
+
+  it('F14: tipo BANNER_IMAGE en SQL real: > 1 MiB y prefijo de clave cruzado los rechaza la BD', async () => {
     const insert = (kind: string, key: string, size: number) =>
       raw(
         `INSERT INTO app.media_assets (kind, object_key, bucket, mime_type, size_bytes, checksum_sha256, status, confirmed_at)
@@ -669,29 +496,5 @@ describe.skipIf(!url || !ready)('Banners (F16) contra PostgreSQL real', () => {
     await expect(
       insert('PRODUCT_IMAGE', `banners/2026/${randomUUID()}.webp`, 1000),
     ).rejects.toMatchObject({ code: '23514' });
-  });
-
-  it('FK RESTRICT: no se puede borrar una sucursal, categoría, producto, promoción ni asset referenciados', async (ctx) => {
-    skipUnlessReady(ctx);
-    const cat = await newCategory('Ref');
-    const promo = await promotion();
-    const asset = await newAsset();
-    await create({
-      imageAssetId: asset,
-      branchScope: 'SELECTED',
-      branchIds: [branchB],
-      cta: { type: 'CATEGORY', categoryId: cat },
-      promotionId: promo.id,
-    });
-    await create({ cta: { type: 'PRODUCT', productId } });
-    const blocked: [string, string][] = [
-      ['DELETE FROM app.branches WHERE id = $1', branchB],
-      ['DELETE FROM app.categories WHERE id = $1', cat],
-      ['DELETE FROM app.products WHERE id = $1', productId],
-      ['DELETE FROM app.promotions WHERE id = $1', promo.id],
-      ['DELETE FROM app.media_assets WHERE id = $1', asset],
-    ];
-    for (const [sql, id] of blocked)
-      await expect(raw(sql, [id])).rejects.toMatchObject({ code: '23503' });
   });
 });

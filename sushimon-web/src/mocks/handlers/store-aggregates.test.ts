@@ -270,21 +270,21 @@ describe('F17 mock · bootstrap (getStoreBootstrap)', () => {
     }
     expect(JSON.stringify(b)).not.toMatch(/BIENVENIDO10|COMBOMON/);
     expect(b.banners.length).toBeGreaterThan(0);
-    expect(b.banners.length).toBeLessThanOrEqual(10);
+    expect(b.banners.length).toBeLessThanOrEqual(5);
     expect(b.productCount).toBe(29);
     expect(b.degraded).toEqual([]);
     expect(b.generatedAt).toBe(h.clock.now().toISOString());
   });
 
-  it('sin sucursal: branch/availability null, sin promociones y solo banners de «todas»', async () => {
+  it('sin sucursal: branch/availability null, sin promociones y los mismos banners', async () => {
     const h = createHarness();
     const b = await store.getStoreBootstrap(h.client);
     expect(b).toMatchObject({ branchId: null, branch: null, availability: null, promotions: [] });
     const withBranch = await store.getStoreBootstrap(h.client, { branchId: 'sucursal-1' });
-    expect(b.banners.length).toBeLessThanOrEqual(withBranch.banners.length);
+    expect(b.banners).toEqual(withBranch.banners);
   });
 
-  it('nextChangeAt = el menor entre promociones, banners y próxima transición de horario; posterior a generatedAt', async () => {
+  it('nextChangeAt = el menor entre promociones y próxima transición de horario (los banners ya no dependen del tiempo); posterior a generatedAt', async () => {
     const h = createHarness();
     const b = await store.getStoreBootstrap(h.client, { branchId: 'sucursal-1' });
     expect(b.nextChangeAt).not.toBeNull();
@@ -292,24 +292,18 @@ describe('F17 mock · bootstrap (getStoreBootstrap)', () => {
     const promos = await h.client.get<{ nextChangeAt: string | null }>('/v1/store/promotions', {
       query,
     });
-    const banners = await h.client.get<{ nextChangeAt: string | null }>('/v1/store/banners', {
-      query,
-    });
-    const candidates = [promos.nextChangeAt, banners.nextChangeAt, b.availability?.nextTransitionAt]
+    const candidates = [promos.nextChangeAt, b.availability?.nextTransitionAt]
       .filter((x): x is string => Boolean(x))
       .map((x) => Date.parse(x));
     expect(Date.parse(b.nextChangeAt as string)).toBe(Math.min(...candidates));
     expect(Date.parse(b.nextChangeAt as string)).toBeGreaterThan(Date.parse(b.generatedAt));
   });
 
-  it('es/en: devuelve el idioma pedido; locale inválido → 400', async () => {
+  it('no hay idioma: la respuesta no lleva `locale` y la forma de los banners es {id, image, alt}', async () => {
     const h = createHarness();
-    const en = await store.getStoreBootstrap(h.client, { branchId: 'sucursal-1', locale: 'en' });
-    expect(en.locale).toBe('en');
-    expect((await store.getStoreBootstrap(h.client)).locale).toBe('es');
-    expect(
-      await failure(h.client.get('/v1/store/bootstrap', { query: { locale: 'fr' } })),
-    ).toMatchObject({ status: 400 });
+    const b = await store.getStoreBootstrap(h.client, { branchId: 'sucursal-1' });
+    expect('locale' in b).toBe(false);
+    expect(Object.keys(b.banners[0]!).sort()).toEqual(['alt', 'id', 'image']);
   });
 
   it('secciones no críticas independientes: una caída las deja vacías y la lista en `degraded` (200)', async () => {

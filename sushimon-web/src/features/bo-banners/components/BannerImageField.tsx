@@ -20,7 +20,7 @@ const LIBRARY_PAGE_SIZE = 8;
 /**
  * Imagen del banner (F16): vista previa 3:1, SUBIR (optimiza en el navegador a 3:1, ≤ 1920 px y ≤ 1 MiB; intent → PUT → confirmar)
  * o ELEGIR una imagen de banner ya subida. Subir exige `catalog.update` con alcance global (en v1 solo administración: P18); sin
- * ese permiso solo se puede elegir de la biblioteca. Un error de subida no borra el resto del formulario.
+ * ese permiso solo se puede elegir de la biblioteca. Un error de subida no borra el texto alternativo.
  */
 export function BannerImageField({
   value,
@@ -42,7 +42,7 @@ export function BannerImageField({
   const client = useDataClient();
   const input = useRef<HTMLInputElement>(null);
   const labelId = useId();
-  const { state, upload, cancel } = useBannerImageUpload();
+  const { state, upload, reset, cancel } = useBannerImageUpload();
   const [library, setLibrary] = useState(false);
   const busy =
     state.status === 'optimizing' || state.status === 'uploading' || state.status === 'confirming';
@@ -63,7 +63,10 @@ export function BannerImageField({
         : state.status === 'confirming'
           ? t('status.confirming')
           : state.status === 'done'
-            ? t('status.done')
+            ? t('status.done', {
+                before: formatBytes(state.before ?? 0),
+                after: formatBytes(state.after ?? 0),
+              })
             : null;
 
   return (
@@ -138,9 +141,6 @@ export function BannerImageField({
       <span className="xs muted" style={{ fontWeight: 600 }}>
         {t('help')}
       </span>
-      <span className="xs muted" style={{ fontWeight: 600 }}>
-        {t('safeZone')}
-      </span>
       {!canUpload ? (
         <Banner zone="bo" tone="info" role="note">
           {t('uploadScope')}
@@ -159,6 +159,7 @@ export function BannerImageField({
         <BannerLibraryModal
           selected={value?.assetId ?? null}
           onPick={(image) => {
+            reset();
             onChange(image);
             setLibrary(false);
           }}

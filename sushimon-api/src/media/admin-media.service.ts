@@ -268,11 +268,29 @@ export class AdminMediaService {
 
   async remove(staff: StaffContext, assetId: string): Promise<void> {
     this.assertGlobal(staff, 'catalog.update');
+    await this.removeAsset(staff, assetId);
+  }
+
+  /**
+   * Libera un asset que un llamador YA autorizado dejó sin dueño (F16: tras borrar un banner). Misma lógica que `remove`
+   * (409 `MEDIA_IN_USE` si otro banner o producto lo usa; fila y objeto) pero sin exigir `catalog.update`: el permiso lo
+   * verificó el llamador sobre su propio recurso. Solo borra assets `BANNER_IMAGE` (nunca de producto). Lanza los mismos errores que `remove`; el llamador decide si son fatales.
+   */
+  async removeUnusedAsset(staff: StaffContext, assetId: string): Promise<void> {
+    await this.removeAsset(staff, assetId, 'BANNER_IMAGE');
+  }
+
+  /** `onlyKind`: restringe el borrado a un tipo (un asset de otro tipo responde 404 como si no existiera). */
+  private async removeAsset(
+    staff: StaffContext,
+    assetId: string,
+    onlyKind?: MediaKind,
+  ): Promise<void> {
     // Sin almacenamiento no se toca la fila: evitaría dejar un objeto huérfano imposible de limpiar.
     if (this.storage.mode === 'UNAVAILABLE') throw storageUnavailable();
     const objectKey = await this.inTransaction(async (tx) => {
       const row = await this.repo.findById(assetId, tx);
-      if (!row) throw mediaNotFound();
+      if (!row || (onlyKind !== undefined && row.kind !== onlyKind)) throw mediaNotFound();
       if (row.usageCount > 0) throw mediaInUse();
       // La FK RESTRICT responde (23503 -> 409) si un adjuntar concurrente confirmó entre la lectura y el DELETE.
       if (!(await this.repo.deleteById(tx, assetId))) throw mediaNotFound();

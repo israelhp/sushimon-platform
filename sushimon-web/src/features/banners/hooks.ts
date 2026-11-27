@@ -1,19 +1,15 @@
 'use client';
 
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { isApiError } from '@/lib/data-access/errors';
 import type { UpdateBannerRequest } from '@/lib/data-access/models';
 import { useDataClient } from '@/lib/data-access/provider';
-import { isBannerExpiredByDate, moveId, sanitizeReason } from '@/lib/banner-rules';
 import {
   createAdminBanner,
+  deleteAdminBanner,
   getAdminBanner,
   listAdminBanners,
-  listAllAdminBanners,
-  reorderAdminBanners,
   updateAdminBanner,
-  updateAdminBannerStatus,
-  type AdminBannerFilters,
   type CreateBannerInput,
 } from '@/services/banners';
 import { queryKeys } from '../query-keys';
@@ -21,35 +17,23 @@ import { useDemoSession } from '../session/demo-session';
 import { invalidateStoreAggregates } from '../store/invalidate';
 
 /**
- * F16 — Hooks de banners del backoffice: solo con sesión de personal (la API decide 401/403/404); toda mutación invalida los banners
- * admin, los agregados públicos (F17: el Inicio recibe los banners dentro del bootstrap; la caché compartida tarda ≤ 15 s) y la
- * biblioteca de medios (conteo de usos). La lectura pública del carrusel pasó a `useStoreBootstrap` (`features/store/hooks.ts`).
+ * F16 (simplificado) — Hooks de banners del backoffice: solo con sesión de personal (la API decide 401/403/404); toda mutación invalida
+ * los banners admin, los agregados públicos (F17: el Inicio recibe los banners dentro del bootstrap; la caché compartida tarda ≤ 15 s)
+ * y la biblioteca de medios (conteo de usos). La lectura pública del carrusel vive en `useStoreBootstrap` (`features/store/hooks.ts`).
  */
 
-export function useAdminBanners(filters: AdminBannerFilters = {}) {
+/** Todos los banners (máx. 5) en orden de creación. */
+export function useAdminBanners() {
   const client = useDataClient();
   const { staff } = useDemoSession();
   return useQuery({
-    queryKey: queryKeys.backoffice.bannerList(filters),
-    queryFn: () => listAdminBanners(client, filters),
+    queryKey: queryKeys.backoffice.bannerList,
+    queryFn: () => listAdminBanners(client),
     enabled: Boolean(staff),
-    placeholderData: keepPreviousData,
   });
 }
 
-/** Todos los banners en orden de prioridad (para saber el primero/último no vencido y reordenar). */
-export function useAdminBannerOrder() {
-  const client = useDataClient();
-  const { staff } = useDemoSession();
-  return useQuery({
-    queryKey: queryKeys.backoffice.bannerOrder,
-    queryFn: () => listAllAdminBanners(client),
-    enabled: Boolean(staff),
-    placeholderData: keepPreviousData,
-  });
-}
-
-/** Detalle (con `version` y ambas traducciones). `staleTime: 0`: el formulario parte siempre de la versión vigente. */
+/** Detalle (con `version`). `staleTime: 0`: el formulario parte siempre de la versión vigente. */
 export function useAdminBanner(id: string | null) {
   const client = useDataClient();
   const { staff } = useDemoSession();
@@ -62,7 +46,7 @@ export function useAdminBanner(id: string | null) {
   });
 }
 
-/** Tras CADA mutación: banners admin (listas, orden y detalle), públicos de TODAS las sucursales e idiomas, y la biblioteca. */
+/** Tras CADA mutación: banners admin (lista y detalle), públicos, agregados de la tienda y la biblioteca. */
 function useInvalidate() {
   const qc = useQueryClient();
   return () =>
@@ -93,43 +77,12 @@ export function useUpdateBanner() {
   });
 }
 
-export function useSetBannerStatus() {
+export function useDeleteBanner() {
   const client = useDataClient();
   const invalidate = useInvalidate();
   return useMutation({
-    mutationFn: ({ id, active, reason }: { id: string; active: boolean; reason?: string }) => {
-      const clean = sanitizeReason(reason);
-      return updateAdminBannerStatus(client, id, { active, ...(clean ? { reason: clean } : {}) });
-    },
-    onSuccess: invalidate,
-  });
-}
-
-/**
- * Sube o baja UN banner dentro del orden global de los no vencidos. Lee el orden vigente justo antes de enviarlo (el PUT exige el
- * conjunto exacto) y devuelve `false` sin escribir si ya está en el borde. 422 `BANNER_REORDER_MISMATCH` => recargar y reintentar.
- */
-export function useMoveBanner() {
-  const client = useDataClient();
-  const invalidate = useInvalidate();
-  return useMutation({
-    mutationFn: async ({
-      id,
-      direction,
-      now,
-    }: {
-      id: string;
-      direction: 'up' | 'down';
-      /** Reloj del servidor (`useNow`): fija qué banners están vencidos por fecha. */
-      now: Date;
-    }) => {
-      const all = await listAllAdminBanners(client);
-      const ids = all.filter((b) => !isBannerExpiredByDate(b, now)).map((b) => b.id);
-      const next = moveId(ids, id, direction);
-      if (next.every((x, i) => x === ids[i])) return false;
-      await reorderAdminBanners(client, next);
-      return true;
-    },
+    mutationFn: ({ id, expectedVersion }: { id: string; expectedVersion: number }) =>
+      deleteAdminBanner(client, id, expectedVersion),
     onSuccess: invalidate,
   });
 }

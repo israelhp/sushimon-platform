@@ -1,7 +1,6 @@
 import type {
   PublicProductDetail,
   PublicProductMedia,
-  StoreBannerList,
   StoreBootstrap,
   StoreBootstrapSection,
   StoreBranchMenu,
@@ -19,7 +18,6 @@ import {
 } from '@/lib/promotion-rules';
 import { PRODUCT_SLUG_MAX, PRODUCT_SLUG_PATTERN, priceToCents } from '@/lib/product-rules';
 import {
-  STORE_BOOTSTRAP_BANNERS_MAX,
   STORE_BOOTSTRAP_CATEGORIES_MAX,
   STORE_BOOTSTRAP_PROMOTIONS_MAX,
   STORE_MENU_PAGE_MAX,
@@ -57,8 +55,8 @@ import { now, type Handler, type Req } from './shared';
  *   nombre de categoría sin acentos ni mayúsculas, orden ESTABLE por grupo (prefijo del nombre, contiene en el nombre, descripción o
  *   categoría) y luego `name`, `id`; `page` ≤ 20, `pageSize` ≤ 50 (por defecto 20); sin resultados = 200 vacío.
  * - `GET /v1/store/bootstrap`: sucursal, disponibilidad, categorías raíz (≤ 30), destacados (`[]`: P23 sin criterio), promociones vigentes
- *   (≤ 5, sin `items`, sin código), banners (≤ 10), `productCount`, `degraded` (secciones no críticas independientes) y `nextChangeAt`
- *   combinado (el menor entre promociones, banners y `availability.nextTransitionAt`).
+ *   (≤ 5, sin `items`, sin código), banners (activos, ≤ 5, orden de creación), `productCount`, `degraded` (secciones no críticas independientes) y `nextChangeAt`
+ *   combinado (el menor entre promociones y `availability.nextTransitionAt`; los banners ya no dependen del tiempo).
  * - `GET /v1/store/products/:slug?branchId`: añade `offer`, `promotions` (≤ 3, mayor ahorro primero), `generatedAt` y `nextChangeAt`.
  * - 503 `STORE_BUSY` determinista (`store.storeBusy`: nº de lecturas que fallan). Sin datos privados (sin SKU, código, favoritos).
  * NO simula `Cache-Control`/CDN, el límite de tasa (429), la forma UUID de los ids ni el rendimiento SQL. Cuando el contrato es ambiguo
@@ -414,14 +412,11 @@ function section<T>(
   }
 }
 
-/** GET /v1/store/bootstrap?branchId&locale — agregado del Inicio. */
+/** GET /v1/store/bootstrap?branchId — agregado del Inicio. */
 export const getStoreBootstrap: Handler = (req): StoreBootstrap => {
   const problems: string[] = [];
   const branchRaw = branchParam(req, problems);
-  const localeRaw = req.query.get('locale') ?? 'es';
-  if (localeRaw !== 'es' && localeRaw !== 'en') problems.push('locale: es o en');
   if (problems.length > 0) badRequest(problems);
-  const locale = localeRaw as 'es' | 'en';
   const { store } = req;
   const branch = branchRaw === null ? null : activeBranch(store, branchRaw);
   failStoreBusy(store);
@@ -452,21 +447,15 @@ export const getStoreBootstrap: Handler = (req): StoreBootstrap => {
         return promotionList.items.slice(0, STORE_BOOTSTRAP_PROMOTIONS_MAX);
       })
     : [];
-  let bannerList = null as StoreBannerList | null;
+  // F16 (ADR-0033): los banners son los mismos con o sin sucursal y ya no dependen del tiempo (no aportan a `nextChangeAt`).
   const banners = section(store, 'banners', degraded, [], () => {
     failBannersBusy(store);
-    bannerList = publicBannerList(store, branch?.id ?? null, locale, at);
-    return bannerList.items.slice(0, STORE_BOOTSTRAP_BANNERS_MAX);
+    return publicBannerList(store).items;
   });
 
   return {
     generatedAt: iso(at),
-    nextChangeAt: earliestInstant([
-      promotionList?.nextChangeAt,
-      bannerList?.nextChangeAt,
-      availability?.nextTransitionAt,
-    ]),
-    locale,
+    nextChangeAt: earliestInstant([promotionList?.nextChangeAt, availability?.nextTransitionAt]),
     branchId: branch?.id ?? null,
     branch: branch ? publicBranchView(branch) : null,
     availability,

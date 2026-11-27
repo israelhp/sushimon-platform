@@ -7,7 +7,7 @@ import { escapeLike, fold } from '../products/product-policy.js';
 export const MAX_BOOTSTRAP_CATEGORIES = 30;
 export const MAX_BOOTSTRAP_FEATURED = 8;
 export const MAX_BOOTSTRAP_PROMOTIONS = 5;
-export const MAX_BOOTSTRAP_BANNERS = 10;
+export const MAX_BOOTSTRAP_BANNERS = 5;
 export const MAX_DETAIL_PROMOTIONS = 3;
 export const MENU_MAX_PAGE_SIZE = 100;
 export const MENU_MAX_PAGE = 200;

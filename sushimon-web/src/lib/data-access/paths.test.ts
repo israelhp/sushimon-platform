@@ -40,22 +40,21 @@ describe('paths', () => {
     // F16: banners (contrato).
     expect(paths.storeBanners()).toBe('/v1/store/banners');
     expect(paths.adminBanners()).toBe('/v1/admin/banners');
-    expect(paths.adminBannersOrder()).toBe('/v1/admin/banners/order');
     expect(paths.adminBanner('b 1')).toBe('/v1/admin/banners/b%201');
-    expect(paths.adminBannerStatus('b1')).toBe('/v1/admin/banners/b1/status');
     for (const key of [
       'GET /v1/store/banners',
       'GET /v1/admin/banners',
       'POST /v1/admin/banners',
-      'PUT /v1/admin/banners/order',
       'GET /v1/admin/banners/:id',
       'PATCH /v1/admin/banners/:id',
-      'PATCH /v1/admin/banners/:id/status',
+      'DELETE /v1/admin/banners/:id',
     ]) {
       expect(Object.keys(mockRoutes)).toContain(key);
     }
     expect(Object.keys(paths)).not.toContain('banners');
     expect(Object.keys(paths)).not.toContain('boBanners');
+    expect(Object.keys(paths)).not.toContain('adminBannersOrder');
+    expect(Object.keys(paths)).not.toContain('adminBannerStatus');
     expect(Object.keys(paths)).not.toContain('promotions');
     expect(Object.keys(paths)).not.toContain('boPromotions');
     expect(Object.keys(mockRoutes)).not.toContain('GET /v1/promotions');

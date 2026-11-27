@@ -12,7 +12,6 @@ export const MOCK_SCENARIOS = [
   'forbidden',
   'promotion-expired',
   'banners-empty',
-  'banner-promotion-expired',
   'branch-closed',
   'product-unavailable',
   'order-pending',

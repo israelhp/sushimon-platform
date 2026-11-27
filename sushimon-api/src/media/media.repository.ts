@@ -210,10 +210,10 @@ export class MediaRepository {
   async findBannerUsages(assetId: string): Promise<MediaBannerUsageRow[]> {
     const rows = await this.prisma.banner.findMany({
       where: { imageAssetId: assetId },
-      select: { id: true, code: true },
-      orderBy: [{ code: 'asc' }, { id: 'asc' }],
+      select: { id: true, translations: { where: { locale: 'es' }, select: { imageAlt: true } } },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       take: 500,
     });
-    return rows.map((r) => ({ bannerId: r.id, bannerCode: r.code }));
+    return rows.map((r) => ({ bannerId: r.id, bannerAlt: r.translations[0]?.imageAlt ?? '' }));
   }
 }

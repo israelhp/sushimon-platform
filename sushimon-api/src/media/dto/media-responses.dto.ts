@@ -24,7 +24,7 @@ export class AdminMediaUsageDto {
 
 export class AdminMediaBannerUsageDto {
   @ApiProperty({ type: String, format: 'uuid' }) bannerId!: string;
-  @ApiProperty({ type: String }) bannerCode!: string;
+  @ApiProperty({ type: String, description: 'Texto alternativo del banner.' }) bannerAlt!: string;
 }
 
 export class AdminMediaAssetDetailDto extends AdminMediaAssetDto {

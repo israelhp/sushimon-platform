@@ -601,17 +601,12 @@ describe('paridad mock ↔ http', () => {
     expect(await run(admin, p.http)).toEqual(await run(admin, p.mock.client));
   });
 
-  it('F16: banners (público, lista/detalle admin, alta, edición, estado, reordenado; 400/401/403/404/409/422/503) producen los mismos resultados y errores', async () => {
+  it('F16: banners simplificados (público, lista/detalle admin, alta, edición, borrado, tope de 5; 400/401/403/404/409/422/503) producen los mismos resultados y errores', async () => {
     const p = pair();
     for (const h of [p.mock, p.backend]) h.store.bannersBusy = 1;
     const anon: ((c: DataClient) => Promise<unknown>)[] = [
-      (c) => banners.listStoreBanners(c, null), // 503 BANNERS_BUSY
-      (c) => banners.listStoreBanners(c, null),
-      (c) => banners.listStoreBanners(c, 'sucursal-1', 'en'),
-      (c) => banners.listStoreBanners(c, 'sucursal-2'),
-      (c) => banners.listStoreBanners(c, 'zzz'), // 404 BRANCH_NOT_FOUND
-      (c) => banners.listStoreBanners(c, 'sucursal-4'), // inactiva
-      (c) => banners.listStoreBanners(c, null, 'fr' as never), // 400
+      (c) => banners.listStoreBanners(c), // 503 BANNERS_BUSY
+      (c) => banners.listStoreBanners(c),
       (c) => banners.listAdminBanners(c), // 401
     ];
     expect(await run(anon, p.http)).toEqual(await run(anon, p.mock.client));
@@ -620,67 +615,33 @@ describe('paridad mock ↔ http', () => {
     const manager: ((c: DataClient) => Promise<unknown>)[] = [
       (c) => banners.listAdminBanners(c), // 403 sin banners.read
       (c) => banners.getAdminBanner(c, 'banner-favoritos'), // 403
-      (c) => banners.reorderAdminBanners(c, []), // 403
+      (c) => banners.deleteAdminBanner(c, 'banner-favoritos', 1), // 403
     ];
     expect(await run(manager, p.http)).toEqual(await run(manager, p.mock.client));
 
     p.asStaff('admin');
-    const valid = {
-      code: 'paridad',
-      imageAssetId: 'media-seed-banner-favoritos',
-      translations: { es: { title: 'Paridad', imageAlt: 'Imagen de paridad' } },
-      cta: { type: 'MENU' as const },
-      branchScope: 'ALL' as const,
-    };
-    const order = [
-      'banner-favoritos',
-      'banner-happy-hour',
-      'banner-calientito',
-      'banner-equipo',
-      'banner-fin-de-mes',
-      'banner-navidad',
-      'banner-bienvenida',
-    ];
+    const valid = { imageAssetId: 'media-seed-banner-favoritos', imageAlt: 'Imagen de paridad' };
     const admin: ((c: DataClient) => Promise<unknown>)[] = [
-      (c) => banners.listAdminBanners(c, { pageSize: 3, page: 2 }),
-      (c) => banners.listAdminBanners(c, { lifecycle: 'SCHEDULED' }),
-      (c) => banners.listAdminBanners(c, { q: 'te merecés', branchId: 'sucursal-1' }),
-      (c) => banners.listAdminBanners(c, { branchId: 'zzz' }), // 404
-      (c) => banners.listAdminBanners(c, { pageSize: 101 }), // 400
-      (c) => banners.getAdminBanner(c, 'banner-fin-de-mes'),
+      (c) => banners.listAdminBanners(c),
+      (c) => banners.getAdminBanner(c, 'banner-navidad'),
       (c) => banners.getAdminBanner(c, 'no-existe'), // 404 BANNER_NOT_FOUND
       (c) => banners.createAdminBanner(c, valid), // 503 BANNERS_BUSY
-      (c) => banners.createAdminBanner(c, valid),
-      (c) => banners.createAdminBanner(c, { ...valid, code: 'favoritos' }), // 409 código
-      (c) => banners.createAdminBanner(c, { ...valid, code: 'x1', endsAt: valid.code }), // 400 instante
-      (c) =>
-        banners.createAdminBanner(c, {
-          ...valid,
-          code: 'periodo',
-          startsAt: '2026-12-01T10:00:00.000Z',
-          endsAt: '2026-12-01T10:00:00.000Z',
-        }), // 422 periodo
-      (c) => banners.createAdminBanner(c, { ...valid, code: 'img', imageAssetId: 'media-seed-1' }), // 422 imagen
-      (c) =>
-        banners.createAdminBanner(c, {
-          ...valid,
-          code: 'cta',
-          cta: { type: 'PAGE', page: 'X' as never },
-        }), // 422 CTA
-      (c) =>
-        banners.createAdminBanner(c, { ...valid, code: 'ext', cta: { type: 'EXTERNAL' as never } }), // 400
-      (c) => banners.createAdminBanner(c, { ...valid, code: 'promo', promotionId: 'fin-de-mes' }), // 422 promoción
-      (c) => banners.createAdminBanner(c, { ...valid, code: 'scope', branchScope: 'SELECTED' }), // 422 alcance
-      (c) => banners.updateAdminBanner(c, 'banner-1', { expectedVersion: 1, sortOrder: 3 }),
-      (c) => banners.updateAdminBanner(c, 'banner-1', { expectedVersion: 1, sortOrder: 4 }), // 409 versión
-      (c) => banners.updateAdminBanner(c, 'banner-1', { expectedVersion: 2, sortOrder: 3 }), // sin cambios
-      (c) => banners.updateAdminBannerStatus(c, 'banner-1', { active: false }),
-      (c) => banners.updateAdminBannerStatus(c, 'banner-1', { active: false }), // idempotente
-      (c) => banners.reorderAdminBanners(c, order), // 422 (falta banner-1 y paridad)
-      (c) => banners.reorderAdminBanners(c, [...order, 'banner-1'].reverse()),
-      (c) => banners.reorderAdminBanners(c, [...order, 'banner-1'].reverse()), // idempotente
-      (c) => banners.listStoreBanners(c, 'sucursal-1', 'en'),
-      (c) => banners.getAdminBanner(c, 'banner-1'),
+      (c) => banners.createAdminBanner(c, valid), // 5.º
+      (c) => banners.createAdminBanner(c, valid), // 409 BANNER_LIMIT_REACHED
+      (c) => banners.listAdminBanners(c),
+      (c) => banners.createAdminBanner(c, { ...valid, imageAlt: '' }), // 400
+      (c) => banners.createAdminBanner(c, { ...valid, imageAlt: '   ' }), // 422 alt
+      (c) => banners.createAdminBanner(c, { ...valid, imageAssetId: 'media-seed-1' }), // 422 imagen
+      (c) => banners.updateAdminBanner(c, 'banner-navidad', { expectedVersion: 1, active: true }),
+      (c) => banners.updateAdminBanner(c, 'banner-navidad', { expectedVersion: 1, imageAlt: 'X' }), // 409 versión
+      (c) => banners.updateAdminBanner(c, 'banner-navidad', { expectedVersion: 2, active: true }), // sin cambios
+      (c) => banners.updateAdminBanner(c, 'banner-navidad', { expectedVersion: 2, imageAlt: ' ' }), // 422
+      (c) => banners.updateAdminBanner(c, 'nada', { expectedVersion: 1 }), // 404
+      (c) => banners.deleteAdminBanner(c, 'banner-navidad', 1), // 409 versión
+      (c) => banners.deleteAdminBanner(c, 'banner-navidad', 2),
+      (c) => banners.deleteAdminBanner(c, 'banner-navidad', 2), // 404 (no idempotente)
+      (c) => banners.listStoreBanners(c),
+      (c) => banners.listAdminBanners(c),
     ];
     expect(await run(admin, p.http)).toEqual(await run(admin, p.mock.client));
   });
@@ -1119,7 +1080,7 @@ describe('paridad mock ↔ http', () => {
     const reads: ((c: DataClient) => Promise<unknown>)[] = [
       (c) => store.getStoreBootstrap(c, { branchId: 'sucursal-1' }), // 503 STORE_BUSY (determinista)
       (c) => store.getStoreBootstrap(c, { branchId: 'sucursal-1' }),
-      (c) => store.getStoreBootstrap(c, { branchId: 'sucursal-2', locale: 'en' }),
+      (c) => store.getStoreBootstrap(c, { branchId: 'sucursal-2' }),
       (c) => store.getStoreBootstrap(c),
       (c) => store.getStoreBootstrap(c, { branchId: 'zzz' }), // 404
       (c) => store.getStoreBootstrap(c, { branchId: 'sucursal-4' }), // 404 inactiva

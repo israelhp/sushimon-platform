@@ -2,318 +2,136 @@ import { describe, expect, it } from 'vitest';
 import { ApiError } from '@/lib/data-access/errors';
 import type { AdminBanner } from '@/lib/data-access/models';
 import {
-  EMPTY_FILTERS,
   bannerServerError,
   bannerToForm,
+  canAddBanner,
   emptyBannerForm,
-  fieldOfViolationPath,
-  filtersToQuery,
-  hasActiveFilters,
   previewBanner,
   toCreateRequest,
   toUpdateRequest,
   validateBannerForm,
-  type BannerFormValues,
+  type ImageValue,
 } from './banners-view';
 
-const image = { assetId: 'a1', url: null, mimeType: 'image/webp', sizeBytes: 1000 };
-
-function filled(): BannerFormValues {
-  const v = emptyBannerForm(true);
-  return {
-    ...v,
-    code: ' Mi-Banner ',
-    image,
-    es: { title: ' Título ', subtitle: '', ctaLabel: 'Ver', imageAlt: 'Alt' },
-  };
-}
+const image: ImageValue = {
+  assetId: 'asset-1',
+  url: 'https://cdn.example/banners/a.webp',
+  mimeType: 'image/webp',
+  sizeBytes: 5000,
+};
 
 const current: AdminBanner = {
   id: 'b1',
-  code: 'mi-banner',
-  title: 'Título',
-  image: { assetId: 'a1', url: null, mimeType: 'image/webp', sizeBytes: 1000 },
-  cta: {
-    type: 'MENU',
-    categoryId: null,
-    productId: null,
-    page: null,
-    targetLabel: null,
-    targetActive: null,
-  },
-  branchScope: 'ALL',
-  branches: [],
-  promotion: null,
-  startsAt: null,
-  endsAt: null,
+  image: { assetId: 'asset-1', url: image.url, mimeType: 'image/webp', sizeBytes: 5000 },
+  imageAlt: 'Rolls',
   active: true,
-  sortOrder: 2,
-  lifecycle: 'PUBLISHED',
-  visibleNow: true,
-  hiddenReason: null,
-  hasEnglish: true,
-  editable: true,
-  version: 4,
-  createdAt: '2026-01-01T00:00:00.000Z',
-  updatedAt: '2026-01-01T00:00:00.000Z',
-  translations: {
-    es: { title: 'Título', subtitle: null, ctaLabel: 'Ver', imageAlt: 'Alt' },
-    en: { title: 'Title', subtitle: null, ctaLabel: null, imageAlt: null },
-  },
+  version: 3,
+  createdAt: '2026-11-01T00:00:00.000Z',
+  updatedAt: '2026-11-01T00:00:00.000Z',
 };
 
-const errorCode = (status: number, businessCode?: string, path?: string) =>
-  new ApiError(
-    status,
-    'x',
-    'msg',
-    undefined,
-    undefined,
-    businessCode,
-    path ? [{ path, code: 'C', message: 'm' }] : undefined,
-  );
+const apiError = (status: number, businessCode?: string) =>
+  new ApiError(status, 'x', 'mensaje del servidor', undefined, undefined, businessCode);
 
-describe('filtros', () => {
-  it('detecta filtros activos y arma la consulta en el orden de la tienda', () => {
-    expect(hasActiveFilters(EMPTY_FILTERS)).toBe(false);
-    expect(hasActiveFilters({ ...EMPTY_FILTERS, lifecycle: 'EXPIRED' })).toBe(true);
-    expect(
-      filtersToQuery({ q: ' hola ', branchId: 'sucursal-1', lifecycle: 'PUBLISHED' }, 2, 10),
-    ).toEqual({
-      q: 'hola',
-      branchId: 'sucursal-1',
-      lifecycle: 'PUBLISHED',
-      sort: 'priority',
-      order: 'asc',
-      page: 2,
-      pageSize: 10,
-    });
-    expect(filtersToQuery(EMPTY_FILTERS, 1, 10)).toMatchObject({
-      q: undefined,
-      branchId: undefined,
-      lifecycle: undefined,
-    });
+describe('tope de 5', () => {
+  it('se puede agregar mientras haya menos de 5', () => {
+    expect([0, 3, 4].map(canAddBanner)).toEqual([true, true, true]);
+    expect([5, 6].map(canAddBanner)).toEqual([false, false]);
   });
 });
 
-describe('validación del formulario', () => {
-  const fields = (v: BannerFormValues, editing = false) =>
-    validateBannerForm(v, editing).map((e) => e.field);
-
-  it('válido: no hay errores; el código se valida solo al crear', () => {
-    expect(fields(filled())).toEqual([]);
-    expect(fields({ ...filled(), code: '' }, true)).toEqual([]);
-    expect(fields({ ...filled(), code: 'AB' })).toEqual(['code']);
+describe('formulario', () => {
+  it('vacío: sin imagen ni texto y activo', () => {
+    expect(emptyBannerForm()).toEqual({ image: null, imageAlt: '', active: true });
   });
 
-  it('exige imagen, título y alt en español', () => {
-    expect(fields({ ...emptyBannerForm(true), code: 'abc' })).toEqual([
-      'image',
-      'esTitle',
-      'esImageAlt',
+  it('bannerToForm copia imagen, texto alternativo y estado', () => {
+    expect(bannerToForm(current)).toEqual({ image, imageAlt: 'Rolls', active: true });
+  });
+
+  it('valida imagen y texto alternativo (obligatorios, 1..120)', () => {
+    expect(validateBannerForm(emptyBannerForm())).toEqual([
+      { field: 'image', problem: 'imageRequired' },
+      { field: 'imageAlt', problem: 'altEmpty' },
     ]);
-  });
-
-  it('límites de longitud y caracteres no permitidos en ambos idiomas', () => {
-    const v = filled();
-    expect(fields({ ...v, es: { ...v.es, title: 'x'.repeat(81) } })).toEqual(['esTitle']);
-    expect(fields({ ...v, en: { ...v.en, subtitle: 'y'.repeat(161) } })).toEqual(['enSubtitle']);
-    expect(fields({ ...v, en: { ...v.en, ctaLabel: 'z'.repeat(41) } })).toEqual(['enCtaLabel']);
-    expect(fields({ ...v, en: { ...v.en, imageAlt: 'a‮b' } })).toEqual(['enImageAlt']);
-  });
-
-  it('CTA estructurado: cada tipo exige su destino; sin enlaces libres', () => {
-    expect(fields({ ...filled(), ctaType: 'CATEGORY' })).toEqual(['cta']);
-    expect(fields({ ...filled(), ctaType: 'PRODUCT' })).toEqual(['cta']);
-    expect(fields({ ...filled(), ctaType: 'PAGE', page: '' })).toEqual(['cta']);
-    expect(fields({ ...filled(), ctaType: 'PAGE', page: 'CAREERS' })).toEqual([]);
-    expect(fields({ ...filled(), ctaType: 'PAGE', page: '/admin' as never })).toEqual(['cta']);
-  });
-
-  it('fechas: fin posterior al inicio (zona America/Guatemala); ambos opcionales', () => {
-    const v = filled();
-    expect(fields({ ...v, startsAt: '2026-12-01T10:00', endsAt: '2026-12-01T10:00' })).toEqual([
-      'endsAt',
+    expect(validateBannerForm({ image, imageAlt: 'a'.repeat(121), active: true })).toEqual([
+      { field: 'imageAlt', problem: 'altTooLong' },
     ]);
-    expect(fields({ ...v, startsAt: '2026-12-01T10:00', endsAt: '2026-12-01T10:01' })).toEqual([]);
-    expect(fields({ ...v, endsAt: '2026-12-01T10:00' })).toEqual([]);
+    expect(validateBannerForm({ image, imageAlt: 'a\u0007', active: true })).toEqual([
+      { field: 'imageAlt', problem: 'altChars' },
+    ]);
+    expect(validateBannerForm({ image, imageAlt: ' Texto ', active: false })).toEqual([]);
   });
 
-  it('sucursales y prioridad', () => {
-    expect(fields({ ...filled(), branchScope: 'SELECTED', branchIds: [] })).toEqual(['branches']);
-    expect(fields({ ...filled(), sortOrder: '10000' })).toEqual(['sortOrder']);
-    expect(fields({ ...filled(), sortOrder: '-1' })).toEqual(['sortOrder']);
-    expect(fields({ ...filled(), sortOrder: '9999' })).toEqual([]);
-  });
-});
-
-describe('formulario → petición', () => {
-  it('alta: normaliza el código, recorta textos, en blanco = ausente, inglés vacío no se envía', () => {
-    const req = toCreateRequest({
-      ...filled(),
-      startsAt: '2026-12-01T10:00',
-      sortOrder: '3',
-      promotionId: 'p1',
-    });
-    expect(req).toEqual({
-      code: 'mi-banner',
-      imageAssetId: 'a1',
-      translations: { es: { title: 'Título', subtitle: null, ctaLabel: 'Ver', imageAlt: 'Alt' } },
-      cta: { type: 'MENU' },
-      branchScope: 'ALL',
-      promotionId: 'p1',
-      // 10:00 en Guatemala = 16:00 UTC.
-      startsAt: '2026-12-01T16:00:00.000Z',
-      sortOrder: 3,
-      active: true,
+  it('toCreateRequest envía solo imagen, texto recortado y activo', () => {
+    expect(toCreateRequest({ image, imageAlt: '  Rolls  ', active: false })).toEqual({
+      imageAssetId: 'asset-1',
+      imageAlt: 'Rolls',
+      active: false,
     });
   });
 
-  it('alta con inglés, CTA de categoría y sucursales seleccionadas', () => {
-    const req = toCreateRequest({
-      ...filled(),
-      en: { title: 'Title', subtitle: '', ctaLabel: '', imageAlt: '' },
-      ctaType: 'CATEGORY',
-      categoryId: 'cat-rolls',
-      branchScope: 'SELECTED',
-      branchIds: ['sucursal-1'],
-    });
-    expect(req.translations.en).toEqual({
-      title: 'Title',
-      subtitle: null,
-      ctaLabel: null,
-      imageAlt: null,
-    });
-    expect(req.cta).toEqual({ type: 'CATEGORY', categoryId: 'cat-rolls' });
-    expect(req.branchIds).toEqual(['sucursal-1']);
-  });
-
-  it('edición sin cambios = null (no se envía)', () => {
+  it('toUpdateRequest envía solo lo que cambió con expectedVersion; sin cambios = null', () => {
     expect(toUpdateRequest(bannerToForm(current), current)).toBeNull();
-  });
-
-  it('edición: solo lo que cambió + expectedVersion; nunca code ni active', () => {
-    const v = bannerToForm(current);
-    const patch = toUpdateRequest(
-      {
-        ...v,
-        code: 'otro-codigo',
-        active: false,
-        es: { ...v.es, title: 'Nuevo', ctaLabel: '' },
-        en: { ...v.en, title: 'Title', imageAlt: 'Alt en' },
-        image: { ...image, assetId: 'a2' },
-        sortOrder: '5',
-      },
-      current,
-    );
-    expect(patch).toEqual({
-      expectedVersion: 4,
-      imageAssetId: 'a2',
-      translations: { es: { title: 'Nuevo', ctaLabel: null }, en: { imageAlt: 'Alt en' } },
-      sortOrder: 5,
-    });
-    expect(patch).not.toHaveProperty('code');
-    expect(patch).not.toHaveProperty('active');
-  });
-
-  it('quitar todo el inglés envía en:null; bloques de CTA, sucursales, promoción y fechas', () => {
-    const v = bannerToForm(current);
-    const patch = toUpdateRequest(
-      {
-        ...v,
-        en: { title: '', subtitle: '', ctaLabel: '', imageAlt: '' },
-        ctaType: 'PAGE',
-        page: 'INCIDENTS',
-        branchScope: 'SELECTED',
-        branchIds: ['sucursal-2'],
-        promotionId: 'promo-1',
-        endsAt: '2026-12-01T10:00',
-      },
-      current,
-    );
-    expect(patch).toEqual({
-      expectedVersion: 4,
-      translations: { en: null },
-      cta: { type: 'PAGE', page: 'INCIDENTS' },
-      branchScope: 'SELECTED',
-      branchIds: ['sucursal-2'],
-      promotionId: 'promo-1',
-      endsAt: '2026-12-01T16:00:00.000Z',
-    });
-    // Borrar un extremo envía null.
-    const dated = {
-      ...current,
-      endsAt: '2026-12-01T16:00:00.000Z',
-      promotion: { id: 'p', name: 'P', lifecycle: 'RUNNING' as const },
-    };
-    expect(toUpdateRequest({ ...bannerToForm(dated), endsAt: '', promotionId: '' }, dated)).toEqual(
-      {
-        expectedVersion: 4,
-        promotionId: null,
-        endsAt: null,
-      },
-    );
+    expect(toUpdateRequest({ ...bannerToForm(current), imageAlt: ' Rolls ' }, current)).toBeNull();
+    expect(
+      toUpdateRequest({ ...bannerToForm(current), imageAlt: 'Nuevo', active: false }, current),
+    ).toEqual({ expectedVersion: 3, imageAlt: 'Nuevo', active: false });
+    expect(
+      toUpdateRequest(
+        { ...bannerToForm(current), image: { ...image, assetId: 'asset-2' } },
+        current,
+      ),
+    ).toEqual({ expectedVersion: 3, imageAssetId: 'asset-2' });
   });
 });
 
 describe('vista previa', () => {
-  it('es el banner de la tienda con el mismo respaldo por campo a español', () => {
-    const v = { ...filled(), en: { title: 'Title', subtitle: '', ctaLabel: '', imageAlt: '' } };
-    expect(previewBanner(v, 'es')?.fallbackFields).toEqual([]);
-    const en = previewBanner(v, 'en')!;
-    expect(en.title).toBe('Title');
-    expect(en.fallbackFields).toEqual(['ctaLabel', 'imageAlt']);
-    expect(previewBanner({ ...v, image: null }, 'es')).toBeNull();
-    expect(previewBanner({ ...v, es: { ...v.es, title: '' } }, 'es')).toBeNull();
+  it('null sin imagen; con imagen usa la URL y el texto alternativo recortado', () => {
+    expect(previewBanner(emptyBannerForm())).toBeNull();
+    expect(previewBanner({ image, imageAlt: ' Rolls ', active: true })).toEqual({
+      image: { url: image.url },
+      alt: 'Rolls',
+    });
   });
 });
 
-describe('errores del servidor por code', () => {
-  it('mapea cada código a su campo y a la recarga', () => {
-    const e = bannerServerError;
-    expect(e(errorCode(409, 'BANNER_CODE_TAKEN'))).toMatchObject({
-      kind: 'codeTaken',
-      field: 'code',
+describe('errores del servidor (por businessCode, no por el texto)', () => {
+  const e = (error: unknown) => bannerServerError(error);
+
+  it('409 BANNER_LIMIT_REACHED: recarga y explica el tope', () => {
+    expect(e(apiError(409, 'BANNER_LIMIT_REACHED'))).toMatchObject({
+      kind: 'limitReached',
+      reload: true,
     });
-    expect(e(errorCode(409, 'BANNER_VERSION_CONFLICT'))).toMatchObject({
+    expect(e(apiError(409, 'BANNER_LIMIT_REACHED')).message).toMatch(/5 banners/);
+  });
+
+  it('409 BANNER_VERSION_CONFLICT: recarga y avisa', () => {
+    expect(e(apiError(409, 'BANNER_VERSION_CONFLICT'))).toMatchObject({
       kind: 'versionConflict',
       reload: true,
     });
-    expect(e(errorCode(422, 'BANNER_IMAGE_INVALID'))).toMatchObject({ field: 'image' });
-    expect(e(errorCode(422, 'BANNER_CTA_INVALID'))).toMatchObject({ field: 'cta' });
-    expect(e(errorCode(422, 'BANNER_PERIOD_INVALID'))).toMatchObject({ field: 'endsAt' });
-    expect(e(errorCode(422, 'BANNER_SCOPE_INVALID'))).toMatchObject({ field: 'branches' });
-    expect(e(errorCode(422, 'BANNER_PROMOTION_INVALID'))).toMatchObject({ field: 'promotion' });
-    expect(e(errorCode(422, 'BANNER_REORDER_MISMATCH'))).toMatchObject({
-      kind: 'reorderMismatch',
-      reload: true,
-    });
-    expect(e(errorCode(422, 'BANNER_LIMIT_REACHED'))).toMatchObject({ kind: 'limitReached' });
-    expect(e(errorCode(403, 'BANNER_SCOPE_FORBIDDEN'))).toMatchObject({ kind: 'scopeForbidden' });
-    expect(e(errorCode(404, 'BANNER_NOT_FOUND'))).toMatchObject({ kind: 'notFound', reload: true });
-    expect(e(errorCode(404, 'BRANCH_NOT_FOUND'))).toMatchObject({
-      field: 'branches',
-      reload: true,
-    });
-    expect(e(errorCode(503, 'BANNERS_BUSY'))).toMatchObject({ kind: 'busy', reload: false });
-    expect(e(errorCode(400))).toMatchObject({ kind: 'invalid' });
-    expect(e(errorCode(401))).toMatchObject({ kind: 'unauthorized' });
-    expect(e(errorCode(403))).toMatchObject({ kind: 'forbidden' });
-    expect(e(new Error('boom'))).toMatchObject({ kind: 'other', message: 'boom' });
   });
 
-  it('un 422 de traducciones apunta al campo de la violación', () => {
-    expect(fieldOfViolationPath('translations.en.ctaLabel')).toBe('enCtaLabel');
-    expect(fieldOfViolationPath('translations.es.imageAlt')).toBe('esImageAlt');
-    expect(fieldOfViolationPath('otra.cosa')).toBeUndefined();
-    expect(
-      bannerServerError(errorCode(422, 'BANNER_TRANSLATION_INVALID', 'translations.es.imageAlt')),
-    ).toMatchObject({ field: 'esImageAlt' });
-    // Se ramifica por code, no por el texto del mensaje.
-    expect(
-      bannerServerError(
-        new ApiError(409, 'x', 'BANNER_CODE_TAKEN', undefined, undefined, undefined),
-      ),
-    ).toMatchObject({ kind: 'other' });
+  it('422 de imagen y texto alternativo apuntan a su campo', () => {
+    expect(e(apiError(422, 'BANNER_IMAGE_INVALID'))).toMatchObject({
+      kind: 'imageInvalid',
+      field: 'image',
+    });
+    expect(e(apiError(422, 'BANNER_ALT_INVALID'))).toMatchObject({
+      kind: 'altInvalid',
+      field: 'imageAlt',
+    });
+  });
+
+  it('404, 503, 400, 401, 403 y otros', () => {
+    expect(e(apiError(404, 'BANNER_NOT_FOUND'))).toMatchObject({ kind: 'notFound', reload: true });
+    expect(e(apiError(503, 'BANNERS_BUSY'))).toMatchObject({ kind: 'busy', reload: false });
+    expect(e(apiError(400))).toMatchObject({ kind: 'invalid' });
+    expect(e(apiError(401))).toMatchObject({ kind: 'unauthorized' });
+    expect(e(apiError(403))).toMatchObject({ kind: 'forbidden' });
+    expect(e(apiError(500))).toMatchObject({ kind: 'other', message: 'mensaje del servidor' });
+    expect(e(new Error('boom'))).toMatchObject({ kind: 'other', message: 'boom' });
   });
 });

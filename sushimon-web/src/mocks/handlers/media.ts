@@ -114,7 +114,7 @@ function productsBusy(store: MockStore): void {
   }
 }
 
-const removeAsset = (store: MockStore, id: string) => {
+export const removeAsset = (store: MockStore, id: string) => {
   store.mediaAssets = store.mediaAssets.filter((a) => a.id !== id);
   delete store.mediaObjects[id];
 };
@@ -341,7 +341,7 @@ export const getAdminMedia: Handler = (req): AdminMediaAssetDetail => {
   );
   const bannerUsages = store.banners
     .filter((b) => b.imageAssetId === asset.id)
-    .map((b) => ({ bannerId: b.id, bannerCode: b.code }));
+    .map((b) => ({ bannerId: b.id, bannerAlt: b.imageAlt }));
   return { ...assetView(store, asset), usages, bannerUsages };
 };
 

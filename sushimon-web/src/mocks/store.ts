@@ -33,7 +33,7 @@ import type { MockScenario } from './scenarios';
  * el historial de días anteriores lo genera `factories/history.ts` de forma determinista.
  * NUNCA contiene PAN completo, CVV ni PIN: de una tarjeta solo marca, últimos 4 y referencia.
  */
-export const MOCK_STORE_VERSION = 14;
+export const MOCK_STORE_VERSION = 15;
 
 /**
  * Producto del mock. Los campos F11 (`id`…`updatedAt`) reproducen `app.products` + `app.product_media`; el bloque «SIMULADO»
@@ -234,7 +234,7 @@ export interface MockStore {
   modifiersBusy?: number;
   /** F15: simulación DETERMINISTA de `PROMOTIONS_BUSY`: nº de escrituras de promociones que fallarán con 503 antes de que una funcione. */
   promotionsBusy?: number;
-  /** F16: simulación DETERMINISTA de `BANNERS_BUSY`: nº de escrituras de banners (alta, edición, estado, reordenado) y de lecturas públicas que fallarán con 503 antes de que una funcione. */
+  /** F16: simulación DETERMINISTA de `BANNERS_BUSY`: nº de escrituras de banners (alta, edición, borrado) y de lecturas que fallarán con 503 antes de que una funcione. */
   bannersBusy?: number;
   /** F17: simulación DETERMINISTA de `STORE_BUSY`: nº de lecturas de los agregados públicos (bootstrap, menú, búsqueda, ficha con sucursal) que fallarán con 503 antes de que una funcione. */
   storeBusy?: number;
@@ -261,7 +261,7 @@ export interface MockStore {
   productModifierGroups: Record<string, string[]>;
   /** F15: promociones y cupones (alcance explícito, `version` para concurrencia optimista). */
   promotions: PromotionRecord[];
-  /** F16: banners del Inicio (estados derivados; `version` para concurrencia optimista; prioridad no única). */
+  /** F16: banners del Inicio (imagen + texto alternativo + activo; `version` para concurrencia optimista; máx. 5; orden = creación). */
   banners: BannerRecord[];
   orders: DraftOrder[];
   staff: StaffRecord[];

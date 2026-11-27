@@ -1,8 +1,7 @@
 'use client';
 
-import { ArrowRight, ChevronLeft, ChevronRight, Pause, Play } from 'lucide-react';
-import Link from 'next/link';
-import { useLocale, useTranslations } from 'next-intl';
+import { ChevronLeft, ChevronRight, Pause, Play } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import {
   useCallback,
   useEffect,
@@ -12,16 +11,8 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { cn } from '@/lib/cn';
-import { isBannerLocale } from '@/lib/banner-rules';
 import { useHomeBootstrap } from '@/features/store/hooks';
-import { useProductSheet } from '@/features/catalog/product-sheet-context';
-import { bannerAction } from '../banner-href';
-import {
-  BANNER_HEIGHT_CLASSES,
-  BannerSlide,
-  BannerSlideSkeleton,
-  bannerCtaText,
-} from './banner-slide';
+import { BANNER_HEIGHT_CLASSES, BannerSlide, BannerSlideSkeleton } from './banner-slide';
 
 /** Segundos entre diapositivas (temporizador de presentación: usa el reloj del navegador, no es dato de dominio). */
 export const CAROUSEL_INTERVAL_MS = 6000;
@@ -41,30 +32,25 @@ export function usePrefersReducedMotion(): boolean {
   );
 }
 
-/** Foco visible sobre la imagen (flechas blancas y CTA): anillo ámbar con separación oscura, visible en claro y oscuro. */
+/** Foco visible sobre la imagen (flechas blancas): anillo ámbar con separación oscura, visible en claro y oscuro. */
 const FOCUS_ON_IMAGE =
   'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black';
 /** Foco visible sobre el fondo de la página (indicadores y pausa). */
 const FOCUS_ON_PAGE =
   'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-bg';
 
-const CTA_CLASS = `btn mt-1 !min-h-[40px] self-start !border-transparent !bg-white !px-4 text-sm !text-[rgb(var(--on-band-amber))] sm:mt-1.5 sm:!min-h-[42px] ${FOCUS_ON_IMAGE}`;
-
 /**
- * Carrusel del Inicio (F16): banners REALES (dentro de `GET /v1/store/bootstrap`, F17) para la sucursal activa y el idioma activo (desplazamiento por
- * *scroll snap*). El servidor decide qué se publica (vigencia, sucursal, promoción vinculada); esta pieza solo lo muestra y vuelve a
- * pedirlo en `nextChangeAt` (medido con la hora del servidor), al cambiar de sucursal/idioma y al volver a la pestaña.
+ * Carrusel del Inicio (F16 simplificado, ADR-0033): imágenes `{image.url, alt}` de los banners ACTIVOS (dentro de
+ * `GET /v1/store/bootstrap`, F17), en orden de creación, sin textos ni enlaces (desplazamiento por *scroll snap*). El servidor decide
+ * qué se publica; esta pieza solo lo muestra y vuelve a pedirlo al cambiar de sucursal y al volver a la pestaña.
  * Avanza cada 6 s, salvo si el usuario lo pausó, pasa el puntero/foco por encima o pidió reducir el movimiento. Un solo banner =
  * sin controles ni avance. Sin banners (o si falla) no renderiza nada. Puntos, flechas y teclas ←/→/Inicio/Fin; solo la
- * diapositiva actual es interactiva (`inert` en las demás). El destino sale de `bannerAction` (función cerrada).
+ * diapositiva actual es accesible (`inert` en las demás).
  */
 export function PromoCarousel() {
   const t = useTranslations('home');
-  const rawLocale = useLocale();
-  const locale = isBannerLocale(rawLocale) ? rawLocale : 'es';
   // F17: los banners llegan en el bootstrap del Inicio (una sola solicitud; NO se pide `/store/banners` aparte).
   const banners = useHomeBootstrap();
-  const { openProduct } = useProductSheet();
   const reduced = usePrefersReducedMotion();
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -97,9 +83,7 @@ export function PromoCarousel() {
       const next = (target + count) % count;
       setIndex(next);
       if (manual) {
-        setAnnouncement(
-          `${t('slideOf', { a: next + 1, b: count })}: ${items?.[next]?.title ?? ''}`,
-        );
+        setAnnouncement(`${t('slideOf', { a: next + 1, b: count })}: ${items?.[next]?.alt ?? ''}`);
       }
       const el = scroller.current;
       if (el && el.clientWidth > 0 && typeof el.scrollTo === 'function') {
@@ -184,16 +168,6 @@ export function PromoCarousel() {
           className="no-scrollbar flex snap-x snap-mandatory overflow-x-auto rounded-3xl shadow-card"
         >
           {items.map((banner, i) => {
-            const action = bannerAction(banner.cta);
-            const label = bannerCtaText(banner, t('banner.cta'));
-            const labelLang =
-              locale === 'en' && banner.fallbackFields.includes('ctaLabel') ? 'es' : undefined;
-            const body = (
-              <>
-                <span lang={labelLang}>{label}</span>{' '}
-                <ArrowRight className="h-4 w-4" aria-hidden="true" />
-              </>
-            );
             // Solo la diapositiva actual y la siguiente piden su imagen; las lejanas esperan (`src` ausente).
             const near = loadedIds.has(banner.id) || i === current || i === (current + 1) % count;
             return (
@@ -207,27 +181,7 @@ export function PromoCarousel() {
                   BANNER_HEIGHT_CLASSES,
                 )}
               >
-                <BannerSlide
-                  banner={banner}
-                  locale={locale}
-                  eager={i === 0}
-                  loadImage={near}
-                  ctaSlot={
-                    action.type === 'link' ? (
-                      <Link href={action.href} className={CTA_CLASS}>
-                        {body}
-                      </Link>
-                    ) : action.type === 'product' ? (
-                      <button
-                        type="button"
-                        onClick={() => openProduct(action.productId)}
-                        className={CTA_CLASS}
-                      >
-                        {body}
-                      </button>
-                    ) : null
-                  }
-                />
+                <BannerSlide banner={banner} eager={i === 0} loadImage={near} />
               </article>
             );
           })}
