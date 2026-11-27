@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/test';
 import { CART_KEY, DUMPLINGS, cartV2 } from './support/cart';
 import { button, cartLines, seedCheckout, toReview } from './support/checkout';
 import {

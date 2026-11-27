@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 
 /**
  * Backoffice, bloque 4: Productos, Categorías y Promociones con datos simulados. El estado del mock vive

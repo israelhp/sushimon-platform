@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 
 /**
  * F09 · Geografía, zonas propias y cobertura (datos simulados, sin red externa). El mock emula las reglas del servidor

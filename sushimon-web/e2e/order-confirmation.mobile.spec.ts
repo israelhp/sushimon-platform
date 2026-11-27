@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 import { button, cartLines, seedCheckout, toReview } from './support/checkout';
 
 /** F20 · Confirmación en móvil (Pixel 7, datos SIMULADOS): barra inferior, botón ≥ 44 px, sin desbordes y axe claro/oscuro. */

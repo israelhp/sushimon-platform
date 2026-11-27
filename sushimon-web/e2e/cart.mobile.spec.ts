@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 import { CART_KEY, DUMPLINGS, cartV2, pickupMode } from './support/cart';
 
 /**

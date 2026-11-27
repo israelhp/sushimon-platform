@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 
 /**
  * F22 · Pedidos del backoffice (tablero, tabla, detalle y comandos) en modo MOCK: el adaptador responde `/v1/admin/orders*` con la

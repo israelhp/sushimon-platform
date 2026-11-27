@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 import { DUMPLINGS, cartV2, pickupMode } from './support/cart';
 
 /** F19 · Cotización en móvil (Pixel 7, datos SIMULADOS): resumen visible en «Envío», barra inferior con el total del servidor, sin desbordes y objetivos ≥ 44 px. */

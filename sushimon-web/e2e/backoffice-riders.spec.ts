@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 
 /**
  * F27 · Motoristas propios del backoffice en modo MOCK (datos SIMULADOS, sin red externa): el adaptador responde

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 
 /**
  * Backoffice (bloques 1–2): acceso de demostración, shell por rol, Panel y Pedidos con datos simulados.

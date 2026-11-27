@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 import { button, seedCheckout, toReview } from './support/checkout';
 
 /** F21 · Seguimiento en móvil (Pixel 7, datos SIMULADOS): orden, sin desbordes, botones ≥ 44 px y axe claro/oscuro. */

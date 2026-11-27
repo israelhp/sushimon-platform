@@ -1,6 +1,6 @@
 import { DUMPLINGS, cartV2, pickupMode } from './support/cart';
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 
 /**
  * F08 · Horarios, cierres y disponibilidad (datos simulados, sin red externa). El mock emula las reglas del servidor

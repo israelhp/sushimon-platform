@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 
 /**
  * F15 — Promociones, cupones y Happy Hour con datos SIMULADOS (el mock reproduce la semántica del contrato; nada se probó contra la

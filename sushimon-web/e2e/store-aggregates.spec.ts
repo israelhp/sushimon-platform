@@ -1,6 +1,6 @@
 import { DUMPLINGS, cartV2 } from './support/cart';
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 
 /**
  * F17 — Medición de solicitudes `/v1/*` por pantalla con datos SIMULADOS (mock fiel a la semántica del contrato; nada se probó contra la

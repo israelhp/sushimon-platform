@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 import { button, next, seedCheckout } from './support/checkout';
 
 /** F24 · Pagos en efectivo en móvil (Pixel 7, datos SIMULADOS): sin desbordes, objetivos ≥ 44 px, axe claro/oscuro y modal accesible. */

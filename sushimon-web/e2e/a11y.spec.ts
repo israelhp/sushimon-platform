@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 import { demoStaffFromSeed } from '../src/mocks/fixtures/staff';
 import { CART_KEY, DUMPLINGS, cartV2, pickupMode } from './support/cart';
 

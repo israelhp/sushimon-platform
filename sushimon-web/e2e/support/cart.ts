@@ -1,3 +1,5 @@
+import { demoNow } from './demo-clock';
+
 /**
  * Carrito `monsushi-cart-v2` para sembrar `localStorage` en las pruebas (F18). Mismo esquema que `lib/cart-rules.ts`; se escribe
  * aquí a mano para que las pruebas NO dependan del código bajo prueba. Los ids del mock no son UUID (el carrito no los exige).
@@ -22,7 +24,7 @@ export interface SeedLine {
 }
 
 /** Siembra un carrito de UNA sucursal; `updatedAt` = ahora (el TTL es de 7 días). */
-export function cartV2(branchId: string, lines: SeedLine[], updatedAt = Date.now()): string {
+export function cartV2(branchId: string, lines: SeedLine[], updatedAt = demoNow()): string {
   return JSON.stringify({
     v: 2,
     branchId,
