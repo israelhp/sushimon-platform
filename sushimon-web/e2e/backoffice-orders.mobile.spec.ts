@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 
 /** F22 · Pedidos del backoffice en móvil (Pixel 7, datos SIMULADOS): sin desbordes, acciones ≥ 44 px y axe claro/oscuro. */
 test.skip(({ isMobile }) => !isMobile, 'solo en el proyecto e2e-mobile');

@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 
 /**
  * Consulta de invitado → seguimiento → reclamo, con datos mock (pedido de demostración MON-490217 · 5555-1234)

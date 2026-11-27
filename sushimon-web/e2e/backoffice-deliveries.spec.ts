@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 
 /**
  * Backoffice, bloque 3 y F28: pantalla Entregas. «Reparto propio» es REAL (contrato `admin-deliveries`, aquí contra el adaptador mock

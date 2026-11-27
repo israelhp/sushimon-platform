@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 
 /**
  * Backoffice (bloque 5 + F03): Sucursales, Usuarios (empleados con asignaciones), Roles y Reportes con datos simulados. La sesión es de DEMOSTRACIÓN: ni

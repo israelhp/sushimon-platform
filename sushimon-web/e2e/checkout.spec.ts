@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { DUMPLINGS, cartV2, pickupMode } from './support/cart';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 
 /**
  * Checkout de punta a punta (datos simulados, sin red externa). F24: el ÚNICO método es EFECTIVO (sin elegir, sin tarjeta,

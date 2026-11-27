@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 
 /**
  * SC-007 / FR-007: la demo funciona sin red externa. Recorre las rutas principales de la tienda y

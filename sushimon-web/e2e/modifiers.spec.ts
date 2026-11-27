@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { pickupMode } from './support/cart';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 
 /**
  * F12 — Extras (modificadores) con datos simulados fieles al contrato: administración (grupos, opciones, asociación al

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 import { demoStaffFromSeed } from '../src/mocks/fixtures/staff';
 
 /**

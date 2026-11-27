@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 
 /**
  * F14 (MOCK_ONLY): gestor de imágenes del backoffice contra el ALMACÉN SIMULADO. Se sube un PNG real, el navegador lo optimiza

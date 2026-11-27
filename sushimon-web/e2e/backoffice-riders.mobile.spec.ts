@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 
 /**
  * F27 · Motoristas en móvil (390 px, datos SIMULADOS): sin desbordes horizontales, objetivos táctiles ≥ 44 px, modal accesible y
